@@ -107,6 +107,7 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
         {"table_uuid", std::make_shared<DataTypeUUID>()},
         {"part_name", std::make_shared<DataTypeString>()},
         {"partition_id", std::make_shared<DataTypeString>()},
+        {"partition", std::make_shared<DataTypeString>()},
         {"part_type", std::make_shared<DataTypeString>()},
         {"disk_name", std::make_shared<DataTypeString>()},
         {"path_on_disk", std::make_shared<DataTypeString>()},
@@ -157,6 +158,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(table_uuid);
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
+    columns[i++]->insert(partition);
     columns[i++]->insert(part_type.toString());
     columns[i++]->insert(disk_name);
     columns[i++]->insert(path_on_disk);
@@ -229,6 +231,10 @@ bool PartLog::addNewParts(
             elem.table_name = table_id.table_name;
             elem.table_uuid = table_id.uuid;
             elem.partition_id = part->info.partition_id;
+            {
+                WriteBufferFromString out(elem.partition);
+                part->partition.serializeText(part->storage, out, {});
+            }
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();
@@ -242,7 +248,7 @@ bool PartLog::addNewParts(
 
             elem.profile_counters = part_log_entry.profile_counters;
 
-            part_log->add(elem);
+            part_log->add(std::move(elem));
         }
     }
     catch (...)

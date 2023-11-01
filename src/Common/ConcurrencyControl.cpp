@@ -57,7 +57,7 @@ ConcurrencyControl::Allocation::Allocation(ConcurrencyControl & parent_, SlotCou
         *waiter = this;
 }
 
-// Grant single slot to allocation, returns true iff more slot(s) are required
+// Grant single slot to allocation returns true iff more slot(s) are required
 bool ConcurrencyControl::Allocation::grant()
 {
     std::unique_lock lock{mutex};

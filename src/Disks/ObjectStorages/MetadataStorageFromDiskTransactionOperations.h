@@ -244,15 +244,6 @@ private:
     std::unique_ptr<WriteFileOperation> write_operation;
 };
 
-/// Return the result of operation to the caller.
-/// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
-struct UnlinkMetadataFileOperationOutcome
-{
-    UInt32 num_hardlinks = std::numeric_limits<UInt32>::max();
-};
-
-using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
-
 struct UnlinkMetadataFileOperation final : public IMetadataOperation
 {
     const UnlinkMetadataFileOperationOutcomePtr outcome = std::make_shared<UnlinkMetadataFileOperationOutcome>();

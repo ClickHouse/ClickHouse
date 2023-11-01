@@ -131,6 +131,8 @@ public:
     virtual void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
 
     /// Copy object to another instance of object storage
@@ -139,6 +141,8 @@ public:
     virtual void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {});
 

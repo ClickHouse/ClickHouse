@@ -1,15 +1,11 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
 
 #include <Formats/NativeWriter.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Core/ProtocolDefines.h>
-#include <Disks/IVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -17,6 +13,9 @@
 #include <fmt/format.h>
 
 #include <Formats/formatBlock.h>
+
+#include <numeric>
+
 
 namespace CurrentMetrics
 {
@@ -302,7 +301,8 @@ void GraceHashJoin::initBuckets()
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
     bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
-    return !is_asof && isInnerOrLeft(table_join->kind()) && table_join->oneDisjunct();
+    auto kind = table_join->kind();
+    return !is_asof && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)) && table_join->oneDisjunct();
 }
 
 GraceHashJoin::~GraceHashJoin() = default;
@@ -322,7 +322,6 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
-
     bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
     if (has_overflow)
@@ -494,17 +493,30 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
     return hash_join_is_empty;
 }
 
-IBlocksStreamPtr GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
+/// Each bucket are handled by the following steps
+/// 1. build hash_join by the right side blocks.
+/// 2. join left side with the hash_join,
+/// 3. read right non-joined blocks from hash_join.
+/// buckets are handled one by one, each hash_join will not be release before the right non-joined blocks are emitted.
+///
+/// There is a finished counter in JoiningTransform/DelayedJoinedBlocksWorkerTransform,
+/// only one processor could take the non-joined blocks from right stream, and ensure all rows from
+/// left stream have been emitted before this.
+IBlocksStreamPtr
+GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
 {
-    /// We do no support returning non joined blocks here.
-    /// TODO: They _should_ be reported by getDelayedBlocks instead
-    return nullptr;
+    return hash_join->getNonJoinedBlocks(left_sample_block_, result_sample_block_, max_block_size_);
 }
 
 class GraceHashJoin::DelayedBlocks : public IBlocksStream
 {
 public:
-    explicit DelayedBlocks(size_t current_bucket_, Buckets buckets_, InMemoryJoinPtr hash_join_, const Names & left_key_names_, const Names & right_key_names_)
+    explicit DelayedBlocks(
+        size_t current_bucket_,
+        Buckets buckets_,
+        InMemoryJoinPtr hash_join_,
+        const Names & left_key_names_,
+        const Names & right_key_names_)
         : current_bucket(current_bucket_)
         , buckets(std::move(buckets_))
         , hash_join(std::move(hash_join_))
@@ -522,12 +534,15 @@ public:
 
         do
         {
+            // One DelayedBlocks is shared among multiple DelayedJoinedBlocksWorkerTransform.
+            // There is a lock inside left_reader.read() .
             block = left_reader.read();
             if (!block)
             {
                 return {};
             }
 
+            // block comes from left_reader, need to join with right table to get the result.
             Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
             block = std::move(blocks[current_idx]);
 

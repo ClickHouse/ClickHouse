@@ -113,7 +113,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_if_transform_strings_to_enum)
             return;

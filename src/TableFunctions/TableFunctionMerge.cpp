@@ -118,7 +118,7 @@ const TableFunctionMerge::DBToTableSetMap & TableFunctionMerge::getSourceDatabas
     return *source_databases_and_tables;
 }
 
-ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
     {
@@ -134,11 +134,11 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context),
+        getActualTableStructure(context, is_insert_query),
         String{},
         source_database_name_or_regexp,
         database_is_regexp,

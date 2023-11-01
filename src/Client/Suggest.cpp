@@ -1,7 +1,7 @@
 #include "Suggest.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -22,9 +22,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int OK;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DEADLOCK_AVOIDED;
+    extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
 Suggest::Suggest()
@@ -121,18 +123,24 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
             }
             catch (const Exception & e)
             {
+                last_error = e.code();
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
-
-                /// We should not use std::cerr here, because this method works concurrently with the main thread.
-                /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
-
-                WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
-                out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                out.next();
+                else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+                {
+                    /// We should not use std::cerr here, because this method works concurrently with the main thread.
+                    /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
+                    ///
+                    /// USER_SESSION_LIMIT_EXCEEDED is ignored here. The client will try to receive
+                    /// suggestions using the main connection later.
+                    WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
+                    out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                    out.next();
+                }
             }
             catch (...)
             {
+                last_error = getCurrentExceptionCode();
                 WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                 out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
                 out.next();
@@ -143,6 +151,21 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
     });
+}
+
+void Suggest::load(IServerConnection & connection,
+                   const ConnectionTimeouts & timeouts,
+                   Int32 suggestion_limit)
+{
+    try
+    {
+        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true));
+    }
+    catch (...)
+    {
+        std::cerr << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
+        last_error = getCurrentExceptionCode();
+    }
 }
 
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
@@ -173,6 +196,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 return;
 
             case Protocol::Server::EndOfStream:
+                last_error = ErrorCodes::OK;
                 return;
 
             default:

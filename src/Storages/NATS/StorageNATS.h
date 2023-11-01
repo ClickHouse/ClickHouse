@@ -38,7 +38,7 @@ public:
     /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
     /// because of drop query. And drop() method is not suitable at all, because it will not only require to reopen connection, but also
     /// it can be called considerable time after table is dropped (for example, in case of Atomic database), which is not appropriate for the case.
-    void checkTableCanBeDropped() const override { drop_table = true; }
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
     void read(

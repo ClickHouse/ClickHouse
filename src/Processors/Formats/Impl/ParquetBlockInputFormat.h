@@ -5,6 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace parquet { class FileMetaData; }
 namespace parquet::arrow { class FileReader; }
@@ -52,6 +53,7 @@ public:
         const FormatSettings & format_settings,
         size_t max_decoding_threads,
         size_t min_bytes_for_seek);
+
     ~ParquetBlockInputFormat() override;
 
     void resetParser() override;
@@ -71,14 +73,14 @@ private:
     }
 
     void initializeIfNeeded();
-    void initializeRowGroupReader(size_t row_group_idx);
+    void initializeRowGroupBatchReader(size_t row_group_batch_idx);
 
-    void decodeOneChunk(size_t row_group_idx, std::unique_lock<std::mutex> & lock);
+    void decodeOneChunk(size_t row_group_batch_idx, std::unique_lock<std::mutex> & lock);
 
-    void scheduleMoreWorkIfNeeded(std::optional<size_t> row_group_touched = std::nullopt);
-    void scheduleRowGroup(size_t row_group_idx);
+    void scheduleMoreWorkIfNeeded(std::optional<size_t> row_group_batch_touched = std::nullopt);
+    void scheduleRowGroup(size_t row_group_batch_idx);
 
-    void threadFunction(size_t row_group_idx);
+    void threadFunction(size_t row_group_batch_idx);
 
     // Data layout in the file:
     //
@@ -165,7 +167,7 @@ private:
     //  * The max_pending_chunks_per_row_group limit could be based on actual memory usage too.
     //    Useful for preserve_order.
 
-    struct RowGroupState
+    struct RowGroupBatchState
     {
         // Transitions:
         //
@@ -202,8 +204,10 @@ private:
         size_t next_chunk_idx = 0;
         size_t num_pending_chunks = 0;
 
-        size_t row_group_bytes_uncompressed = 0;
-        size_t row_group_rows = 0;
+        size_t total_rows = 0;
+        size_t total_bytes_compressed = 0;
+
+        std::vector<int> row_groups_idxs;
 
         // These are only used by the decoding thread, so don't require locking the mutex.
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
@@ -217,7 +221,7 @@ private:
         Chunk chunk;
         BlockMissingValues block_missing_values;
         size_t chunk_idx; // within row group
-        size_t row_group_idx;
+        size_t row_group_batch_idx;
         size_t approx_original_chunk_size;
 
         // For priority_queue.
@@ -230,8 +234,8 @@ private:
             bool operator()(const PendingChunk & a, const PendingChunk & b) const
             {
                 auto tuplificate = [this](const PendingChunk & c)
-                { return row_group_first ? std::tie(c.row_group_idx, c.chunk_idx)
-                                         : std::tie(c.chunk_idx, c.row_group_idx); };
+                { return row_group_first ? std::tie(c.row_group_batch_idx, c.chunk_idx)
+                                         : std::tie(c.chunk_idx, c.row_group_batch_idx); };
                 return tuplificate(a) > tuplificate(b);
             }
         };
@@ -241,13 +245,13 @@ private:
     const std::unordered_set<int> & skip_row_groups;
     size_t max_decoding_threads;
     size_t min_bytes_for_seek;
-    const size_t max_pending_chunks_per_row_group = 2;
+    const size_t max_pending_chunks_per_row_group_batch = 2;
 
-    // RandomAccessFile is thread safe, so we share it among threads.
-    // FileReader is not, so each thread creates its own.
+    /// RandomAccessFile is thread safe, so we share it among threads.
+    /// FileReader is not, so each thread creates its own.
     std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
     std::shared_ptr<parquet::FileMetaData> metadata;
-    // indices of columns to read from Parquet file
+    /// Indices of columns to read from Parquet file.
     std::vector<int> column_indices;
 
     // Window of active row groups:
@@ -264,16 +268,16 @@ private:
     // Wakes up the generate() call, if any.
     std::condition_variable condvar;
 
-    std::vector<RowGroupState> row_groups;
+    std::vector<RowGroupBatchState> row_group_batches;
     std::priority_queue<PendingChunk, std::vector<PendingChunk>, PendingChunk::Compare> pending_chunks;
-    size_t row_groups_completed = 0;
+    size_t row_group_batches_completed = 0;
 
     // These are only used when max_decoding_threads > 1.
-    size_t row_groups_started = 0;
+    size_t row_group_batches_started = 0;
     std::unique_ptr<ThreadPool> pool;
 
     BlockMissingValues previous_block_missing_values;
-    size_t previous_approx_bytes_read_for_chunk;
+    size_t previous_approx_bytes_read_for_chunk = 0;
 
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
@@ -286,9 +290,14 @@ public:
     ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+    std::optional<size_t> readNumberOrRows() override;
 
 private:
+    void initializeIfNeeded();
+
     const FormatSettings format_settings;
+    std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
+    std::shared_ptr<parquet::FileMetaData> metadata;
 };
 
 }

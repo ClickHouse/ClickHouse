@@ -60,6 +60,9 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (if_exists)
         settings.ostr << "IF EXISTS ";
 
+    if (if_empty)
+        settings.ostr << "IF EMPTY ";
+
     settings.ostr << (settings.hilite ? hilite_none : "");
 
     if (!table && database)

@@ -48,6 +48,11 @@ public:
         available.fetch_add(estimated_cost - real_cost);
     }
 
+    ResourceCost get() const
+    {
+        return available.load();
+    }
+
 private:
     std::atomic<ResourceCost> available = 0; // requested - consumed
 };

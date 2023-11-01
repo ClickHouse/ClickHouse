@@ -7,9 +7,12 @@ import json
 import logging
 import os
 import random
+import re
 import shutil
+import string
 import subprocess
 import time
+import shlex
 import zlib  # for crc32
 
 
@@ -110,16 +113,36 @@ def get_counters(fname):
             if not (".py::" in line and " " in line):
                 continue
 
-            line_arr = line.strip().split(" ")
+            line = line.strip()
+            # [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            # ^^^^^^^^^^^^^
+            if line.strip().startswith("["):
+                line = re.sub("^\[[^\[\]]*\] \[[^\[\]]*\] ", "", line)
+
+            line_arr = line.split(" ")
             if len(line_arr) < 2:
                 logging.debug("Strange line %s", line)
                 continue
 
             # Lines like:
-            #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
-            #     [gw3] [ 40%] PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
-            state = line_arr[-2]
-            test_name = line_arr[-1]
+            #
+            #     ERROR test_mysql_protocol/test.py::test_golang_client
+            #     PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
+            #     PASSED test_drop_is_lock_free/test.py::test_query_is_lock_free[detach part]
+            #
+            state = line_arr.pop(0)
+            test_name = " ".join(line_arr)
+
+            # Normalize test names for lines like this:
+            #
+            #    FAILED test_storage_s3/test.py::test_url_reconnect_in_the_middle - Exception
+            #    FAILED test_distributed_ddl/test.py::test_default_database[configs] - AssertionError: assert ...
+            #
+            test_name = re.sub(
+                r"^(?P<test_name>[^\[\] ]+)(?P<test_param>\[[^\[\]]*\]|)(?P<test_error> - .*|)$",
+                r"\g<test_name>\g<test_param>",
+                test_name,
+            )
 
             if state in counters:
                 counters[state].add(test_name)
@@ -168,7 +191,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
+            "timeout --signal=KILL 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -177,7 +200,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Removing all docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
+            "timeout --signal=KILL 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -291,6 +314,7 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/mysql-java-client",
             "clickhouse/mysql-js-client",
             "clickhouse/mysql-php-client",
+            "clickhouse/nginx-dav",
             "clickhouse/postgresql-java-client",
         ]
 
@@ -299,7 +323,7 @@ class ClickhouseIntegrationTestsRunner:
 
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
+            "timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
@@ -407,19 +431,12 @@ class ClickhouseIntegrationTestsRunner:
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
-        out_file = "all_tests.txt"
+        runner_opts = self._get_runner_opts()
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
-            "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
-            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' "
-            "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
-                repo_path=repo_path,
-                runner_opts=self._get_runner_opts(),
-                image_cmd=image_cmd,
-                out_file=out_file,
-                out_file_full=out_file_full,
-            )
+            f"cd {repo_path}/tests/integration && "
+            f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
+            f"| tee '{out_file_full}'"
         )
 
         logging.info("Getting all tests with cmd '%s'", cmd)
@@ -427,34 +444,19 @@ class ClickhouseIntegrationTestsRunner:
             cmd, shell=True
         )
 
-        all_tests_file_path = "{repo_path}/tests/integration/{out_file}".format(
-            repo_path=repo_path, out_file=out_file
-        )
-        if (
-            not os.path.isfile(all_tests_file_path)
-            or os.path.getsize(all_tests_file_path) == 0
-        ):
-            if os.path.isfile(out_file_full):
-                # log runner output
-                logging.info("runner output:")
-                with open(out_file_full, "r") as all_tests_full_file:
-                    for line in all_tests_full_file:
-                        line = line.rstrip()
-                        if line:
-                            logging.info("runner output: %s", line)
-            else:
-                logging.info("runner output '%s' is empty", out_file_full)
+        all_tests = set()
+        with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
+            for line in all_tests_fd:
+                if (
+                    line[0] in string.whitespace  # test names at the start of lines
+                    or "::test" not in line  # test names contain '::test'
+                    or "SKIPPED" in line  # pytest.mark.skip/-if
+                ):
+                    continue
+                all_tests.add(line.strip())
 
-            raise Exception(
-                "There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(
-                    all_tests_file_path
-                )
-            )
+        assert all_tests
 
-        all_tests = []
-        with open(all_tests_file_path, "r") as all_tests_file:
-            for line in all_tests_file:
-                all_tests.append(line.strip())
         return list(sorted(all_tests))
 
     def _get_parallel_tests_skip_list(self, repo_path):
@@ -490,8 +492,6 @@ class ClickhouseIntegrationTestsRunner:
             if test not in main_counters["PASSED"]:
                 if test in main_counters["FAILED"]:
                     main_counters["FAILED"].remove(test)
-                if test in main_counters["ERROR"]:
-                    main_counters["ERROR"].remove(test)
                 if test in main_counters["BROKEN"]:
                     main_counters["BROKEN"].remove(test)
 
@@ -504,7 +504,6 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 if test in main_counters["PASSED"]:
                     main_counters["PASSED"].remove(test)
-                    continue
                 if test not in broken_tests:
                     if test not in main_counters[state]:
                         main_counters[state].append(test)
@@ -646,7 +645,7 @@ class ClickhouseIntegrationTestsRunner:
             info_basename = test_group_str + "_" + str(i) + ".nfo"
             info_path = os.path.join(repo_path, "tests/integration", info_basename)
 
-            test_cmd = " ".join([test for test in sorted(test_names)])
+            test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = (
                 " --parallel {} ".format(num_workers) if num_workers > 0 else ""
             )
@@ -655,7 +654,7 @@ class ClickhouseIntegrationTestsRunner:
             # -E -- (E)rror
             # -p -- (p)assed
             # -s -- (s)kipped
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEps --run-id={} --color=no --durations=0 {}' | tee {}".format(
+            cmd = "cd {}/tests/integration && timeout --signal=KILL 1h ./runner {} {} -t {} {} -- -rfEps --run-id={} --color=no --durations=0 {} | tee {}".format(
                 repo_path,
                 self._get_runner_opts(),
                 image_cmd,
@@ -766,6 +765,7 @@ class ClickhouseIntegrationTestsRunner:
                     and test not in counters["ERROR"]
                     and test not in counters["SKIPPED"]
                     and test not in counters["FAILED"]
+                    and test not in counters["BROKEN"]
                     and "::" in test
                 ):
                     counters["ERROR"].append(test)
@@ -810,7 +810,6 @@ class ClickhouseIntegrationTestsRunner:
                 result_state = "failure"
                 if not should_fail:
                     break
-            assert should_fail
             logging.info("Try is OK, all tests passed, going to clear env")
             clear_ip_tables_and_restart_daemons()
             logging.info("And going to sleep for some time")
@@ -999,16 +998,6 @@ class ClickhouseIntegrationTestsRunner:
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
-
-        for res in test_result:
-            # It's not easy to parse output of pytest
-            # Especially when test names may contain spaces
-            # Do not allow it to avoid obscure failures
-            if " " not in res[0]:
-                continue
-            logging.warning("Found invalid test name with space: %s", res[0])
-            status_text = "Found test with invalid name, see main log"
-            result_state = "failure"
 
         return result_state, status_text, test_result, []
 

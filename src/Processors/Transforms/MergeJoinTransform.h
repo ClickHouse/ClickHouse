@@ -229,6 +229,7 @@ class MergeJoinAlgorithm final : public IMergingAlgorithm
 public:
     explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
 
+    const char * getName() const override { return "MergeJoinAlgorithm"; }
     virtual void initialize(Inputs inputs) override;
     virtual void consume(Input & input, size_t source_num) override;
     virtual Status merge() override;

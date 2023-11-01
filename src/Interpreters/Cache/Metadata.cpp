@@ -1,7 +1,6 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -11,6 +10,7 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
+    extern const Metric FilesystemCacheDelayedCleanupElements;
 }
 
 namespace ProfileEvents
@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
@@ -58,14 +59,16 @@ size_t FileSegmentMetadata::size() const
 KeyMetadata::KeyMetadata(
     const Key & key_,
     const std::string & key_path_,
-    CleanupQueue & cleanup_queue_,
-    DownloadQueue & download_queue_,
+    CleanupQueuePtr cleanup_queue_,
+    DownloadQueuePtr download_queue_,
     Poco::Logger * log_,
+    std::shared_mutex & key_prefix_directory_mutex_,
     bool created_base_directory_)
     : key(key_)
     , key_path(key_path_)
     , cleanup_queue(cleanup_queue_)
     , download_queue(download_queue_)
+    , key_prefix_directory_mutex(key_prefix_directory_mutex_)
     , created_base_directory(created_base_directory_)
     , log(log_)
 {
@@ -86,13 +89,17 @@ LockedKeyPtr KeyMetadata::lock()
 
 LockedKeyPtr KeyMetadata::tryLock()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-
-    auto locked = std::make_unique<LockedKey>(shared_from_this());
+    auto locked = lockNoStateCheck();
     if (key_state == KeyMetadata::KeyState::ACTIVE)
         return locked;
 
     return nullptr;
+}
+
+LockedKeyPtr KeyMetadata::lockNoStateCheck()
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
+    return std::make_unique<LockedKey>(shared_from_this());
 }
 
 bool KeyMetadata::createBaseDirectory()
@@ -101,48 +108,36 @@ bool KeyMetadata::createBaseDirectory()
     {
         try
         {
+            std::shared_lock lock(key_prefix_directory_mutex);
             fs::create_directories(key_path);
         }
-        catch (...)
+        catch (const fs::filesystem_error & e)
         {
-            /// Avoid errors like
-            /// std::__1::__fs::filesystem::filesystem_error: filesystem error: in create_directories: No space left on device
-            /// and mark file segment with SKIP_CACHE state
-            tryLogCurrentException(__PRETTY_FUNCTION__);
             created_base_directory = false;
-            return false;
+
+            if (e.code() == std::errc::no_space_on_device)
+            {
+                LOG_TRACE(log, "Failed to create base directory for key {}, "
+                          "because no space left on device", key);
+
+                return false;
+            }
+            throw;
         }
     }
     return true;
 }
 
-std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment)
+std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
     return fs::path(key_path)
         / CacheMetadata::getFileNameForFileSegment(file_segment.offset(), file_segment.getKind());
 }
 
-
-class CleanupQueue
-{
-    friend struct CacheMetadata;
-public:
-    void add(const FileCacheKey & key);
-    void remove(const FileCacheKey & key);
-    size_t getSize() const;
-
-private:
-    bool tryPop(FileCacheKey & key);
-
-    std::unordered_set<FileCacheKey> keys;
-    mutable std::mutex mutex;
-};
-
-
 CacheMetadata::CacheMetadata(const std::string & path_)
     : path(path_)
-    , cleanup_queue(std::make_unique<CleanupQueue>())
-    , download_queue(std::make_unique<DownloadQueue>())
+    , cleanup_queue(std::make_shared<CleanupQueue>())
+    , download_queue(std::make_shared<DownloadQueue>())
     , log(&Poco::Logger::get("CacheMetadata"))
 {
 }
@@ -172,10 +167,16 @@ String CacheMetadata::getPathForKey(const Key & key) const
     return fs::path(path) / key_str.substr(0, 3) / key_str;
 }
 
-CacheMetadataGuard::Lock CacheMetadata::lockMetadata() const
+CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
     return guard.lock();
+}
+
+CacheMetadata::MetadataBucket & CacheMetadata::getMetadataBucket(const Key & key)
+{
+    const auto bucket = key.key % buckets_num;
+    return metadata_buckets[bucket];
 }
 
 LockedKeyPtr CacheMetadata::lockKeyMetadata(
@@ -183,38 +184,20 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     KeyNotFoundPolicy key_not_found_policy,
     bool is_initial_load)
 {
-    KeyMetadataPtr key_metadata;
-    {
-        auto lock = lockMetadata();
-
-        auto it = find(key);
-        if (it == end())
-        {
-            if (key_not_found_policy == KeyNotFoundPolicy::THROW)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
-            else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
-                return nullptr;
-
-            it = emplace(
-                key, std::make_shared<KeyMetadata>(
-                    key, getPathForKey(key), *cleanup_queue, *download_queue, log, is_initial_load)).first;
-        }
-
-        key_metadata = it->second;
-    }
+    auto key_metadata = getKeyMetadata(key, key_not_found_policy, is_initial_load);
+    if (!key_metadata)
+        return nullptr;
 
     {
-        LockedKeyPtr locked_metadata;
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_metadata = std::make_unique<LockedKey>(key_metadata);
-        }
-
+        auto locked_metadata = key_metadata->lockNoStateCheck();
         const auto key_state = locked_metadata->getKeyState();
+
         if (key_state == KeyMetadata::KeyState::ACTIVE)
             return locked_metadata;
 
         if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
+        else if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
 
         if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
@@ -237,96 +220,247 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     return lockKeyMetadata(key, key_not_found_policy);
 }
 
-void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
+KeyMetadataPtr CacheMetadata::getKeyMetadata(
+    const Key & key,
+    KeyNotFoundPolicy key_not_found_policy,
+    bool is_initial_load)
 {
-    auto lock = lockMetadata();
-    for (const auto & [key, key_metadata] : *this)
+    auto & bucket = getMetadataBucket(key);
+    auto lock = bucket.lock();
+
+    auto it = bucket.find(key);
+    if (it == bucket.end())
     {
-        LockedKeyPtr locked_key;
+        if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
+        else if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
+        else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+            return nullptr;
+
+        it = bucket.emplace(
+            key, std::make_shared<KeyMetadata>(
+                key, getPathForKey(key), cleanup_queue, download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
+    }
+
+    return it->second;
+}
+
+bool CacheMetadata::isEmpty() const
+{
+    for (const auto & bucket : metadata_buckets)
+        if (!bucket.empty())
+            return false;
+    return true;
+}
+
+void CacheMetadata::iterate(IterateFunc && func)
+{
+    for (auto & bucket : metadata_buckets)
+    {
+        auto lk = bucket.lock();
+        for (auto & [key, key_metadata] : bucket)
         {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_key = std::make_unique<LockedKey>(key_metadata);
+            auto locked_key = key_metadata->lockNoStateCheck();
+            const auto key_state = locked_key->getKeyState();
+
+            if (key_state == KeyMetadata::KeyState::ACTIVE)
+            {
+                func(*locked_key);
+                continue;
+            }
+            else if (key_state == KeyMetadata::KeyState::REMOVING)
+                continue;
+
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Cannot lock key {}: key does not exist", key_metadata->key);
         }
-
-        const auto key_state = locked_key->getKeyState();
-
-        if (key_state == KeyMetadata::KeyState::ACTIVE)
-        {
-            func(*locked_key);
-            continue;
-        }
-
-        if (key_state == KeyMetadata::KeyState::REMOVING)
-            continue;
-
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cannot lock key {}: key does not exist", key_metadata->key);
     }
 }
 
-void CacheMetadata::doCleanup()
+void CacheMetadata::removeAllKeys(bool if_releasable)
 {
-    auto lock = lockMetadata();
-
-    FileCacheKey cleanup_key;
-    while (cleanup_queue->tryPop(cleanup_key))
+    for (auto & bucket : metadata_buckets)
     {
-        auto it = find(cleanup_key);
-        if (it == end())
-            continue;
-
-        LockedKeyPtr locked_metadata;
+        auto lock = bucket.lock();
+        for (auto it = bucket.begin(); it != bucket.end();)
         {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_metadata = std::make_unique<LockedKey>(it->second);
-        }
-
-        const auto key_state = locked_metadata->getKeyState();
-        if (key_state == KeyMetadata::KeyState::ACTIVE)
-        {
-            /// Key was added back to cache after we submitted it to removal queue.
-            continue;
-        }
-
-        chassert(it->second->empty());
-        locked_metadata->markAsRemoved();
-        erase(it);
-        LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
-
-        const fs::path key_directory = getPathForKey(cleanup_key);
-        const fs::path key_prefix_directory = key_directory.parent_path();
-
-        try
-        {
-            if (fs::exists(key_directory))
-                fs::remove_all(key_directory);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
-            chassert(false);
-            continue;
-        }
-
-        try
-        {
-            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-                fs::remove(key_prefix_directory);
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            /// Key prefix directory can become non-empty just now, it is expected.
-            if (e.code() == std::errc::directory_not_empty)
-                continue;
-            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
-            chassert(false);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
-            chassert(false);
+            auto locked_key = it->second->lockNoStateCheck();
+            if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
+            {
+                bool removed_all = locked_key->removeAllFileSegments(if_releasable);
+                if (removed_all)
+                {
+                    it = removeEmptyKey(bucket, it, *locked_key, lock);
+                    continue;
+                }
+            }
+            ++it;
         }
     }
+}
+
+void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasable)
+{
+    auto & bucket = getMetadataBucket(key);
+    auto lock = bucket.lock();
+    auto it = bucket.find(key);
+    if (it == bucket.end())
+    {
+        if (if_exists)
+            return;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key: {}", key);
+    }
+
+    auto locked_key = it->second->lockNoStateCheck();
+    auto state = locked_key->getKeyState();
+    if (state != KeyMetadata::KeyState::ACTIVE)
+    {
+        if (if_exists)
+            return;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key: {} (state: {})", key, magic_enum::enum_name(state));
+    }
+
+    bool removed_all = locked_key->removeAllFileSegments(if_releasable);
+    if (removed_all)
+        removeEmptyKey(bucket, it, *locked_key, lock);
+}
+
+CacheMetadata::MetadataBucket::iterator
+CacheMetadata::removeEmptyKey(
+    MetadataBucket & bucket,
+    MetadataBucket::iterator it,
+    LockedKey & locked_key,
+    const CacheMetadataGuard::Lock &)
+{
+    const auto & key = locked_key.getKey();
+
+    if (!locked_key.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove non-empty key: {}", key);
+
+    locked_key.markAsRemoved();
+    auto next_it = bucket.erase(it);
+
+    LOG_DEBUG(log, "Key {} is removed from metadata", key);
+
+    const fs::path key_directory = getPathForKey(key);
+    const fs::path key_prefix_directory = key_directory.parent_path();
+
+    try
+    {
+        if (fs::exists(key_directory))
+            fs::remove_all(key_directory);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Error while removing key {}: {}", key, getCurrentExceptionMessage(true));
+        chassert(false);
+        return next_it;
+    }
+
+    try
+    {
+        std::unique_lock mutex(key_prefix_directory_mutex);
+        if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
+            fs::remove(key_prefix_directory);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Error while removing key {}: {}", key, getCurrentExceptionMessage(true));
+        chassert(false);
+    }
+    return next_it;
+}
+
+class CleanupQueue
+{
+    friend struct CacheMetadata;
+public:
+    void add(const FileCacheKey & key)
+    {
+        bool inserted;
+        {
+            std::lock_guard lock(mutex);
+            if (cancelled)
+                return;
+            inserted = keys.insert(key).second;
+        }
+        if (inserted)
+        {
+            CurrentMetrics::add(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+            cv.notify_one();
+        }
+    }
+
+    void cancel()
+    {
+        {
+            std::lock_guard lock(mutex);
+            cancelled = true;
+        }
+        cv.notify_all();
+    }
+
+private:
+    std::unordered_set<FileCacheKey> keys;
+    mutable std::mutex mutex;
+    std::condition_variable cv;
+    bool cancelled = false;
+};
+
+void CacheMetadata::cleanupThreadFunc()
+{
+    while (true)
+    {
+        Key key;
+        {
+            std::unique_lock lock(cleanup_queue->mutex);
+            if (cleanup_queue->cancelled)
+                return;
+
+            auto & keys = cleanup_queue->keys;
+            if (keys.empty())
+            {
+                cleanup_queue->cv.wait(lock, [&](){ return cleanup_queue->cancelled || !keys.empty(); });
+                if (cleanup_queue->cancelled)
+                    return;
+            }
+
+            auto it = keys.begin();
+            key = *it;
+            keys.erase(it);
+        }
+
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+
+        try
+        {
+
+            auto & bucket = getMetadataBucket(key);
+            auto lock = bucket.lock();
+
+            auto it = bucket.find(key);
+            if (it == bucket.end())
+                continue;
+
+            auto locked_key = it->second->lockNoStateCheck();
+            if (locked_key->getKeyState() == KeyMetadata::KeyState::REMOVING)
+            {
+                removeEmptyKey(bucket, it, *locked_key, lock);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void CacheMetadata::cancelCleanup()
+{
+    cleanup_queue->cancel();
 }
 
 class DownloadQueue
@@ -337,7 +471,9 @@ public:
     {
         {
             std::lock_guard lock(mutex);
-            queue.emplace(file_segment->key(), file_segment->offset(), file_segment);
+            if (cancelled)
+                return;
+            queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
@@ -360,6 +496,9 @@ private:
 
     struct DownloadInfo
     {
+        DownloadInfo(const CacheMetadata::Key & key_, const size_t & offset_, const std::weak_ptr<FileSegment> & file_segment_)
+            : key(key_), offset(offset_), file_segment(file_segment_) {}
+
         CacheMetadata::Key key;
         size_t offset;
         /// We keep weak pointer to file segment
@@ -382,14 +521,14 @@ void CacheMetadata::downloadThreadFunc()
 
         {
             std::unique_lock lock(download_queue->mutex);
-
             if (download_queue->cancelled)
                 return;
 
             if (download_queue->queue.empty())
             {
-                download_queue->cv.wait(lock);
-                continue;
+                download_queue->cv.wait(lock, [&](){ return download_queue->cancelled || !download_queue->queue.empty(); });
+                if (download_queue->cancelled)
+                    return;
             }
 
             auto entry = download_queue->queue.front();
@@ -402,65 +541,74 @@ void CacheMetadata::downloadThreadFunc()
 
         CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDownloadQueueElements);
 
-        FileSegmentsHolderPtr holder;
         try
         {
+            FileSegmentsHolderPtr holder;
+            try
             {
-                auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL);
-                if (!locked_key)
+                {
+                    auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL);
+                    if (!locked_key)
+                        continue;
+
+                    auto file_segment_metadata = locked_key->tryGetByOffset(offset);
+                    if (!file_segment_metadata || file_segment_metadata->evicting())
+                        continue;
+
+                    auto file_segment = file_segment_weak.lock();
+
+                    if (!file_segment
+                        || file_segment != file_segment_metadata->file_segment
+                        || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
+                        continue;
+
+                    holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
+                }
+
+                auto & file_segment = holder->front();
+
+                if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
                     continue;
 
-                auto file_segment_metadata = locked_key->tryGetByOffset(offset);
-                if (!file_segment_metadata || file_segment_metadata->evicting())
-                    continue;
+                chassert(file_segment.getDownloadedSize() != file_segment.range().size());
+                chassert(file_segment.assertCorrectness());
 
-                auto file_segment = file_segment_weak.lock();
-
-                if (!file_segment
-                    || file_segment != file_segment_metadata->file_segment
-                    || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
-                    continue;
-
-                holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
+                downloadImpl(file_segment, memory);
             }
+            catch (...)
+            {
+                if (holder)
+                {
+                    auto & file_segment = holder->front();
+                    file_segment.setDownloadFailed();
 
-            downloadImpl(holder->front(), memory);
+                    LOG_ERROR(
+                        log, "Error during background download of {}:{} ({}): {}",
+                        file_segment.key(), file_segment.offset(),
+                        file_segment.getInfoForLog(), getCurrentExceptionMessage(true));
+                }
+                else
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    chassert(false);
+                }
+            }
         }
         catch (...)
         {
-            if (holder)
-            {
-                const auto & file_segment = holder->front();
-                LOG_ERROR(
-                    log, "Error during background download of {}:{} ({}): {}",
-                    file_segment.key(), file_segment.offset(),
-                    file_segment.getInfoForLog(), getCurrentExceptionMessage(true));
-            }
-            else
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                chassert(false);
-            }
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
         }
     }
 }
 
 void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory)
 {
-    chassert(file_segment.assertCorrectness());
-
-    if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
-        return;
-
-    if (file_segment.getDownloadedSize(false) == file_segment.range().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
-
     LOG_TEST(
         log, "Downloading {} bytes for file segment {}",
-        file_segment.range().size() - file_segment.getDownloadedSize(false), file_segment.getInfoForLog());
+        file_segment.range().size() - file_segment.getDownloadedSize(), file_segment.getInfoForLog());
 
     auto reader = file_segment.getRemoteFileReader();
-
     if (!reader)
     {
         throw Exception(
@@ -478,7 +626,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         reader->set(memory->data(), memory->size());
     }
 
-    size_t offset = file_segment.getCurrentWriteOffset(false);
+    size_t offset = file_segment.getCurrentWriteOffset();
     if (offset != static_cast<size_t>(reader->getPosition()))
         reader->seek(offset, SEEK_SET);
 
@@ -492,7 +640,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
                 log, "Failed to reserve space during background download "
                 "for {}:{} (downloaded size: {}/{})",
                 file_segment.key(), file_segment.offset(),
-                file_segment.getDownloadedSize(false), file_segment.range().size());
+                file_segment.getDownloadedSize(), file_segment.range().size());
             return;
         }
 
@@ -533,9 +681,15 @@ LockedKey::~LockedKey()
     if (!key_metadata->empty() || getKeyState() != KeyMetadata::KeyState::ACTIVE)
         return;
 
+    /// If state if ACTIVE and key turns out empty - we submit it for delayed removal.
+    /// Because we do not want to always lock all cache metadata lock, when we remove files segments.
+    /// but sometimes we do - we remove the empty key without delay - then key state
+    /// will be REMOVED here and we will return in the check above.
+    /// See comment near cleanupThreadFunc() for more details.
+
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
     LOG_DEBUG(key_metadata->log, "Submitting key {} for removal", getKey());
-    key_metadata->cleanup_queue.add(getKey());
+    key_metadata->cleanup_queue->add(getKey());
 }
 
 void LockedKey::removeFromCleanupQueue()
@@ -558,13 +712,15 @@ bool LockedKey::isLastOwnerOfFileSegment(size_t offset) const
     return file_segment_metadata->file_segment.use_count() == 2;
 }
 
-void LockedKey::removeAllReleasable()
+bool LockedKey::removeAllFileSegments(bool if_releasable)
 {
+    bool removed_all = true;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
-        if (!it->second->releasable())
+        if (if_releasable && !it->second->releasable())
         {
             ++it;
+            removed_all = false;
             continue;
         }
         else if (it->second->evicting())
@@ -575,50 +731,82 @@ void LockedKey::removeAllReleasable()
             /// so if we remove file segment now, we break the freeable_count
             /// calculation in tryReserve.
             ++it;
+            removed_all = false;
             continue;
         }
 
         auto file_segment = it->second->file_segment;
         it = removeFileSegment(file_segment->offset(), file_segment->lock());
     }
+    return removed_all;
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
 
+    auto file_segment = it->second->file_segment;
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken);
+}
+
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock, bool can_be_broken)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {} in key {}", offset, getKey());
+
+    return removeFileSegmentImpl(it, segment_lock, can_be_broken);
+}
+
+KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock & segment_lock, bool can_be_broken)
+{
     auto file_segment = it->second->file_segment;
 
     LOG_DEBUG(
         key_metadata->log, "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), offset, file_segment->reserved_size);
+        getKey(), file_segment->offset(), file_segment->reserved_size);
 
-    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+    chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->invalidate();
 
     file_segment->detach(segment_lock, *this);
 
-    const auto path = key_metadata->getFileSegmentPath(*file_segment);
-    bool exists = fs::exists(path);
-    if (exists)
+    try
     {
-        fs::remove(path);
+        const auto path = key_metadata->getFileSegmentPath(*file_segment);
+        bool exists = fs::exists(path);
+        if (exists)
+        {
+            fs::remove(path);
 
-        /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
-        int flags = file_segment->getFlagsForLocalRead();
-        /// Files are created with flags from file_segment->getFlagsForLocalRead()
-        /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
-        OpenedFileCache::instance().remove(path, flags);
-        OpenedFileCache::instance().remove(path, flags | O_DIRECT);
+            /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
+            int flags = file_segment->getFlagsForLocalRead();
+            /// Files are created with flags from file_segment->getFlagsForLocalRead()
+            /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
+            OpenedFileCache::instance().remove(path, flags);
+            OpenedFileCache::instance().remove(path, flags | O_DIRECT);
 
-        LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
+            LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
+        }
+        else if (file_segment->downloaded_size && !can_be_broken)
+        {
+#ifdef ABORT_ON_LOGICAL_ERROR
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
+#else
+            LOG_WARNING(key_metadata->log, "Expected path {} to exist, while removing {}:{}",
+                        path, getKey(), file_segment->offset());
+#endif
+        }
     }
-    else if (file_segment->downloaded_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
+    }
 
     return key_metadata->erase(it);
 }
@@ -636,7 +824,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     const auto & file_segment = metadata->file_segment;
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
-    const size_t downloaded_size = file_segment->getDownloadedSize(false);
+    const size_t downloaded_size = file_segment->getDownloadedSize();
     if (downloaded_size == file_segment->range().size())
     {
         throw Exception(
@@ -650,7 +838,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
 
     metadata->file_segment = std::make_shared<FileSegment>(
         getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
-        CreateFileSegmentSettings(file_segment->getKind()),
+        CreateFileSegmentSettings(file_segment->getKind()), false,
         file_segment->cache, key_metadata, file_segment->queue_iterator);
 
     if (diff)
@@ -664,7 +852,7 @@ void LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
-    key_metadata->download_queue.add(it->second->file_segment);
+    key_metadata->download_queue->add(it->second->file_segment);
 }
 
 std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegment::Range & range) const
@@ -734,35 +922,62 @@ std::string LockedKey::toString() const
     return result;
 }
 
-void CleanupQueue::add(const FileCacheKey & key)
+FileSegments LockedKey::sync()
 {
-    std::lock_guard lock(mutex);
-    keys.insert(key);
-}
+    FileSegments broken;
+    for (auto it = key_metadata->begin(); it != key_metadata->end();)
+    {
+        if (it->second->evicting() || !it->second->releasable())
+        {
+            ++it;
+            continue;
+        }
 
-void CleanupQueue::remove(const FileCacheKey & key)
-{
-    std::lock_guard lock(mutex);
-    bool erased = keys.erase(key);
-    if (!erased)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in removal queue", key);
-}
+        auto file_segment = it->second->file_segment;
+        if (file_segment->isDetached())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "File segment has unexpected state: DETACHED ({})", file_segment->getInfoForLog());
+        }
 
-bool CleanupQueue::tryPop(FileCacheKey & key)
-{
-    std::lock_guard lock(mutex);
-    if (keys.empty())
-        return false;
-    auto it = keys.begin();
-    key = *it;
-    keys.erase(it);
-    return true;
-}
+        if (file_segment->getDownloadedSize() == 0)
+        {
+            ++it;
+            continue;
+        }
 
-size_t CleanupQueue::getSize() const
-{
-    std::lock_guard lock(mutex);
-    return keys.size();
+        const auto & path = key_metadata->getFileSegmentPath(*file_segment);
+        if (!fs::exists(path))
+        {
+            LOG_WARNING(
+                key_metadata->log,
+                "File segment has DOWNLOADED state, but file does not exist ({})",
+                file_segment->getInfoForLog());
+
+            broken.push_back(FileSegment::getSnapshot(file_segment));
+            it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */true);
+            continue;
+        }
+
+        const size_t actual_size = fs::file_size(path);
+        const size_t expected_size = file_segment->getDownloadedSize();
+
+        if (actual_size == expected_size)
+        {
+            ++it;
+            continue;
+        }
+
+        LOG_WARNING(
+            key_metadata->log,
+            "File segment has unexpected size. Having {}, expected {} ({})",
+            actual_size, expected_size, file_segment->getInfoForLog());
+
+        broken.push_back(FileSegment::getSnapshot(file_segment));
+        it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */false);
+    }
+    return broken;
 }
 
 }

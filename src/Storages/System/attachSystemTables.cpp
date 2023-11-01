@@ -83,6 +83,12 @@
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemJemalloc.h>
+#include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemS3Queue.h>
+
+#if USE_RDKAFKA
+#include <Storages/System/StorageSystemKafkaConsumers.h>
+#endif
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -90,7 +96,6 @@
 
 #if USE_ROCKSDB
 #include <Storages/RocksDB/StorageSystemRocksDB.h>
-#include <Storages/System/StorageSystemMergeTreeMetadataCache.h>
 #endif
 
 
@@ -145,12 +150,15 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemBackups>(context, system_database, "backups");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
+    attach<StorageSystemScheduler>(context, system_database, "scheduler");
+#if USE_RDKAFKA
+    attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers");
+#endif
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
-    attach<StorageSystemMergeTreeMetadataCache>(context, system_database, "merge_tree_metadata_cache");
 #endif
 }
 
@@ -189,6 +197,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes");
     attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins");
+    attach<StorageSystemS3Queue>(context, system_database, "s3queue");
 
     if (has_zookeeper)
     {

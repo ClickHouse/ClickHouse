@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
 set -e -x
 
 # Choose random timezone for this test run
@@ -19,6 +21,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateful
+
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 function start()
 {
@@ -65,6 +69,9 @@ function start()
 }
 
 start
+
+setup_logs_replication
+
 # shellcheck disable=SC2086 # No quotes because I want to split it into words.
 /s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse

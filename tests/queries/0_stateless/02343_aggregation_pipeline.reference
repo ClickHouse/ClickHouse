@@ -100,7 +100,7 @@ ExpressionTransform × 16
               (Expression)
               ExpressionTransform
                 (ReadFromMergeTree)
-                MergeTreeInOrder 0 → 1
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
           (ReadFromRemote)
 explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 1;
 (Expression)
@@ -117,7 +117,7 @@ ExpressionTransform × 16
                 (Expression)
                 ExpressionTransform
                   (ReadFromMergeTree)
-                  MergeTreeInOrder 0 → 1
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
               (ReadFromRemote)
 -- { echoOn }
 
@@ -144,6 +144,6 @@ ExpressionTransform × 2
                               (Expression)
                               ExpressionTransform × 2
                                 (ReadFromMergeTree)
-                                MergeTreeThread × 2 0 → 1
+                                MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
                         (ReadFromRemote)
               (ReadFromRemote)

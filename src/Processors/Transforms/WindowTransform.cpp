@@ -148,7 +148,7 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
     const auto offset = _offset.get<typename ColumnType::ValueType>();
-    assert(offset >= 0);
+    chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
@@ -1066,7 +1066,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         auto columns = chunk.detachColumns();
         block.original_input_columns = columns;
         for (auto & column : columns)
-            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst());
+            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
         block.input_columns = std::move(columns);
 
         // Initialize output columns.

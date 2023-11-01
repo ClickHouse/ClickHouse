@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <IO/SwapHelper.h>
 #include <IO/ReadBufferFromFile.h>
 
@@ -44,11 +45,25 @@ void WriteBufferToFileSegment::nextImpl()
 
     size_t bytes_to_write = offset();
 
+    FileCacheReserveStat reserve_stat;
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
-    bool ok = file_segment->reserve(bytes_to_write);
+    bool ok = file_segment->reserve(bytes_to_write, &reserve_stat);
+
     if (!ok)
-        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve space for the file cache ({})", file_segment->getInfoForLog());
+    {
+        String reserve_stat_msg;
+        for (const auto & [kind, stat] : reserve_stat.stat_by_kind)
+            reserve_stat_msg += fmt::format("{} hold {}, can release {}; ",
+                toString(kind), ReadableSize(stat.non_releasable_size), ReadableSize(stat.releasable_size));
+
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: {}(segment info: {})",
+            bytes_to_write,
+            file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
+            reserve_stat_msg,
+            file_segment->getInfoForLog()
+        );
+    }
 
     try
     {
@@ -69,6 +84,12 @@ std::shared_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
 {
     finalize();
     return std::make_shared<ReadBufferFromFile>(file_segment->getPathInLocalCache());
+}
+
+WriteBufferToFileSegment::~WriteBufferToFileSegment()
+{
+    /// To be sure that file exists before destructor of segment_holder is called
+    WriteBufferFromFileDecorator::finalize();
 }
 
 }

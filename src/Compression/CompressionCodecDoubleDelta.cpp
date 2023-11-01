@@ -489,7 +489,7 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
     size_t start_pos = 2 + bytes_to_skip;
     UInt32 compressed_size = 0;
 
-    switch (data_bytes_size)
+    switch (data_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         compressed_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
@@ -526,7 +526,7 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
-    switch (bytes_size)
+    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);

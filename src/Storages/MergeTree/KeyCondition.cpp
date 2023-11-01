@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -13,7 +14,6 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
@@ -23,12 +23,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
-
 #include <base/defines.h>
 
 #include <algorithm>
@@ -44,17 +41,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_TYPE_OF_FIELD;
-}
-
-
-String Range::toString() const
-{
-    WriteBufferFromOwnString str;
-
-    str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
-    str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
-
-    return str.str();
 }
 
 
@@ -421,7 +407,12 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromRegularExpression(value.get<const String &>());
+            const String & expression = value.get<const String &>();
+            // This optimization can't process alternation - this would require a comprehensive parsing of regular expression.
+            if (expression.contains('|'))
+                return false;
+
+            String prefix = extractFixedPrefixFromRegularExpression(expression);
             if (prefix.empty())
                 return false;
 
@@ -460,7 +451,8 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 };
 
 
-static const std::map<std::string, std::string> inverse_relations = {
+static const std::map<std::string, std::string> inverse_relations =
+{
         {"equals", "notEquals"},
         {"notEquals", "equals"},
         {"less", "greaterOrEquals"},
@@ -484,7 +476,7 @@ static const std::map<std::string, std::string> inverse_relations = {
 };
 
 
-bool isLogicalOperator(const String & func_name)
+static bool isLogicalOperator(const String & func_name)
 {
     return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
 }
@@ -564,7 +556,17 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         }
         case (ActionsDAG::ActionType::COLUMN):
         {
-            res = &inverted_dag.addColumn({node.column, node.result_type, node.result_name});
+            String name;
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+                /// Re-generate column name for constant.
+                /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+                /// DAG from PK does not use it. This is breakig match by column name sometimes.
+                /// Ideally, we should not compare manes, but DAG subtrees instead.
+                name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
+            else
+                name = node.result_name;
+
+            res = &inverted_dag.addColumn({node.column, node.result_type, name});
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):
@@ -668,14 +670,14 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     return *res;
 }
 
-static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
+ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
     auto res = std::make_shared<ActionsDAG>();
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
 
     for (auto & node : nodes)
-        node = &cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false);
+        node = &DB::cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false);
 
     if (nodes.size() > 1)
     {
@@ -687,11 +689,6 @@ static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs 
 
     return res;
 }
-
-
-inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
-inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
-
 
 /** Calculate expressions, that depend only on constants.
   * For index to work when something like "WHERE Date = toDate(now())" is written.
@@ -754,7 +751,9 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    auto filter_node = buildFilterNode(query, additional_filter_asts);
+    ASTPtr filter_node;
+    if (query)
+        filter_node = buildFilterNode(query, additional_filter_asts);
 
     if (!filter_node)
     {
@@ -769,7 +768,7 @@ KeyCondition::KeyCondition(
       * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
       * are pushed down and applied (when possible) to leaf nodes.
       */
-    auto inverted_filter_node = cloneASTWithInversionPushDown(filter_node);
+    auto inverted_filter_node = DB::cloneASTWithInversionPushDown(filter_node);
 
     RPNBuilder<RPNElement> builder(
         inverted_filter_node,
@@ -948,17 +947,17 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
   * CREATE TABLE (x String) ORDER BY toDate(x)
   * SELECT ... WHERE x LIKE 'Hello%'
   * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on unparsable values.
+  * but should modify it to pass on un-parsable values.
   */
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
     "toDateTime",
     "toDateTime64",
-    "ParseDateTimeBestEffort",
-    "ParseDateTimeBestEffortUS",
-    "ParseDateTime32BestEffort",
-    "ParseDateTime64BestEffort",
+    "parseDateTimeBestEffort",
+    "parseDateTimeBestEffortUS",
+    "parseDateTime32BestEffort",
+    "parseDateTime64BestEffort",
     "parseDateTime",
     "parseDateTimeInJodaSyntax",
 };
@@ -1241,9 +1240,21 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const auto right_arg = func.getArgumentAt(1);
 
-    auto future_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
         return false;
+
+    const auto set_types = future_set->getTypes();
+    size_t set_types_size = set_types.size();
+    size_t indexes_mapping_size = indexes_mapping.size();
+
+    /// When doing strict matches, we have to check all elements in set.
+    if (strict && indexes_mapping_size < set_types_size)
+        return false;
+
+    for (auto & index_mapping : indexes_mapping)
+        if (index_mapping.tuple_index >= set_types_size)
+            return false;
 
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
@@ -1253,11 +1264,72 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!prepared_set->hasExplicitSetElements())
         return false;
 
-    prepared_set->checkColumnsNumber(left_args_count);
-    for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
+    /** Try to convert set columns to primary key columns.
+      * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
+      * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
+      * we need to convert set column to primary key column.
+      */
+    auto set_columns = prepared_set->getSetElements();
+    assert(set_types_size == set_columns.size());
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
+    for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
+    {
+        const auto & key_column_type = data_types[indexes_mapping_index];
+        size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
+        auto set_element_type = set_types[set_element_index];
+        auto set_column = set_columns[set_element_index];
+
+        if (canBeSafelyCasted(set_element_type, key_column_type))
+        {
+            set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
+            continue;
+        }
+
+        if (!key_column_type->canBeInsideNullable())
+            return false;
+
+        const NullMap * set_column_null_map = nullptr;
+
+        if (isNullableOrLowCardinalityNullable(set_element_type))
+        {
+            if (WhichDataType(set_element_type).isLowCardinality())
+            {
+                set_element_type = removeLowCardinality(set_element_type);
+                set_column = set_column->convertToFullColumnIfLowCardinality();
+            }
+
+            set_element_type = removeNullable(set_element_type);
+            const auto & set_column_nullable = assert_cast<const ColumnNullable &>(*set_column);
+            set_column_null_map = &set_column_nullable.getNullMapData();
+            set_column = set_column_nullable.getNestedColumnPtr();
+        }
+
+        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        const auto & nullable_set_column_typed = assert_cast<const ColumnNullable &>(*nullable_set_column);
+        const auto & nullable_set_column_null_map = nullable_set_column_typed.getNullMapData();
+        size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
+
+        IColumn::Filter filter(nullable_set_column_null_map_size);
+
+        if (set_column_null_map)
+        {
+            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+
+            set_column = nullable_set_column_typed.filter(filter, 0);
+        }
+        else
+        {
+            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                filter[i] = !nullable_set_column_null_map[i];
+
+            set_column = nullable_set_column_typed.getNestedColumn().filter(filter, 0);
+        }
+
+        set_columns[set_element_index] = std::move(set_column);
+    }
+
+    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
     return true;
 }
 
@@ -1410,7 +1482,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       */
     const auto & sample_block = key_expr->getSampleBlock();
 
-    // Key columns should use canonical names for index analysis
+    /// Key columns should use canonical names for the index analysis.
     String name = node.getColumnName();
 
     if (array_joined_column_names.contains(name))
@@ -1507,7 +1579,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             bool is_set_const = false;
             bool is_constant_transformed = false;
 
-            /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
+            /// We don't look for inverted key transformations when strict is true, which is required for trivial count().
             /// Consider the following test case:
             ///
             /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
@@ -1613,7 +1685,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     func_name = "greaterOrEquals";
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notIlike" ||
+                         func_name == "ilike" || func_name == "notILike" ||
                          func_name == "startsWith" || func_name == "match")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
@@ -2010,7 +2082,7 @@ static BoolMask forAnyHyperrectangle(
     const FieldRef * right_keys,
     bool left_bounded,
     bool right_bounded,
-    std::vector<Range> & hyperrectangle,
+    Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
@@ -2113,7 +2185,7 @@ BoolMask KeyCondition::checkInRange(
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
-    std::vector<Range> key_ranges;
+    Hyperrectangle key_ranges;
 
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
@@ -2134,7 +2206,7 @@ BoolMask KeyCondition::checkInRange(
     // std::cerr << "]\n";
 
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
-        [&] (const std::vector<Range> & key_ranges_hyperrectangle)
+        [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
 
@@ -2269,7 +2341,7 @@ bool KeyCondition::matchesExactContinuousRange() const
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
-    const std::vector<Range> & hyperrectangle,
+    const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;

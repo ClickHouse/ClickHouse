@@ -26,8 +26,15 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <re2/re2.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 #include <boost/algorithm/string.hpp>
 
 static const int SUCCESS_RESPONSE_MIN = 200;
@@ -85,20 +92,26 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
+        std::function<DB::ProxyConfiguration()> per_request_configuration_,
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
+        unsigned int s3_retry_attempts_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_)
-    : force_region(force_region_)
+        const ThrottlerPtr & put_request_throttler_,
+        std::function<void(const DB::ProxyConfiguration &)> error_report_)
+    : per_request_configuration(per_request_configuration_)
+    , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
+    , s3_retry_attempts(s3_retry_attempts_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
     , put_request_throttler(put_request_throttler_)
+    , error_report(error_report_)
 {
 }
 
@@ -258,12 +271,12 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
-    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter ,
+    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
     /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
-    const auto request_configuration = per_request_configuration(request);
-    if (http_connection_pool_size && request_configuration.proxy_host.empty())
+    const auto request_configuration = per_request_configuration();
+    if (http_connection_pool_size)
         makeRequestInternalImpl<true>(request, request_configuration, response, readLimiter, writeLimiter);
     else
         makeRequestInternalImpl<false>(request, request_configuration, response, readLimiter, writeLimiter);
@@ -272,7 +285,7 @@ void PocoHTTPClient::makeRequestInternal(
 template <bool pooled>
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
-    const ClientConfigurationPerRequest & request_configuration,
+    const DB::ProxyConfiguration & request_configuration,
     std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
@@ -327,7 +340,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             Poco::URI target_uri(uri);
             SessionPtr session;
 
-            if (!request_configuration.proxy_host.empty())
+            if (!request_configuration.host.empty())
             {
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
@@ -336,15 +349,15 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 /// This can lead to request signature difference on S3 side.
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, /* resolve_host = */ true, wait_on_pool_size_limit);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
-                bool use_tunnel = request_configuration.proxy_scheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
+                    session = makeHTTPSession(target_uri, timeouts);
+                bool use_tunnel = request_configuration.protocol == DB::ProxyConfiguration::Protocol::HTTP && target_uri.getScheme() == "https";
 
                 session->setProxy(
-                    request_configuration.proxy_host,
-                    request_configuration.proxy_port,
-                    Aws::Http::SchemeMapper::ToString(request_configuration.proxy_scheme),
+                    request_configuration.host,
+                    request_configuration.port,
+                    DB::ProxyConfiguration::protocolToString(request_configuration.protocol),
                     use_tunnel
                 );
             }
@@ -352,9 +365,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             {
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, /* resolve_host = */ true, wait_on_pool_size_limit);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
+                    session = makeHTTPSession(target_uri, timeouts);
             }
 
             /// In case of error this address will be written to logs
@@ -536,7 +549,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));
+        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
+        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
+        LOG_INFO(log, error_message);
+
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 

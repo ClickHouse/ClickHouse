@@ -24,7 +24,7 @@ struct Settings;
   * and should not be changed by the user without a reason.
   */
 
-#define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
+#define MERGE_TREE_SETTINGS(M, ALIAS) \
     M(UInt64, min_compress_block_size, 0, "When granule is written, compress the data in buffer if the size of pending uncompressed data is larger or equal than the specified threshold. If this setting is not set, the corresponding global setting is used.", 0) \
     M(UInt64, max_compress_block_size, 0, "Compress the pending uncompressed data in buffer if its size is larger or equal than the specified threshold. Block of data will be compressed even if the current granule is not finished. If this setting is not set, the corresponding global setting is used.", 0) \
     M(UInt64, index_granularity, 8192, "How many rows correspond to one primary key value.", 0) \
@@ -33,8 +33,9 @@ struct Settings;
     /** Data storing format settings. */ \
     M(UInt64, min_bytes_for_wide_part, 10485760, "Minimal uncompressed size in bytes to create part in wide format instead of compact", 0) \
     M(UInt64, min_rows_for_wide_part, 0, "Minimal number of rows to create part in wide format instead of compact", 0) \
-    M(Float, ratio_of_defaults_for_sparse_serialization, 1.0, "Minimal ratio of number of default values to number of all values in column to store it in sparse serializations. If >= 1, columns will be always written in full serialization.", 0) \
-    \
+    M(Float, ratio_of_defaults_for_sparse_serialization, 0.9375f, "Minimal ratio of number of default values to number of all values in column to store it in sparse serializations. If >= 1, columns will be always written in full serialization.", 0) \
+    M(Bool, replace_long_file_name_to_hash, false, "If the file name for column is too long (more than 'max_file_name_length' bytes) replace it to SipHash128", 0) \
+    M(UInt64, max_file_name_length, 127, "The maximal length of the file name to keep it as is without hashing", 0) \
     /** Merge settings. */ \
     M(UInt64, merge_max_block_size, 8192, "How many rows in blocks should be formed for merge operations. By default has the same value as `index_granularity`.", 0) \
     M(UInt64, merge_max_block_size_bytes, 10 * 1024 * 1024, "How many bytes in blocks should be formed for merge operations. By default has the same value as `index_granularity_bytes`.", 0) \
@@ -62,10 +63,9 @@ struct Settings;
     M(Float, merge_selecting_sleep_slowdown_factor, 1.2f, "The sleep time for merge selecting task is multiplied by this factor when there's nothing to merge and divided when a merge was assigned", 0) \
     M(UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60, "The period of executing the clear old temporary directories operation in background.", 0) \
     M(UInt64, merge_tree_clear_old_parts_interval_seconds, 1, "The period of executing the clear old parts operation in background.", 0) \
-    M(UInt64, merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds, 1ULL * 3600 * 24 * 30, "Remove old broken detached parts in the background if they remained intouched for a specified by this setting period of time.", 0) \
     M(UInt64, min_age_to_force_merge_seconds, 0, "If all parts in a certain range are older than this value, range will be always eligible for merging. Set to 0 to disable.", 0) \
     M(Bool, min_age_to_force_merge_on_partition_only, false, "Whether min_age_to_force_merge_seconds should be applied only on the entire partition and not on subset.", false) \
-    M(UInt64, merge_tree_enable_clear_old_broken_detached, false, "Enable clearing old broken detached parts operation in background.", 0) \
+    M(UInt64, number_of_free_entries_in_pool_to_execute_optimize_entire_partition, 25, "When there is less than specified number of free entries in pool, do not try to execute optimize entire partition with a merge (this merge is created when set min_age_to_force_merge_seconds > 0 and min_age_to_force_merge_on_partition_only = true). This is to leave free threads for regular merges and avoid \"Too many parts\"", 0) \
     M(Bool, remove_rolled_back_parts_immediately, 1, "Setting for an incomplete experimental feature.", 0) \
     M(CleanDeletedRows, clean_deleted_rows, CleanDeletedRows::Never, "Is the Replicated Merge cleanup has to be done automatically at each merge or manually (possible values are 'Always'/'Never' (default))", 0) \
     M(UInt64, replicated_max_mutations_in_one_entry, 10000, "Max number of mutation commands that can be merged together and executed in one MUTATE_PART entry (0 means unlimited)", 0) \
@@ -119,6 +119,9 @@ struct Settings;
     M(Bool, detach_not_byte_identical_parts, false, "Do not remove non byte-idential parts for ReplicatedMergeTree, instead detach them (maybe useful for further analysis).", 0) \
     M(UInt64, max_replicated_fetches_network_bandwidth, 0, "The maximum speed of data exchange over the network in bytes per second for replicated fetches. Zero means unlimited.", 0) \
     M(UInt64, max_replicated_sends_network_bandwidth, 0, "The maximum speed of data exchange over the network in bytes per second for replicated sends. Zero means unlimited.", 0) \
+    M(Milliseconds, wait_for_unique_parts_send_before_shutdown_ms, 0, "Before shutdown table will wait for required amount time for unique parts (exist only on current replica) to be fetched by other replicas (0 means disabled).", 0) \
+    M(Float, fault_probability_before_part_commit, 0, "For testing. Do not change it.", 0) \
+    M(Float, fault_probability_after_part_commit, 0, "For testing. Do not change it.", 0) \
     \
     /** Check delay of replicas settings. */ \
     M(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
@@ -160,17 +163,19 @@ struct Settings;
     M(UInt64, min_marks_to_honor_max_concurrent_queries, 0, "Minimal number of marks to honor the MergeTree-level's max_concurrent_queries (0 - disabled). Queries will still be limited by other max_concurrent_queries settings.", 0) \
     M(UInt64, min_bytes_to_rebalance_partition_over_jbod, 0, "Minimal amount of bytes to enable part rebalance over JBOD array (0 - disabled).", 0) \
     M(Bool, check_sample_column_is_correct, true, "Check columns or columns by hash for sampling are unsigned integer.", 0) \
-    M(Bool, allow_vertical_merges_from_compact_to_wide_parts, false, "Allows vertical merges from compact to wide parts. This settings must have the same value on all replicas", 0) \
+    M(Bool, allow_vertical_merges_from_compact_to_wide_parts, true, "Allows vertical merges from compact to wide parts. This settings must have the same value on all replicas", 0) \
     M(Bool, enable_the_endpoint_id_with_zookeeper_name_prefix, false, "Enable the endpoint id with zookeeper name prefix for the replicated merge tree table", 0) \
     M(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_before_lock, 1ULL * 1024 * 1024 * 1024, "If zero copy replication is enabled sleep random amount of time before trying to lock depending on parts size for merge or mutation", 0) \
+    M(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     M(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", 0) \
     M(UInt64, part_moves_between_shards_delay_seconds, 30, "Time to wait before/after moving parts between shards.", 0) \
-    M(Bool, use_metadata_cache, false, "Experimental feature to speed up parts loading process by using MergeTree metadata cache", 0) \
     M(Bool, allow_remote_fs_zero_copy_replication, false, "Don't use this setting in production, because it is not ready.", 0) \
-    M(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", "ZooKeeper path for Zero-copy table-independet info.", 0) \
-    M(Bool, remote_fs_zero_copy_path_compatible_mode, false, "Run zero-copy in compatible mode during conversion process.", 0) \
+    M(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", "ZooKeeper path for zero-copy table-independent info.", 0) \
+    M(Bool, remote_fs_zero_copy_path_compatible_mode, false, "Run zero-copy in compatible mode during conversion process.", 0)                                                                                                                                       \
+    M(Bool, allow_experimental_block_number_column, false, "Enable persisting column _block_number for each row.", 0) \
+    \
     /** Compress marks and primary key. */ \
     M(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
     M(Bool, compress_primary_key, true, "Primary key support compression, reduce primary key file size and speed up network transmission.", 0) \
@@ -178,30 +183,40 @@ struct Settings;
     M(String, primary_key_compression_codec, "ZSTD(3)", "Compression encoding used by primary, primary key is small enough and cached, so the default compression is ZSTD(3).", 0) \
     M(UInt64, marks_compress_block_size, 65536, "Mark compress block size, the actual size of the block to compress.", 0) \
     M(UInt64, primary_key_compress_block_size, 65536, "Primary compress block size, the actual size of the block to compress.", 0) \
-    \
-    /** Obsolete settings. Kept for backward compatibility only. */ \
-    M(UInt64, min_relative_delay_to_yield_leadership, 120, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, check_delay_period, 60, "Obsolete setting, does nothing.", 0) \
-    M(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
-    M(UInt64, replicated_max_parallel_sends, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, replicated_max_parallel_sends_for_table, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, replicated_max_parallel_fetches, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, replicated_max_parallel_fetches_for_table, 0, "Obsolete setting, does nothing.", 0) \
-    M(Bool, write_final_mark, true, "Obsolete setting, does nothing.", 0)                                                                                                                                                                                            \
-    M(UInt64, min_bytes_for_compact_part, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, min_rows_for_compact_part, 0, "Obsolete setting, does nothing.", 0) \
-    M(Bool, in_memory_parts_enable_wal, true, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, write_ahead_log_max_bytes, 1024 * 1024 * 1024, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, write_ahead_log_bytes_to_fsync, 100ULL * 1024 * 1024, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, write_ahead_log_interval_ms_to_fsync, 100, "Obsolete setting, does nothing.", 0) \
-    M(Bool, in_memory_parts_insert_sync, false, "Obsolete setting, does nothing.", 0) \
-    M(MaxThreads, max_part_loading_threads, 0, "Obsolete setting, does nothing.", 0) \
-    M(MaxThreads, max_part_removal_threads, 0, "Obsolete setting, does nothing.", 0) \
+
+#define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
+    M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
+
+#define OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS) \
+    /** Obsolete settings that do nothing but left for compatibility reasons. */ \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_relative_delay_to_yield_leadership, 120) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, check_delay_period, 60) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends_for_table, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches_for_table, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, write_final_mark, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_bytes_for_compact_part, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_rows_for_compact_part, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, in_memory_parts_enable_wal, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_max_bytes, 1024 * 1024 * 1024) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_bytes_to_fsync, 100ULL * 1024 * 1024) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_interval_ms_to_fsync, 100) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, in_memory_parts_insert_sync, false) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, MaxThreads, max_part_loading_threads, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, MaxThreads, max_part_removal_threads, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_metadata_cache, false) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, merge_tree_enable_clear_old_broken_detached, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds, 1ULL * 3600 * 24 * 30) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
     M(index_granularity)
+
+#define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
+    MERGE_TREE_SETTINGS(M, ALIAS)             \
+    OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 

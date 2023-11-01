@@ -152,7 +152,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-16 CXX=clang++-16`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-17 CXX=clang++-17`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -219,13 +219,21 @@ You can also run your custom-built ClickHouse binary with the config file from t
 
 ## IDE (Integrated Development Environment) {#ide-integrated-development-environment}
 
-If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on macOS.
+**CLion (recommended)**
 
-KDevelop and QTCreator are other great alternatives of an IDE for developing ClickHouse. KDevelop comes in as a very handy IDE although unstable. If KDevelop crashes after a while upon opening project, you should click “Stop All” button as soon as it has opened the list of project’s files. After doing so KDevelop should be fine to work with.
+If you do not know which IDE to use, we recommend that you use [CLion](https://www.jetbrains.com/clion/). CLion is commercial software but it offers a 30 day free trial. It is also free of charge for students. CLion can be used on both Linux and macOS.
 
-As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate (all of which are available on Linux).
+A few things to know when using CLion to develop ClickHouse:
 
-Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
+- CLion creates a `build` path on its own and automatically selects `debug` for the build type
+- It uses a version of CMake that is defined in CLion and not the one installed by you
+- CLion will use `make` to run build tasks instead of `ninja` (this is normal behavior)
+
+**Other alternatives**
+
+[KDevelop](https://kdevelop.org/) and [QTCreator](https://www.qt.io/product/development-tools) are other great alternative IDEs for developing ClickHouse. While KDevelop is a great IDE, it is sometimes unstable. If KDevelop crashes when opening a project, you should click the “Stop All” button as soon as it has opened the list of project’s files. After doing so, KDevelop should be fine to work with.
+
+Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux). If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
 
 ## Writing Code {#writing-code}
 
@@ -276,15 +284,13 @@ Most probably some of the builds will fail at first times. This is due to the fa
 
 ## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
 
-You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
-
 You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
 
 Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
 
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```
--DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
+-DENABLE_LIBRARIES=0
 ```
 
 In case of problems with any of the development options, you are on your own!

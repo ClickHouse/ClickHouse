@@ -21,8 +21,6 @@ public:
         return "String";
     }
 
-    String getSQLCompatibleName() const override { return "BLOB"; }
-
     TypeIndex getTypeId() const override { return type_id; }
 
     MutableColumnPtr createColumn() const override;

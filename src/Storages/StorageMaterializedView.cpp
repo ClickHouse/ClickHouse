@@ -182,6 +182,11 @@ void StorageMaterializedView::read(
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
                                                                         ActionsDAG::MatchColumnsMode::Name);
+            /* Leave columns outside from materialized view structure as is.
+             * They may be added in case of distributed query with JOIN.
+             * In that case underlying table returns joined columns as well.
+             */
+            converting_actions->projectInput(false);
             auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
             converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
             query_plan.addStep(std::move(converting_step));
@@ -228,10 +233,13 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
 {
     /// We will use `sync` argument wneh this function is called from a DROP query
     /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
-    /// See the comment in StorageMaterializedView::drop
+    /// See the comment in StorageMaterializedView::drop.
+    /// DDL queries with StorageMaterializedView are fundamentally broken.
+    /// Best-effort to make them work: the inner table name is almost always less than the MV name (so it's safe to lock DDLGuard)
+    bool may_lock_ddl_guard = getStorageID().getQualifiedName() < target_table_id.getQualifiedName();
     if (has_inner_table && tryGetTargetTable())
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id,
-                                               sync, /* ignore_sync_setting */ true);
+                                               sync, /* ignore_sync_setting */ true, may_lock_ddl_guard);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -327,10 +335,11 @@ Pipe StorageMaterializedView::alterPartition(
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot,
+    const Settings & settings, ContextPtr local_context) const
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, local_context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
@@ -472,6 +481,13 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
             return target_table->getActionLock(type);
     }
     return ActionLock{};
+}
+
+bool StorageMaterializedView::isRemote() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->isRemote();
+    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

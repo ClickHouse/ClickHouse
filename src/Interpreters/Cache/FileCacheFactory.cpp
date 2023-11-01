@@ -29,7 +29,7 @@ FileCachePtr FileCacheFactory::getOrCreate(
     auto it = caches_by_name.find(cache_name);
     if (it == caches_by_name.end())
     {
-        auto cache = std::make_shared<FileCache>(file_cache_settings);
+        auto cache = std::make_shared<FileCache>(cache_name, file_cache_settings);
         it = caches_by_name.emplace(
             cache_name, std::make_unique<FileCacheData>(cache, file_cache_settings)).first;
     }

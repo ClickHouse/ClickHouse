@@ -159,11 +159,11 @@ def test_drop_replica(start_cluster):
     for i in range(1, 5):
         node_1_1.query("DETACH DATABASE test{}".format(i))
 
-    assert "doesn't exist" in node_1_3.query_and_get_error(
+    assert "does not exist" in node_1_3.query_and_get_error(
         "SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table"
     )
 
-    assert "doesn't exist" in node_1_3.query_and_get_error(
+    assert "does not exist" in node_1_3.query_and_get_error(
         "SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test1"
     )
 

@@ -39,7 +39,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
+:::note Важно
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 :::
 

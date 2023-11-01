@@ -35,6 +35,8 @@ public:
     /// Data from buffer to insert after inlined one - may be nullptr.
     ReadBuffer * tail = nullptr;
 
+    bool async_insert_flush = false;
+
     String getDatabase() const;
     String getTable() const;
 
@@ -66,7 +68,7 @@ public:
         return res;
     }
 
-    QueryKind getQueryKind() const override { return QueryKind::Insert; }
+    QueryKind getQueryKind() const override { return async_insert_flush ? QueryKind::AsyncInsertFlush : QueryKind::Insert; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

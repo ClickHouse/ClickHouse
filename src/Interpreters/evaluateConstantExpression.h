@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Parsers/IAST.h>
 
 #include <memory>
@@ -17,13 +18,16 @@ class IDataType;
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+using EvaluateConstantExpressionResult = std::pair<Field, std::shared_ptr<const IDataType>>;
+
 /** Evaluate constant expression and its type.
   * Used in rare cases - for elements of set for IN, for data to INSERT.
   * Throws exception if it's not a constant expression.
   * Quite suboptimal.
   */
-std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
+EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
 
+std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
 
 /** Evaluate constant expression and returns ASTLiteral with its value.
   */
@@ -52,4 +56,12 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Cont
   */
 std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr, size_t & limit);
 
+using ConstantVariants = std::vector<ColumnsWithTypeAndName>;
+
+/// max_elements is a hint
+std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
+    const ActionsDAG::Node * predicate,
+    const ActionsDAG::NodeRawConstPtrs & expr,
+    const ContextPtr & context,
+    size_t max_elements);
 }

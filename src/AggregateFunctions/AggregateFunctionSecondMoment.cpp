@@ -19,6 +19,7 @@ void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory &
     factory.registerAlias("VAR_POP", "varPop", AggregateFunctionFactory::CaseInsensitive);
     factory.registerAlias("STDDEV_SAMP", "stddevSamp", AggregateFunctionFactory::CaseInsensitive);
     factory.registerAlias("STDDEV_POP", "stddevPop", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("STD", "stddevPop", AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

@@ -217,8 +217,6 @@ struct MergeJoinEqualRange
     bool empty() const { return !left_length && !right_length; }
 };
 
-using Range = MergeJoinEqualRange;
-
 
 class MergeJoinCursor
 {
@@ -248,7 +246,7 @@ public:
         }
     }
 
-    Range getNextEqualRange(MergeJoinCursor & rhs)
+    MergeJoinEqualRange getNextEqualRange(MergeJoinCursor & rhs)
     {
         if (has_left_nullable && has_right_nullable)
             return getNextEqualRangeImpl<true, true>(rhs);
@@ -293,7 +291,7 @@ private:
     bool has_right_nullable = false;
 
     template <bool left_nulls, bool right_nulls>
-    Range getNextEqualRangeImpl(MergeJoinCursor & rhs)
+    MergeJoinEqualRange getNextEqualRangeImpl(MergeJoinCursor & rhs)
     {
         while (!atEnd() && !rhs.atEnd())
         {
@@ -303,10 +301,10 @@ private:
             else if (cmp > 0)
                 rhs.impl.next();
             else if (!cmp)
-                return Range{impl.getRow(), rhs.impl.getRow(), getEqualLength(), rhs.getEqualLength()};
+                return MergeJoinEqualRange{impl.getRow(), rhs.impl.getRow(), getEqualLength(), rhs.getEqualLength()};
         }
 
-        return Range{impl.getRow(), rhs.impl.getRow(), 0, 0};
+        return MergeJoinEqualRange{impl.getRow(), rhs.impl.getRow(), 0, 0};
     }
 
     template <bool left_nulls, bool right_nulls>
@@ -404,14 +402,14 @@ void copyRightRange(const Block & right_block, const Block & right_columns_to_ad
     }
 }
 
-void joinEqualsAnyLeft(const Block & right_block, const Block & right_columns_to_add, MutableColumns & right_columns, const Range & range)
+void joinEqualsAnyLeft(const Block & right_block, const Block & right_columns_to_add, MutableColumns & right_columns, const MergeJoinEqualRange & range)
 {
     copyRightRange(right_block, right_columns_to_add, right_columns, range.right_start, range.left_length);
 }
 
 template <bool is_all>
 bool joinEquals(const Block & left_block, const Block & right_block, const Block & right_columns_to_add,
-                MutableColumns & left_columns, MutableColumns & right_columns, Range & range, size_t max_rows [[maybe_unused]])
+                MutableColumns & left_columns, MutableColumns & right_columns, MergeJoinEqualRange & range, size_t max_rows [[maybe_unused]])
 {
     bool one_more = true;
 
@@ -876,7 +874,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         size_t left_unequal_position = left_cursor.position() + left_key_tail;
         left_key_tail = 0;
 
-        Range range = left_cursor.getNextEqualRange(right_cursor);
+        MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
 
         joinInequalsLeft<is_all>(left_block, left_columns, right_columns_to_add, right_columns, left_unequal_position, range.left_start);
 
@@ -930,7 +928,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
-        Range range = left_cursor.getNextEqualRange(right_cursor);
+        MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
         if (range.empty())
             break;
 
@@ -968,7 +966,7 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
-        Range range = left_cursor.getNextEqualRange(right_cursor);
+        MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
         if (range.empty())
             break;
 
@@ -1034,7 +1032,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getPath(), materializeBlock(right_sample_block));
+            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getAbsolutePath(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 

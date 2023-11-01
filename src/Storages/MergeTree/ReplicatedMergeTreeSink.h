@@ -51,22 +51,11 @@ public:
 
     void onStart() override;
     void consume(Chunk chunk) override;
-    void onFinish() override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For ATTACHing existing data on filesystem.
-    void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
-
-    /// For proper deduplication in MaterializedViews
-    bool lastBlockIsDuplicate() const override
-    {
-        /// If MV is responsible for deduplication, block is not considered duplicating.
-        if (context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-            return false;
-
-        return last_block_is_duplicate;
-    }
+    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
     struct DelayedChunk;
 private:
@@ -122,7 +111,6 @@ private:
     bool is_attach = false;
     bool quorum_parallel = false;
     const bool deduplicate = true;
-    bool last_block_is_duplicate = false;
     UInt64 num_blocks_processed = 0;
 
     using Logger = Poco::Logger;

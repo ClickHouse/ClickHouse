@@ -20,6 +20,9 @@ struct EnabledRolesInfo
     AccessRights access;
     SettingsProfileElements settings_from_enabled_roles;
 
+    std::vector<UUID> getCurrentRoles() const;
+    std::vector<UUID> getEnabledRoles() const;
+
     Strings getCurrentRolesNames() const;
     Strings getEnabledRolesNames() const;
 

@@ -1,12 +1,9 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
-#include <Common/createHardLink.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
@@ -14,7 +11,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
-#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
@@ -64,7 +60,9 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
-    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
+    , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
+    , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
+    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
 {}
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
@@ -176,7 +174,8 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,
     const String & to_file_path,
-    const WriteSettings & settings)
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings)
 {
     if (this == &to_disk)
     {
@@ -188,7 +187,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     else
     {
         /// Copy through buffers
-        IDisk::copyFile(from_file_path, to_disk, to_file_path, settings);
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings);
     }
 }
 
@@ -479,15 +478,48 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         config_prefix);
 }
 
+template <class Settings>
+static inline Settings updateResourceLink(const Settings & settings, const String & resource_name)
+{
+    if (resource_name.empty())
+        return settings;
+    if (auto query_context = CurrentThread::getQueryContext())
+    {
+        Settings result(settings);
+        result.resource_link = query_context->getWorkloadClassifier()->get(resource_name);
+        return result;
+    }
+    return settings;
+}
+
+String DiskObjectStorage::getReadResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return read_resource_name;
+}
+
+String DiskObjectStorage::getWriteResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return write_resource_name;
+}
+
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    auto storage_objects = metadata_storage->getStorageObjects(path);
+
+    const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
+
+    if (storage_objects.empty() && file_can_be_empty)
+        return std::make_unique<ReadBufferFromEmptyFile>();
+
     return object_storage->readObjects(
-        metadata_storage->getStorageObjects(path),
-        object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
+        storage_objects,
+        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getReadResourceName()), path),
         read_hint,
         file_size);
 }
@@ -501,13 +533,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     LOG_TEST(log, "Write file: {}", path);
 
     auto transaction = createObjectStorageTransaction();
-    auto result = transaction->writeFile(
+    return transaction->writeFile(
         path,
         buf_size,
         mode,
-        object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
-
-    return result;
+        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getWriteResourceName()), path));
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const
@@ -537,6 +567,15 @@ void DiskObjectStorage::applyNewSettings(
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
     const auto config_prefix = "storage_configuration.disks." + name;
     object_storage->applyNewSettings(config, config_prefix, context_);
+
+    {
+        std::unique_lock lock(resource_mutex);
+        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name)
+            read_resource_name = new_read_resource_name;
+        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name)
+            write_resource_name = new_write_resource_name;
+    }
+
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
 }
 

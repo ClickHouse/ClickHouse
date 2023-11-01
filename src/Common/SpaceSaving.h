@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <vector>
 
 #include <boost/range/adaptor/reversed.hpp>
@@ -18,6 +17,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
+
 
 /*
  * Implementation of the Filtered Space-Saving for TopK streaming analysis.
@@ -321,7 +321,7 @@ protected:
         percolate(ptr);
     }
 
-    // This is equivallent to one step of bubble sort
+    // This is equivalent to one step of bubble sort
     void percolate(Counter * counter)
     {
         while (counter->slot > 0)

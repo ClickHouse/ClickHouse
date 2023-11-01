@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
@@ -11,6 +12,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -111,6 +113,68 @@ void CSVRowInputFormat::resetParser()
 {
     RowInputFormatWithNamesAndTypes::resetParser();
     buf->reset();
+}
+
+void CSVFormatReader::skipRow()
+{
+    bool quotes = false;
+    ReadBuffer & istr = *buf;
+
+    while (!istr.eof())
+    {
+        if (quotes)
+        {
+            auto * pos = find_first_symbols<'"'>(istr.position(), istr.buffer().end());
+            istr.position() = pos;
+
+            if (pos > istr.buffer().end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+            else if (pos == istr.buffer().end())
+                continue;
+            else if (*pos == '"')
+            {
+                ++istr.position();
+                if (!istr.eof() && *istr.position() == '"')
+                    ++istr.position();
+                else
+                    quotes = false;
+            }
+        }
+        else
+        {
+            auto * pos = find_first_symbols<'"', '\r', '\n'>(istr.position(), istr.buffer().end());
+            istr.position() = pos;
+
+            if (pos > istr.buffer().end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+            else if (pos == istr.buffer().end())
+                continue;
+
+            if (*pos == '"')
+            {
+                quotes = true;
+                ++istr.position();
+                continue;
+            }
+
+            if (*pos == '\n')
+            {
+                ++istr.position();
+                if (!istr.eof() && *istr.position() == '\r')
+                    ++istr.position();
+                return;
+            }
+            else if (*pos == '\r')
+            {
+                ++istr.position();
+                if (!istr.eof() && *pos == '\n')
+                {
+                    ++pos;
+                    return;
+                }
+            }
+        }
+    }
 }
 
 static void skipEndOfLine(ReadBuffer & in)
@@ -283,7 +347,7 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
-bool CSVFormatReader::allowVariableNumberOfColumns()
+bool CSVFormatReader::allowVariableNumberOfColumns() const
 {
     return format_settings.csv.allow_variable_number_of_columns;
 }
@@ -315,15 +379,52 @@ bool CSVFormatReader::readField(
         return false;
     }
 
+    if (format_settings.csv.use_default_on_bad_values)
+        return readFieldOrDefault(column, type, serialization);
+    return readFieldImpl(*buf, column, type, serialization);
+}
+
+bool CSVFormatReader::readFieldImpl(ReadBuffer & istr, DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization)
+{
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
     {
         /// If value is null but type is not nullable then use default value instead.
-        return SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
+        return SerializationNullable::deserializeTextCSVImpl(column, istr, format_settings, serialization);
     }
 
     /// Read the column normally.
-    serialization->deserializeTextCSV(column, *buf, format_settings);
+    serialization->deserializeTextCSV(column, istr, format_settings);
     return true;
+}
+
+bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization)
+{
+    String field;
+    readCSVField(field, *buf, format_settings.csv);
+    ReadBufferFromString tmp_buf(field);
+    bool is_bad_value = false;
+    bool res = false;
+
+    size_t col_size = column.size();
+    try
+    {
+        res = readFieldImpl(tmp_buf, column, type, serialization);
+        /// Check if we parsed the whole field successfully.
+        if (!field.empty() && !tmp_buf.eof())
+            is_bad_value = true;
+    }
+    catch (const Exception &)
+    {
+        is_bad_value = true;
+    }
+
+    if (!is_bad_value)
+        return res;
+
+    if (column.size() == col_size + 1)
+        column.popBack(1);
+    column.insertDefault();
+    return false;
 }
 
 void CSVFormatReader::skipPrefixBeforeHeader()
@@ -372,19 +473,22 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
 {
 }
 
-std::pair<std::vector<String>, DataTypes> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<std::vector<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, FormatSettings::EscapingRule::CSV);
-    return {fields, data_types};
+    return std::make_pair(std::move(fields), std::move(data_types));
 }
 
-DataTypes CSVSchemaReader::readRowAndGetDataTypesImpl()
+std::optional<DataTypes> CSVSchemaReader::readRowAndGetDataTypesImpl()
 {
-    return std::move(readRowAndGetFieldsAndDataTypes().second);
+    auto fields_with_types = readRowAndGetFieldsAndDataTypes();
+    if (!fields_with_types)
+        return {};
+    return std::move(fields_with_types->second);
 }
 
 
@@ -448,11 +552,6 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 continue;
             }
 
-            ++number_of_rows;
-            if ((number_of_rows >= min_rows)
-                && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
-                need_more_data = false;
-
             if (*pos == '\n')
             {
                 ++pos;
@@ -464,7 +563,15 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 ++pos;
                 if (loadAtPosition(in, memory, pos) && *pos == '\n')
                     ++pos;
+                else
+                    continue;
             }
+
+            ++number_of_rows;
+            if ((number_of_rows >= min_rows)
+                && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+                need_more_data = false;
+
         }
     }
 

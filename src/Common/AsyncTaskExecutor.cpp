@@ -1,17 +1,22 @@
 #include <Common/AsyncTaskExecutor.h>
+#include <base/scope_guard.h>
+
 
 namespace DB
 {
 
 AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_) : task(std::move(task_))
 {
-    createFiber();
 }
 
 void AsyncTaskExecutor::resume()
 {
     if (routine_is_finished)
         return;
+
+    /// Create fiber lazily on first resume() call.
+    if (!fiber)
+        createFiber();
 
     if (!checkBeforeTaskResume())
         return;
@@ -22,6 +27,11 @@ void AsyncTaskExecutor::resume()
             return;
 
         resumeUnlocked();
+
+        /// Destroy fiber when it's finished.
+        if (routine_is_finished)
+            destroyFiber();
+
         if (exception)
             processException(exception);
     }
@@ -38,17 +48,18 @@ void AsyncTaskExecutor::cancel()
 {
     std::lock_guard guard(fiber_lock);
     is_cancelled = true;
-    cancelBefore();
-    destroyFiber();
+    {
+        SCOPE_EXIT({ destroyFiber(); });
+        cancelBefore();
+    }
     cancelAfter();
 }
 
 void AsyncTaskExecutor::restart()
 {
     std::lock_guard guard(fiber_lock);
-    if (fiber)
+    if (!routine_is_finished)
         destroyFiber();
-    createFiber();
     routine_is_finished = false;
 }
 

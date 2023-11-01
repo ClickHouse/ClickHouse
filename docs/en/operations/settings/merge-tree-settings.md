@@ -56,11 +56,11 @@ Possible values:
 
 - Any positive integer.
 
-Default value: 300.
+Default value: 3000.
 
 To achieve maximum performance of `SELECT` queries, it is necessary to minimize the number of parts processed, see [Merge Tree](../../development/architecture.md#merge-tree).
 
-You can set a larger value to 600 (1200), this will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
+Prior to 23.6 this setting was set to 300. You can set a higher different value, it will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
 
 
 ## parts_to_delay_insert {#parts-to-delay-insert}
@@ -71,7 +71,7 @@ Possible values:
 
 - Any positive integer.
 
-Default value: 150.
+Default value: 1000.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
@@ -502,7 +502,7 @@ Possible values:
 Default value: 480.
 
 After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
-Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
+Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is 1.
 
 `fsync` is not called for new parts, so for some time new parts exist only in the server's RAM (OS cache). If the server is rebooted spontaneously, new parts can be lost or damaged.
 To protect data inactive parts are not deleted immediately.
@@ -555,7 +555,7 @@ Merge reads rows from parts in blocks of `merge_max_block_size` rows, then merge
 
 ## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number-of-free-entries-in-pool-to-lower-max-size-of-merge}
 
-When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue). 
+When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue).
 This is to allow small merges to process - not filling the pool with long running merges.
 
 Possible values:
@@ -566,7 +566,7 @@ Default value: 8
 
 ## number_of_free_entries_in_pool_to_execute_mutation {#number-of-free-entries-in-pool-to-execute-mutation}
 
-When there is less than specified number of free entries in pool, do not execute part mutations. 
+When there is less than specified number of free entries in pool, do not execute part mutations.
 This is to leave free threads for regular merges and avoid "Too many parts".
 
 Possible values:
@@ -622,6 +622,19 @@ Possible values:
 - true, false
 
 Default value: false
+
+## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
+
+When there is less than specified number of free entries in pool, do not execute optimizing entire partition in the background (this task generated when set `min_age_to_force_merge_seconds` and enable `min_age_to_force_merge_on_partition_only`). This is to leave free threads for regular merges and avoid "Too many parts".
+
+Possible values:
+
+- Positive integer.
+
+Default value: 25
+
+The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
@@ -733,14 +746,14 @@ Default value: `0` (limit never applied).
 
 Minimal ratio of the number of _default_ values to the number of _all_ values in a column. Setting this value causes the column to be stored using sparse serializations.
 
-If a column is sparse (contains mostly zeros), ClickHouse can encode it in a sparse format and automatically optimize calculations - the data does not require full decompression during queries. To enable this sparse serialization, define the `ratio_of_defaults_for_sparse_serialization` setting to be less than 1.0. If the value is greater than or equal to 1.0 (the default), then the columns will be always written using the normal full serialization.
+If a column is sparse (contains mostly zeros), ClickHouse can encode it in a sparse format and automatically optimize calculations - the data does not require full decompression during queries. To enable this sparse serialization, define the `ratio_of_defaults_for_sparse_serialization` setting to be less than 1.0. If the value is greater than or equal to 1.0, then the columns will be always written using the normal full serialization.
 
 Possible values:
 
 - Float between 0 and 1 to enable sparse serialization
 - 1.0 (or greater) if you do not want to use sparse serialization
 
-Default value: `1.0` (sparse serialization is disabled)
+Default value: `0.9375`
 
 **Example**
 
@@ -832,6 +845,13 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
+If the file name for column is too long (more than `max_file_name_length` bytes) replace it to SipHash128. Default value: `false`.
+
+## max_file_name_length {#max_file_name_length}
+
+The maximal length of the file name to keep it as is without hashing. Takes effect only if setting `replace_long_file_name_to_hash` is enabled. The value of this setting does not include the length of file extension. So, it is recommended to set it below the maximum filename length (usually 255 bytes) with some gap to avoid filesystem errors. Default value: 127.
+
 ## clean_deleted_rows
 
 Enable/disable automatic deletion of rows flagged as `is_deleted` when perform `OPTIMIZE ... FINAL` on a table using the ReplacingMergeTree engine. When disabled, the `CLEANUP` keyword has to be added to the `OPTIMIZE ... FINAL` to have the same behaviour.
@@ -841,3 +861,9 @@ Possible values:
 - `Always` or `Never`.
 
 Default value: `Never`
+
+## allow_experimental_block_number_column
+
+Persists virtual column `_block_number` on merges.
+
+Default value: false.

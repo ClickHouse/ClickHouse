@@ -1,27 +1,30 @@
 #pragma once
 
-#include <Processors/Formats/InputFormatErrorsLogger.h>
-#include <Processors/ISource.h>
+#include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Formats/ColumnMapping.h>
+#include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Processors/SourceWithKeyCondition.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 
 namespace DB
 {
 
+struct SelectQueryInfo;
+
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
-class IInputFormat : public ISource
+class IInputFormat : public SourceWithKeyCondition
 {
 protected:
 
     ReadBuffer * in [[maybe_unused]] = nullptr;
 
 public:
-    // ReadBuffer can be nullptr for random-access formats.
+    /// ReadBuffer can be nullptr for random-access formats.
     IInputFormat(Block header, ReadBuffer * in_);
 
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
@@ -55,10 +58,16 @@ public:
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
+    void needOnlyCount() { need_only_count = true; }
+
 protected:
+    virtual Chunk getChunkForCount(size_t rows);
+
     ColumnMappingPtr column_mapping{};
 
     InputFormatErrorsLoggerPtr errors_logger;
+
+    bool need_only_count = false;
 
 private:
     /// Number of currently parsed chunk (if parallel parsing is enabled)

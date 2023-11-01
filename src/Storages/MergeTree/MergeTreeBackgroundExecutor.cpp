@@ -113,6 +113,13 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
 }
 
 template <class Queue>
+size_t MergeTreeBackgroundExecutor<Queue>::getMaxThreads() const
+{
+    std::lock_guard lock(mutex);
+    return threads_count;
+}
+
+template <class Queue>
 size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 {
     return max_tasks_count.load(std::memory_order_relaxed);
@@ -269,12 +276,13 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     try
     {
         ALLOW_ALLOCATIONS_IN_SCOPE;
-        item->task->getQueryId();
+        query_id = item->task->getQueryId();
         need_execute_again = item->task->executeStep();
     }
     catch (...)
     {
-        printExceptionWithRespectToAbort(log, query_id);
+        if (item->task->printExecutionException())
+            printExceptionWithRespectToAbort(log, query_id);
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
         release_task(std::move(item));

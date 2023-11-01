@@ -167,10 +167,14 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path
 }
 
 void LocalObjectStorage::copyObject( // NOLINT
-    const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    auto in = readObject(object_from);
-    auto out = writeObject(object_to, WriteMode::Rewrite);
+    auto in = readObject(object_from, read_settings);
+    auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
 }

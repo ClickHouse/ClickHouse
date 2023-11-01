@@ -441,11 +441,10 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
     }
 }
 
-void DatabaseAtomic::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+void DatabaseAtomic::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     beforeLoadingMetadata(local_context, mode);
-    DatabaseOrdinary::loadStoredObjects(local_context, mode, skip_startup_tables);
+    DatabaseOrdinary::loadStoredObjects(local_context, mode);
 }
 
 void DatabaseAtomic::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
@@ -472,8 +471,16 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     {
         String link = path_to_table_symlinks + escapeForFileName(table_name);
         fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
-        if (!if_data_path_exist || fs::exists(data))
-            fs::create_directory_symlink(data, link);
+
+        /// If it already points where needed.
+        std::error_code ec;
+        if (fs::equivalent(data, link, ec))
+            return;
+
+        if (if_data_path_exist && !fs::exists(data))
+            return;
+
+        fs::create_directory_symlink(data, link);
     }
     catch (...)
     {

@@ -182,6 +182,7 @@ AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool lo
                 init.max_threads,
                 /* max_free_threads = */ 0,
                 init.max_threads),
+            .ready_queue = {},
             .max_threads = init.max_threads
         });
 }
