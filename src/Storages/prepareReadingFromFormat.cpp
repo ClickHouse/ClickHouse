@@ -29,7 +29,6 @@ ReadFromFormatInfo prepareReadingFromFormat(
 
         if (!is_virtual)
             columns_to_read.push_back(column_name);
-        std::cout << "columns_to_read: " << column_name << std::endl;
     }
 
     /// Create header for Source that will contain all requested columns including virtual columns at the end
@@ -40,8 +39,6 @@ ReadFromFormatInfo prepareReadingFromFormat(
 
     /// Set requested columns that should be read from data.
     info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);
-    std::cout << "requested_columns:" << info.requested_columns.toString() << std::endl;
-    std::cout << "supports_subset_of_columns:" << supports_subset_of_columns << std::endl;
 
     if (supports_subset_of_columns)
     {
