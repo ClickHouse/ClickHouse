@@ -757,11 +757,32 @@ static const orc::Type * traverseDownORCTypeByName(
     if (target.empty())
         return orc_type;
 
-    auto split = Nested::splitName(target);
+    auto search_struct_field = [&](const std::string & target_, const orc::Type * type_) -> std::pair<std::string, const orc::Type *>
+    {
+        auto target_copy = target_;
+        if (ignore_case)
+            boost::to_lower(target_copy);
+
+        for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
+        {
+            auto field_name = type_->getFieldName(i);
+            if (ignore_case)
+                boost::to_lower(field_name);
+
+            if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
+            {
+                return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+            }
+        }
+        return {"", nullptr};
+    };
+
     if (orc::STRUCT == orc_type->getKind())
     {
-        const auto * orc_field_type = getORCTypeByName(*orc_type, split.first, ignore_case);
-        return orc_field_type ? traverseDownORCTypeByName(split.second, orc_field_type, type, ignore_case) : nullptr;
+        auto next_type_and_target = search_struct_field(target, orc_type);
+        const auto & next_target = next_type_and_target.first;
+        const auto * next_orc_type = next_type_and_target.second;
+        return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case) : nullptr;
     }
     else if (orc::LIST == orc_type->getKind())
     {
@@ -772,12 +793,14 @@ static const orc::Type * traverseDownORCTypeByName(
         const auto * orc_nested_type = orc_type->getSubtype(0);
         if (array_type && orc::STRUCT == orc_nested_type->getKind())
         {
-            const auto * orc_field_type = getORCTypeByName(*orc_nested_type, split.first, ignore_case);
-            if (orc_field_type)
+            auto next_type_and_target = search_struct_field(target, orc_nested_type);
+            const auto & next_target = next_type_and_target.first;
+            const auto * next_orc_type = next_type_and_target.second;
+            if (next_orc_type)
             {
                 /// Adjust CH type to avoid inconsistency between CH and ORC type brought by flattened Nested type.
                 type = array_type->getNestedType();
-                return traverseDownORCTypeByName(split.second, orc_field_type, type, ignore_case);
+                return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case);
             }
             else
                 return nullptr;
