@@ -30,6 +30,7 @@ Choose your build architecture:
 ---
 
 # x86_64 macOS:
+
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
 
 Let’s remember the path where we install `cctools` as ${CCTOOLS}
@@ -91,7 +92,6 @@ git clone --depth=1 https://github.com/tpoechtrager/cctools-port.git
 cd cctools-port/cctools
 ./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=aarch64-apple-darwin
 make install
-
 ```
 
 Also, we need to download macOS X SDK into the working tree.
