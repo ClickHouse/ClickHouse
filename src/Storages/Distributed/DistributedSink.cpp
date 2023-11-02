@@ -553,8 +553,15 @@ void DistributedSink::onFinish()
                 {
                     if (job.executor)
                     {
-                        pool->scheduleOrThrowOnError([&job]()
+                        pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachFromGroupIfNotDetached();
+                            );
+                            if (thread_group)
+                                CurrentThread::attachToGroupIfDetached(thread_group);
+
                             job.executor->finish();
                         });
                     }

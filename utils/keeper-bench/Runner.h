@@ -89,6 +89,6 @@ private:
     std::unordered_map<size_t, size_t> connections_to_info_map;
 
     void createConnections();
-    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info);
+    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx);
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
 };

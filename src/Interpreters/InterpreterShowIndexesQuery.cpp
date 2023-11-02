@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterShowIndexesQuery.h>
 
 #include <Common/quoteString.h>
+#include <Common/escapeString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowIndexesQuery.h>
@@ -23,16 +24,9 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-
-    WriteBufferFromOwnString buf_table;
-    writeEscapedString(query.table, buf_table);
-    String table = buf_table.str();
-
-    WriteBufferFromOwnString buf_database;
+    String table = escapeString(query.table);
     String resolved_database = getContext()->resolveDatabase(query.database);
-    writeEscapedString(resolved_database, buf_database);
-    String database = buf_database.str();
-
+    String database = escapeString(resolved_database);
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression) : "";
 
     String rewritten_query = fmt::format(R"(
@@ -107,7 +101,7 @@ ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, 
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true);
+    return executeQuery(getRewrittenQuery(), getContext(), true).second;
 }
 
 

@@ -115,6 +115,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
+        .apply_deleted_mask = settings.apply_deleted_mask,
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
             && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
         .enable_multiple_prewhere_read_steps = settings.enable_multiple_prewhere_read_steps,
@@ -718,7 +719,29 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
     {
         /// Reduce the number of num_streams if the data is small.
         if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
-            num_streams = std::max((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+        {
+            /*
+            If the data is fragmented, then allocate the size of parts to num_streams. If the data is not fragmented, besides the sum_marks and
+            min_marks_for_concurrent_read, involve the system cores to get the num_streams. Increase the num_streams and decrease the min_marks_for_concurrent_read
+            if the data is small but system has plentiful cores. It helps to improve the parallel performance of `MergeTreeRead` significantly.
+            Make sure the new num_streams `num_streams * increase_num_streams_ratio` will not exceed the previous calculated prev_num_streams.
+            The new info.min_marks_for_concurrent_read `info.min_marks_for_concurrent_read / increase_num_streams_ratio` should be larger than 8.
+            https://github.com/ClickHouse/ClickHouse/pull/53867
+            */
+            if ((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read > parts_with_ranges.size())
+            {
+                const size_t prev_num_streams = num_streams;
+                num_streams = (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read;
+                const size_t increase_num_streams_ratio = std::min(prev_num_streams / num_streams, info.min_marks_for_concurrent_read / 8);
+                if (increase_num_streams_ratio > 1)
+                {
+                    num_streams = num_streams * increase_num_streams_ratio;
+                    info.min_marks_for_concurrent_read = (info.sum_marks + num_streams - 1) / num_streams;
+                }
+            }
+            else
+                num_streams = parts_with_ranges.size();
+        }
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
@@ -1792,15 +1815,17 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     const auto & input_order_info = query_info.getInputOrderInfo();
 
     Names column_names_to_read = result.column_names_to_read;
+    NameSet names(column_names_to_read.begin(), column_names_to_read.end());
 
     if (!final && result.sampling.use_sampling)
     {
         /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
         /// Skip this if final was used, because such columns were already added from PK.
-        std::vector<String> add_columns = result.sampling.filter_expression->getRequiredColumns().getNames();
-        column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-        ::sort(column_names_to_read.begin(), column_names_to_read.end());
-        column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
+        for (const auto & column : result.sampling.filter_expression->getRequiredColumns().getNames())
+        {
+            if (!names.contains(column))
+                column_names_to_read.push_back(column);
+        }
     }
 
     if (final)
@@ -1811,18 +1836,21 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
 
         /// Add columns needed to calculate the sorting expression and the sign.
-        std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
-        column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+        for (const auto & column : metadata_for_reading->getColumnsRequiredForSortingKey())
+        {
+            if (!names.contains(column))
+            {
+                column_names_to_read.push_back(column);
+                names.insert(column);
+            }
+        }
 
-        if (!data.merging_params.is_deleted_column.empty())
+        if (!data.merging_params.is_deleted_column.empty() && !names.contains(data.merging_params.is_deleted_column))
             column_names_to_read.push_back(data.merging_params.is_deleted_column);
-        if (!data.merging_params.sign_column.empty())
+        if (!data.merging_params.sign_column.empty() && !names.contains(data.merging_params.sign_column))
             column_names_to_read.push_back(data.merging_params.sign_column);
-        if (!data.merging_params.version_column.empty())
+        if (!data.merging_params.version_column.empty() && !names.contains(data.merging_params.version_column))
             column_names_to_read.push_back(data.merging_params.version_column);
-
-        ::sort(column_names_to_read.begin(), column_names_to_read.end());
-        column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
         return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
     }
@@ -2245,4 +2273,14 @@ size_t MergeTreeDataSelectAnalysisResult::marks() const
     return index_stats.back().num_granules_after;
 }
 
+UInt64 MergeTreeDataSelectAnalysisResult::rows() const
+{
+    if (std::holds_alternative<std::exception_ptr>(result))
+        std::rethrow_exception(std::get<std::exception_ptr>(result));
+
+    const auto & index_stats = std::get<ReadFromMergeTree::AnalysisResult>(result).index_stats;
+    if (index_stats.empty())
+        return 0;
+    return std::get<ReadFromMergeTree::AnalysisResult>(result).selected_rows;
+}
 }

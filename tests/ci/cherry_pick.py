@@ -289,7 +289,9 @@ close it.
             "Checking if cherry-pick PR #%s needs to be pinged",
             self.cherrypick_pr.number,
         )
-        since_updated = datetime.now() - self.cherrypick_pr.updated_at
+        # The `updated_at` is Optional[datetime]
+        cherrypick_updated_at = self.cherrypick_pr.updated_at or datetime.now()
+        since_updated = datetime.now() - cherrypick_updated_at
         since_updated_str = (
             f"{since_updated.days}d{since_updated.seconds // 3600}"
             f"h{since_updated.seconds // 60 % 60}m{since_updated.seconds % 60}s"
@@ -298,7 +300,7 @@ close it.
             logging.info(
                 "The cherry-pick PR was updated at %s %s ago, "
                 "waiting for the next running",
-                self.cherrypick_pr.updated_at.isoformat(),
+                cherrypick_updated_at.isoformat(),
                 since_updated_str,
             )
             return

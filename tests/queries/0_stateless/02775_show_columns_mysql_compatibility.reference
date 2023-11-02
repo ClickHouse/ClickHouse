@@ -1,366 +1,366 @@
-Drop tables if they exist
-Create tab table 
-Create pseudo-random database name
-Create tab duplicate table
-Run MySQL test
-field	type	null	key	default	extra
-aggregate_function	AggregateFunction(sum, Int32)	NO		NULL	
-array_value	Array(Int32)	NO		NULL	
-boolean_value	UInt8	NO		NULL	
-date32_value	Date32	NO		NULL	
-date_value	Date	NO		NULL	
-datetime64_value	DateTime64(3)	NO		NULL	
-datetime_value	DateTime	NO		NULL	
-decimal_value	Decimal(10, 2)	NO		NULL	
-enum_value	Enum8('apple' = 1, 'banana' = 2, 'orange' = 3)	NO		NULL	
-fixed_string_value	FixedString(10)	NO		NULL	
-float32	Float32	NO		NULL	
-float64	Float64	NO		NULL	
-int128	Int128	NO		NULL	
-int16	Int16	NO		NULL	
-int256	Int256	NO		NULL	
-int32	Int32	NO		NULL	
-int64	Int64	NO		NULL	
-int8	Int8	NO		NULL	
-ipv4_value	IPv4	NO		NULL	
-ipv6_value	IPv6	NO		NULL	
-json_value	Object('json')	NO		NULL	
-low_cardinality	LowCardinality(String)	NO		NULL	
-low_cardinality_date	LowCardinality(DateTime)	NO		NULL	
-map_value	Map(String, Int32)	NO		NULL	
-nested.nested_int	Array(Int32)	NO		NULL	
-nested.nested_string	Array(String)	NO		NULL	
-nint32	Nullable(Int32)	YES		NULL	
-nullable_value	Nullable(Int32)	YES		NULL	
-string_value	String	NO		NULL	
-tuple_value	Tuple(Int32, String)	NO		NULL	
-uint128	UInt128	NO		NULL	
-uint16	UInt16	NO		NULL	
-uint256	UInt256	NO		NULL	
-uint32	UInt32	NO		NULL	
-uint64	UInt64	NO	PRI SOR	NULL	
-uint8	UInt8	NO		NULL	
-uuid_value	UUID	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra	collation	comment	privileges
-aggregate_function	TEXT	NO		NULL		NULL		
-array_value	TEXT	NO		NULL		NULL		
-boolean_value	TINYINT UNSIGNED	NO		NULL		NULL		
-date32_value	DATE	NO		NULL		NULL		
-date_value	DATE	NO		NULL		NULL		
-datetime64_value	DATETIME	NO		NULL		NULL		
-datetime_value	DATETIME	NO		NULL		NULL		
-decimal_value	DECIMAL(10, 2)	NO		NULL		NULL		
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL		NULL		
-fixed_string_value	TEXT	NO		NULL		NULL		
-float32	FLOAT	NO		NULL		NULL		
-float64	DOUBLE	NO		NULL		NULL		
-int128	TEXT	NO		NULL		NULL		
-int16	SMALLINT	NO		NULL		NULL		
-int256	TEXT	NO		NULL		NULL		
-int32	INTEGER	NO		NULL		NULL		
-int64	BIGINT	NO		NULL		NULL		
-int8	TINYINT	NO		NULL		NULL		
-ipv4_value	TEXT	NO		NULL		NULL		
-ipv6_value	TEXT	NO		NULL		NULL		
-json_value	JSON	NO		NULL		NULL		
-low_cardinality	BLOB	NO		NULL		NULL		
-low_cardinality_date	DATETIME	NO		NULL		NULL		
-map_value	JSON	NO		NULL		NULL		
-nested.nested_int	TEXT	NO		NULL		NULL		
-nested.nested_string	TEXT	NO		NULL		NULL		
-nint32	INTEGER	NO		NULL		NULL		
-nullable_value	INTEGER	NO		NULL		NULL		
-string_value	BLOB	NO		NULL		NULL		
-tuple_value	JSON	NO		NULL		NULL		
-uint128	TEXT	NO		NULL		NULL		
-uint16	SMALLINT UNSIGNED	NO		NULL		NULL		
-uint256	TEXT	NO		NULL		NULL		
-uint32	INTEGER UNSIGNED	NO		NULL		NULL		
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL		NULL		
-uint8	TINYINT UNSIGNED	NO		NULL		NULL		
-uuid_value	CHAR	NO		NULL		NULL		
-field	type	null	key	default	extra
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
+-- SHOW COLUMNS with use_mysql_types_in_show_columns = 0
+a	Array(String)	NO		\N	
+agg	AggregateFunction(uniq, UInt64)	NO		\N	
+b	Bool	NO		\N	
+d	Date	NO		\N	
+d32	Date32	NO		\N	
+dec128	Decimal(38, 2)	NO		\N	
+dec128_native	Decimal(35, 30)	NO		\N	
+dec128_text	Decimal(35, 31)	NO		\N	
+dec256	Decimal(76, 2)	NO		\N	
+dec256_native	Decimal(65, 2)	NO		\N	
+dec256_text	Decimal(66, 2)	NO		\N	
+dec32	Decimal(9, 2)	NO		\N	
+dec64	Decimal(18, 2)	NO		\N	
+dt	DateTime	NO		\N	
+dt64	DateTime64(3)	NO		\N	
+dt64_3_tz1	DateTime64(3, \'UTC\')	NO		\N	
+dt64_3_tz2	DateTime64(3, \'Asia/Shanghai\')	NO		\N	
+dt64_6	DateTime64(6, \'UTC\')	NO		\N	
+dt64_9	DateTime64(9, \'UTC\')	NO		\N	
+dt_tz1	DateTime(\'UTC\')	NO		\N	
+dt_tz2	DateTime(\'Europe/Amsterdam\')	NO		\N	
+enm	Enum8(\'hallo\' = 1, \'welt\' = 2)	NO		\N	
+f32	Float32	NO		\N	
+f64	Float64	NO		\N	
+fs	FixedString(3)	NO		\N	
+i128	Int128	NO		\N	
+i16	Int16	NO		\N	
+i256	Int256	NO		\N	
+i32	Int32	NO		\N	
+i64	Int64	NO		\N	
+i8	Int8	NO		\N	
+ip4	IPv4	NO		\N	
+ip6	IPv6	NO		\N	
+lfs	LowCardinality(FixedString(3))	NO		\N	
+lnfs	LowCardinality(Nullable(FixedString(3)))	YES		\N	
+lns	LowCardinality(Nullable(String))	YES		\N	
+ls	LowCardinality(String)	NO		\N	
+m	Map(Int32, String)	NO		\N	
+m_complex	Map(Int32, Map(Int32, LowCardinality(Nullable(String))))	NO		\N	
+mpg	MultiPolygon	NO		\N	
+ndt64	Nullable(DateTime64(3))	YES		\N	
+ndt64_tz	Nullable(DateTime64(3, \'Asia/Shanghai\'))	YES		\N	
+nested.col1	Array(String)	NO		\N	
+nested.col2	Array(UInt32)	NO		\N	
+nfs	Nullable(FixedString(3))	YES		\N	
+ns	Nullable(String)	YES		\N	
+o	Object(\'json\')	NO		\N	
+p	Point	NO		\N	
+pg	Polygon	NO		\N	
+r	Ring	NO		\N	
+s	String	NO		\N	
+sagg	SimpleAggregateFunction(sum, Float64)	NO		\N	
+t	Tuple(Int32, String, Nullable(String), LowCardinality(String), LowCardinality(Nullable(String)), Tuple(Int32, String))	NO		\N	
+ui128	UInt128	NO		\N	
+ui16	UInt16	NO		\N	
+ui256	UInt256	NO		\N	
+ui32	UInt32	NO		\N	
+ui64	UInt64	NO		\N	
+ui8	UInt8	NO		\N	
+uuid	UUID	NO		\N	
+-- SHOW COLUMNS with use_mysql_types_in_show_columns = 1
+a	TEXT	NO		\N	
+agg	TEXT	NO		\N	
+b	TINYINT	NO		\N	
+d	DATE	NO		\N	
+d32	DATE	NO		\N	
+dec128	DECIMAL(38, 2)	NO		\N	
+dec128_native	DECIMAL(35, 30)	NO		\N	
+dec128_text	TEXT	NO		\N	
+dec256	TEXT	NO		\N	
+dec256_native	DECIMAL(65, 2)	NO		\N	
+dec256_text	TEXT	NO		\N	
+dec32	DECIMAL(9, 2)	NO		\N	
+dec64	DECIMAL(18, 2)	NO		\N	
+dt	DATETIME	NO		\N	
+dt64	DATETIME	NO		\N	
+dt64_3_tz1	DATETIME	NO		\N	
+dt64_3_tz2	DATETIME	NO		\N	
+dt64_6	DATETIME	NO		\N	
+dt64_9	DATETIME	NO		\N	
+dt_tz1	DATETIME	NO		\N	
+dt_tz2	DATETIME	NO		\N	
+enm	TEXT	NO		\N	
+f32	FLOAT	NO		\N	
+f64	DOUBLE	NO		\N	
+fs	BLOB	NO		\N	
+i128	TEXT	NO		\N	
+i16	SMALLINT	NO		\N	
+i256	TEXT	NO		\N	
+i32	INTEGER	NO		\N	
+i64	BIGINT	NO		\N	
+i8	TINYINT	NO		\N	
+ip4	TEXT	NO		\N	
+ip6	TEXT	NO		\N	
+lfs	BLOB	NO		\N	
+lnfs	BLOB	YES		\N	
+lns	BLOB	YES		\N	
+ls	BLOB	NO		\N	
+m	JSON	NO		\N	
+m_complex	JSON	NO		\N	
+mpg	TEXT	NO		\N	
+ndt64	DATETIME	YES		\N	
+ndt64_tz	DATETIME	YES		\N	
+nested.col1	TEXT	NO		\N	
+nested.col2	TEXT	NO		\N	
+nfs	BLOB	YES		\N	
+ns	BLOB	YES		\N	
+o	JSON	NO		\N	
+p	TEXT	NO		\N	
+pg	TEXT	NO		\N	
+r	TEXT	NO		\N	
+s	BLOB	NO		\N	
+sagg	TEXT	NO		\N	
+t	JSON	NO		\N	
+ui128	TEXT	NO		\N	
+ui16	SMALLINT UNSIGNED	NO		\N	
+ui256	TEXT	NO		\N	
+ui32	INTEGER UNSIGNED	NO		\N	
+ui64	BIGINT UNSIGNED	NO		\N	
+ui8	TINYINT UNSIGNED	NO		\N	
+uuid	CHAR	NO		\N	
+-- SHOW COLUMNS with mysql_map_string_to_text_in_show_columns = 1
+a	TEXT	NO		\N	
+agg	TEXT	NO		\N	
+b	TINYINT	NO		\N	
+d	DATE	NO		\N	
+d32	DATE	NO		\N	
+dec128	DECIMAL(38, 2)	NO		\N	
+dec128_native	DECIMAL(35, 30)	NO		\N	
+dec128_text	TEXT	NO		\N	
+dec256	TEXT	NO		\N	
+dec256_native	DECIMAL(65, 2)	NO		\N	
+dec256_text	TEXT	NO		\N	
+dec32	DECIMAL(9, 2)	NO		\N	
+dec64	DECIMAL(18, 2)	NO		\N	
+dt	DATETIME	NO		\N	
+dt64	DATETIME	NO		\N	
+dt64_3_tz1	DATETIME	NO		\N	
+dt64_3_tz2	DATETIME	NO		\N	
+dt64_6	DATETIME	NO		\N	
+dt64_9	DATETIME	NO		\N	
+dt_tz1	DATETIME	NO		\N	
+dt_tz2	DATETIME	NO		\N	
+enm	TEXT	NO		\N	
+f32	FLOAT	NO		\N	
+f64	DOUBLE	NO		\N	
+fs	BLOB	NO		\N	
+i128	TEXT	NO		\N	
+i16	SMALLINT	NO		\N	
+i256	TEXT	NO		\N	
+i32	INTEGER	NO		\N	
+i64	BIGINT	NO		\N	
+i8	TINYINT	NO		\N	
+ip4	TEXT	NO		\N	
+ip6	TEXT	NO		\N	
+lfs	BLOB	NO		\N	
+lnfs	BLOB	YES		\N	
+lns	TEXT	YES		\N	
+ls	TEXT	NO		\N	
+m	JSON	NO		\N	
+m_complex	JSON	NO		\N	
+mpg	TEXT	NO		\N	
+ndt64	DATETIME	YES		\N	
+ndt64_tz	DATETIME	YES		\N	
+nested.col1	TEXT	NO		\N	
+nested.col2	TEXT	NO		\N	
+nfs	BLOB	YES		\N	
+ns	TEXT	YES		\N	
+o	JSON	NO		\N	
+p	TEXT	NO		\N	
+pg	TEXT	NO		\N	
+r	TEXT	NO		\N	
+s	TEXT	NO		\N	
+sagg	TEXT	NO		\N	
+t	JSON	NO		\N	
+ui128	TEXT	NO		\N	
+ui16	SMALLINT UNSIGNED	NO		\N	
+ui256	TEXT	NO		\N	
+ui32	INTEGER UNSIGNED	NO		\N	
+ui64	BIGINT UNSIGNED	NO		\N	
+ui8	TINYINT UNSIGNED	NO		\N	
+uuid	CHAR	NO		\N	
+-- SHOW COLUMNS with mysql_map_fixed_string_to_text_in_show_columns = 1
+a	TEXT	NO		\N	
+agg	TEXT	NO		\N	
+b	TINYINT	NO		\N	
+d	DATE	NO		\N	
+d32	DATE	NO		\N	
+dec128	DECIMAL(38, 2)	NO		\N	
+dec128_native	DECIMAL(35, 30)	NO		\N	
+dec128_text	TEXT	NO		\N	
+dec256	TEXT	NO		\N	
+dec256_native	DECIMAL(65, 2)	NO		\N	
+dec256_text	TEXT	NO		\N	
+dec32	DECIMAL(9, 2)	NO		\N	
+dec64	DECIMAL(18, 2)	NO		\N	
+dt	DATETIME	NO		\N	
+dt64	DATETIME	NO		\N	
+dt64_3_tz1	DATETIME	NO		\N	
+dt64_3_tz2	DATETIME	NO		\N	
+dt64_6	DATETIME	NO		\N	
+dt64_9	DATETIME	NO		\N	
+dt_tz1	DATETIME	NO		\N	
+dt_tz2	DATETIME	NO		\N	
+enm	TEXT	NO		\N	
+f32	FLOAT	NO		\N	
+f64	DOUBLE	NO		\N	
+fs	TEXT	NO		\N	
+i128	TEXT	NO		\N	
+i16	SMALLINT	NO		\N	
+i256	TEXT	NO		\N	
+i32	INTEGER	NO		\N	
+i64	BIGINT	NO		\N	
+i8	TINYINT	NO		\N	
+ip4	TEXT	NO		\N	
+ip6	TEXT	NO		\N	
+lfs	TEXT	NO		\N	
+lnfs	TEXT	YES		\N	
+lns	BLOB	YES		\N	
+ls	BLOB	NO		\N	
+m	JSON	NO		\N	
+m_complex	JSON	NO		\N	
+mpg	TEXT	NO		\N	
+ndt64	DATETIME	YES		\N	
+ndt64_tz	DATETIME	YES		\N	
+nested.col1	TEXT	NO		\N	
+nested.col2	TEXT	NO		\N	
+nfs	TEXT	YES		\N	
+ns	BLOB	YES		\N	
+o	JSON	NO		\N	
+p	TEXT	NO		\N	
+pg	TEXT	NO		\N	
+r	TEXT	NO		\N	
+s	BLOB	NO		\N	
+sagg	TEXT	NO		\N	
+t	JSON	NO		\N	
+ui128	TEXT	NO		\N	
+ui16	SMALLINT UNSIGNED	NO		\N	
+ui256	TEXT	NO		\N	
+ui32	INTEGER UNSIGNED	NO		\N	
+ui64	BIGINT UNSIGNED	NO		\N	
+ui8	TINYINT UNSIGNED	NO		\N	
+uuid	CHAR	NO		\N	
+-- SHOW COLUMNS with mysql_map_string_to_text_in_show_columns = 1 and without use_mysql_types_in_show_columns
+a	Array(String)	NO		\N	
+agg	AggregateFunction(uniq, UInt64)	NO		\N	
+b	Bool	NO		\N	
+d	Date	NO		\N	
+d32	Date32	NO		\N	
+dec128	Decimal(38, 2)	NO		\N	
+dec128_native	Decimal(35, 30)	NO		\N	
+dec128_text	Decimal(35, 31)	NO		\N	
+dec256	Decimal(76, 2)	NO		\N	
+dec256_native	Decimal(65, 2)	NO		\N	
+dec256_text	Decimal(66, 2)	NO		\N	
+dec32	Decimal(9, 2)	NO		\N	
+dec64	Decimal(18, 2)	NO		\N	
+dt	DateTime	NO		\N	
+dt64	DateTime64(3)	NO		\N	
+dt64_3_tz1	DateTime64(3, \'UTC\')	NO		\N	
+dt64_3_tz2	DateTime64(3, \'Asia/Shanghai\')	NO		\N	
+dt64_6	DateTime64(6, \'UTC\')	NO		\N	
+dt64_9	DateTime64(9, \'UTC\')	NO		\N	
+dt_tz1	DateTime(\'UTC\')	NO		\N	
+dt_tz2	DateTime(\'Europe/Amsterdam\')	NO		\N	
+enm	Enum8(\'hallo\' = 1, \'welt\' = 2)	NO		\N	
+f32	Float32	NO		\N	
+f64	Float64	NO		\N	
+fs	FixedString(3)	NO		\N	
+i128	Int128	NO		\N	
+i16	Int16	NO		\N	
+i256	Int256	NO		\N	
+i32	Int32	NO		\N	
+i64	Int64	NO		\N	
+i8	Int8	NO		\N	
+ip4	IPv4	NO		\N	
+ip6	IPv6	NO		\N	
+lfs	LowCardinality(FixedString(3))	NO		\N	
+lnfs	LowCardinality(Nullable(FixedString(3)))	YES		\N	
+lns	LowCardinality(Nullable(String))	YES		\N	
+ls	LowCardinality(String)	NO		\N	
+m	Map(Int32, String)	NO		\N	
+m_complex	Map(Int32, Map(Int32, LowCardinality(Nullable(String))))	NO		\N	
+mpg	MultiPolygon	NO		\N	
+ndt64	Nullable(DateTime64(3))	YES		\N	
+ndt64_tz	Nullable(DateTime64(3, \'Asia/Shanghai\'))	YES		\N	
+nested.col1	Array(String)	NO		\N	
+nested.col2	Array(UInt32)	NO		\N	
+nfs	Nullable(FixedString(3))	YES		\N	
+ns	Nullable(String)	YES		\N	
+o	Object(\'json\')	NO		\N	
+p	Point	NO		\N	
+pg	Polygon	NO		\N	
+r	Ring	NO		\N	
+s	String	NO		\N	
+sagg	SimpleAggregateFunction(sum, Float64)	NO		\N	
+t	Tuple(Int32, String, Nullable(String), LowCardinality(String), LowCardinality(Nullable(String)), Tuple(Int32, String))	NO		\N	
+ui128	UInt128	NO		\N	
+ui16	UInt16	NO		\N	
+ui256	UInt256	NO		\N	
+ui32	UInt32	NO		\N	
+ui64	UInt64	NO		\N	
+ui8	UInt8	NO		\N	
+uuid	UUID	NO		\N	
+-- SHOW COLUMNS with mysql_map_fixed_string_to_text_in_show_columns = 1 and without use_mysql_types_in_show_columns
+a	Array(String)	NO		\N	
+agg	AggregateFunction(uniq, UInt64)	NO		\N	
+b	Bool	NO		\N	
+d	Date	NO		\N	
+d32	Date32	NO		\N	
+dec128	Decimal(38, 2)	NO		\N	
+dec128_native	Decimal(35, 30)	NO		\N	
+dec128_text	Decimal(35, 31)	NO		\N	
+dec256	Decimal(76, 2)	NO		\N	
+dec256_native	Decimal(65, 2)	NO		\N	
+dec256_text	Decimal(66, 2)	NO		\N	
+dec32	Decimal(9, 2)	NO		\N	
+dec64	Decimal(18, 2)	NO		\N	
+dt	DateTime	NO		\N	
+dt64	DateTime64(3)	NO		\N	
+dt64_3_tz1	DateTime64(3, \'UTC\')	NO		\N	
+dt64_3_tz2	DateTime64(3, \'Asia/Shanghai\')	NO		\N	
+dt64_6	DateTime64(6, \'UTC\')	NO		\N	
+dt64_9	DateTime64(9, \'UTC\')	NO		\N	
+dt_tz1	DateTime(\'UTC\')	NO		\N	
+dt_tz2	DateTime(\'Europe/Amsterdam\')	NO		\N	
+enm	Enum8(\'hallo\' = 1, \'welt\' = 2)	NO		\N	
+f32	Float32	NO		\N	
+f64	Float64	NO		\N	
+fs	FixedString(3)	NO		\N	
+i128	Int128	NO		\N	
+i16	Int16	NO		\N	
+i256	Int256	NO		\N	
+i32	Int32	NO		\N	
+i64	Int64	NO		\N	
+i8	Int8	NO		\N	
+ip4	IPv4	NO		\N	
+ip6	IPv6	NO		\N	
+lfs	LowCardinality(FixedString(3))	NO		\N	
+lnfs	LowCardinality(Nullable(FixedString(3)))	YES		\N	
+lns	LowCardinality(Nullable(String))	YES		\N	
+ls	LowCardinality(String)	NO		\N	
+m	Map(Int32, String)	NO		\N	
+m_complex	Map(Int32, Map(Int32, LowCardinality(Nullable(String))))	NO		\N	
+mpg	MultiPolygon	NO		\N	
+ndt64	Nullable(DateTime64(3))	YES		\N	
+ndt64_tz	Nullable(DateTime64(3, \'Asia/Shanghai\'))	YES		\N	
+nested.col1	Array(String)	NO		\N	
+nested.col2	Array(UInt32)	NO		\N	
+nfs	Nullable(FixedString(3))	YES		\N	
+ns	Nullable(String)	YES		\N	
+o	Object(\'json\')	NO		\N	
+p	Point	NO		\N	
+pg	Polygon	NO		\N	
+r	Ring	NO		\N	
+s	String	NO		\N	
+sagg	SimpleAggregateFunction(sum, Float64)	NO		\N	
+t	Tuple(Int32, String, Nullable(String), LowCardinality(String), LowCardinality(Nullable(String)), Tuple(Int32, String))	NO		\N	
+ui128	UInt128	NO		\N	
+ui16	UInt16	NO		\N	
+ui256	UInt256	NO		\N	
+ui32	UInt32	NO		\N	
+ui64	UInt64	NO		\N	
+ui8	UInt8	NO		\N	
+uuid	UUID	NO		\N	

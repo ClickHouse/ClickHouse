@@ -330,10 +330,11 @@ Pipe StorageMaterializedView::alterPartition(
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot,
+    const Settings & settings, ContextPtr local_context) const
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, local_context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
@@ -475,6 +476,13 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
             return target_table->getActionLock(type);
     }
     return ActionLock{};
+}
+
+bool StorageMaterializedView::isRemote() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->isRemote();
+    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

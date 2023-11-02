@@ -61,6 +61,7 @@ static constexpr std::string_view tables = R"(
         `table_schema` String,
         `table_name` String,
         `table_type` String,
+        `table_rows` Nullable(UInt64),
         `data_length` Nullable(UInt64),
         `table_collation` Nullable(String),
         `table_comment` Nullable(String),
@@ -68,6 +69,7 @@ static constexpr std::string_view tables = R"(
         `TABLE_SCHEMA` String,
         `TABLE_NAME` String,
         `TABLE_TYPE` String,
+        `TABLE_ROWS` Nullable(UInt64),
         `DATA_LENGTH` Nullable(UInt64),
         `TABLE_COLLATION` Nullable(String),
         `TABLE_COMMENT` Nullable(String)
@@ -82,6 +84,7 @@ static constexpr std::string_view tables = R"(
                 has_own_data = 0,      'FOREIGN TABLE',
                 'BASE TABLE'
                 )            AS table_type,
+        total_rows AS table_rows,
         total_bytes AS data_length,
         'utf8mb4_0900_ai_ci' AS table_collation,
         comment              AS table_comment,
@@ -89,6 +92,7 @@ static constexpr std::string_view tables = R"(
         table_schema         AS TABLE_SCHEMA,
         table_name           AS TABLE_NAME,
         table_type           AS TABLE_TYPE,
+        table_rows           AS TABLE_ROWS,
         data_length          AS DATA_LENGTH,
         table_collation      AS TABLE_COLLATION,
         table_comment        AS TABLE_COMMENT
@@ -170,6 +174,7 @@ static constexpr std::string_view columns = R"(
         `domain_catalog` Nullable(String),
         `domain_schema` Nullable(String),
         `domain_name` Nullable(String),
+        `extra` Nullable(String),
         `column_comment` String,
         `column_type` String,
         `TABLE_CATALOG` String,
@@ -195,6 +200,7 @@ static constexpr std::string_view columns = R"(
         `DOMAIN_CATALOG` Nullable(String),
         `DOMAIN_SCHEMA` Nullable(String),
         `DOMAIN_NAME` Nullable(String),
+        `EXTRA` Nullable(String),
         `COLUMN_COMMENT` String,
         `COLUMN_TYPE` String
     ) AS
@@ -222,6 +228,11 @@ static constexpr std::string_view columns = R"(
         NULL AS domain_catalog,
         NULL AS domain_schema,
         NULL AS domain_name,
+        multiIf(default_kind = 'DEFAULT',      'DEFAULT_GENERATED',
+                default_kind = 'MATERIALIZED', 'STORED GENERATED',
+                default_kind = 'ALIAS',        'VIRTUAL GENERATED',
+                ''
+               ) AS extra,
         comment AS column_comment,
         type AS column_type,
         table_catalog AS TABLE_CATALOG,
@@ -247,6 +258,7 @@ static constexpr std::string_view columns = R"(
         domain_catalog AS DOMAIN_CATALOG,
         domain_schema AS DOMAIN_SCHEMA,
         domain_name AS DOMAIN_NAME,
+        extra AS EXTRA,
         column_comment AS COLUMN_COMMENT,
         column_type AS COLUMN_TYPE
     FROM system.columns

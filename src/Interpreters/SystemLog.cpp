@@ -19,6 +19,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include <Interpreters/S3QueueLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/ReplicatedFetchesLog.h>
 #include <Interpreters/BackupLog.h>
@@ -291,6 +292,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log");
     replicated_fetches_log = createSystemLog<ReplicatedFetchesLog>(global_context, "system", "replicated_fetches_log", config, "replicated_fetches_log");
     backup_log = createSystemLog<BackupLog>(global_context, "system", "backup_log", config, "backup_log");
+    s3_queue_log = createSystemLog<S3QueueLog>(global_context, "system", "s3queue_log", config, "s3queue_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -333,6 +335,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(replicated_fetches_log.get());
     if (backup_log)
         logs.emplace_back(backup_log.get());
+    if (s3_queue_log)
+        logs.emplace_back(s3_queue_log.get());
 
     try
     {

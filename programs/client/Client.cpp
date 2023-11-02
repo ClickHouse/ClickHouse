@@ -320,6 +320,7 @@ try
     registerAggregateFunctions();
 
     processConfig();
+    adjustSettings();
     initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     {
@@ -704,6 +705,17 @@ bool Client::processWithFuzzing(const String & full_query)
     if (orig_ast->as<ASTUseQuery>())
     {
         return true;
+    }
+
+    // Kusto is not a subject for fuzzing (yet)
+    if (global_context->getSettingsRef().dialect == DB::Dialect::kusto)
+    {
+        return true;
+    }
+    if (auto *q = orig_ast->as<ASTSetQuery>())
+    {
+        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
+            return true;
     }
 
     // Don't repeat:
@@ -1226,6 +1238,8 @@ void Client::processConfig()
 
     if (config().has("multiquery"))
         is_multiquery = true;
+
+    pager = config().getString("pager", "");
 
     is_default_format = !config().has("vertical") && !config().has("format");
     if (config().has("vertical"))

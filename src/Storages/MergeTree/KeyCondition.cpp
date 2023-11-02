@@ -14,7 +14,6 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
@@ -24,12 +23,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
-
 #include <base/defines.h>
 
 #include <algorithm>
@@ -45,17 +41,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_TYPE_OF_FIELD;
-}
-
-
-String Range::toString() const
-{
-    WriteBufferFromOwnString str;
-
-    str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
-    str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
-
-    return str.str();
 }
 
 
@@ -466,7 +451,8 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 };
 
 
-static const std::map<std::string, std::string> inverse_relations = {
+static const std::map<std::string, std::string> inverse_relations =
+{
         {"equals", "notEquals"},
         {"notEquals", "equals"},
         {"less", "greaterOrEquals"},
@@ -490,7 +476,7 @@ static const std::map<std::string, std::string> inverse_relations = {
 };
 
 
-bool isLogicalOperator(const String & func_name)
+static bool isLogicalOperator(const String & func_name)
 {
     return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
 }
@@ -703,11 +689,6 @@ static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs 
 
     return res;
 }
-
-
-inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
-inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
-
 
 /** Calculate expressions, that depend only on constants.
   * For index to work when something like "WHERE Date = toDate(now())" is written.
@@ -966,17 +947,17 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
   * CREATE TABLE (x String) ORDER BY toDate(x)
   * SELECT ... WHERE x LIKE 'Hello%'
   * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on unparsable values.
+  * but should modify it to pass on un-parsable values.
   */
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
     "toDateTime",
     "toDateTime64",
-    "ParseDateTimeBestEffort",
-    "ParseDateTimeBestEffortUS",
-    "ParseDateTime32BestEffort",
-    "ParseDateTime64BestEffort",
+    "parseDateTimeBestEffort",
+    "parseDateTimeBestEffortUS",
+    "parseDateTime32BestEffort",
+    "parseDateTime64BestEffort",
     "parseDateTime",
     "parseDateTimeInJodaSyntax",
 };
@@ -1501,7 +1482,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       */
     const auto & sample_block = key_expr->getSampleBlock();
 
-    // Key columns should use canonical names for index analysis
+    /// Key columns should use canonical names for the index analysis.
     String name = node.getColumnName();
 
     if (array_joined_column_names.contains(name))
@@ -1598,7 +1579,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             bool is_set_const = false;
             bool is_constant_transformed = false;
 
-            /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
+            /// We don't look for inverted key transformations when strict is true, which is required for trivial count().
             /// Consider the following test case:
             ///
             /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
@@ -1704,7 +1685,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     func_name = "greaterOrEquals";
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notIlike" ||
+                         func_name == "ilike" || func_name == "notILike" ||
                          func_name == "startsWith" || func_name == "match")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
@@ -2101,7 +2082,7 @@ static BoolMask forAnyHyperrectangle(
     const FieldRef * right_keys,
     bool left_bounded,
     bool right_bounded,
-    std::vector<Range> & hyperrectangle,
+    Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
@@ -2204,7 +2185,7 @@ BoolMask KeyCondition::checkInRange(
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
-    std::vector<Range> key_ranges;
+    Hyperrectangle key_ranges;
 
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
@@ -2225,7 +2206,7 @@ BoolMask KeyCondition::checkInRange(
     // std::cerr << "]\n";
 
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
-        [&] (const std::vector<Range> & key_ranges_hyperrectangle)
+        [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
 
@@ -2360,7 +2341,7 @@ bool KeyCondition::matchesExactContinuousRange() const
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
-    const std::vector<Range> & hyperrectangle,
+    const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;

@@ -61,7 +61,7 @@ PARTITION BY expr
 - limit_size: 必需的。本地缓存文件的最大大小(单位为字节)。
 - bytes_read_before_flush: 从远程文件系统下载文件时，刷新到本地文件系统前的控制字节数。缺省值为1MB。
 
-当ClickHouse为远程文件系统启用了本地缓存时，用户仍然可以选择不使用缓存，并在查询中设置`use_local_cache_for_remote_fs = 0 `, `use_local_cache_for_remote_fs` 默认为 `false`。
+当ClickHouse为远程文件系统启用了本地缓存时，用户仍然可以选择不使用缓存，并在查询中设置 `use_local_cache_for_remote_storage = 0`, `use_local_cache_for_remote_storage` 默认为 `1`。
 
 ### 查询 ORC 输入格式的Hive 表
 

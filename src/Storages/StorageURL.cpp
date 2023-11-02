@@ -272,12 +272,12 @@ StorageURLSource::StorageURLSource(
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
     size_t max_parsing_threads,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo &,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
     bool need_only_count_)
-    : ISource(info.source_header, false), WithContext(context_)
+    : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
     , name(std::move(name_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
@@ -353,11 +353,14 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                need_only_count ? 1 : max_parsing_threads,
+                max_parsing_threads,
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
-                compression_method);
-            input_format->setQueryInfo(query_info, getContext());
+                compression_method,
+                need_only_count);
+
+            if (key_condition)
+                input_format->setKeyCondition(key_condition);
 
             if (need_only_count)
                 input_format->needOnlyCount();

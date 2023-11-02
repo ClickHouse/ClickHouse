@@ -40,9 +40,11 @@
 #include <Interpreters/StorageID.h>
 
 #include <Storages/ColumnsDescription.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageDummy.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
@@ -135,6 +137,89 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
             "Storage {} (table {}) does not support transactions",
             storage->getName(),
             storage->getStorageID().getNameForLogs());
+    }
+}
+
+/** Storages can rely that filters that for storage will be available for analysis before
+  * getQueryProcessingStage method will be called.
+  *
+  * StorageDistributed skip unused shards optimization relies on this.
+  * Parallel replicas estimation relies on this too.
+  *
+  * To collect filters that will be applied to specific table in case we have JOINs requires
+  * to run query plan optimization pipeline.
+  *
+  * Algorithm:
+  * 1. Replace all table expressions in query tree with dummy tables.
+  * 2. Build query plan.
+  * 3. Optimize query plan.
+  * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
+  */
+void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+{
+    bool collect_filters = false;
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    bool parallel_replicas_estimation_enabled
+        = query_context->canUseParallelReplicasOnInitiator() && settings.parallel_replicas_min_number_of_rows_per_replica > 0;
+
+    for (auto & [table_expression, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        auto * table_node = table_expression->as<TableNode>();
+        auto * table_function_node = table_expression->as<TableFunctionNode>();
+        if (!table_node && !table_function_node)
+            continue;
+
+        const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+        if (typeid_cast<const StorageDistributed *>(storage.get())
+            || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
+        {
+            collect_filters = true;
+            break;
+        }
+    }
+
+    if (!collect_filters)
+        return;
+
+    ResultReplacementMap replacement_map;
+    auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, planner_context->getQueryContext(), &replacement_map);
+
+    std::unordered_map<const IStorage *, TableExpressionData *> dummy_storage_to_table_expression_data;
+
+    for (auto & [from_table_expression, dummy_table_expression] : replacement_map)
+    {
+        auto * dummy_storage = dummy_table_expression->as<TableNode &>().getStorage().get();
+        auto * table_expression_data = &planner_context->getTableExpressionDataOrThrow(from_table_expression);
+        dummy_storage_to_table_expression_data.emplace(dummy_storage, table_expression_data);
+    }
+
+    SelectQueryOptions select_query_options;
+    Planner planner(updated_query_tree, select_query_options);
+    planner.buildQueryPlanIfNeeded();
+
+    auto & result_query_plan = planner.getQueryPlan();
+
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(query_context);
+    result_query_plan.optimize(optimization_settings);
+
+    std::vector<QueryPlan::Node *> nodes_to_process;
+    nodes_to_process.push_back(result_query_plan.getRootNode());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * node_to_process = nodes_to_process.back();
+        nodes_to_process.pop_back();
+        nodes_to_process.insert(nodes_to_process.end(), node_to_process->children.begin(), node_to_process->children.end());
+
+        auto * read_from_dummy = typeid_cast<ReadFromDummy *>(node_to_process->step.get());
+        if (!read_from_dummy)
+            continue;
+
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG(read_from_dummy->getFilterNodes().nodes, {}, query_context);
+        auto & table_expression_data = dummy_storage_to_table_expression_data.at(&read_from_dummy->getStorage());
+        table_expression_data->setFilterActions(std::move(filter_actions));
     }
 }
 
@@ -1227,6 +1312,9 @@ void Planner::buildPlanForQueryNode()
     collectSets(query_tree, *planner_context);
     collectTableExpressionData(query_tree, planner_context);
 
+    if (!select_query_options.only_analyze)
+        collectFiltersForAnalysis(query_tree, planner_context);
+
     const auto & settings = query_context->getSettingsRef();
 
     /// Check support for JOIN for parallel replicas with custom key
@@ -1234,7 +1322,7 @@ void Planner::buildPlanForQueryNode()
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
         {
-            LOG_WARNING(
+            LOG_DEBUG(
                 &Poco::Logger::get("Planner"),
                 "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 

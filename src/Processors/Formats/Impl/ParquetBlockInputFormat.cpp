@@ -387,16 +387,6 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
         pool->wait();
 }
 
-void ParquetBlockInputFormat::setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context)
-{
-    /// When analyzer is enabled, query_info.filter_asts is missing sets and maybe some type casts,
-    /// so don't use it. I'm not sure how to support analyzer here: https://github.com/ClickHouse/ClickHouse/issues/53536
-    if (format_settings.parquet.filter_push_down && !context->getSettingsRef().allow_experimental_analyzer)
-        key_condition.emplace(query_info, context, getPort().getHeader().getNames(),
-            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(
-                getPort().getHeader().getColumnsWithTypeAndName())));
-}
-
 void ParquetBlockInputFormat::initializeIfNeeded()
 {
     if (std::exchange(is_initialized, true))
@@ -428,10 +418,12 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (skip_row_groups.contains(row_group))
             continue;
 
-        if (key_condition.has_value() &&
-            !key_condition->checkInHyperrectangle(
-                getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
-                getPort().getHeader().getDataTypes()).can_be_true)
+        if (format_settings.parquet.filter_push_down && key_condition
+            && !key_condition
+                    ->checkInHyperrectangle(
+                        getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
+                        getPort().getHeader().getDataTypes())
+                    .can_be_true)
             continue;
 
         if (row_group_batches.empty() || row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek)

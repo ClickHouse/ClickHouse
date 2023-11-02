@@ -11,6 +11,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <absl/container/flat_hash_map.h>
 
 /// GinIndexStore manages the generalized inverted index ("gin") for a data part, and it is made up of one or more immutable
 /// index segments.
@@ -124,7 +125,7 @@ class GinIndexStore
 {
 public:
     /// Container for all term's Gin Index Postings List Builder
-    using GinIndexPostingsBuilderContainer = std::unordered_map<std::string, GinIndexPostingsBuilderPtr>;
+    using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);

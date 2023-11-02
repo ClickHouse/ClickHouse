@@ -926,6 +926,15 @@
     </macros>
     -->
 
+    <!-- Replica group name for database Replicated.
+          The cluster created by Replicated database will consist of replicas in the same group.
+          DDL queries will only wail for the replicas in the same group.
+          Empty by default.
+    -->
+    <!--
+    <replica_group_name><replica_group_name>
+    -->
+
 
     <!-- Reloading interval for embedded dictionaries, in seconds. Default: 3600. -->
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>

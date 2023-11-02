@@ -47,7 +47,9 @@ namespace DB
 /// Number of streams is not number parts, but number or parts*files, hence 1000.
 const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
 
+struct AlterCommand;
 class AlterCommands;
+class InterpreterSelectQuery;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
@@ -412,13 +414,10 @@ public:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
-    std::optional<ProjectionCandidate> getQueryProcessingStageWithAggregateProjection(
-        ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & query_info) const;
-
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr query_context,
         QueryProcessingStage::Enum to_stage,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
@@ -582,9 +581,6 @@ public:
     /// The decision to delay or throw is made according to settings 'number_of_mutations_to_delay' and 'number_of_mutations_to_throw'.
     void delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
 
-    /// Returns number of unfinished mutations (is_done = 0).
-    virtual size_t getNumberOfUnfinishedMutations() const = 0;
-
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// Adds the part in the PreActive state (the part will be added to the active set later with out_transaction->commit()).
@@ -689,9 +685,6 @@ public:
     /// Try to clear parts from filesystem. Throw exception in case of errors.
     void clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error = true, NameSet * parts_failed_to_delete = nullptr);
 
-    /// Delete WAL files containing parts, that all already stored on disk.
-    size_t clearOldWriteAheadLogs();
-
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
     size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
@@ -724,12 +717,23 @@ public:
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
+    /// Throw exception if command is some kind of DROP command (drop column, drop index, etc)
+    /// and we have unfinished mutation which need this column to finish.
+    void checkDropCommandDoesntAffectInProgressMutations(
+        const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr context) const;
+    /// Return mapping unfinished mutation name -> Mutation command
+    virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
+
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
     /// Checks that partition name in all commands is valid
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr local_context) const override;
 
     /// Change MergeTreeSettings
     void changeSettings(
@@ -945,9 +949,6 @@ public:
     /// Method is cheap and doesn't require any locks.
     size_t getTotalMergesWithTTLInMergeList() const;
 
-    using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
-    WriteAheadLogPtr getWriteAheadLog();
-
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
@@ -1078,6 +1079,18 @@ public:
 
     /// TODO: make enabled by default in the next release if no problems found.
     bool allowRemoveStaleMovingParts() const;
+
+    /// Generate DAG filters based on query info (for PK analysis)
+    static struct ActionDAGNodes getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select);
+
+    /// Estimate the number of rows to read based on primary key analysis (which could be very rough)
+    /// It is used to make a decision whether to enable parallel replicas (distributed processing) or not and how
+    /// many to replicas to use
+    UInt64 estimateNumberOfRowsToRead(
+        ContextPtr query_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        const ActionDAGNodes & added_filter_nodes) const;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1512,9 +1525,6 @@ private:
     CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
-
-    std::mutex write_ahead_log_mutex;
-    WriteAheadLogPtr write_ahead_log;
 
     virtual void startBackgroundMovesIfNeeded() = 0;
 

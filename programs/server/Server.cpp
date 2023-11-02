@@ -1474,7 +1474,7 @@ try
 
     {
         std::lock_guard lock(servers_lock);
-        /// We should start interserver communications before (and more imporant shutdown after) tables.
+        /// We should start interserver communications before (and more important shutdown after) tables.
         /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
         /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
         /// communicate with zookeeper, execute merges, etc.

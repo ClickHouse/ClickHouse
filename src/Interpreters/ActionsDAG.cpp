@@ -863,20 +863,6 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
     return dag;
 }
 
-void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
-{
-    ::sort(outputs.begin(), outputs.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
-    {
-        return key_names_pos_map.find(lhs->result_name)->second < key_names_pos_map.find(rhs->result_name)->second;
-    });
-}
-
-void ActionsDAG::addAggregatesViaProjection(const Block & aggregates)
-{
-    for (const auto & aggregate : aggregates)
-        outputs.push_back(&addInput(aggregate));
-}
-
 void ActionsDAG::addAliases(const NamesWithAliases & aliases)
 {
     std::unordered_map<std::string_view, size_t> names_map;
