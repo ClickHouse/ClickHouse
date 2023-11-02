@@ -83,6 +83,10 @@ public:
 
     bool supportsDelete() const override { return true; }
 
+    bool supportsTrivialCountOptimization() const override { return true; }
+
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+
 private:
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;

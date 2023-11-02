@@ -40,10 +40,11 @@
 #include <Interpreters/StorageID.h>
 
 #include <Storages/ColumnsDescription.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageDummy.h>
-#include <Storages/StorageDistributed.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
@@ -143,6 +144,7 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   * getQueryProcessingStage method will be called.
   *
   * StorageDistributed skip unused shards optimization relies on this.
+  * Parallel replicas estimation relies on this too.
   *
   * To collect filters that will be applied to specific table in case we have JOINs requires
   * to run query plan optimization pipeline.
@@ -156,6 +158,11 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
 void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
     bool collect_filters = false;
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    bool parallel_replicas_estimation_enabled
+        = query_context->canUseParallelReplicasOnInitiator() && settings.parallel_replicas_min_number_of_rows_per_replica > 0;
 
     for (auto & [table_expression, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
@@ -165,7 +172,8 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
             continue;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        if (typeid_cast<const StorageDistributed *>(storage.get()))
+        if (typeid_cast<const StorageDistributed *>(storage.get())
+            || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
         {
             collect_filters = true;
             break;
@@ -186,8 +194,6 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
         auto * table_expression_data = &planner_context->getTableExpressionDataOrThrow(from_table_expression);
         dummy_storage_to_table_expression_data.emplace(dummy_storage, table_expression_data);
     }
-
-    const auto & query_context = planner_context->getQueryContext();
 
     SelectQueryOptions select_query_options;
     Planner planner(updated_query_tree, select_query_options);
@@ -899,8 +905,12 @@ void addWindowSteps(QueryPlan & query_plan,
             query_plan.addStep(std::move(sorting_step));
         }
 
+        // Fan out streams only for the last window to preserve the ordering between windows,
+        // and WindowTransform works on single stream anyway.
+        const bool streams_fan_out = settings.query_plan_enable_multithreading_after_window_functions && ((i + 1) == window_descriptions_size);
+
         auto window_step
-            = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions);
+            = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions, streams_fan_out);
         window_step->setStepDescription("Window step for window '" + window_description.window_name + "'");
         query_plan.addStep(std::move(window_step));
     }
@@ -1316,7 +1326,7 @@ void Planner::buildPlanForQueryNode()
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
         {
-            LOG_WARNING(
+            LOG_DEBUG(
                 &Poco::Logger::get("Planner"),
                 "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
@@ -1363,6 +1373,9 @@ void Planner::buildPlanForQueryNode()
     {
         if (table_expression_data.getPrewhereFilterActions())
             result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
+
+        if (table_expression_data.getRowLevelFilterActions())
+            result_actions_to_execute.push_back(table_expression_data.getRowLevelFilterActions());
     }
 
     if (query_processing_info.isIntermediateStage())
