@@ -1592,7 +1592,7 @@ Result:
 
 Returns for a given number of days passed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero) the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar). The calculation is the same as in MySQL's [`FROM_DAYS()`](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_from-days) function.
 
-The overflow behaviour can be configured using setting `date_time_overflow_behavior` to `ignore` (default), `saturate` (clamps) or `throw`.
+The result is undefined if it cannot be represented within the bounds of the [Date](../../sql-reference/data-types/date.md) type.
 
 **Syntax**
 
@@ -1613,7 +1613,6 @@ Type: [Date](../../sql-reference/data-types/date.md).
 **Example**
 
 ``` sql
-SET date_time_overflow_behavior = 'ignore';
 SELECT fromDaysSinceYearZero(739136), fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')));
 ```
 
