@@ -1385,6 +1385,23 @@ void ClientBase::addMultiquery(std::string_view query, Arguments & common_argume
     common_arguments.emplace_back(query);
 }
 
+namespace
+{
+bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
+{
+    try
+    {
+        return !std_in.eof();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR)
+            return false;
+        throw;
+    }
+}
+}
+
 
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
@@ -1404,7 +1421,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
     /// Process the query that requires transferring data blocks to the server.
     const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
+    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(std_in))))
     {
         const auto & settings = global_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
@@ -1441,23 +1458,6 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
         sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
-    }
-}
-
-namespace
-{
-    bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
-    {
-        try
-        {
-            return !std_in.eof();
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR)
-                return false;
-            throw;
-        }
     }
 }
 
