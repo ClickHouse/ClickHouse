@@ -315,7 +315,7 @@ bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & bloc
 
     for (const auto & candidate : candidates)
     {
-        if (candidate.min_block - current_right_block > 1)
+        if (current_right_block + 1 != candidate.min_block)
             return false;
 
         current_right_block = candidate.max_block;
