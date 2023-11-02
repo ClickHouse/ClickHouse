@@ -728,6 +728,11 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
 
+    SCOPE_EXIT({
+        if (table)
+            table->is_being_restarted = false;
+    });
+    table->is_being_restarted = true;
     table->flushAndShutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
