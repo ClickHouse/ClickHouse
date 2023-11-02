@@ -35,16 +35,18 @@ struct DateTraits
 {
     static constexpr auto name = "fromDaysSinceYearZero";
     using ReturnDataType = DataTypeDate;
-    static constexpr auto min_days = 719528;
-    static constexpr auto max_days = 785063;
+
+    static constexpr auto MIN_DAYS = 719528;
+    static constexpr auto MAX_DAYS = 785063;
 };
 
 struct DateTraits32
 {
     static constexpr auto name = "fromDaysSinceYearZero32";
     using ReturnDataType = DataTypeDate32;
-    static constexpr auto min_days = 693961;
-    static constexpr auto max_days = 840056;
+
+    static constexpr auto MIN_DAYS = 693961;
+    static constexpr auto MAX_DAYS = 840056;
 };
 
 template <typename Traits>
@@ -145,15 +147,15 @@ public:
             auto value = static_cast<equivalent_integer>(raw_value);
             if constexpr (overflow_behaviour == FormatSettings::DateTimeOverflowBehavior::Saturate)
             {
-                if (value < Traits::min_days)
-                    value = Traits::min_days;
-                else if (value > Traits::max_days)
-                    value = Traits::max_days;
+                if (value < Traits::MIN_DAYS)
+                    value = Traits::MIN_DAYS;
+                else if (value > Traits::MAX_DAYS)
+                    value = Traits::MAX_DAYS;
                 dst_data[i] = static_cast<RawReturnType>(value - DAYS_BETWEEN_YEARS_0_AND_1970);
             }
             else if constexpr (overflow_behaviour == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
-                if (value < Traits::min_days || value > Traits::max_days) [[unlikely]]
+                if (value < Traits::MIN_DAYS || value > Traits::MAX_DAYS) [[unlikely]]
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds while executing function {}", static_cast<Int64>(value), getName());
                 dst_data[i] = static_cast<RawReturnType>(value - DAYS_BETWEEN_YEARS_0_AND_1970);
             } else
