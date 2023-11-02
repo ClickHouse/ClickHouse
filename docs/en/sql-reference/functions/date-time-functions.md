@@ -1600,6 +1600,8 @@ The result is undefined if it cannot be represented within the bounds of the [Da
 fromDaysSinceYearZero(days)
 ```
 
+Alias: `FROM_DAYS`
+
 **Arguments**
 
 - `days` — The number of days passed since year zero.
