@@ -278,6 +278,7 @@ FilesystemMainPathTotalBytes
 FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
+FileLog
 FixedString
 Flink
 ForEach
@@ -575,6 +576,7 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+NumPy
 OFNS
 OLAP
 OLTP
@@ -588,6 +590,7 @@ OSGuestTimeNormalized
 OSIOWaitTime
 OSIOWaitTimeCPU
 OSIOWaitTimeNormalized
+OSIOWaitMicroseconds
 OSIdleTime
 OSIdleTimeCPU
 OSIdleTimeNormalized
@@ -1470,6 +1473,7 @@ filesystemAvailable
 filesystemCapacity
 filesystemFree
 filesystems
+filelog
 finalizeAggregation
 fips
 firstLine
@@ -2357,6 +2361,7 @@ symlinks
 syntaxes
 syscall
 syscalls
+sysctl
 syslog
 syslogd
 systemd
