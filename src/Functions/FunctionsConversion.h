@@ -4072,7 +4072,6 @@ arguments, result_type, input_rows_count); \
     WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
     {
         using EnumType = DataTypeEnum<FieldType>;
-        using Function = typename FunctionTo<EnumType>::Type;
 
         if (const auto * from_enum8 = checkAndGetDataType<DataTypeEnum8>(from_type.get()))
             checkEnumToEnumConversion(from_enum8, to_type);
@@ -4083,19 +4082,33 @@ arguments, result_type, input_rows_count); \
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (isNativeNumber(from_type) || isEnum(from_type))
-        {
-            auto function = Function::create();
-            return createFunctionAdaptor(function, from_type);
-        }
+
+        if (checkAndGetDataType<DataTypeInt8>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnInt8, EnumType>();
+        else if (checkAndGetDataType<DataTypeInt16>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnInt16, EnumType>();
+        else if (checkAndGetDataType<DataTypeInt32>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnInt32, EnumType>();
+        else if (checkAndGetDataType<DataTypeInt64>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnInt64, EnumType>();
+        else if (checkAndGetDataType<DataTypeUInt8>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnUInt8, EnumType>();
+        else if (checkAndGetDataType<DataTypeUInt16>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnUInt16, EnumType>();
+        else if (checkAndGetDataType<DataTypeUInt32>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnUInt32, EnumType>();
+        else if (checkAndGetDataType<DataTypeUInt64>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnUInt64, EnumType>();
+        else if (checkAndGetDataType<DataTypeFloat32>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnFloat32, EnumType>();
+        else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
+            return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
+
+        if (cast_type == CastType::accurateOrNull)
+            return createToNullableColumnWrapper();
         else
-        {
-            if (cast_type == CastType::accurateOrNull)
-                return createToNullableColumnWrapper();
-            else
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                    from_type->getName(), to_type->getName());
-        }
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+                from_type->getName(), to_type->getName());
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
@@ -4162,6 +4175,64 @@ arguments, result_type, input_rows_count); \
                 {
                     for (size_t i = 0; i < size; ++i)
                         out_data[i] = result_type.getValue(col->getDataAt(i));
+                }
+
+                return res;
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
+                    first_col->getName(), function_name);
+        };
+    }
+
+    template <typename ColumnNumberType, typename EnumType>
+    WrapperType createNumberToEnumWrapper() const
+    {
+        using FieldType = EnumType::FieldType;
+
+        const char * function_name = cast_name;
+        return [function_name] (
+            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+        {
+            const auto & first_col = arguments.front().column.get();
+            const auto & result_type = typeid_cast<const EnumType &>(*res_type);
+
+            const ColumnNumberType * col = typeid_cast<const ColumnNumberType *>(first_col);
+
+            if (col && nullable_col && nullable_col->size() != col->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
+
+            if (col)
+            {
+                const auto size = col->size();
+                const auto & in_data = col->getData();
+
+                auto res = result_type.createColumn();
+                auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
+                out_data.resize(size);
+
+                auto default_enum_value = result_type.getValues().front().second;
+
+                if (nullable_col)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (!nullable_col->isNullAt(i))
+                        {
+                            result_type.findByValue(static_cast<FieldType>(in_data[i]));
+                            out_data[i] = static_cast<FieldType>(in_data[i]);
+                        }
+                        else
+                            out_data[i] = default_enum_value;
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        result_type.findByValue(static_cast<FieldType>(in_data[i]));
+                        out_data[i] = static_cast<FieldType>(in_data[i]);
+                    }
                 }
 
                 return res;
