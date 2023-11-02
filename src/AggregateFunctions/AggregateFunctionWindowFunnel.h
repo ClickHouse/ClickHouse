@@ -8,8 +8,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
-#include <AggregateFunctions/AggregateFunctionNull.h>
-
 namespace DB
 {
 struct Settings;

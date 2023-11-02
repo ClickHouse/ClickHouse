@@ -605,7 +605,7 @@ The first argument can also be specified as [String](../data-types/string.md) in
 
 **Returned value**
 
-- The day of the month (1 - 31) of the given date/time
+- The day of the week (1-7), depending on the chosen mode, of the given date/time
 
 **Example**
 
@@ -1910,6 +1910,7 @@ Result:
 ```
 
 **See Also**
+
 - [subDate](#subDate)
 
 ## timestamp\_add
@@ -2015,7 +2016,7 @@ Result:
 
 ## addDate
 
-Adds the time interval or date interval to the provided date or date with time.
+Adds the time interval to the provided date, date with time or String-encoded date / date with time.
 
 If the addition results in a value outside the bounds of the data type, the result is undefined.
 
@@ -2027,7 +2028,7 @@ addDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), or [String](../../sql-reference/data-types/string.md)
 - `interval` — Interval to add. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
@@ -2053,11 +2054,12 @@ Result:
 Alias: `ADDDATE`
 
 **See Also**
+
 - [date_add](#date_add)
 
 ## subDate
 
-Subtracts the time interval or date interval from the provided date or date with time.
+Subtracts the time interval from the provided date, date with time or String-encoded date / date with time.
 
 If the subtraction results in a value outside the bounds of the data type, the result is undefined.
 
@@ -2069,7 +2071,7 @@ subDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), or [String](../../sql-reference/data-types/string.md)
 - `interval` — Interval to subtract. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
@@ -2095,6 +2097,7 @@ Result:
 Alias: `SUBDATE`
 
 **See Also**
+
 - [date_sub](#date_sub)
 
 ## now {#now}
@@ -2388,42 +2391,50 @@ Like function `YYYYMMDDhhmmssToDate()` but produces a [DateTime64](../../sql-ref
 
 Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 
-## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
+## addYears, addQuarters, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addMilliseconds, addMicroseconds, addNanoseconds
 
-Function adds a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
+These functions add units of the interval specified by the function name to a date, a date with time or a string-encoded date / date with time. A date or date with time is returned.
+
+Example:
 
 ``` sql
 WITH
-    toDate('2018-01-01') AS date,
-    toDateTime('2018-01-01 00:00:00') AS date_time
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
 SELECT
     addYears(date, 1) AS add_years_with_date,
-    addYears(date_time, 1) AS add_years_with_date_time
+    addYears(date_time, 1) AS add_years_with_date_time,
+    addYears(date_time_string, 1) AS add_years_with_date_time_string
 ```
 
 ``` text
-┌─add_years_with_date─┬─add_years_with_date_time─┐
-│          2019-01-01 │      2019-01-01 00:00:00 │
-└─────────────────────┴──────────────────────────┘
+┌─add_years_with_date─┬─add_years_with_date_time─┬─add_years_with_date_time_string─┐
+│          2025-01-01 │      2025-01-01 00:00:00 │         2025-01-01 00:00:00.000 │
+└─────────────────────┴──────────────────────────┴─────────────────────────────────┘
 ```
 
-## subtractYears, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractQuarters
+## subtractYears, subtractQuarters, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractMilliseconds, subtractMicroseconds, subtractNanoseconds
 
-Function subtract a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
+These functions subtract units of the interval specified by the function name from a date, a date with time or a string-encoded date / date with time. A date or date with time is returned.
+
+Example:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
-    toDateTime('2019-01-01 00:00:00') AS date_time
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
 SELECT
     subtractYears(date, 1) AS subtract_years_with_date,
-    subtractYears(date_time, 1) AS subtract_years_with_date_time
+    subtractYears(date_time, 1) AS subtract_years_with_date_time,
+    subtractYears(date_time_string, 1) AS subtract_years_with_date_time_string
 ```
 
 ``` text
-┌─subtract_years_with_date─┬─subtract_years_with_date_time─┐
-│               2018-01-01 │           2018-01-01 00:00:00 │
-└──────────────────────────┴───────────────────────────────┘
+┌─subtract_years_with_date─┬─subtract_years_with_date_time─┬─subtract_years_with_date_time_string─┐
+│               2023-01-01 │           2023-01-01 00:00:00 │              2023-01-01 00:00:00.000 │
+└──────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
 ```
 
 ## timeSlots(StartTime, Duration,\[, Size\])

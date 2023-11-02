@@ -10,6 +10,7 @@ namespace DB
 struct ASTCheckQuery : public ASTQueryWithTableAndOutput
 {
     ASTPtr partition;
+    String part_name;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "CheckQuery" + (delim + getDatabase()) + delim + getTable(); }

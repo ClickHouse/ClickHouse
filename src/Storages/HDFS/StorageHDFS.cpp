@@ -602,7 +602,6 @@ bool HDFSSource::initialize()
             max_parsing_threads = 1;
 
         input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, max_parsing_threads);
-        input_format->setQueryInfo(query_info, getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();

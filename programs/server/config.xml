@@ -406,6 +406,9 @@
       -->
     <mark_cache_size>5368709120</mark_cache_size>
 
+    <!-- For marks of secondary indices.
+      -->
+    <index_mark_cache_size>5368709120</index_mark_cache_size>
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
          the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -924,6 +927,15 @@
         <shard>01</shard>
         <replica>example01-01-1</replica>
     </macros>
+    -->
+
+    <!-- Replica group name for database Replicated.
+          The cluster created by Replicated database will consist of replicas in the same group.
+          DDL queries will only wail for the replicas in the same group.
+          Empty by default.
+    -->
+    <!--
+    <replica_group_name><replica_group_name>
     -->
 
 

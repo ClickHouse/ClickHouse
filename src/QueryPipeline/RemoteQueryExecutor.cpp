@@ -574,7 +574,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
-    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(announcement);
+    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 void RemoteQueryExecutor::finish()

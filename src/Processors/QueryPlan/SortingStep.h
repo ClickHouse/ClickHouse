@@ -27,8 +27,6 @@ public:
         size_t max_bytes_before_external_sort = 0;
         TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
-        UInt64 partial_result_limit = 0;
-        UInt64 partial_result_duration_ms = 0;
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
