@@ -836,7 +836,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
             zkutil::CreateMode::Persistent));
 
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_uuid", toString(ServerUUID::get()),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", toString(getStorageID().getFullTableName()) + "|" + toString(ServerUUID::get()),
             zkutil::CreateMode::Persistent));
 
         Coordination::Responses responses;
@@ -869,7 +869,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
     const String local_metadata = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
     const String local_columns = metadata_snapshot->getColumns().toString();
     const String local_metadata_version = toString(metadata_snapshot->getMetadataVersion());
-    const String creator_uuid = toString(ServerUUID::get());
+    const String creator_info = toString(getStorageID().getFullTableName()) + "|" + toString(ServerUUID::get());
 
     /// It is possible for the replica to fail after creating ZK nodes without saving local metadata.
     /// Because of that we need to check whether the replica exists and is newly created.
@@ -888,7 +888,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         replica_path + "/min_unprocessed_insert_time",
         replica_path + "/max_processed_insert_time",
         replica_path + "/mutation_pointer",
-        replica_path + "/creator_uuid"
+        replica_path + "/creator_info"
     };
 
     auto response_exists = zookeeper->tryGet(paths_exists);
@@ -919,7 +919,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         const auto & zk_min_unprocessed_insert_time = response_exists[response_num++].data;
         const auto & zk_max_processed_insert_time   = response_exists[response_num++].data;
         const auto & zk_mutation_pointer            = response_exists[response_num++].data;
-        const auto & zk_creator_uuid                = response_exists[response_num++].data;
+        const auto & zk_creator_info                = response_exists[response_num++].data;
 
         if (zk_host.empty() &&
             zk_log_pointer.empty() &&
@@ -933,7 +933,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
             zk_min_unprocessed_insert_time.empty() &&
             zk_max_processed_insert_time.empty() &&
             zk_mutation_pointer.empty() &&
-            zk_creator_uuid == creator_uuid)
+            zk_creator_info == creator_info)
         {
             LOG_DEBUG(log, "Empty replica {} exists, will use it", replica_path);
             return;
@@ -986,7 +986,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
             zkutil::CreateMode::Persistent));
 
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_uuid", creator_uuid,
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", creator_info,
             zkutil::CreateMode::Persistent));
 
         /// Check version of /replicas to see if there are any replicas created at the same moment of time.
