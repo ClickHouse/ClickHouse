@@ -1513,7 +1513,18 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
 
             auto offsets_column = readOffsetsFromORCListColumn(orc_list_column);
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
-            auto array_type = std::make_shared<DataTypeArray>(nested_column.type);
+            DataTypePtr array_type;
+            /// If type hint is Nested, we should return Nested type,
+            /// because we differentiate Nested and simple Array(Tuple)
+            if (type_hint && isNested(type_hint))
+            {
+                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_column.type);
+                array_type = createNested(tuple_type.getElements(), tuple_type.getElementNames());
+            }
+            else
+            {
+                array_type = std::make_shared<DataTypeArray>(nested_column.type);
+            }
             return {std::move(array_column), std::move(array_type), column_name};
         }
         case orc::STRUCT: {
