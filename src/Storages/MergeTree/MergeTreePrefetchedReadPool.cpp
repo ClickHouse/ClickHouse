@@ -12,6 +12,8 @@
 #include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
+
 
 namespace ProfileEvents
 {
@@ -26,6 +28,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+    extern const char prefeteched_reader_pool_failpoint[];
 }
 
 bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other) const
@@ -44,10 +51,26 @@ MergeTreePrefetchedReadPool::PrefetechedReaders::PrefetechedReaders(
     : is_valid(true)
     , readers(std::move(readers_))
 {
-    prefetch_futures.push_back(pool_.createPrefetchedFuture(readers.main.get(), priority_));
+    try
+    {
+        prefetch_futures.push_back(pool_.createPrefetchedFuture(readers.main.get(), priority_));
 
-    for (const auto & reader : readers.prewhere)
-        prefetch_futures.push_back(pool_.createPrefetchedFuture(reader.get(), priority_));
+        for (const auto & reader : readers.prewhere)
+            prefetch_futures.push_back(pool_.createPrefetchedFuture(reader.get(), priority_));
+
+        fiu_do_on(FailPoints::prefeteched_reader_pool_failpoint,
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefeteched reader enabled");
+        });
+    }
+    catch (...) /// in case of memory exceptions we have to wait
+    {
+        for (auto & prefetch_future : prefetch_futures)
+            if (prefetch_future.valid())
+                prefetch_future.wait();
+
+        throw;
+    }
 }
 
 void MergeTreePrefetchedReadPool::PrefetechedReaders::wait()

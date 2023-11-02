@@ -38,6 +38,7 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(dummy_failpoint) \
+    REGULAR(prefeteched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
     PAUSEABLE(dummy_pausable_failpoint)
 
