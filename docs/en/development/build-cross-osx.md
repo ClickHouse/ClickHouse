@@ -11,7 +11,7 @@ This is intended for continuous integration checks that run on Linux servers. If
 
 The cross-build for macOS is based on the [Build instructions](../development/build.md), follow them first.
 
-The following sections provide a walkthrough for building ClickHouse for `x86_64` macOS. If you’re targeting ARM architecture, simply substitute all occurrences of `x86_64` with `aarch64`. For example, replace `x86_64-apple-darwin` with `aarch64-apple-darwin` throughout the steps.
+The following sections provide a walk-through for building ClickHouse for `x86_64` macOS. If you’re targeting ARM architecture, simply substitute all occurrences of `x86_64` with `aarch64`. For example, replace `x86_64-apple-darwin` with `aarch64-apple-darwin` throughout the steps.
 
 ## Install Clang-17
 
