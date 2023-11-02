@@ -194,4 +194,21 @@ private:
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
 
+using PartitionIds = std::vector<String>; // sorted, suitable for binary_search
+
+void compactPartitionIds(PartitionIds &);
+
+inline bool containsInPartitionIdsOrEmpty(const PartitionIds & haystack, const String & needle)
+{
+    switch (haystack.size())
+    {
+    case 0:
+        return true;
+    case 1:
+        return haystack.front() == needle; // just a small optimization, size > 1 is not common
+    default:
+        return std::binary_search(haystack.cbegin(), haystack.cend(), needle);
+    }
+}
+
 }

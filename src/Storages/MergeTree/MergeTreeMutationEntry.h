@@ -10,6 +10,7 @@
 namespace DB
 {
 class IBackupEntry;
+class StorageMergeTree;
 
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
@@ -30,6 +31,9 @@ struct MergeTreeMutationEntry
     time_t latest_fail_time = 0;
     String latest_fail_reason;
 
+    /// If empty, applied to all partitions. Not serialized. Sorted (to use binary_search).
+    PartitionIds partition_ids;
+
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::PrehistoricTID;
     /// CSN of transaction which has created mutation
@@ -38,7 +42,7 @@ struct MergeTreeMutationEntry
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                           PartitionIds && partition_ids, const TransactionID & tid_, const WriteSettings & settings);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 
@@ -51,12 +55,22 @@ struct MergeTreeMutationEntry
 
     std::shared_ptr<const IBackupEntry> backup() const;
 
+    bool affectsPartition(const String & partition_id) const
+    {
+        return containsInPartitionIdsOrEmpty(partition_ids, partition_id);
+    }
+
     static String versionToFileName(UInt64 block_number_);
     static UInt64 tryParseFileName(const String & file_name_);
     static UInt64 parseFileName(const String & file_name_);
 
     /// Load an existing entry.
-    MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);
+    MergeTreeMutationEntry(
+        DiskPtr disk_,
+        const String & path_prefix_,
+        const String & file_name_,
+        StorageMergeTree * storage_,
+        ContextPtr context_);
 
     ~MergeTreeMutationEntry();
 };
