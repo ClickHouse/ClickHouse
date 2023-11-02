@@ -106,70 +106,6 @@ namespace ErrorCodes
 
 namespace
 {
-/// Process {a,b,c...} globs separately: don't match it against regex, but generate a,b,c strings instead.
-void expandSelector(const std::string & path, Strings & for_match_paths_expanded)
-{
-    /// regexp for {expr1,expr2,expr3}, expr.. should be without "{", "}", "*" and ","
-    static const re2::RE2 selector_regex(R"({([^{}*,]+,[^{}*]*[^{}*,])})");
-
-    std::string_view path_view(path);
-    std::string_view matched;
-
-    if (RE2::FindAndConsume(&path_view, selector_regex, &matched))
-        std::string buffer(matched);
-    else
-    {
-        for_match_paths_expanded.push_back(path);
-        return;
-    }
-
-    Strings expanded_paths;
-
-    std::vector<size_t> anchor_positions = {};
-    bool opened = false, closed = false;
-
-    for (std::string::const_iterator it = path.begin(); it != path.end(); it++)
-    {
-        if (*it == '{')
-        {
-            if (opened)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected '{{' found in path '{}' at position {}.", path, std::distance(path.begin(), it));
-            anchor_positions.push_back(std::distance(path.begin(), it));
-            opened = true;
-        }
-        else if (*it == '}')
-        {
-            if (!opened)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected '}}' found in path '{}' at position {}.", path, std::distance(path.begin(), it));
-            anchor_positions.push_back(std::distance(path.begin(), it));
-            closed = true;
-            break;
-        }
-        else if (*it == ',')
-        {
-            if (!opened)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected ',' found in path '{}' at position {}.", path, std::distance(path.begin(), it));
-            anchor_positions.push_back(std::distance(path.begin(), it));
-        }
-    }
-    if (!opened || !closed)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid {{}} glob in path {}.", path);
-
-    std::string common_prefix = path.substr(0, anchor_positions[0]);
-    std::string common_suffix = path.substr(anchor_positions[anchor_positions.size()-1] + 1);
-    for (size_t i = 1; i < anchor_positions.size(); ++i)
-    {
-        std::string expanded_matcher = common_prefix
-            + path.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
-            + common_suffix;
-        expandSelector(expanded_matcher, for_match_paths_expanded);
-    }
-}
-
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -189,7 +125,7 @@ void listFilesWithRegexpMatchingImpl(
             fs::path path = fs::canonical(path_for_ls + for_match);
             result.push_back(path.string());
         }
-        catch (const std::exception &)
+        catch (const std::exception &) // NOLINT
         {
             /// There is no such file, but we just ignore this.
 //            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", for_match);
