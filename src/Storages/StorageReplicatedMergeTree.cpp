@@ -1361,7 +1361,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     UInt64 unexpected_parts_rows = 0;
 
     Strings covered_unexpected_parts;
-    Strings uncovered_unexpected_parts;
+    std::unordered_set<String> uncovered_unexpected_parts;
     UInt64 uncovered_unexpected_parts_rows = 0;
 
     for (const auto & part : unexpected_parts)
@@ -1378,7 +1378,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         }
 
         /// Part is unexpected and we don't have covering part: it's suspicious
-        uncovered_unexpected_parts.push_back(part->name);
+        uncovered_unexpected_parts.insert(part->name);
         uncovered_unexpected_parts_rows += part->rows_count;
 
         if (part->info.level > 0)
@@ -1454,8 +1454,9 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Remove extra local parts.
     for (const DataPartPtr & part : unexpected_parts)
     {
-        LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}", part->name, part->name);
-        forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", true);
+        bool restore_covered = uncovered_unexpected_parts.contains(part->name);
+        LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}{}", part->name, part->name, restore_covered ? ", restoring covered parts" : "");
+        forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", restore_covered);
     }
 }
 
@@ -1490,8 +1491,7 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
     if (part_name.empty())
         part_name = part->name;
 
-    auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-        part->getColumns(), part->checksums);
+    auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums);
 
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
@@ -1586,47 +1586,64 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
     return part_found;
 }
 
+bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper,
+    const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
+    Coordination::Requests & ops, size_t & num_check_ops)
+{
+    LOG_DEBUG(log, "Committing part {} to zookeeper", part->name);
+
+    NameSet absent_part_paths_on_replicas;
+
+    size_t prev_ops_size = ops.size();
+    getLockSharedDataOps(*part, zookeeper, replace_zero_copy_lock, hardlinked_files, ops);
+
+    /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
+    bool part_found = checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, absent_part_paths_on_replicas);
+
+    num_check_ops = 2 * absent_part_paths_on_replicas.size() + (ops.size() - prev_ops_size);
+
+    /// Will check that the part did not suddenly appear on skipped replicas
+    if (part_found)
+    {
+        chassert(absent_part_paths_on_replicas.empty());
+        return true;
+    }
+
+    Coordination::Requests new_ops;
+    for (const String & part_path : absent_part_paths_on_replicas)
+    {
+        /// NOTE Create request may fail with ZNONODE if replica is being dropped, we will throw an exception
+        new_ops.emplace_back(zkutil::makeCreateRequest(part_path, "", zkutil::CreateMode::Persistent));
+        new_ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
+    }
+
+    /// Add check ops at the beginning
+    new_ops.insert(new_ops.end(), ops.begin(), ops.end());
+    ops = std::move(new_ops);
+
+    return false;
+}
+
+
 MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(Transaction & transaction,
     const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock)
 {
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(getZooKeeper());
+
+    if (transaction.isEmpty())
+    {
+        /// Do not commit if the part is obsolete, but check it's checksums just in case. It may throw if checksums mismatch
+        Coordination::Requests ops;
+        size_t num_check_ops;
+        getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
+        return {};
+    }
 
     while (true)
     {
-        LOG_DEBUG(log, "Committing part {} to zookeeper", part->name);
-
         Coordination::Requests ops;
-        NameSet absent_part_paths_on_replicas;
-
-        getLockSharedDataOps(*part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), replace_zero_copy_lock, hardlinked_files, ops);
-        size_t zero_copy_lock_ops_size = ops.size();
-
-        /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
-        bool part_found = checkPartChecksumsAndAddCommitOps(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), part, ops, part->name, absent_part_paths_on_replicas);
-
-        /// Do not commit if the part is obsolete, we have just briefly checked its checksums
-        if (transaction.isEmpty())
-            return {};
-
-        /// Will check that the part did not suddenly appear on skipped replicas
-        if (!part_found)
-        {
-            Coordination::Requests new_ops;
-            for (const String & part_path : absent_part_paths_on_replicas)
-            {
-                /// NOTE Create request may fail with ZNONODE if replica is being dropped, we will throw an exception
-                new_ops.emplace_back(zkutil::makeCreateRequest(part_path, "", zkutil::CreateMode::Persistent));
-                new_ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
-            }
-
-            /// Add check ops at the beginning
-            new_ops.insert(new_ops.end(), ops.begin(), ops.end());
-            ops = std::move(new_ops);
-        }
-        else
-        {
-            chassert(absent_part_paths_on_replicas.empty());
-        }
+        size_t num_check_ops;
+        getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
 
         Coordination::Responses responses;
         Coordination::Error e;
@@ -1634,6 +1651,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 
             Coordination::SimpleFaultInjection fault(getSettings()->fault_probability_before_part_commit,
                                                      getSettings()->fault_probability_after_part_commit, "part commit");
+            ThreadFuzzer::maybeInjectSleep();
             e = zookeeper->tryMulti(ops, responses);
         }
         if (e == Coordination::Error::ZOK)
@@ -1644,7 +1662,6 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 
         if (e == Coordination::Error::ZNODEEXISTS)
         {
-            size_t num_check_ops = 2 * absent_part_paths_on_replicas.size() + zero_copy_lock_ops_size;
             size_t failed_op_index = zkutil::getFailedOpIndex(e, responses);
             if (failed_op_index < num_check_ops)
             {
@@ -9726,7 +9743,13 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                 }
             }
 
-            getCommitPartOps(ops, new_data_part);
+            /// Two replicas may try to commit an empty part simultaneously, so some lost part may be counted twice in lost_part_count.
+            /// Ensure that we are the first replica who commits that part.
+            size_t num_check_ops_unused;
+            bool part_found = getOpsToCheckPartChecksumsAndCommit(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper),
+                new_data_part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true, ops, num_check_ops_unused);
+            if (part_found)
+                throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Found part on another replica, probably it was already replaced");
 
             /// Increment lost_part_count
             auto lost_part_count_path = fs::path(zookeeper_path) / "lost_part_count";
@@ -9742,8 +9765,11 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                 ops.emplace_back(zkutil::makeCreateRequest(lost_part_count_path, "1", zkutil::CreateMode::Persistent));
             }
 
+            ThreadFuzzer::maybeInjectSleep();
+
             Coordination::Responses responses;
-            if (auto code = zookeeper->tryMulti(ops, responses); code == Coordination::Error::ZOK)
+            auto code = zookeeper->tryMulti(ops, responses);
+            if (code == Coordination::Error::ZOK)
             {
                 transaction.commit();
                 break;
