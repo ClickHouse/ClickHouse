@@ -2,5 +2,8 @@ SELECT seriesPeriodDetect([139, 87, 110, 68, 54, 50, 51, 53, 133, 86, 141, 97, 1
 SELECT seriesPeriodDetect([10,20,30,10,20,30,10,20,30, 10,20,30,10,20,30,10,20,30,10,20,30]);
 SELECT seriesPeriodDetect([10.1, 20.45, 40.34, 10.1, 20.45, 40.34,10.1, 20.45, 40.34,10.1, 20.45, 40.34,10.1, 20.45, 40.34,10.1, 20.45, 40.34,10.1, 20.45, 40.34, 10.1, 20.45, 40.34]);
 SELECT seriesPeriodDetect([10.1, 10, 400, 10.1, 10, 400, 10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400]);
+SELECT seriesPeriodDetect([1,2,3]);  -- { serverError BAD_ARGUMENTS}
+SELECT seriesPeriodDetect(); --{ serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT seriesPeriodDetect([]); -- { serverError ILLEGAL_COLUMN}
 SELECT seriesPeriodDetect([NULL, NULL, NULL]); -- { serverError ILLEGAL_COLUMN}
 SELECT seriesPeriodDetect([10,20,30,10,202,30,NULL]); -- { serverError ILLEGAL_COLUMN }
