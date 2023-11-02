@@ -3488,7 +3488,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 }
 std::shared_ptr<ReplicatedFetchesLog> Context::getReplicatedFetchesLog() const
 {
-    auto lock = getLock();
+    SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
