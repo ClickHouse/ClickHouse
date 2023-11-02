@@ -86,19 +86,12 @@ public:
             return false;
         };
 
-        const auto res = false // NOLINT
-            || try_type(UInt8{})
-            || try_type(UInt16{})
-            || try_type(UInt32{})
-            || try_type(UInt64{})
-            || try_type(Int8{})
-            || try_type(Int16{})
-            || try_type(Int32{})
-            || try_type(Int64{});
-        if (res)
-            return res_column;
+        const bool success = try_type(UInt8{}) || try_type(UInt16{}) || try_type(UInt32{}) || try_type(UInt64{});
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
+        if (!success)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
+
+        return res_column;
     }
 
     template <typename T, typename ColVecType, typename ResCol>
@@ -113,11 +106,6 @@ public:
         for (size_t i = 0; i < rows_count; ++i)
         {
             auto raw_value = src_data[i];
-            if constexpr (std::is_signed_v<T>)
-            {
-                if (raw_value < 0) [[unlikely]]
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative value {} while executing function {}", static_cast<Int64>(raw_value), getName());
-            }
             auto value = static_cast<equivalent_integer>(raw_value);
             dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
         }
