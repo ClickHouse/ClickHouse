@@ -77,13 +77,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        WhichDataType which_first(arguments[0]->getTypeId());
+        FunctionArgumentDescriptors args{
+            {"days", &isNativeUnsignedInteger<IDataType>, nullptr, "UInt*"}
+        };
 
-        if (!which_first.isInt() && !which_first.isUInt())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<typename Traits::ReturnDataType>();
     }
