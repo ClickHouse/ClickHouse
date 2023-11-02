@@ -15,6 +15,8 @@ SELECT 739136 AS x, fromDaysSinceYearZero32(x);
 SELECT 693961 AS x, fromDaysSinceYearZero32(x);
 SELECT 785063 AS x, fromDaysSinceYearZero32(x);
 SELECT 785064 AS x, fromDaysSinceYearZero32(x);
+SELECT -10 AS x, fromDaysSinceYearZero(x), 'lower clip, 1970-01-01 min'; -- {serverError ARGUMENT_OUT_OF_BOUND}
+SELECT -10 AS x, fromDaysSinceYearZero32(x), 'lower clip, 1970-01-01 min'; -- {serverError ARGUMENT_OUT_OF_BOUND}
 SELECT fromDaysSinceYearZero(NULL);
 SELECT fromDaysSinceYearZero32(NULL);
 
@@ -38,6 +40,8 @@ SELECT 739136 AS x, fromDaysSinceYearZero32(x);
 SELECT 693961 AS x, fromDaysSinceYearZero32(x);
 SELECT 785063 AS x, fromDaysSinceYearZero32(x);
 SELECT 785064 AS x, fromDaysSinceYearZero32(x);
+SELECT -10 AS x, fromDaysSinceYearZero(x), 'lower clip, 1970-01-01 min'; -- {serverError ARGUMENT_OUT_OF_BOUND}
+SELECT -10 AS x, fromDaysSinceYearZero32(x), 'lower clip, 1970-01-01 min'; -- {serverError ARGUMENT_OUT_OF_BOUND}
 SELECT fromDaysSinceYearZero(NULL);
 SELECT fromDaysSinceYearZero32(NULL);
 
@@ -59,8 +63,8 @@ SELECT 785064 AS x, fromDaysSinceYearZero32(x);
 SELECT fromDaysSinceYearZero(NULL);
 SELECT fromDaysSinceYearZero32(NULL);
 SELECT 0.5 AS x, fromDaysSinceYearZero(x); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
-SELECT -10 AS x, fromDaysSinceYearZero(x), 'lower clip, 1970-01-01 min'; -- {serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE}
-SELECT -10 AS x, fromDaysSinceYearZero32(x), 'lower clip, 1970-01-01 min'; -- {serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE}
+SELECT -10 AS x, fromDaysSinceYearZero(x), 'lower clip, 1970-01-01 min'; -- {serverError ARGUMENT_OUT_OF_BOUND}
+SELECT -10 AS x, fromDaysSinceYearZero32(x), 'lower clip, 1970-01-01 min'; -- {serverError ARGUMENT_OUT_OF_BOUND}
 SELECT 0 AS x, fromDaysSinceYearZero(x), 'lower clip, 1970-01-01 min'; -- {serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE}
 SELECT 719527 AS x, fromDaysSinceYearZero(x), 'lower clip, 1970-01-01 min'; -- {serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE}
 SELECT 785064 AS x, fromDaysSinceYearZero(x), 'upper clip, 2149-06-06 max'; -- {serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE}
