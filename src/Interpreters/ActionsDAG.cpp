@@ -335,6 +335,28 @@ const ActionsDAG::Node * ActionsDAG::tryFindInOutputs(const std::string & name) 
     return nullptr;
 }
 
+ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutpus(const Names & names) const
+{
+    NodeRawConstPtrs required_nodes;
+    required_nodes.reserve(names.size());
+
+    std::unordered_map<std::string_view, const Node *> names_map;
+    for (const auto * node : outputs)
+        names_map[node->result_name] = node;
+
+    for (const auto & name : names)
+    {
+        auto it = names_map.find(name);
+        if (it == names_map.end())
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                            "Unknown column: {}, there are only columns {}", name, dumpDAG());
+
+        required_nodes.push_back(it->second);
+    }
+
+    return required_nodes;
+}
+
 void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 {
     for (auto & output_node : outputs)
@@ -441,23 +463,7 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
 
 void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
-    NodeRawConstPtrs required_nodes;
-    required_nodes.reserve(required_names.size());
-
-    std::unordered_map<std::string_view, const Node *> names_map;
-    for (const auto * node : outputs)
-        names_map[node->result_name] = node;
-
-    for (const auto & name : required_names)
-    {
-        auto it = names_map.find(name);
-        if (it == names_map.end())
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                            "Unknown column: {}, there are only columns {}", name, dumpDAG());
-
-        required_nodes.push_back(it->second);
-    }
-
+    auto required_nodes = findInOutpus(required_names);
     outputs.swap(required_nodes);
     removeUnusedActions(allow_remove_inputs, allow_constant_folding);
 }
@@ -526,6 +532,62 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
 
     nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
     std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
+}
+
+ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
+{
+    auto actions = std::make_shared<ActionsDAG>();
+    std::unordered_map<const Node *, Node *> copy_map;
+
+    struct Frame
+    {
+        const Node * node = nullptr;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+
+    for (const auto * output : outputs)
+    {
+        if (copy_map.contains(output))
+            continue;
+
+        stack.push(Frame{output});
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+            const auto & children = frame.node->children;
+            while (frame.next_child < children.size() && copy_map.contains(children[frame.next_child]))
+                ++frame.next_child;
+
+            if (frame.next_child < children.size())
+            {
+                stack.push(Frame{children[frame.next_child]});
+                continue;
+            }
+
+            auto & copy_node = copy_map[frame.node];
+
+            if (remove_aliases && frame.node->type == ActionType::ALIAS)
+                copy_node = copy_map[frame.node->children.front()];
+            else
+                copy_node = &actions->nodes.emplace_back(*frame.node);
+
+            if (frame.node->type == ActionType::INPUT)
+                actions->inputs.push_back(copy_node);
+
+            stack.pop();
+        }
+    }
+
+    for (auto & node : actions->nodes)
+        for (auto & child : node.children)
+            child = copy_map[child];
+
+    for (const auto * output : outputs)
+        actions->outputs.push_back(copy_map[output]);
+
+    return actions;
 }
 
 static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments)
