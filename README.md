@@ -45,4 +45,4 @@ We are a globally diverse and distributed team, united behind a common goal of c
   
 Check out our **current openings** here: https://clickhouse.com/company/careers 
   
-Cant find what you are looking for, but want to let us know you are interested in joining ClickHouse? Email careers@clickhouse.com! 
+Can't find what you are looking for, but want to let us know you are interested in joining ClickHouse? Email careers@clickhouse.com! 
