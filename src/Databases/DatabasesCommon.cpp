@@ -200,11 +200,7 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
     waitTableStarted(table_name);
-    std::lock_guard lock(mutex);
-    auto it = tables.find(table_name);
-    if (it != tables.end())
-        return it->second;
-    return {};
+    return tryGetTableNoWait(table_name);
 }
 
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
@@ -374,6 +370,15 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
     interpreter.execute();
+}
+
+StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_name) const
+{
+    std::lock_guard lock(mutex);
+    auto it = tables.find(table_name);
+    if (it != tables.end())
+        return it->second;
+    return {};
 }
 
 }

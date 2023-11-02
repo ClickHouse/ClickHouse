@@ -202,8 +202,7 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
         fmt::format("startup table {}", name.getFullName()),
         [this, name] (AsyncLoader &, const LoadJobPtr &)
         {
-            // `DatabaseOnDisk::tryGetTable()` is used to avoid waiting for a startup
-            if (auto table = DatabaseOnDisk::tryGetTable(name.table, {}))
+            if (auto table = tryGetTableNoWait(name.table))
             {
                 /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
                 /// until startup finished.
