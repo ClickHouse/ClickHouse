@@ -88,6 +88,15 @@ struct FormatSettings
         IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
     } interval;
 
+    enum class DateTimeOverflowBehavior
+    {
+        Ignore,
+        Throw,
+        Saturate
+    };
+
+    DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
+
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
 

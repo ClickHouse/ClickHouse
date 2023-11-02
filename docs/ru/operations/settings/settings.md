@@ -3838,6 +3838,18 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
+## date_time_overflow_behavior {#date_time_overflow_behavior}
+
+Задаёт поведение при преобразовании [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), а также численных типов данных к Date, Date32, DateTime, DateTime64 в случае, если результат выходит за пределы диапазона значений необходимого типа.
+
+Возможные значения:
+
+- `ignore` — Молча игнорирует переполнение. В таком случае, результатом будет случайное значение.
+- `throw` — Выкинуть исключение при переполнении.
+- `saturate` — Молча округлить до ближайшего (то есть наибольшего или наименьшего) значения из диапазона значений результата.
+
+Значение по умолчанию: `ignore`.
+
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md).

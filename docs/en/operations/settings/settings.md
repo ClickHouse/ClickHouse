@@ -4155,6 +4155,18 @@ Possible values:
 
 Default value: `0`.
 
+## date_time_overflow_behavior {#date_time_overflow_behavior}
+
+Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+
+Possible values:
+
+- `ignore` — Silently ignore overflows. The result is random.
+- `throw` — Throw an exception in case of conversion overflow.
+- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+Default value: `ignore`.
+
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
