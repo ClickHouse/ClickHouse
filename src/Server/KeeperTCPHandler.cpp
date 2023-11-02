@@ -394,7 +394,7 @@ void KeeperTCPHandler::runImpl()
     if (use_compression)
     {
         compressed_in.emplace(*in);
-        compressed_out.emplace(*out,CompressionCodecFactory::instance().get("None",{}));
+        compressed_out.emplace(*out, CompressionCodecFactory::instance().get("ZSTD",{}));
     }
 
     auto response_fd = poll_wrapper->getResponseFD();
@@ -577,17 +577,18 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
+    auto & read_buffer = getReadBuffer();
     int32_t length;
-    Coordination::read(length, getReadBuffer());
+    Coordination::read(length, read_buffer);
     int32_t xid;
-    Coordination::read(xid, getReadBuffer());
+    Coordination::read(xid, read_buffer);
 
     Coordination::OpNum opnum;
-    Coordination::read(opnum, getReadBuffer());
+    Coordination::read(opnum, read_buffer);
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
-    request->readImpl(getReadBuffer());
+    request->readImpl(read_buffer);
 
     if (!keeper_dispatcher->putRequest(request, session_id))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);

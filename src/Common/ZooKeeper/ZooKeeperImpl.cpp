@@ -491,7 +491,7 @@ void ZooKeeper::connect(
                 if (use_compression)
                 {
                     compressed_in.emplace(*in);
-                    compressed_out.emplace(*out,CompressionCodecFactory::instance().get("None", {}));
+                    compressed_out.emplace(*out, CompressionCodecFactory::instance().get("ZSTD", {}));
                 }
 
                 original_index = static_cast<Int8>(node.original_index);
