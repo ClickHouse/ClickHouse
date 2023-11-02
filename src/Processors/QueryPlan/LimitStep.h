@@ -49,6 +49,11 @@ public:
 
     void setPhase(Phase phase_) { phase = phase_; }
 
+    const SortDescription & getSortDescription() const
+    {
+        return description;
+    }
+
     StepType stepType() const override
     {
         return Limit;

@@ -27,6 +27,8 @@ public:
 
     PhysicalProperties visit(TopNStep & step) override;
 
+    PhysicalProperties visit(UnionStep & step) override;
+
 private:
     GroupNodePtr group_node;
     PhysicalProperties required_prop;

@@ -35,6 +35,15 @@ PhysicalProperties DeriveOutputProp::visitDefault(IQueryPlanStep & step)
     return res;
 }
 
+PhysicalProperties DeriveOutputProp::visit(UnionStep & step)
+{
+    PhysicalProperties res;
+    res.distribution = children_prop[0].distribution;
+    res.sort_prop.sort_description = step.getOutputStream().sort_description;
+    res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
+    return res;
+}
+
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, ContextPtr context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
@@ -154,8 +163,11 @@ PhysicalProperties DeriveOutputProp::visit(ExpressionStep & step)
         }
     }
 
-    res.sort_prop.sort_description = step.getOutputStream().sort_description;
-    res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
+    if (step.getDataStreamTraits().preserves_sorting)
+    {
+        res.sort_prop.sort_description = step.getOutputStream().sort_description;
+        res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
+    }
 
 //    CalculateSortProp sort_prop_calculator(step.getExpression(), children_prop[0].sort_prop);
 //    res.sort_prop = sort_prop_calculator.calcSortProp();

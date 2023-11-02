@@ -1,5 +1,6 @@
 #include <QueryCoordination/Exchange/ExchangeDataSink.h>
 #include <QueryCoordination/Exchange/ExchangeManager.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -55,6 +56,16 @@ void ExchangeDataSink::consume(Chunk chunk)
     num_rows += rows;
 
     auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
+    /// E.g select count(id) from distribute_table where name='a'
+    /// Filter has empty header. ExchangeData has empty header. But there is real data, and in order to prevent the upper layer from receiving an empty block, we construct a fake header.
+    if (unlikely(rows && !block))
+    {
+        auto column = ColumnUInt64::create();
+        column->insertValue(rows);
+        block.insert({column->getPtr(), std::make_shared<DataTypeUInt64>(), "_empty_header_rows"});
+    }
+
     if (auto chunk_info = chunk.getChunkInfo())
     {
         if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))

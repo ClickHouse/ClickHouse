@@ -59,7 +59,7 @@ Statistics JoinStatsCalculator::Impl::calculate()
     }
 
     /// filter by constant on_expression, such as: 't1 join t2 on 1'
-    if (isAlwaysFalse(join.getTableJoin().on_expression))
+    if (join.getTableJoin().on_expression && isAlwaysFalse(join.getTableJoin().on_expression))
         statistics.setOutputRowSize(1.0);
 
     /// remove non output columns

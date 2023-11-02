@@ -53,6 +53,6 @@ def test_query(started_cluster):
     node1.query("SYSTEM FLUSH DISTRIBUTED table_1")
     node1.query("SYSTEM FLUSH DISTRIBUTED table_2")
 
-    exec_query_compare_result("SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2")
+    exec_query_compare_result("SELECT * FROM (SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2) ORDER BY id, val, name")
 
-    exec_query_compare_result("SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2 UNION ALL SELECT 1,'2','3'")
+    exec_query_compare_result("SELECT * FROM (SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2 UNION ALL SELECT 1,'2','3') ORDER BY id, val, name")

@@ -56,7 +56,12 @@ std::shared_ptr<TopNStep> TopNStep::makePreliminary(bool exact_rows_before_limit
 
     auto pre_sort = sorting->clone();
     auto pre_limit = std::make_shared<LimitStep>(
-        limit_step->getInputStreams().front(), limit->getLimitForSorting(), 0, exact_rows_before_limit);
+        limit_step->getInputStreams().front(),
+        limit->getLimitForSorting(),
+        0,
+        exact_rows_before_limit,
+        limit->withTies(),
+        limit->getSortDescription());
 
     auto pre_topn = std::make_shared<TopNStep>(pre_sort, pre_limit);
     pre_topn->phase = TopNStep::Phase::Preliminary;
@@ -77,7 +82,9 @@ std::shared_ptr<TopNStep> TopNStep::makeFinal(size_t max_block_size, bool exact_
         limit_step->getInputStreams().front(),
         limit->getLimit(),
         limit->getOffset(),
-        exact_rows_before_limit);
+        exact_rows_before_limit,
+        limit->withTies(),
+        limit->getSortDescription());
 
     auto final_topn = std::make_shared<TopNStep>(merging_sorted, final_limit);
     final_topn->phase = TopNStep::Phase::Final;

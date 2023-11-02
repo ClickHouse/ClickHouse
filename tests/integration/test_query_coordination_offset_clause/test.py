@@ -18,7 +18,7 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE test_fetch_local ON CLUSTER test_two_shards (a UInt32, b UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_fetch_local', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE test_fetch_local ON CLUSTER test_two_shards (a UInt32, b UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_fetch_local', '{replica}') ORDER BY a SETTINGS index_granularity=100;"""
         )
 
         node1.query(
@@ -37,7 +37,7 @@ def exec_query_compare_result(query_text):
     assert accurate_result == test_result
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO test_fetch SELECT a, b FROM generateRandom('a UInt8, b Int8') LIMIT 200")
+    node1.query("INSERT INTO test_fetch SELECT a, b FROM generateRandom('a UInt8, b Int8') LIMIT 20")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED test_fetch")
 

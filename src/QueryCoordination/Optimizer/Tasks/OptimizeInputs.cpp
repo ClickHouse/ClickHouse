@@ -118,7 +118,7 @@ void OptimizeInputs::execute()
 
             /// Currently, it only deals with distributed cases
             if (!output_prop.satisfySort(required_prop))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort property not satisfied");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort property not satisfied, output sort prop {}, required sort prop {}", output_prop.sort_prop.toString(), required_prop.sort_prop.toString());
 
             if (!output_prop.satisfyDistribute(required_prop))
             {

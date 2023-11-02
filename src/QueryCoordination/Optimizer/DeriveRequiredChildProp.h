@@ -42,6 +42,8 @@ public:
 
     AlternativeChildrenProp visit(CreatingSetsStep & step) override;
 
+    AlternativeChildrenProp visit(FilterStep & step) override;
+
 private:
     GroupNodePtr group_node;
 };

@@ -19,10 +19,13 @@ public:
     ExchangeDataSource(const DataStream & data_stream, UInt32 fragment_id_, UInt32 plan_id_, const String & source_)
         : ISource(data_stream.header, false), fragment_id(fragment_id_), plan_id(plan_id_), source(source_)
     {
-        const auto & sample = getPort().getHeader();
-        for (auto & type : sample.getDataTypes())
-            if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
-                add_aggregation_info = true;
+//        const auto & sample = getPort().getHeader();
+//        for (auto & type : sample.getDataTypes())
+//            if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+
+        /// default it's aggregate chunk. It cannot be judged based on the datatype is DataTypeAggregateFunction
+        /// E.g select id,name from aaa_all group by id,name order by id,name SETTINGS allow_experimental_query_coordination = 1;
+        add_aggregation_info = true;
     }
 
     ~ExchangeDataSource() override = default;

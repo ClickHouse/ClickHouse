@@ -158,6 +158,10 @@ Float64 Statistics::getDataSize() const
     {
         total_row_size += column_stats->isUnKnown() ? 8 : column_stats->getAvgRowSize();
     }
+
+    if (total_row_size <= 0)
+        total_row_size = 8;
+
     return total_row_size * output_row_size;
 }
 

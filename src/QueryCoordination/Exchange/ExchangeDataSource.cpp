@@ -33,7 +33,17 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
         return {};
     }
 
-    size_t rows = block.rows();
+    /// E.g select count(id) from distribute_table where name='a'
+    /// Filter has empty header. ExchangeData has empty header. But there is real data, we construct a fake header.
+    size_t rows;
+    if (unlikely(!getPort().getHeader()))
+    {
+        rows = block.getByName("_empty_header_rows").column->get64(0);
+        block.clear();
+    }
+    else
+        rows = block.rows();
+
     LOG_DEBUG(&Poco::Logger::get("ExchangeDataSource"), "Fragment {} exchange id {} receive {} rows from {}", fragment_id, plan_id, rows, source);
     num_rows += rows;
 

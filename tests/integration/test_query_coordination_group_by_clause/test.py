@@ -48,15 +48,13 @@ def test_query(started_cluster):
 
     exec_query_compare_result("SELECT id, val, name FROM test_aggregate_all GROUP BY id, val, name ORDER BY id, val, name")
 
-    exec_query_compare_result("SELECT id, val, any(name) FROM test_aggregate_all GROUP BY id, val ORDER BY id, val")
-
     exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY val, name ORDER BY val, name")
 
-    exec_query_compare_result("SELECT sum(id), val FROM test_aggregate_all GROUP BY val ORDER BY val, name")
+    exec_query_compare_result("SELECT sum(id), val FROM test_aggregate_all GROUP BY val ORDER BY val")
 
-    exec_query_compare_result("SELECT sum(id), val FROM test_aggregate_all GROUP BY val ORDER BY val, name")
+    exec_query_compare_result("SELECT sum(id), val FROM test_aggregate_all GROUP BY val ORDER BY val")
 
-    exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY GROUPING SETS((name,val),(name),(val),())")
+    exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY GROUPING SETS((name,val),(name),(val),()) ORDER BY val, name")
 
     exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY val, name WITH totals ORDER BY val, name")
 

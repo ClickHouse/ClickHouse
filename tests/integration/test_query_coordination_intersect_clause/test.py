@@ -55,11 +55,13 @@ def exec_query_compare_result(query_text):
     accurate_result = node1.query(query_text)
     test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
 
+    print(accurate_result)
+    print(test_result)
     assert accurate_result == test_result
 
 def test_query(started_cluster):
     insert_data()
 
-    exec_query_compare_result("SELECT id FROM intersect_all_1 INTERSECT SELECT id FROM intersect_all_2 ORDER BY id")
+    exec_query_compare_result("SELECT id FROM (SELECT id FROM intersect_all_1 ORDER BY id) INTERSECT SELECT id FROM (SELECT id FROM intersect_all_2 ORDER BY id) ORDER BY id")
 
-    exec_query_compare_result("SELECT id FROM intersect_all_1 EXCEPT SELECT id FROM intersect_all_2 ORDER BY id")
+    exec_query_compare_result("SELECT id FROM (SELECT id FROM intersect_all_1 ORDER BY id) EXCEPT SELECT id FROM (SELECT id FROM intersect_all_2 ORDER BY id) ORDER BY id")
