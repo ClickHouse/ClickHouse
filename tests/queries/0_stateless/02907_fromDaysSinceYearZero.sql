@@ -16,3 +16,5 @@ SELECT -10 AS x, fromDaysSinceYearZero(x), 'lower clip, 1970-01-01 min'; -- {ser
 SELECT -10 AS x, fromDaysSinceYearZero32(x), 'lower clip, 1970-01-01 min'; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT fromDaysSinceYearZero(NULL);
 SELECT fromDaysSinceYearZero32(NULL);
+
+SELECT FROM_DAYS(1); -- test alias
