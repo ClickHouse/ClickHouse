@@ -62,6 +62,38 @@ SELECT * FROM source ORDER BY productName;
 SELECT * FROM destination ORDER BY productName;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
+-- Should be allowed, extra test case to validate https://github.com/ClickHouse/ClickHouse/pull/39507#issuecomment-1747574133
+
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (timestamp Int64) engine=MergeTree ORDER BY (timestamp) PARTITION BY (intDiv(timestamp, 86400000));
+CREATE TABLE destination (timestamp Int64) engine=MergeTree ORDER BY (timestamp) PARTITION BY toYear(toDateTime(intDiv(timestamp, 1000)));
+
+INSERT INTO TABLE source VALUES (1267495261123);
+
+ALTER TABLE destination ATTACH PARTITION ID '14670' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
+-- Should be allowed, extra test case to validate https://github.com/ClickHouse/ClickHouse/pull/39507#issuecomment-1747511726
+
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (timestamp DateTime, key Int64, f Float64) engine=MergeTree ORDER BY (key, timestamp) PARTITION BY toYear(timestamp);
+CREATE TABLE destination (timestamp DateTime, key Int64, f Float64) engine=SummingMergeTree ORDER BY (key, timestamp) PARTITION BY (intDiv(toUInt32(timestamp),86400));
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01',1,1),('2010-03-02 02:01:01',1,1),('2011-02-02 02:01:03',1,1);
+
+ALTER TABLE destination ATTACH PARTITION ID '2010' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
