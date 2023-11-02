@@ -2,7 +2,11 @@
 -- no-fasttest: json type needs rapidjson library, geo types need s2 geometry
 -- no-parallel: can't provide currentDatabase() to SHOW COLUMNS
 
--- Tests setting 'use_mysql_types_in_show_columns' in SHOW COLUMNS and SELECTs on system.columns
+-- Tests the output of SHOW COLUMNS when called through the ClickHouse protocol.
+
+-- -----------------------------------------------------------------------------------
+-- Please keep this test in-sync with 02775_show_columns_called_through_mysql.sql
+-- -----------------------------------------------------------------------------------
 
 DROP TABLE IF EXISTS tab;
 
@@ -72,22 +76,6 @@ CREATE TABLE tab
     lnfs          LowCardinality(Nullable(FixedString(3))),
 ) ENGINE Memory;
 
-SELECT '-- SHOW COLUMNS with use_mysql_types_in_show_columns = 0';
-SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 0;
-
-SELECT '-- SHOW COLUMNS with use_mysql_types_in_show_columns = 1';
-SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 1;
-
-SELECT '-- SHOW COLUMNS with mysql_map_string_to_text_in_show_columns = 1';
-SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 1, mysql_map_string_to_text_in_show_columns=1;
-
-SELECT '-- SHOW COLUMNS with mysql_map_fixed_string_to_text_in_show_columns = 1';
-SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 1, mysql_map_fixed_string_to_text_in_show_columns=1;
-
-SELECT '-- SHOW COLUMNS with mysql_map_string_to_text_in_show_columns = 1 and without use_mysql_types_in_show_columns';
-SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 0, mysql_map_string_to_text_in_show_columns=1;
-
-SELECT '-- SHOW COLUMNS with mysql_map_fixed_string_to_text_in_show_columns = 1 and without use_mysql_types_in_show_columns';
-SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 0, mysql_map_fixed_string_to_text_in_show_columns=1;
+SHOW COLUMNS FROM tab;
 
 DROP TABLE tab;
