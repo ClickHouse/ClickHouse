@@ -4790,6 +4790,10 @@ a	Tuple(
 )
 ```
 
+## analyze_index_with_space_filling_curves
+
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+
 ## dictionary_use_async_executor {#dictionary_use_async_executor}
 
 Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
