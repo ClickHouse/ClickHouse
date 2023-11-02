@@ -11,6 +11,14 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event AsyncLoaderWaitMicroseconds;
+}
 
 namespace DB
 {
@@ -693,9 +701,11 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
         }
     }
 
+    Stopwatch watch;
     job->waiters++;
     job->finished.wait(job_lock, [&] { return job->load_status != LoadStatus::PENDING; });
     job->waiters--;
+    ProfileEvents::increment(ProfileEvents::AsyncLoaderWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
 void AsyncLoader::workerIsSuspendedByWait(size_t pool_id, const LoadJobPtr & job)

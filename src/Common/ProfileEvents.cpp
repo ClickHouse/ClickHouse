@@ -555,6 +555,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.") \
     \
+    M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.") \
+    \
     M(LogTest, "Number of log messages with level Test") \
     M(LogTrace, "Number of log messages with level Trace") \
     M(LogDebug, "Number of log messages with level Debug") \
