@@ -667,6 +667,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 {
                     LOG_TRACE(log, "Trying to commit local log entries, committing upto {}", index_to_commit);
                     raft_instance->commitLogs(index_to_commit, true);
+                    /// after we manually committed all the local logs we can, we assert that all of the local logs are either
+                    /// committed or preprocessed
                     if (!keeper_context->local_logs_preprocessed)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Local logs are not preprocessed");
                 }
