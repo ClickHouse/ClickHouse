@@ -23,8 +23,6 @@ namespace DB
 static constexpr auto microsecond_multiplier = 1000000;
 static constexpr auto millisecond_multiplier = 1000;
 
-static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528; /// 01 January, each. Constant taken from Java LocalDate. Consistent with MySQL's TO_DAYS().
-
 static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
 namespace ErrorCodes
@@ -1392,6 +1390,8 @@ private:
     static constexpr auto SECONDS_PER_DAY = 60 * 60 * 24;
 
 public:
+    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528; /// 01 January, each. Constant taken from Java LocalDate. Consistent with MySQL's TO_DAYS().
+
     static constexpr auto name = "toDaysSinceYearZero";
 
     static UInt32 execute(Int64 t, const DateLUTImpl & time_zone)

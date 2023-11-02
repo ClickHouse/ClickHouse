@@ -151,15 +151,15 @@ public:
                     value = Traits::MIN_DAYS;
                 else if (value > Traits::MAX_DAYS)
                     value = Traits::MAX_DAYS;
-                dst_data[i] = static_cast<RawReturnType>(value - DAYS_BETWEEN_YEARS_0_AND_1970);
+                dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
             }
             else if constexpr (overflow_behaviour == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
                 if (value < Traits::MIN_DAYS || value > Traits::MAX_DAYS) [[unlikely]]
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds while executing function {}", static_cast<Int64>(value), getName());
-                dst_data[i] = static_cast<RawReturnType>(value - DAYS_BETWEEN_YEARS_0_AND_1970);
+                dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
             } else
-                dst_data[i] = static_cast<RawReturnType>(value - DAYS_BETWEEN_YEARS_0_AND_1970);
+                dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
         }
     }
 
