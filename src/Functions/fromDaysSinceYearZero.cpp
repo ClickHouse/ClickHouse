@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -138,17 +139,24 @@ public:
     }
 
     template <FormatSettings::DateTimeOverflowBehavior overflow_behaviour, typename T, typename ColVecType, typename ResCol>
-    static void execute(const ColVecType & col, ResCol & result_column, size_t rows_count)
+    void execute(const ColVecType & col, ResCol & result_column, size_t rows_count) const
     {
         const auto & src_data = col.getData();
         auto & dst_data = result_column.getData();
         dst_data.resize(rows_count);
 
+        using equivalent_integer = typename std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;
+
         for (size_t i = 0; i < rows_count; ++i)
         {
             auto raw_value = src_data[i];
-            auto value = static_cast<Int64>(raw_value);
-            if constexpr  (overflow_behaviour == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            if constexpr (std::is_signed_v<T>)
+            {
+                if (raw_value < 0) [[unlikely]]
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative value {} while executing function {}", static_cast<Int64>(raw_value), getName());
+            }
+            auto value = static_cast<equivalent_integer>(raw_value);
+            if constexpr (overflow_behaviour == FormatSettings::DateTimeOverflowBehavior::Saturate)
             {
                 if (value < Traits::min_days)
                     value = Traits::min_days;
@@ -159,7 +167,7 @@ public:
             else if constexpr (overflow_behaviour == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
                 if (value < Traits::min_days || value > Traits::max_days) [[unlikely]]
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds", value);
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds while executing function {}", static_cast<Int64>(value), getName());
                 dst_data[i] = static_cast<RawReturnType>(value - DAYS_BETWEEN_YEARS_0_AND_1970);
             } else
                 dst_data[i] = static_cast<RawReturnType>(value - DAYS_BETWEEN_YEARS_0_AND_1970);
@@ -177,7 +185,7 @@ REGISTER_FUNCTION(FromDaysSinceYearZero)
 {
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits>>(FunctionDocumentation{
         .description = R"(
-Given the number of days passed since 1 January 0000 in the  proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
+Given the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
 The calculation is the same as in MySQL's FROM_DAYS() function. If an overflow of the range supported by Date were to happen the behaviour is controlled by DateTimeOverflowBehavior setting.
 )",
         .examples{{"typical", "SELECT fromDaysSinceYearZero(713569)", "2023-09-08"}},
@@ -185,7 +193,7 @@ The calculation is the same as in MySQL's FROM_DAYS() function. If an overflow o
 
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>(FunctionDocumentation{
         .description = R"(
-Given the number of days passed since 1 January 0000 in the  proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
+Given the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
 The calculation is the same as in MySQL's FROM_DAYS() function. If an overflow of the range supported by Date32 were to happen the behaviour is controlled by DateTimeOverflowBehavior setting.
 )",
         .examples{{"typical", "SELECT fromDaysSinceYearZero32(713569)", "2023-09-08"}},
