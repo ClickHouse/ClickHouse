@@ -800,14 +800,9 @@ static const orc::Type * traverseDownORCTypeByName(
                 type = array_type->getNestedType();
                 return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case);
             }
-            else
-                return nullptr;
         }
-        else
-            return nullptr;
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 static void updateIncludeTypeIds(
