@@ -779,9 +779,7 @@ static const orc::Type * traverseDownORCTypeByName(
 
     if (orc::STRUCT == orc_type->getKind())
     {
-        auto next_type_and_target = search_struct_field(target, orc_type);
-        const auto & next_target = next_type_and_target.first;
-        const auto * next_orc_type = next_type_and_target.second;
+        const auto [next_target, next_orc_type]= search_struct_field(target, orc_type);
         return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case) : nullptr;
     }
     else if (orc::LIST == orc_type->getKind())
