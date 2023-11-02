@@ -238,6 +238,8 @@ std::vector<FunctionBasePtr> KeyDescriptionMonotonicityChecker::buildFunctionLis
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to check monotonicity of function {}", function.getFunctionName());
         }
 
+        key_column_type = func->getResultType();
+
         functions.push_back(func);
     }
 
