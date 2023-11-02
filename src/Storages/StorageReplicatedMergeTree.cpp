@@ -10004,35 +10004,43 @@ void StorageReplicatedMergeTree::backupData(
 
     /// Send a list of mutations to the coordination too (we need to find the mutations which are not finished for added part names).
     {
-        ZooKeeperRetriesControl retries_ctl("getMutations", zookeeper_retries_info, nullptr);
-
-        bool exists;
-        Strings mutation_ids;
+        const fs::path mutations_node_path = fs::path(zookeeper_path) / "mutations";
         zkutil::ZooKeeperPtr zookeeper;
-        retries_ctl.retryLoop([&]()
+
+        bool exists = false;
+        Strings mutation_ids;
         {
-            if (!zookeeper || zookeeper->expired())
-                zookeeper = local_context->getZooKeeper();
-            exists = zookeeper->tryGetChildren(fs::path(zookeeper_path) / "mutations", mutation_ids) == Coordination::Error::ZOK;
-        });
+            ZooKeeperRetriesControl retries_ctl("getMutations", zookeeper_retries_info, nullptr);
+            retries_ctl.retryLoop([&]()
+            {
+                if (!zookeeper || zookeeper->expired())
+                    zookeeper = local_context->getZooKeeper();
+                exists = (zookeeper->tryGetChildren(mutations_node_path, mutation_ids) == Coordination::Error::ZOK);
+            });
+        }
 
         if (exists)
         {
             std::vector<IBackupCoordination::MutationInfo> mutation_infos;
             mutation_infos.reserve(mutation_ids.size());
+
             for (const auto & mutation_id : mutation_ids)
             {
                 bool mutation_id_exists = false;
                 String mutation;
+
+                ZooKeeperRetriesControl retries_ctl("getMutation", zookeeper_retries_info, nullptr);
                 retries_ctl.retryLoop([&]()
                 {
                     if (!zookeeper || zookeeper->expired())
                         zookeeper = local_context->getZooKeeper();
-                    mutation_id_exists = exists = zookeeper->tryGet(fs::path(zookeeper_path) / "mutations" / mutation_id, mutation);
+                    mutation_id_exists = zookeeper->tryGet(mutations_node_path / mutation_id, mutation);
                 });
+
                 if (mutation_id_exists)
                     mutation_infos.emplace_back(IBackupCoordination::MutationInfo{mutation_id, mutation});
             }
+
             if (!mutation_infos.empty())
                 coordination->addReplicatedMutations(shared_id, getStorageID().getFullTableName(), getReplicaName(), mutation_infos);
         }
