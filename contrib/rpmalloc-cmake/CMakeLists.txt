@@ -1,4 +1,4 @@
-option (ENABLE_RPMALLOC "Enable rpmalloc allocator" OFF)
+option (ENABLE_RPMALLOC "Enable rpmalloc allocator" ON)
 
 if (NOT ENABLE_RPMALLOC)
     message (STATUS "Not using rpmalloc")
