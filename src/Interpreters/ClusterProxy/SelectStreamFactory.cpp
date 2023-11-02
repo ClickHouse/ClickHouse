@@ -122,41 +122,18 @@ void SelectStreamFactory::createForShard(
     auto it = objects_by_shard.find(shard_info.shard_num);
     if (it != objects_by_shard.end())
         replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
-    
-    const auto & settings = context->getSettingsRef();    
-    ASTPtr query;
-    
-    if (settings.max_execution_time_leaf.value != 0)
-    {
-        query = query_ast->clone();
-        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
-        /// with 'timeout_overflow_mode_leaf'
-        if (auto * select = query->as<ASTSelectQuery>())
-        {
-            auto query_settings = select->settings();
-            if (!query_settings)
-                query_settings = std::make_shared<ASTSetQuery>();
-            
-            query_settings->as<ASTSetQuery &>().is_standalone = false;
-            auto & changes = query_settings->as<ASTSetQuery &>().changes;
-            changes.setSetting("max_execution_time", settings.max_execution_time_leaf.value.totalSeconds());
-            changes.setSetting("timeout_overflow_mode", settings.timeout_overflow_mode_leaf.toString());
-            select->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(query_settings));
-        }
-    }
-    else
-        query = query_ast;
+
 
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query, header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
-            .query = query,
+            .query = query_ast,
             .main_table = main_table,
             .header = header,
             .shard_info = shard_info,
