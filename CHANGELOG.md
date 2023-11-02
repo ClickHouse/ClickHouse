@@ -1,4 +1,5 @@
 ### Table of Contents
+**[ClickHouse release v23.10, 2023-11-02](#2310)**<br/>
 **[ClickHouse release v23.9, 2023-09-28](#239)**<br/>
 **[ClickHouse release v23.8 LTS, 2023-08-31](#238)**<br/>
 **[ClickHouse release v23.7, 2023-07-27](#237)**<br/>
@@ -12,7 +13,7 @@
 
 # 2023 Changelog
 
-### ClickHouse release master (823b62a55c1) FIXME as compared to v23.9.1.1854-stable (8f9a227de1f)
+### ClickHouse release 23.10, 2023-11-02
 
 #### Backward Incompatible Change
 * Rewrited the experimental `S3Queue` table engine completely: changed the way we keep information in zookeeper which allows to make less zookeeper requests, added caching of zookeeper state in cases when we know the state will not change, improved the polling from s3 process to make it less aggressive, changed the way ttl and max set for trached files is maintained, now it is a background process. Added `system.s3queue` and `system.s3queue_log` tables. Closes [#54998](https://github.com/ClickHouse/ClickHouse/issues/54998). [#54422](https://github.com/ClickHouse/ClickHouse/pull/54422) ([Kseniia Sumarokova](https://github.com/kssenii)).
