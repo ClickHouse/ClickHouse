@@ -32,7 +32,7 @@ namespace DB
 /// then the new request will return the same future as the previous one.
 class StatusRequestsPool
 {
-    ThreadPool & thread_pool;
+    ThreadPool thread_pool;
 
     std::mutex mutex;
     std::unordered_map<StoragePtr, std::shared_future<ReplicatedTableStatus>> current_requests TSA_GUARDED_BY(mutex);
@@ -42,8 +42,8 @@ class StatusRequestsPool
     Poco::Logger * log;
 
 public:
-    explicit StatusRequestsPool(ThreadPool & thread_pool_)
-        : thread_pool(thread_pool_)
+    explicit StatusRequestsPool(size_t max_threads)
+        : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, max_threads)
         , log(&Poco::Logger::get("StatusRequestsPool"))
     {}
 
@@ -129,9 +129,8 @@ class StorageSystemReplicasImpl
 {
 public:
     explicit StorageSystemReplicasImpl(size_t max_threads)
-        : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, max_threads)
-        , requests_without_zk_fields(thread_pool)
-        , requests_with_zk_fields(thread_pool)
+        : requests_without_zk_fields(max_threads)
+        , requests_with_zk_fields(max_threads)
     {}
 
     Pipe read(
@@ -141,7 +140,6 @@ public:
         ContextPtr context);
 
 private:
-    ThreadPool thread_pool;
     StatusRequestsPool requests_without_zk_fields;
     StatusRequestsPool requests_with_zk_fields;
 };
