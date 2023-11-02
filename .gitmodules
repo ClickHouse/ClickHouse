@@ -357,4 +357,3 @@
 [submodule "contrib/pocketfft"]
 	path = contrib/pocketfft
 	url = https://gitlab.mpcdf.mpg.de/mtr/pocketfft.git
-	branch = cpp
