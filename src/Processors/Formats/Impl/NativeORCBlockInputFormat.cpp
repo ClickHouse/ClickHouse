@@ -720,12 +720,8 @@ static std::string toDotColumnPath(const std::vector<std::string> & columns)
     }
 }
 
-static void getFileReaderAndSchema(
-    ReadBuffer & in,
-    std::unique_ptr<orc::Reader> & file_reader,
-    Block & header,
-    const FormatSettings & format_settings,
-    std::atomic<int> & is_stopped)
+static void getFileReader(
+    ReadBuffer & in, std::unique_ptr<orc::Reader> & file_reader, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
 {
     if (is_stopped)
         return;
@@ -733,18 +729,6 @@ static void getFileReaderAndSchema(
     orc::ReaderOptions options;
     auto input_stream = asORCInputStream(in, format_settings, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
-    const auto & schema = file_reader->getType();
-
-    for (size_t i = 0; i < schema.getSubtypeCount(); ++i)
-    {
-        const std::string & name = schema.getFieldName(i);
-        const orc::Type * orc_type = schema.getSubtype(i);
-
-        bool skipped = false;
-        DataTypePtr type = parseORCType(orc_type, format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference, skipped);
-        if (!skipped)
-            header.insert(ColumnWithTypeAndName{type, name});
-    }
 }
 
 static const orc::Type * traverseDownORCTypeByName(
@@ -884,8 +868,7 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block hea
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    Block schema;
-    getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
+    getFileReader(*in, file_reader, format_settings, is_stopped);
     if (is_stopped)
         return;
 
@@ -1037,16 +1020,27 @@ NativeORCSchemaReader::NativeORCSchemaReader(ReadBuffer & in_, const FormatSetti
 
 NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
-    Block header;
     std::unique_ptr<orc::Reader> file_reader;
     std::atomic<int> is_stopped = 0;
-    getFileReaderAndSchema(in, file_reader, header, format_settings, is_stopped);
+    getFileReader(in, file_reader, format_settings, is_stopped);
+
+    const auto & schema = file_reader->getType();
+    Block header;
+    for (size_t i = 0; i < schema.getSubtypeCount(); ++i)
+    {
+        const std::string & name = schema.getFieldName(i);
+        const orc::Type * orc_type = schema.getSubtype(i);
+
+        bool skipped = false;
+        DataTypePtr type = parseORCType(orc_type, format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference, skipped);
+        if (!skipped)
+            header.insert(ColumnWithTypeAndName{type, name});
+    }
 
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }
-
 
 ORCColumnToCHColumn::ORCColumnToCHColumn(
     const Block & header_, bool allow_missing_columns_, bool null_as_default_, bool case_insensitive_matching_)
