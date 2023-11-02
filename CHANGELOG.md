@@ -16,13 +16,13 @@
 ### ClickHouse release 23.10, 2023-11-02
 
 #### Backward Incompatible Change
-* Rewrited the experimental `S3Queue` table engine completely: changed the way we keep information in zookeeper which allows to make less zookeeper requests, added caching of zookeeper state in cases when we know the state will not change, improved the polling from s3 process to make it less aggressive, changed the way ttl and max set for trached files is maintained, now it is a background process. Added `system.s3queue` and `system.s3queue_log` tables. Closes [#54998](https://github.com/ClickHouse/ClickHouse/issues/54998). [#54422](https://github.com/ClickHouse/ClickHouse/pull/54422) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * There is no longer an option to automatically remove broken data parts. This closes [#55174](https://github.com/ClickHouse/ClickHouse/issues/55174). [#55184](https://github.com/ClickHouse/ClickHouse/pull/55184) ([Alexey Milovidov](https://github.com/alexey-milovidov)). [#55557](https://github.com/ClickHouse/ClickHouse/pull/55557) ([Jihyuk Bok](https://github.com/tomahawk28)).
 * The obsolete in-memory data parts can no longer be read from the write-ahead log. If you have configured in-memory parts before, they have to be removed before the upgrade. [#55186](https://github.com/ClickHouse/ClickHouse/pull/55186) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Remove the integration with Meilisearch. Reason: it was compatible only with the old version 0.18. The recent version of Meilisearch changed the protocol and does not work anymore. Note: we would appreciate it if you help to return it back. [#55189](https://github.com/ClickHouse/ClickHouse/pull/55189) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Rename directory monitor concept into background INSERT. All the settings `*directory_monitor*` had been renamed to `distributed_background_insert*`. *Backward compatibility should be preserved* (since old settings had been added as an alias). [#55978](https://github.com/ClickHouse/ClickHouse/pull/55978) ([Azat Khuzhin](https://github.com/azat)).
 * Do not interpret the `send_timeout` set on the client side as the `receive_timeout` on the server side and vise-versa. [#56035](https://github.com/ClickHouse/ClickHouse/pull/56035) ([Azat Khuzhin](https://github.com/azat)).
 * Comparison of time intervals with different units will throw an exception. This closes [#55942](https://github.com/ClickHouse/ClickHouse/issues/55942). You might have occasionally rely on the previous behavior when the underlying numeric values were compared regardless of the units. [#56090](https://github.com/ClickHouse/ClickHouse/pull/56090) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Rewrited the experimental `S3Queue` table engine completely: changed the way we keep information in zookeeper which allows to make less zookeeper requests, added caching of zookeeper state in cases when we know the state will not change, improved the polling from s3 process to make it less aggressive, changed the way ttl and max set for trached files is maintained, now it is a background process. Added `system.s3queue` and `system.s3queue_log` tables. Closes [#54998](https://github.com/ClickHouse/ClickHouse/issues/54998). [#54422](https://github.com/ClickHouse/ClickHouse/pull/54422) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 #### New Feature
 * Add function `arrayFold(accumulator, x1, ..., xn -> expression, initial, array1, ..., arrayn)` which applies a lambda function to multiple arrays of the same cardinality and collects the result in an accumulator. [#49794](https://github.com/ClickHouse/ClickHouse/pull/49794) ([Lirikl](https://github.com/Lirikl)).
@@ -53,7 +53,8 @@
 
 #### Performance Improvement
 * Add option `query_plan_preserve_num_streams_after_window_functions` to preserve the number of streams after evaluating window functions to allow parallel stream processing. [#50771](https://github.com/ClickHouse/ClickHouse/pull/50771) ([frinkr](https://github.com/frinkr)).
-* Release more num_streams if data is small. [#53867](https://github.com/ClickHouse/ClickHouse/pull/53867) ([Jiebin Sun](https://github.com/jiebinn)).
+* Release more streams if data is small. [#53867](https://github.com/ClickHouse/ClickHouse/pull/53867) ([Jiebin Sun](https://github.com/jiebinn)).
+* RoaringBitmaps being optimized before serialization. [#55044](https://github.com/ClickHouse/ClickHouse/pull/55044) ([UnamedRus](https://github.com/UnamedRus)).
 * Posting lists in inverted indexes are now optimized to use the smallest possible representation for internal bitmaps. Depending on the repetitiveness of the data, this may significantly reduce the space consumption of inverted indexes. [#55069](https://github.com/ClickHouse/ClickHouse/pull/55069) ([Harry Lee](https://github.com/HarryLeeIBM)).
 * Fix contention on Context lock, this significantly improves performance for a lot of short-running concurrent queries. [#55121](https://github.com/ClickHouse/ClickHouse/pull/55121) ([Maksim Kita](https://github.com/kitaisreal)).
 * Improved the performance of inverted index creation by 30%. This was achieved by replacing `std::unordered_map` with `absl::flat_hash_map`. [#55210](https://github.com/ClickHouse/ClickHouse/pull/55210) ([Harry Lee](https://github.com/HarryLeeIBM)).
@@ -129,6 +130,7 @@
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 * Skip hardlinking inverted index files in mutation [#47663](https://github.com/ClickHouse/ClickHouse/pull/47663) ([cangyin](https://github.com/cangyin)).
+* Fixed bug of `match` function (regex) with pattern containing alternation produces incorrect key condition. Closes #53222. [#54696](https://github.com/ClickHouse/ClickHouse/pull/54696) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * Fix 'Cannot find column' in read-in-order optimization with ARRAY JOIN [#51746](https://github.com/ClickHouse/ClickHouse/pull/51746) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Support missed experimental `Object(Nullable(json))` subcolumns in query. [#54052](https://github.com/ClickHouse/ClickHouse/pull/54052) ([zps](https://github.com/VanDarkholme7)).
 * Re-add fix for `accurateCastOrNull()` [#54629](https://github.com/ClickHouse/ClickHouse/pull/54629) ([Salvatore Mesoraca](https://github.com/aiven-sal)).
