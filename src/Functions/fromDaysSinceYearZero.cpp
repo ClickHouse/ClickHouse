@@ -35,18 +35,12 @@ struct DateTraits
 {
     static constexpr auto name = "fromDaysSinceYearZero";
     using ReturnDataType = DataTypeDate;
-
-    static constexpr auto MIN_DAYS = 719528;
-    static constexpr auto MAX_DAYS = 785063;
 };
 
 struct DateTraits32
 {
     static constexpr auto name = "fromDaysSinceYearZero32";
     using ReturnDataType = DataTypeDate32;
-
-    static constexpr auto MIN_DAYS = 693961;
-    static constexpr auto MAX_DAYS = 840056;
 };
 
 template <typename Traits>
@@ -57,9 +51,7 @@ public:
     static constexpr auto name = Traits::name;
     using RawReturnType = typename Traits::ReturnDataType::FieldType;
 
-    static FunctionPtr create(ContextPtr ctx) { return std::make_shared<FunctionFromDaysSinceYearZero>(ctx); }
-
-    explicit FunctionFromDaysSinceYearZero(ContextPtr ctx_) : ctx(ctx_) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFromDaysSinceYearZero>(); }
 
     String getName() const override { return name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -79,15 +71,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        using namespace std::chrono;
-
         auto res_column = Traits::ReturnDataType::ColumnType::create(input_rows_count);
         const auto & src_column = arguments[0];
-
-        [[maybe_unused]] FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
-
-        if (ctx)
-            date_time_overflow_behavior = ctx->getSettingsRef().date_time_overflow_behavior.value;
 
         auto try_type = [&]<typename T>(T)
         {
@@ -95,18 +80,7 @@ public:
 
             if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
             {
-                switch (date_time_overflow_behavior)
-                {
-                    case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        execute<FormatSettings::DateTimeOverflowBehavior::Throw, T>(*col_vec, *res_column, input_rows_count);
-                        break;
-                    case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        execute<FormatSettings::DateTimeOverflowBehavior::Ignore, T>(*col_vec, *res_column, input_rows_count);
-                        break;
-                    case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        execute<FormatSettings::DateTimeOverflowBehavior::Saturate, T>(*col_vec, *res_column, input_rows_count);
-                        break;
-                }
+                execute<T>(*col_vec, *res_column, input_rows_count);
                 return true;
             }
             return false;
@@ -127,7 +101,7 @@ public:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
     }
 
-    template <FormatSettings::DateTimeOverflowBehavior overflow_behaviour, typename T, typename ColVecType, typename ResCol>
+    template <typename T, typename ColVecType, typename ResCol>
     void execute(const ColVecType & col, ResCol & result_column, size_t rows_count) const
     {
         const auto & src_data = col.getData();
@@ -145,26 +119,9 @@ public:
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative value {} while executing function {}", static_cast<Int64>(raw_value), getName());
             }
             auto value = static_cast<equivalent_integer>(raw_value);
-            if constexpr (overflow_behaviour == FormatSettings::DateTimeOverflowBehavior::Saturate)
-            {
-                if (value < Traits::MIN_DAYS)
-                    value = Traits::MIN_DAYS;
-                else if (value > Traits::MAX_DAYS)
-                    value = Traits::MAX_DAYS;
-                dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
-            }
-            else if constexpr (overflow_behaviour == FormatSettings::DateTimeOverflowBehavior::Throw)
-            {
-                if (value < Traits::MIN_DAYS || value > Traits::MAX_DAYS) [[unlikely]]
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds while executing function {}", static_cast<Int64>(value), getName());
-                dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
-            } else
-                dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
+            dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
         }
     }
-
-private:
-    ContextPtr ctx;
 };
 
 
@@ -175,7 +132,7 @@ REGISTER_FUNCTION(FromDaysSinceYearZero)
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits>>(FunctionDocumentation{
         .description = R"(
 Given the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
-The calculation is the same as in MySQL's FROM_DAYS() function. If an overflow of the range supported by Date were to happen the behaviour is controlled by DateTimeOverflowBehavior setting.
+The calculation is the same as in MySQL's FROM_DAYS() function.
 )",
         .examples{{"typical", "SELECT fromDaysSinceYearZero(713569)", "2023-09-08"}},
         .categories{"Dates and Times"}});
@@ -183,7 +140,7 @@ The calculation is the same as in MySQL's FROM_DAYS() function. If an overflow o
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>(FunctionDocumentation{
         .description = R"(
 Given the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
-The calculation is the same as in MySQL's FROM_DAYS() function. If an overflow of the range supported by Date32 were to happen the behaviour is controlled by DateTimeOverflowBehavior setting.
+The calculation is the same as in MySQL's FROM_DAYS() function.
 )",
         .examples{{"typical", "SELECT fromDaysSinceYearZero32(713569)", "2023-09-08"}},
         .categories{"Dates and Times"}});
