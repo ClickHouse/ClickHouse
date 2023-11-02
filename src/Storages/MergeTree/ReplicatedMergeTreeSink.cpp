@@ -816,6 +816,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     NameSet unused;
                     /// if we found part in deduplication hashes part must exists on some replica
                     storage.checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, existing_part_name, unused);
+
+                    /// We have to check that the block_id still exists to avoid a race condition with DROP_RANGE
+                    block_unlock_op_idx = ops.size();
+                    ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/blocks/" + block_id, -1));
                 }
                 catch (const zkutil::KeeperException &)
                 {
@@ -924,8 +928,13 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else if (multi_code == Coordination::Error::ZNONODE && zkutil::getFailedOpIndex(multi_code, responses) == block_unlock_op_idx)
         {
+            if (block_number_lock)
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                            "Insert query (for block {}) was canceled by concurrent ALTER PARTITION or TRUNCATE", block_number_lock->getPath());
+
+            chassert(!existing_part_name.empty());
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                            "Insert query (for block {}) was cancelled by concurrent ALTER PARTITION", block_number_lock->getPath());
+                            "Insert query (for existing part {}, deduplicated) was canceled by concurrent ALTER PARTITION, TRUNCATE, or the part became outdated", existing_part_name);
         }
         else if (Coordination::isHardwareError(multi_code))
         {

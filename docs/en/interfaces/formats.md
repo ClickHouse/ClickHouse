@@ -74,6 +74,7 @@ The supported formats are:
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
 | [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
 | [One](#data-format-one)                                                                   | ✔    | ✗     |
+| [Npy](#data-format-npy)                                                                   | ✔    | ✗     |
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
@@ -2452,6 +2453,50 @@ Result:
 ┌─_file────────┐
 │ data.parquet │
 └──────────────┘
+```
+
+## Npy {#data-format-npy}
+
+This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse: 
+| Npy type | ClickHouse type |
+|:--------:|:---------------:|
+| b1       |    UInt8        |
+| i1       |    Int8         |
+| i2       |    Int16        |
+| i4       |    Int32        |
+| i8       |    Int64        |
+| u1       |    UInt8        |
+| u2       |    UInt16       |
+| u4       |    UInt32       |
+| u8       |    UInt64       |
+| f4       |    Float32      |
+| f8       |    Float64      |
+| S        |    String       |
+| U        |    String       |
+
+**Example of saving an array in .npy format using Python**
+
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+**Example of reading a NumPy file in ClickHouse**
+
+Query:
+```sql
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+Result:
+```
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
 ```
 
 ## LineAsString {#lineasstring}

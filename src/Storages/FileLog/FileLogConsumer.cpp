@@ -1,8 +1,9 @@
 #include <Interpreters/Context.h>
-#include <Storages/FileLog/ReadBufferFromFileLog.h>
+#include <Storages/FileLog/FileLogConsumer.h>
 #include <Common/Stopwatch.h>
 
 #include <Common/logger_useful.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -14,15 +15,14 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ReadBufferFromFileLog::ReadBufferFromFileLog(
+FileLogConsumer::FileLogConsumer(
     StorageFileLog & storage_,
     size_t max_batch_size,
     size_t poll_timeout_,
     ContextPtr context_,
     size_t stream_number_,
     size_t max_streams_number_)
-    : ReadBuffer(nullptr, 0)
-    , log(&Poco::Logger::get("ReadBufferFromFileLog " + toString(stream_number_)))
+    : log(&Poco::Logger::get("FileLogConsumer " + toString(stream_number_)))
     , storage(storage_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
@@ -31,23 +31,19 @@ ReadBufferFromFileLog::ReadBufferFromFileLog(
     , max_streams_number(max_streams_number_)
 {
     current = records.begin();
-    allowed = false;
 }
 
-bool ReadBufferFromFileLog::poll()
+ReadBufferPtr FileLogConsumer::consume()
 {
     if (hasMorePolledRecords())
-    {
-        allowed = true;
-        return true;
-    }
+        return getNextRecord();
 
     auto new_records = pollBatch(batch_size);
     if (new_records.empty())
     {
         buffer_status = BufferStatus::NO_RECORD_RETURNED;
         LOG_TRACE(log, "No new records to read");
-        return false;
+        return nullptr;
     }
     else
     {
@@ -57,12 +53,11 @@ bool ReadBufferFromFileLog::poll()
         LOG_TRACE(log, "Polled batch of {} records. ", records.size());
 
         buffer_status = BufferStatus::POLLED_OK;
-        allowed = true;
-        return true;
+        return getNextRecord();
     }
 }
 
-ReadBufferFromFileLog::Records ReadBufferFromFileLog::pollBatch(size_t batch_size_)
+FileLogConsumer::Records FileLogConsumer::pollBatch(size_t batch_size_)
 {
     Records new_records;
     new_records.reserve(batch_size_);
@@ -84,7 +79,7 @@ ReadBufferFromFileLog::Records ReadBufferFromFileLog::pollBatch(size_t batch_siz
     return new_records;
 }
 
-void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_records, size_t batch_size_)
+void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, size_t batch_size_)
 {
     size_t need_records_size = batch_size_ - new_records.size();
     size_t read_records_size = 0;
@@ -155,21 +150,14 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
     }
 }
 
-bool ReadBufferFromFileLog::nextImpl()
+ReadBufferPtr FileLogConsumer::getNextRecord()
 {
-    if (!allowed || !hasMorePolledRecords())
-        return false;
+    if (!hasMorePolledRecords())
+        return nullptr;
 
-    auto * new_position = const_cast<char *>(current->data.data());
-    BufferBase::set(new_position, current->data.size(), 0);
-    allowed = false;
-
-    current_file = current->file_name;
-    current_offset = current->offset;
-
+    auto buf = std::make_unique<ReadBufferFromString>(current->data);
     ++current;
-
-    return true;
+    return buf;
 }
 
 }
