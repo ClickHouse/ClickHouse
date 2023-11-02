@@ -80,8 +80,8 @@ private:
     Coordination::XID close_xid = Coordination::CLOSE_XID;
 
     /// Streams for reading/writing from/to client connection socket.
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
-    std::shared_ptr<WriteBufferFromPocoSocket> out;
+    std::optional<ReadBufferFromPocoSocket> in;
+    std::optional<WriteBufferFromPocoSocket> out;
     std::optional<CompressedReadBuffer> compressed_in;
     std::optional<CompressedWriteBuffer> compressed_out;
 

@@ -111,13 +111,13 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
-    PollResult poll(Poco::Timespan remaining_time, const std::shared_ptr<ReadBufferFromPocoSocket> & in)
+    PollResult poll(Poco::Timespan remaining_time, const ReadBufferFromPocoSocket & in)
     {
 
         bool socket_ready = false;
         bool fd_ready = false;
 
-        if (in->available() != 0)
+        if (in.available() != 0)
             socket_ready = true;
 
         if (response_in.available() != 0)
@@ -315,8 +315,8 @@ void KeeperTCPHandler::runImpl()
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
+    in.emplace(socket());
+    out.emplace(socket());
     compressed_in.reset();
     compressed_out.reset();
 
@@ -431,7 +431,7 @@ void KeeperTCPHandler::runImpl()
         {
             using namespace std::chrono_literals;
 
-            PollResult result = poll_wrapper->poll(session_timeout, in);
+            PollResult result = poll_wrapper->poll(session_timeout, *in);
             log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
