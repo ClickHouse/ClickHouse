@@ -54,6 +54,8 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
+    /// set to true when we have preprocessed or committed all the logs
+    /// that were already present locally during startup
     std::atomic<bool> local_logs_preprocessed = false;
     std::atomic<bool> shutdown_called = false;
 private:

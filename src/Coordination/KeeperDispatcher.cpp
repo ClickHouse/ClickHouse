@@ -461,7 +461,6 @@ void KeeperDispatcher::shutdown()
             our_last_committed_log_idx.notify_all();
 
             keeper_context->local_logs_preprocessed = true;
-            keeper_context->local_logs_preprocessed.notify_all();
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
