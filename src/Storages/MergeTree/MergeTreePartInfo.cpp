@@ -308,7 +308,7 @@ bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & bloc
     std::sort(candidates.begin(), candidates.end());
 
     /// First doesn't cover left border
-    if (candidates[0].min_block > blocks_range.min_block)
+    if (candidates[0].min_block != blocks_range.min_block)
         return false;
 
     int64_t current_right_block = candidates[0].min_block;
