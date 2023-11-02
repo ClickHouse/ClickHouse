@@ -1,3 +1,5 @@
+-- Tests that functions round(), roundBankers(), floor(), ceil() and trunc() accept non-const decimal arguments (= the 2nd argument)
+
 SELECT toUInt8(number) AS x, round(materialize(x)), roundBankers(materialize(x)), floor(materialize(x)), ceil(materialize(x)), trunc(materialize(x)) FROM system.numbers LIMIT 20;
 SELECT toUInt16(number) AS x, round(materialize(x)), roundBankers(materialize(x)), floor(materialize(x)), ceil(materialize(x)), trunc(materialize(x)) FROM system.numbers LIMIT 20;
 SELECT toUInt32(number) AS x, round(materialize(x)), roundBankers(materialize(x)), floor(materialize(x)), ceil(materialize(x)), trunc(materialize(x)) FROM system.numbers LIMIT 20;
@@ -116,5 +118,5 @@ DROP TABLE IF EXISTS tround2;
 
 SELECT round(1, 1);
 SELECT round(materialize(1), materialize(1));
-SELECT round(1, materialize(1)); --{serverError 44}
+SELECT round(1, materialize(1)); --{serverError NOT_IMPLEMENTED}
 SELECT round(materialize(1), 1);

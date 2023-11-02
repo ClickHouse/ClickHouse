@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
@@ -9,7 +10,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-#include "IFunction.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
@@ -159,7 +159,7 @@ struct IntegerRoundingComputation
             }
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -173,7 +173,7 @@ struct IntegerRoundingComputation
                 return computeImpl(x, scale);
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>
@@ -259,7 +259,7 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Trunc: return truncf(x);
     }
 
-    UNREACHABLE();
+    std::unreachable();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -272,7 +272,7 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Trunc: return trunc(x);
     }
 
-    UNREACHABLE();
+    std::unreachable();
 }
 struct FloatRoundingScalar{};
 
@@ -508,9 +508,9 @@ struct Dispatcher
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
-    static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
+    static ColumnPtr apply(const IColumn * col_input, Scale scale_arg)
     {
-        const auto * const col = checkAndGetColumn<ColumnVector<T>>(col_general);
+        const auto * const col = checkAndGetColumn<ColumnVector<T>>(col_input);
         auto col_res = ColumnVector<T>::create();
 
         typename ColumnVector<T>::Container & vec_res = col_res->getData();
@@ -539,9 +539,9 @@ struct Dispatcher
     }
 
     template<typename S>
-    static ColumnPtr apply(const IColumn * col_general, const ColumnVector<S>* col_scale)
+    static ColumnPtr apply(const IColumn * col_input, const ColumnVector<S>* col_scale)
     {
-        const auto * const col = checkAndGetColumn<ColumnVector<T>>(col_general);
+        const auto * const col = checkAndGetColumn<ColumnVector<T>>(col_input);
         auto col_res = ColumnVector<T>::create();
 
         typename ColumnVector<T>::Container & vec_res = col_res->getData();
@@ -549,14 +549,15 @@ struct Dispatcher
 
         if (!vec_res.empty())
         {
-            const auto& in = col->getData();
-            const auto& scaledata = col_scale->getData();
+            const auto & in = col->getData();
+            const auto & scaledata = col_scale->getData();
             const size_t count = in.size();
 
-            const T* end_in = in.data() + count;
-            const T* __restrict p_in = in.data();
-            const S* __restrict p_scale = scaledata.data();
-            T* __restrict p_out = vec_res.data();
+            const T * end_in = in.data() + count;
+            const T * __restrict p_in = in.data();
+            const S * __restrict p_scale = scaledata.data();
+            T * __restrict p_out = vec_res.data();
+
             while (p_in < end_in)
             {
                 auto raw_scale = clampScale(*p_scale);
@@ -590,9 +591,9 @@ template <is_decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking
 struct Dispatcher<T, rounding_mode, tie_breaking_mode>
 {
 public:
-    static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
+    static ColumnPtr apply(const IColumn * col_input, Scale scale_arg)
     {
-        const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_general);
+        const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_input);
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
         auto col_res = ColumnDecimal<T>::create(vec_src.size(), col->getScale());
@@ -605,10 +606,10 @@ public:
     }
 
     template<typename S>
-    static ColumnPtr apply(const IColumn * col_general, const ColumnVector<S>* col_scale)
+    static ColumnPtr apply(const IColumn * col_input, const ColumnVector<S>* col_scale)
     {
         using NativeType = typename T::NativeType;
-        const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_general);
+        const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_input);
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
         auto col_res = ColumnDecimal<T>::create(vec_src.size(), col->getScale());
@@ -616,12 +617,11 @@ public:
 
         if (!vec_res.empty())
         {
-            const auto& in = col->getData();
-            const auto& scale = col_scale->getData();
-            const size_t count = in.size();
+            const auto & scale = col_scale->getData();
+            const size_t count = vec_src.size();
 
-            const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(in.data());
-            const S* __restrict p_scale = scale.data();
+            const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(vec_src.data());
+            const S * __restrict p_scale = scale.data();
             const NativeType * end_in = p_in + count;
             NativeType * __restrict p_out = reinterpret_cast<NativeType *>(vec_res.data());
             while (p_in < end_in)
@@ -647,30 +647,24 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRounding>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if ((arguments.empty()) || (arguments.size() > 2))
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"x", &isNumber<IDataType>, nullptr, "Number"},
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"N", &isNumber<IDataType>, nullptr, "Number"},
+        };
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
-        for (const auto & type : arguments)
-            if (!isNumber(type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arguments[0]->getName(), getName());
-
-        return arguments[0];
+        return arguments[0].type;
     }
 
     static Scale getScaleArg(const ColumnsWithTypeAndName & arguments)
@@ -697,12 +691,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (arguments.size() == 2 && isColumnConst(*arguments[0].column) && !isColumnConst(*arguments[1].column))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale argument should be a constant when input constant");
-        }
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Const inputs with non-const scale (N) arguments are not implemented");
 
         const ColumnWithTypeAndName & column = arguments[0];
-        const bool has_one_scale = arguments.size() == 1 || (arguments.size() == 2 && (isColumnConst(*arguments[1].column) || arguments[1].column->size() == 1));
+        const bool scale_is_everywhere_the_same = arguments.size() == 1 || (arguments.size() == 2 && (isColumnConst(*arguments[1].column) || arguments[1].column->size() == 1));
 
         ColumnPtr res;
         auto call = [&](const auto & types) -> bool
@@ -713,7 +705,8 @@ public:
             if constexpr (IsDataTypeNumber<DataType> || IsDataTypeDecimal<DataType>)
             {
                 using FieldType = typename DataType::FieldType;
-                if (has_one_scale)
+
+                if (scale_is_everywhere_the_same)
                 {
                     Scale scale_arg = getScaleArg(arguments);
                     res = Dispatcher<FieldType, rounding_mode, tie_breaking_mode>::apply(column.column.get(), scale_arg);

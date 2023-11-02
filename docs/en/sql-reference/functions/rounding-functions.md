@@ -9,8 +9,8 @@ sidebar_label: Rounding
 ## floor(x\[, N\])
 
 Returns the largest round number that is less than or equal to `x`. A round number is a multiple of 1/10N, or the nearest number of the appropriate data type if 1 / 10N isn’t exact.
-‘N’ is an integer constant (can be a column), optional parameter. By default it is zero, which means to round to an integer.
-‘N’ may be negative.
+`N` is an integer. Optional. By default `0`, which means round to an integer.
+`N` may be negative.
 
 Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 
@@ -33,13 +33,13 @@ Rounds a value to a specified number of decimal places.
 The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker’s rounding for float number types and rounds away from zero for the other number types (Decimal).
 
 ``` sql
-round(expression [, decimal_places])
+round(expression[, decimal_places])
 ```
 
 **Arguments**
 
 - `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
-- `decimal-places` — An integer value (can be a column).
+- `decimal-places` — The number of decimal places to round to.
     - If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
     - If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
     - If `decimal-places = 0` then the function rounds the value to integer. In this case the argument can be omitted.
@@ -126,13 +126,13 @@ For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 **Syntax**
 
 ``` sql
-roundBankers(expression [, decimal_places])
+roundBankers(expression[, decimal_places])
 ```
 
 **Arguments**
 
 - `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
-- `decimal-places` — Decimal places. An integer number (can be a column).
+- `decimal-places` — The number of decimal places to round to.
     - `decimal-places > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
     - `decimal-places < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
     - `decimal-places = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
