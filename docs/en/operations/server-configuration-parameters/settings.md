@@ -1823,6 +1823,10 @@ The trailing slash is mandatory.
 
 ## Prometheus {#prometheus}
 
+:::note
+ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+:::
+
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
 Settings:

@@ -18,6 +18,7 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
+#include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
@@ -249,6 +250,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
 
     manager.addPass(std::make_unique<CountDistinctPass>());
+    manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
