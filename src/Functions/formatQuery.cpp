@@ -1,7 +1,7 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <IO/WriteBufferFromVector.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
@@ -75,23 +75,38 @@ private:
     {
         const size_t size = offsets.size();
         res_offsets.resize(size);
-        res_data.reserve(data.size());
+        res_data.resize(data.size());
 
         size_t prev_offset = 0;
+        size_t res_data_size = 0;
+
         for (size_t i = 0; i < size; ++i)
         {
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
-            const char * end = begin + offsets[i] - 1;
+            const char * end = begin + offsets[i] - prev_offset - 1;
 
             ParserQuery parser(end);
             auto ast = parseQuery(parser, begin, end, /*query_description*/ {}, max_query_size, max_parser_depth);
-            WriteBufferFromVector buf(res_data, AppendModeTag{});
-            formatAST(*ast, buf, /*hilite*/ false, /*single_line*/ output_formatting == OutputFormatting::SingleLine);
-            buf.finalize();
 
-            res_offsets[i] = res_data.size() + 1;
+            WriteBufferFromOwnString buf;
+            formatAST(*ast, buf, /*hilite*/ false, /*single_line*/ output_formatting == OutputFormatting::SingleLine);
+            auto formatted = buf.stringView();
+
+            const size_t res_data_new_size = res_data_size + formatted.size() + 1;
+            if (res_data_new_size > res_data.size())
+                res_data.resize(2 * res_data_new_size);
+
+            memcpy(&res_data[res_data_size], formatted.begin(), formatted.size());
+            res_data_size += formatted.size();
+
+            res_data[res_data_size] = '\0';
+            res_data_size += 1;
+
+            res_offsets[i] = res_data_size;
             prev_offset = offsets[i];
         }
+
+        res_data.resize(res_data_size);
     }
 
     const size_t max_query_size;
