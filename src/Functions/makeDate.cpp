@@ -40,6 +40,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isVariadic() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
 
 protected:
@@ -182,7 +184,6 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return mandatory_argument_names.size(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
