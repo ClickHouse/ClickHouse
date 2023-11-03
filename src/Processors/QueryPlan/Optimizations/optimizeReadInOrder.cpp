@@ -97,7 +97,6 @@ void updateStepsDataStreams(StepStack & steps_to_update)
     if (!steps_to_update.empty())
     {
         const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
-        chassert(dynamic_cast<ISourceStep *>(steps_to_update.back()));
         steps_to_update.pop_back();
 
         while (!steps_to_update.empty())
