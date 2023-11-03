@@ -59,7 +59,7 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    friend std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl();
+    friend String getRunningAvailabilityZoneImpl();
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;

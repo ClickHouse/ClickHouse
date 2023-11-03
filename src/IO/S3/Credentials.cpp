@@ -274,7 +274,7 @@ String getGCPAvailabilityZoneOrException()
     return zone_info[3];
 }
 
-std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl()
+String getRunningAvailabilityZoneImpl()
 {
     LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
     try
@@ -291,16 +291,28 @@ std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl()
         }
         catch (const DB::Exception & gcp_ex)
         {
-            return std::make_exception_ptr(DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex.displayText(), gcp_ex.displayText()));
+            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex.displayText(), gcp_ex.displayText());
         }
+    }
+}
+
+std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImplOrException()
+{
+    try
+    {
+        return getRunningAvailabilityZoneImpl();
+    }
+    catch (...)
+    {
+        return std::current_exception();
     }
 }
 
 String getRunningAvailabilityZone()
 {
-    static auto az_or_exception = getRunningAvailabilityZoneImpl();
-    if (const auto * az = std::get_if<std::string>(&az_or_exception))
+    static auto az_or_exception = getRunningAvailabilityZoneImplOrException();
+    if (const auto * az = std::get_if<String>(&az_or_exception))
         return *az;
     else
         std::rethrow_exception(std::get<std::exception_ptr>(az_or_exception));
