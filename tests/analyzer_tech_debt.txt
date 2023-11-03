@@ -68,4 +68,3 @@
 02815_range_dict_no_direct_join
 02845_threads_count_in_distributed_queries
 02861_join_on_nullsafe_compare
-01019_alter_materialized_view_consistent
