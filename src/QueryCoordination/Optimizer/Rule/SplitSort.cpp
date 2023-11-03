@@ -33,7 +33,7 @@ std::vector<StepTree> SplitSort::transform(StepTree & step_tree, ContextPtr cont
     const auto max_block_size = context->getSettingsRef().max_block_size;
     const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
     auto merging_sorted = std::make_unique<SortingStep>(
-        sorting_step->getInputStreams()[0], sorting_step->getSortDescription(), max_block_size, sorting_step->getLimit(), exact_rows_before_limit);
+        pre_sort->getOutputStream(), sorting_step->getSortDescription(), max_block_size, sorting_step->getLimit(), exact_rows_before_limit);
     merging_sorted->setPhase(SortingStep::Phase::Final);
 
     StepTree res_step_tree;

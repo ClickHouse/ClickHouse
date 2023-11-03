@@ -39,8 +39,8 @@ def started_cluster():
         cluster.shutdown()
 
 def exec_query_compare_result(query_text):
-    accurate_result = node1.query(query_text)
-    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+    accurate_result = node1.query(query_text + " SETTINGS distributed_product_mode = 'global'")
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1, use_index_for_in_with_subqueries = 0")
     assert accurate_result == test_result
 
 def test_query(started_cluster):

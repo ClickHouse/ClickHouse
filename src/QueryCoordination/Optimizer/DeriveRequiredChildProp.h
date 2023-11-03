@@ -44,6 +44,8 @@ public:
 
     AlternativeChildrenProp visit(FilterStep & step) override;
 
+    AlternativeChildrenProp visit(UnionStep & step) override;
+
 private:
     GroupNodePtr group_node;
 };

@@ -4,30 +4,27 @@
 namespace DB
 {
 
-void setSortProp(ITransformingStep & transform_step, SortProp & required_sort_prop, size_t child_index = 0)
+void setSortProp(QueryPlanStepPtr step, SortProp & required_sort_prop, size_t child_index = 0)
 {
-    if (child_index >= transform_step.getInputStreams().size())
+    if (child_index >= step->getInputStreams().size())
         return;
 
-    /// If the transform preserves_sorting and the output is ordered, the child is required to be ordered.
-    if (transform_step.getDataStreamTraits().preserves_sorting)
+    /// There are some cases where sort desc is misaligned with the header, and in this case it is not required to keep the sort prop.
+    /// E.g select * from aaa_all where name in (select name from bbb_all where name like '%d%') order by id limit 13 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 1;
+    /// CreatingSetsStep header is id_0, name_1 but it's sort desc is id
+    const auto & header = step->getInputStreams()[child_index].header;
+    for (const auto & sort_column : step->getInputStreams()[child_index].sort_description)
     {
-        /// There are some cases where sort desc is misaligned with the header, and in this case it is not required to keep the sort prop.
-        /// E.g select * from aaa_all where name in (select name from bbb_all where name like '%d%') order by id limit 13 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 1;
-        /// CreatingSetsStep header is id_0, name_1 but it's sort desc is id
-        const auto & header = transform_step.getInputStreams()[child_index].header;
-        for (const auto & sort_column : transform_step.getInputStreams()[child_index].sort_description)
-        {
-            if (!header.has(sort_column.column_name))
-                return;
-        }
-
-        if (!transform_step.getInputStreams()[child_index].sort_description.empty())
-        {
-            required_sort_prop.sort_description = transform_step.getInputStreams()[child_index].sort_description;
-            required_sort_prop.sort_scope = transform_step.getInputStreams()[child_index].sort_scope;
-        }
+        if (!header.has(sort_column.column_name))
+            return;
     }
+
+    if (!step->getInputStreams()[child_index].sort_description.empty())
+    {
+        required_sort_prop.sort_description = step->getInputStreams()[child_index].sort_description;
+        required_sort_prop.sort_scope = step->getInputStreams()[child_index].sort_scope;
+    }
+
 }
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(QueryPlanStepPtr step)
@@ -51,8 +48,9 @@ AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & s
     for (size_t i = 0; i < group_node->childSize(); ++i)
     {
         SortProp required_child_sort_prop;
-        if (transforming_step)
-            setSortProp(*transforming_step, required_child_sort_prop);
+        /// If the transform preserves_sorting and the output is ordered, the child is required to be ordered.
+        if (transforming_step && transforming_step->getDataStreamTraits().preserves_sorting)
+            setSortProp(group_node->getStep(), required_child_sort_prop, i);
 
         required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_child_sort_prop});
     }
@@ -113,10 +111,11 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(MergingAggregatedStep & s
     return res;
 }
 
-AlternativeChildrenProp DeriveRequiredChildProp::visit(ExpressionStep & /*step*/)
+AlternativeChildrenProp DeriveRequiredChildProp::visit(ExpressionStep & step)
 {
     SortProp required_sort_prop;
-    setSortProp(*dynamic_cast<ITransformingStep *>(group_node->getStep().get()), required_sort_prop);
+    if (step.getDataStreamTraits().preserves_sorting)
+        setSortProp(group_node->getStep(), required_sort_prop);
 
     PhysicalProperties required_child_prop;
     required_child_prop.sort_prop = required_sort_prop;
@@ -127,7 +126,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(ExpressionStep & /*step*/
 AlternativeChildrenProp DeriveRequiredChildProp::visit(FilterStep & /*step*/)
 {
     SortProp required_sort_prop;
-    setSortProp(*dynamic_cast<ITransformingStep *>(group_node->getStep().get()), required_sort_prop);
+    setSortProp(group_node->getStep(), required_sort_prop);
 
     PhysicalProperties required_child_prop;
     required_child_prop.sort_prop = required_sort_prop;
@@ -213,7 +212,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(DistinctStep & step)
 AlternativeChildrenProp DeriveRequiredChildProp::visit(LimitStep & step)
 {
     SortProp required_sort_prop;
-    setSortProp(*dynamic_cast<ITransformingStep *>(group_node->getStep().get()), required_sort_prop);
+    setSortProp(group_node->getStep(), required_sort_prop);
 
     AlternativeChildrenProp res;
     std::vector<PhysicalProperties> required_child_prop;
@@ -301,6 +300,19 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(CreatingSetsStep & step)
     for (size_t i = 1; i < group_node->childSize(); ++i)
     {
         required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+    }
+    return {required_child_prop};
+}
+
+AlternativeChildrenProp DeriveRequiredChildProp::visit(UnionStep & /*step*/)
+{
+    std::vector<PhysicalProperties> required_child_prop;
+    for (size_t i = 0; i < group_node->childSize(); ++i)
+    {
+        SortProp required_child_sort_prop;
+        setSortProp(group_node->getStep(), required_child_sort_prop, i);
+
+        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_child_sort_prop});
     }
     return {required_child_prop};
 }
