@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -1069,6 +1070,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
+            if (const auto * type_object = typeid_cast<const DataTypeObject *>(command.data_type.get()))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of type Object to existing table is not allowed");
+
             if (all_columns.has(column_name) || all_columns.hasNested(column_name))
             {
                 if (!command.if_not_exists)
@@ -1098,6 +1102,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
+            if (const auto * type_object = typeid_cast<const DataTypeObject *>(command.data_type.get()))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Modifying a column type to Object in existing table is not allowed");
+
             if (!all_columns.has(column_name))
             {
                 if (!command.if_exists)
