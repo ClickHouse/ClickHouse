@@ -3,7 +3,7 @@
 from hashlib import md5
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 from sys import modules
 
 if TYPE_CHECKING:
@@ -44,6 +44,15 @@ def digest_path(path: Path) -> HASH:
     if path.is_file():
         return _digest_file(path)
     return md5()
+
+
+def digest_paths(paths: Iterable[Path]) -> HASH:
+    """Calculates aggregated md5 hash of passed paths. The order matters"""
+    md5_hash = md5()
+    for path in paths:
+        if path.exists():
+            md5_hash.update(digest_path(path).digest())
+    return md5_hash
 
 
 def digest_script(path_str: str) -> HASH:
