@@ -1500,6 +1500,7 @@ formated
 formatschema
 formatter
 freezed
+fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
