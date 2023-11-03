@@ -23,7 +23,7 @@ FROM
 )
 GROUP BY nw
 ORDER BY R DESC
-LIMIT 10) where explain ilike '%ScatterByPartitionTransform%';
+LIMIT 10) where explain ilike '%ScatterByPartitionTransform%' SETTINGS max_threads = 4;
 
 -- { echoOn }
 
