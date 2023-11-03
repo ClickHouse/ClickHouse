@@ -43,11 +43,9 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
             if (my_is_internal)
             {
                 String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
+                zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-
-                if (code == Coordination::Error::ZNODEEXISTS)
-                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
-                else if (code != Coordination::Error::ZOK)
+                if (auto code != Coordination::Error::ZOK)
                     throw zkutil::KeeperException::fromPath(code, alive_node_path);
             }
         })
