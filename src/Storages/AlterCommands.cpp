@@ -1102,9 +1102,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
-            if (const auto * type_object = typeid_cast<const DataTypeObject *>(command.data_type.get()))
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Modifying a column type to Object in existing table is not allowed");
-
             if (!all_columns.has(column_name))
             {
                 if (!command.if_exists)
@@ -1158,8 +1155,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                if (command.data_type->getName().contains("Object")
-                    || old_data_type->getName().contains("Object"))
+                bool new_type_is_object = !!typeid_cast<const DataTypeObject *>(command.data_type.get());
+                bool old_type_is_object = !!typeid_cast<const DataTypeObject *>(old_data_type.get());
+
+                if (new_type_is_object || old_type_is_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The change of data type {} of column {} to {} is not allowed",
