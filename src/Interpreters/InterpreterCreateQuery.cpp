@@ -480,7 +480,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, bool attach)
+    const ASTExpressionList & columns_ast, ContextPtr context_, bool attach, bool is_restore_from_backup)
 {
     /// First, deduce implicit types.
 
@@ -645,7 +645,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (!attach && context_->getSettingsRef().flatten_nested)
+    if (!attach && !is_restore_from_backup && context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
@@ -692,7 +692,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach);
+            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach, is_restore_from_backup);
         }
 
         if (create.columns_list->indices)
@@ -752,7 +752,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-
         Block as_select_sample;
 
         if (getContext()->getSettingsRef().allow_experimental_analyzer)
