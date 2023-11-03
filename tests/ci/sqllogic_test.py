@@ -18,8 +18,8 @@ from commit_status_helper import (
     override_status,
     post_commit_status,
 )
-from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from docker_images_helper import DockerImage, pull_image, get_docker_image
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import OK, FAIL, ERROR, SUCCESS, TestResults, TestResult, read_test_results
@@ -70,8 +70,22 @@ def read_check_status(result_folder: Path) -> Tuple[str, str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("check_name")
-    parser.add_argument("kill_timeout", type=int)
+    parser.add_argument(
+        "--check-name",
+        required=False,
+        default="",
+    )
+    parser.add_argument(
+        "--kill-timeout",
+        required=False,
+        default=0,
+    )
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     return parser.parse_args()
 
 
@@ -81,12 +95,20 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
-    reports_path = Path(REPORTS_PATH)
 
     args = parse_args()
     check_name = args.check_name
+    check_name = args.check_name or os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    kill_timeout = args.kill_timeout or int(os.getenv("KILL_TIMEOUT", "0"))
+    assert (
+        kill_timeout > 0
+    ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
 
     pr_info = PRInfo()
     gh = Github(get_best_robot_token(), per_page=100)
@@ -97,7 +119,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
     repo_tests_path = repo_path / "tests"
 
@@ -123,7 +145,7 @@ def main():
     )
     logging.info("Going to run func tests: %s", run_command)
 
-    with TeePopen(run_command, run_log_path, timeout=args.kill_timeout) as process:
+    with TeePopen(run_command, run_log_path, timeout=kill_timeout) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")

@@ -11,7 +11,7 @@ on: # yamllint disable-line rule:truthy
   workflow_call:
 jobs:
   KeeperJepsenRelease:
-    uses: ./.github/workflows/reusable_test.yml
+    uses: ./.github/workflows/reusable_simple_job.yml
     with:
       test_name: Jepsen keeper check
       runner_type: style-checker
@@ -19,8 +19,7 @@ jobs:
         cd "$REPO_COPY/tests/ci"
         python3 jepsen_check.py keeper
   # ServerJepsenRelease:
-  #   runs-on: [self-hosted, style-checker]
-  #   uses: ./.github/workflows/reusable_test.yml
+  #   uses: ./.github/workflows/reusable_simple_job.yml
   #   with:
   #     test_name: Jepsen server check
   #     runner_type: style-checker

@@ -25,8 +25,8 @@ from commit_status_helper import (
     update_mergeable_check,
 )
 from compress_files import compress_fast
-from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
+from docker_images_helper import DockerImage, pull_image, get_docker_image
+from env_helper import CI, REPORT_PATH, TEMP_PATH as TEMP
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
@@ -151,7 +151,7 @@ def test_install_tgz(image: DockerImage) -> TestResults:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
-        f"Install server tgz in {image.name}": r"""#!/bin/bash -ex
+        f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/clickhouse-{common,client,server}*tgz; do
     package=${pkg%-*}
@@ -161,7 +161,7 @@ for pkg in /packages/clickhouse-{common,client,server}*tgz; do
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
-        f"Install keeper tgz in {image.name}": r"""#!/bin/bash -ex
+        f"Install keeper tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/clickhouse-keeper*tgz; do
     package=${pkg%-*}
@@ -224,10 +224,15 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="The script to check if the packages are able to install",
     )
-
     parser.add_argument(
         "check_name",
         help="check name, used to download the packages",
+    )
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
     )
     parser.add_argument("--download", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -289,10 +294,9 @@ def main():
             )
             sys.exit(0)
 
-    docker_images = {
-        name: get_image_with_version(REPORTS_PATH, name, args.download)
-        for name in (RPM_IMAGE, DEB_IMAGE)
-    }
+    deb_image = pull_image(get_docker_image(DEB_IMAGE))
+    rpm_image = pull_image(get_docker_image(RPM_IMAGE))
+
     prepare_test_scripts()
 
     if args.download:
@@ -312,7 +316,7 @@ def main():
             return is_match
 
         download_builds_filter(
-            args.check_name, REPORTS_PATH, TEMP_PATH, filter_artifacts
+            args.check_name, REPORT_PATH, TEMP_PATH, filter_artifacts
         )
 
     test_results = []  # type: TestResults
@@ -325,12 +329,12 @@ def main():
         subprocess.check_output(f"{ch_copy.absolute()} local -q 'SELECT 1'", shell=True)
 
     if args.deb:
-        test_results.extend(test_install_deb(docker_images[DEB_IMAGE]))
+        test_results.extend(test_install_deb(deb_image))
     if args.rpm:
-        test_results.extend(test_install_rpm(docker_images[RPM_IMAGE]))
+        test_results.extend(test_install_rpm(rpm_image))
     if args.tgz:
-        test_results.extend(test_install_tgz(docker_images[DEB_IMAGE]))
-        test_results.extend(test_install_tgz(docker_images[RPM_IMAGE]))
+        test_results.extend(test_install_tgz(deb_image))
+        test_results.extend(test_install_tgz(rpm_image))
 
     state = SUCCESS
     test_status = OK

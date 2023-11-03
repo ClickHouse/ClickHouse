@@ -6,30 +6,26 @@ import logging
 import os
 import subprocess
 
-from pathlib import Path
-from typing import List, Dict, Tuple
+import sys
+from typing import List, Tuple
 
 from github import Github
 
 from clickhouse_helper import (
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
-    CHException,
 )
 from commit_status_helper import format_description, get_commit, post_commit_status
-from docker_images_helper import IMAGES_FILE_PATH, get_image_names
-from env_helper import RUNNER_TEMP, REPO_COPY
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
-from git_helper import Runner
 from pr_info import PRInfo
-from report import TestResults, TestResult
+from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from env_helper import ROOT_DIR
 from upload_result_helper import upload_results
+from docker_images_helper import get_images_oredered_list
 
 NAME = "Push multi-arch images to Dockerhub"
-CHANGED_IMAGES = "changed_images_{}.json"
-Images = Dict[str, List[str]]
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,10 +44,21 @@ def parse_args() -> argparse.Namespace:
         help="suffixes for existing images' tags. More than two should be given",
     )
     parser.add_argument(
-        "--path",
-        type=Path,
-        default=RUNNER_TEMP,
-        help="path to changed_images_*.json files",
+        "--missing-images",
+        type=str,
+        required=True,
+        help="json string or json file with images to build {IMAGE: TAG} or type all to build all",
+    )
+    parser.add_argument(
+        "--image-tags",
+        type=str,
+        required=True,
+        help="json string or json file with all images and their tags {IMAGE: TAG}",
+    )
+    parser.add_argument(
+        "--set-latest",
+        type=str,
+        help="add latest tag",
     )
     parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -77,70 +84,13 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def load_images(path: Path, suffix: str) -> Images:
-    with open(path / CHANGED_IMAGES.format(suffix), "rb") as images:
-        return json.load(images)  # type: ignore
-
-
-def strip_suffix(suffix: str, images: Images) -> Images:
-    result = {}
-    for image, versions in images.items():
-        for v in versions:
-            if not v.endswith(f"-{suffix}"):
-                raise ValueError(
-                    f"version {image}:{v} does not contain suffix {suffix}"
-                )
-        result[image] = [v[: -len(suffix) - 1] for v in versions]
-
-    return result
-
-
-def check_sources(to_merge: Dict[str, Images]) -> Images:
-    """get a dict {arch1: Images, arch2: Images}"""
-    result = {}  # type: Images
-    first_suffix = ""
-    for suffix, images in to_merge.items():
-        if not result:
-            first_suffix = suffix
-            result = strip_suffix(suffix, images)
-            continue
-        if not result == strip_suffix(suffix, images):
-            raise ValueError(
-                f"images in {images} are not equal to {to_merge[first_suffix]}"
-            )
-
-    return result
-
-
-def get_changed_images(images: Images) -> Dict[str, str]:
-    """The original json format is {"image": "tag"}, so the output artifact is
-    produced here. The latest version is {PR_NUMBER}-{SHA1}
-    """
-    return {k: v[-1] for k, v in images.items()}
-
-
-def merge_images(to_merge: Dict[str, Images]) -> Dict[str, List[List[str]]]:
-    """The function merges image-name:version-suffix1 and image-name:version-suffix2
-    into image-name:version"""
-    suffixes = to_merge.keys()
-    result_images = check_sources(to_merge)
-    merge = {}  # type: Dict[str, List[List[str]]]
-
-    for image, versions in result_images.items():
-        merge[image] = []
-        for i, v in enumerate(versions):
-            merged_v = [v]  # type: List[str]
-            for suf in suffixes:
-                merged_v.append(to_merge[suf][image][i])
-            merge[image].append(merged_v)
-
-    return merge
-
-
-def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
-    tag = tags[0]
-    manifest = f"{image}:{tag}"
-    cmd = "docker manifest create --amend " + " ".join((f"{image}:{t}" for t in tags))
+def create_manifest(
+    image: str, result_tag: str, tags: List[str], push: bool
+) -> Tuple[str, str]:
+    manifest = f"{image}:{result_tag}"
+    cmd = "docker manifest create --amend " + " ".join(
+        (f"{image}:{t}" for t in [result_tag] + tags)
+    )
     logging.info("running: %s", cmd)
     with subprocess.Popen(
         cmd,
@@ -175,79 +125,14 @@ def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
     return manifest, "OK"
 
 
-def enrich_images(changed_images: Dict[str, str]) -> None:
-    all_image_names = get_image_names(Path(REPO_COPY), IMAGES_FILE_PATH)
-
-    images_to_find_tags_for = [
-        image for image in all_image_names if image not in changed_images
-    ]
-    images_to_find_tags_for.sort()
-
-    logging.info(
-        "Trying to find versions for images:\n %s", "\n ".join(images_to_find_tags_for)
-    )
-
-    COMMIT_SHA_BATCH_SIZE = 100
-    MAX_COMMIT_BATCHES_TO_CHECK = 10
-    # Gets the sha of the last COMMIT_SHA_BATCH_SIZE commits after skipping some commits (see below)
-    LAST_N_ANCESTOR_SHA_COMMAND = f"git log --format=format:'%H' --max-count={COMMIT_SHA_BATCH_SIZE} --skip={{}} --merges"
-    git_runner = Runner()
-
-    GET_COMMIT_SHAS_QUERY = """
-        WITH {commit_shas:Array(String)} AS commit_shas,
-             {images:Array(String)} AS images
-        SELECT
-            splitByChar(':', test_name)[1] AS image_name,
-            argMax(splitByChar(':', test_name)[2], check_start_time) AS tag
-        FROM checks
-            WHERE
-                check_name == 'Push multi-arch images to Dockerhub'
-                AND position(test_name, checks.commit_sha)
-                AND checks.commit_sha IN commit_shas
-                AND image_name IN images
-        GROUP BY image_name
-        """
-
-    batch_count = 0
-    # We use always publicly available DB here intentionally
-    ch_helper = ClickHouseHelper(
-        "https://play.clickhouse.com", {"X-ClickHouse-User": "play"}
-    )
-
-    while (
-        batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0
-    ):
-        commit_shas = git_runner(
-            LAST_N_ANCESTOR_SHA_COMMAND.format(batch_count * COMMIT_SHA_BATCH_SIZE)
-        ).split("\n")
-
-        result = ch_helper.select_json_each_row(
-            "default",
-            GET_COMMIT_SHAS_QUERY,
-            {"commit_shas": commit_shas, "images": images_to_find_tags_for},
-        )
-        result.sort(key=lambda x: x["image_name"])
-
-        logging.info(
-            "Found images for commits %s..%s:\n %s",
-            commit_shas[0],
-            commit_shas[-1],
-            "\n ".join(f"{im['image_name']}:{im['tag']}" for im in result),
-        )
-
-        for row in result:
-            image_name = row["image_name"]
-            changed_images[image_name] = row["tag"]
-            images_to_find_tags_for.remove(image_name)
-
-        batch_count += 1
-
-
 def main():
+    # to be aligned with docker paths from image.json
+    os.chdir(ROOT_DIR)
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
 
     args = parse_args()
+
     if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'robotclickhouse' --password-stdin",
@@ -256,33 +141,40 @@ def main():
             shell=True,
         )
 
-    to_merge = {}
-    for suf in args.suffixes:
-        to_merge[suf] = load_images(args.path, suf)
+    archs = args.suffixes
+    assert len(archs) > 1, "arch suffix input param is invalid"
 
-    changed_images = get_changed_images(check_sources(to_merge))
+    image_tags = (
+        json.loads(args.image_tags)
+        if not os.path.isfile(args.image_tags)
+        else json.load(open(args.image_tags))
+    )
 
-    os.environ["DOCKER_CLI_EXPERIMENTAL"] = "enabled"
-    merged = merge_images(to_merge)
-
+    test_results = []
     status = "success"
-    test_results = []  # type: TestResults
-    for image, versions in merged.items():
-        for tags in versions:
-            manifest, test_result = create_manifest(image, tags, args.push)
+
+    ok_cnt, fail_cnt = 0, 0
+    images = get_images_oredered_list()
+    for image_obj in images:
+        tag = image_tags[image_obj.repo]
+        if image_obj.only_amd64:
+            # FIXME: WA until full arm support
+            tags = [f"{tag}-{arch}" for arch in archs if arch != "aarch64"]
+        else:
+            tags = [f"{tag}-{arch}" for arch in archs]
+        manifest, test_result = create_manifest(image_obj.repo, tag, tags, args.push)
+        test_results.append(TestResult(manifest, test_result))
+        if args.set_latest:
+            manifest, test_result = create_manifest(
+                image_obj.repo, "latest", tags, args.push
+            )
             test_results.append(TestResult(manifest, test_result))
-            if test_result != "OK":
-                status = "failure"
 
-    enriched_images = changed_images.copy()
-    try:
-        # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
-        enrich_images(enriched_images)
-    except CHException as ex:
-        logging.warning("Couldn't get proper tags for not changed images: %s", ex)
-
-    with open(args.path / "changed_images.json", "w", encoding="utf-8") as ci:
-        json.dump(enriched_images, ci)
+        if test_result != "OK":
+            status = "failure"
+            fail_cnt += 1
+        else:
+            ok_cnt += 1
 
     pr_info = PRInfo()
     s3_helper = S3Helper()
@@ -294,12 +186,9 @@ def main():
     if not args.reports:
         return
 
-    if changed_images:
-        description = "Updated " + ", ".join(changed_images.keys())
-    else:
-        description = "Nothing to update"
-
-    description = format_description(description)
+    description = format_description(
+        f"Multiarch images created [ok: {ok_cnt}, failed: {fail_cnt}]"
+    )
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
@@ -316,6 +205,8 @@ def main():
     )
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    if status == "failure":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

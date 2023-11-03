@@ -7,8 +7,7 @@ import csv
 import sys
 import atexit
 from pathlib import Path
-from typing import List, Tuple
-
+from typing import Tuple
 from github import Github
 
 from build_check import get_release_or_pr
@@ -23,14 +22,15 @@ from commit_status_helper import (
     update_mergeable_check,
     format_description,
 )
-from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY, REPORTS_PATH
+
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResult, TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from docker_images_helper import DockerImage, get_docker_image, pull_image
 from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
 
@@ -106,6 +106,12 @@ def parse_args() -> argparse.Namespace:
         default=40,
         help="Timeout in minutes",
     )
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     args = parser.parse_args()
     args.timeout = args.timeout * 60
     return args
@@ -118,8 +124,6 @@ def main():
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
-    reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -136,7 +140,7 @@ def main():
             sys.exit(1)
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/fasttest")
+    docker_image = pull_image(get_docker_image("clickhouse/fasttest"))
 
     s3_helper = S3Helper()
 

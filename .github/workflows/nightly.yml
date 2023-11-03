@@ -13,67 +13,37 @@ jobs:
   Debug:
     # The task for having a preserved ENV and event.json for later investigation
     uses: ./.github/workflows/debug.yml
-  DockerHubPushAarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Images check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_images_check.py --suffix aarch64 --all
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: changed_images_aarch64
-          path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
-  DockerHubPushAmd64:
+  RunConfig:
     runs-on: [self-hosted, style-checker]
+    outputs:
+      data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
-          clear-repository: true
-      - name: Images check
+          clear-repository: true # to ensure correct digests
+      - name: PrepareRunConfig
+        id: runconfig
         run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_images_check.py --suffix amd64 --all
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: changed_images_amd64
-          path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
-  DockerHubPush:
-    needs: [DockerHubPushAmd64, DockerHubPushAarch64]
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
-          filter: tree:0
-      - name: Download changed aarch64 images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images_aarch64
-          path: ${{ runner.temp }}
-      - name: Download changed amd64 images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images_amd64
-          path: ${{ runner.temp }}
-      - name: Images check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ runner.temp }}/changed_images.json
+            # Check docker images:
+            # FIXME: login to dockerhub?
+            aws ssm get-parameter --region us-east-1 --name dockerhub_robot_password --query 'Parameter.Value' --output=text --with-decryption \
+            | docker login --username robotclickhouse --password-stdin
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --rebuild-all-docker --outfile ${{ runner.temp }}/ci_run_data.json
+            # pretty printing
+            echo "=== CI run config ==="
+            python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
+            {
+              echo 'CI_DATA<<EOF'
+              cat  ${{ runner.temp }}/ci_run_data.json
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+  BuildDockers:
+    needs: [RunConfig]
+    uses: ./.github/workflows/reusable_docker.yml
+    with:
+      data: "${{ needs.RunConfig.outputs.data }}"
+      set_latest: true
   SonarCloud:
     runs-on: [self-hosted, builder]
     env:

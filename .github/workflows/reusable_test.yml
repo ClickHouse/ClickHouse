@@ -14,13 +14,10 @@ name: Testing workflow
         required: true
         type: string
       run_command:
-        description: the command to launch the check. Usually starts with `cd '$REPO_COPY/tests/ci'`
-        required: true
+        description: the command to launch the check
+        default: ""
+        required: false
         type: string
-      batches:
-        description: how many batches for the test will be launched
-        default: 1
-        type: number
       checkout_depth:
         description: the value of the git shallow checkout
         required: false
@@ -34,10 +31,19 @@ name: Testing workflow
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
+      data:
+        description: ci data
+        type: string
+        required: true
+      working-directory:
+        description: sets custom working directory
+        type: string
+        default: ""
     secrets:
       secret_envs:
         description: if given, it's passed to the environments
         required: false
+
 
 env:
   # Force the stdout and stderr streams to be unbuffered
@@ -45,69 +51,67 @@ env:
   CHECK_NAME: ${{inputs.test_name}}
 
 jobs:
-  PrepareStrategy:
-    # batches < 1 is misconfiguration,
-    # and we need this step only for batches > 1
-    if: ${{ inputs.batches > 1 }}
-    runs-on: [self-hosted, style-checker-aarch64]
-    outputs:
-      batches: ${{steps.batches.outputs.batches}}
-    steps:
-      - name: Calculate batches
-        id: batches
-        run: |
-          batches_output=$(python3 -c 'import json; print(json.dumps(list(range(${{inputs.batches}}))))')
-          echo "batches=${batches_output}" >> "$GITHUB_OUTPUT"
   Test:
-    # If PrepareStrategy is skipped for batches == 1,
-    # we still need to launch the test.
-    # `! failure()` is mandatory here to launch on skipped Job
-    # `&& !cancelled()` to allow the be cancelable
-    if: ${{ ( !failure() && !cancelled() ) && inputs.batches > 0 }}
-    # Do not add `-0` to the end, if there's only one batch
-    name: ${{inputs.test_name}}${{ inputs.batches > 1 && format('-{0}',matrix.batch) || '' }}
-    env:
-      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ inputs.batches > 1 && format('-{0}',matrix.batch) || '' }}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
-    needs: [PrepareStrategy]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.test_name) }}
+    name: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
+    env:
+      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
     strategy:
       fail-fast: false  # we always wait for entire matrix
       matrix:
-        # if PrepareStrategy does not have batches, we use 0
-        batch: ${{ needs.PrepareStrategy.outputs.batches
-          && fromJson(needs.PrepareStrategy.outputs.batches)
-          || fromJson('[0]')}}
+        batch: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].batches }}
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
+          ref: ${{ github.event.after }}
           submodules: ${{inputs.submodules}}
           fetch-depth: ${{inputs.checkout_depth}}
           filter: tree:0
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
+          CHECK_NAME=${{ inputs.test_name }}
           ${{inputs.additional_envs}}
           ${{secrets.secret_envs}}
           EOF
+          echo "DOCKER_TAG=$(echo '${{ toJson(fromJson(inputs.data).docker_data.images) }}' | tr -d '\n')" >> "$GITHUB_ENV"
       - name: Common setup
         uses: ./.github/actions/common_setup
         with:
           job_type: test
-      - name: Download json reports
-        uses: actions/download-artifact@v3
-        with:
-          path: ${{ env.REPORTS_PATH }}
       - name: Setup batch
-        if: ${{ inputs.batches > 1}}
+        if: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 }}
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           RUN_BY_HASH_NUM=${{matrix.batch}}
-          RUN_BY_HASH_TOTAL=${{inputs.batches}}
+          RUN_BY_HASH_TOTAL=${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches }}
           EOF
-      - name: Run test
-        run: ${{inputs.run_command}}
+      - name: Pre run
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.test_name}}'
+      - name: Run
+        run: |
+          if [ -n "${{ inputs.working-directory }}" ]; then
+            cd "${{ inputs.working-directory }}"
+          else
+            cd "$GITHUB_WORKSPACE/tests/ci"
+          fi
+          if [ -n "$(echo '${{ inputs.run_command }}' | tr -d '\n')" ]; then
+            echo "Running command from workflow input"
+            ${{ inputs.run_command }}
+          else
+            echo "Running command from job config"
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --run --job-name '${{inputs.test_name}}'
+          fi
+      - name: Post run
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.test_name}}'
+      - name: Mark as done
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.test_name}}' --batch ${{matrix.batch}}
       - name: Clean
         if: always()
         uses: ./.github/actions/clean

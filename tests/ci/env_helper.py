@@ -9,10 +9,11 @@ from build_download_helper import get_gh_api
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
-
+ROOT_DIR = git_root
 CI = bool(os.getenv("CI"))
 TEMP_PATH = os.getenv("TEMP_PATH", p.abspath(p.join(module_dir, "./tmp")))
-
+REPORT_PATH = f"{TEMP_PATH}/reports"
+DOCKER_TAG = os.getenv("DOCKER_TAG")
 CACHES_PATH = os.getenv("CACHES_PATH", TEMP_PATH)
 CLOUDFLARE_TOKEN = os.getenv("CLOUDFLARE_TOKEN")
 GITHUB_EVENT_PATH = os.getenv("GITHUB_EVENT_PATH", "")
@@ -23,7 +24,6 @@ GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 GITHUB_WORKSPACE = os.getenv("GITHUB_WORKSPACE", git_root)
 GITHUB_RUN_URL = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
 IMAGES_PATH = os.getenv("IMAGES_PATH", TEMP_PATH)
-REPORTS_PATH = os.getenv("REPORTS_PATH", p.abspath(p.join(module_dir, "./reports")))
 REPO_COPY = os.getenv("REPO_COPY", GITHUB_WORKSPACE)
 RUNNER_TEMP = os.getenv("RUNNER_TEMP", p.abspath(p.join(module_dir, "./tmp")))
 S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")

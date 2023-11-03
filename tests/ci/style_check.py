@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-
 from clickhouse_helper import (
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
@@ -20,8 +19,8 @@ from commit_status_helper import (
     post_commit_status,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
-from env_helper import REPO_COPY, REPORTS_PATH, TEMP_PATH
+
+from env_helper import REPO_COPY, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from git_helper import git_runner
@@ -30,6 +29,7 @@ from report import TestResults, read_test_results
 from s3_helper import S3Helper
 from ssh import SSHKey
 from stopwatch import Stopwatch
+from docker_images_helper import get_docker_image, pull_image
 from upload_result_helper import upload_results
 
 NAME = "Style Check"
@@ -80,6 +80,12 @@ def process_result(
 def parse_args():
     parser = argparse.ArgumentParser("Check and report style issues in the repository")
     parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     parser.add_argument(
         "--no-push",
         action="store_false",
@@ -142,15 +148,12 @@ def main():
     repo_path = Path(REPO_COPY)
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
-    reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
-    if args.push:
-        checkout_head(pr_info)
-
     gh = GitHub(get_best_robot_token(), create_cache_dir=False)
     commit = get_commit(gh, pr_info.sha)
+    if args.push:
+        checkout_head(pr_info)
 
     atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
@@ -163,13 +166,14 @@ def main():
         code = int(state != "success")
         sys.exit(code)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/style-test")
     s3_helper = S3Helper()
 
+    IMAGE_NAME = "clickhouse/style-test"
+    image = pull_image(get_docker_image(IMAGE_NAME))
     cmd = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"{docker_image}"
+        f"{image}"
     )
 
     logging.info("Is going to run the command: %s", cmd)

@@ -24,9 +24,9 @@ from commit_status_helper import (
     post_commit_status,
     post_commit_status_to_file,
 )
-from docker_pull_helper import get_images_with_versions, DockerImage
+from docker_images_helper import DockerImage, pull_image, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import ERROR, TestResult, TestResults, read_test_results
@@ -145,7 +145,11 @@ def process_results(
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("check_name")
+    parser.add_argument(
+        "--check-name",
+        required=False,
+        default="",
+    )
     parser.add_argument(
         "--validate-bugfix",
         action="store_true",
@@ -157,6 +161,12 @@ def parse_args():
         choices=["commit_status", "file"],
         help="Where to public post commit status",
     )
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     return parser.parse_args()
 
 
@@ -166,14 +176,17 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
     post_commit_path = temp_path / "integration_commit_status.tsv"
     repo_path = Path(REPO_COPY)
-    reports_path = Path(REPORTS_PATH)
 
     args = parse_args()
-    check_name = args.check_name
+    check_name = args.check_name or os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
     if "RUN_BY_HASH_NUM" in os.environ:
@@ -215,7 +228,9 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    images = get_images_with_versions(reports_path, IMAGES)
+    images: List[DockerImage] = []
+    for image in IMAGES:
+        images.append(pull_image(get_docker_image(image)))
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
 

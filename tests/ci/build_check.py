@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 from pathlib import Path
 from typing import Tuple
 import subprocess
@@ -9,10 +10,9 @@ import time
 
 from ci_config import CI_CONFIG, BuildConfig
 from ccache_utils import CargoCache
-from docker_pull_helper import get_image_with_version
+
 from env_helper import (
     GITHUB_JOB_API_URL,
-    IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
@@ -23,6 +23,7 @@ from pr_info import PRInfo
 from report import BuildResult, FAILURE, StatusType, SUCCESS
 from s3_helper import S3Helper
 from tee_popen import TeePopen
+import docker_images_helper
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
@@ -223,11 +224,31 @@ def upload_master_static_binaries(
     print(f"::notice ::Binary static URL (compact): {url_compact}")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser("Clickhouse builder script")
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        type=str,
+        help="tag for docker image",
+    )
+    parser.add_argument(
+        "--build-name",
+        required=True,
+        type=str,
+        help="build name",
+    )
+    return parser.parse_args()
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
+    args = parse_args()
+
     stopwatch = Stopwatch()
-    build_name = sys.argv[1]
+    build_name = args.build_name
 
     build_config = CI_CONFIG.build_config[build_name]
 
@@ -250,14 +271,12 @@ def main():
         (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
     )
 
+    # FIXME: to be removed in favor of "skip by job digest"
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
     # The s3_path_prefix has additional "/" in the end to prevent finding
     # e.g. `binary_darwin_aarch64/clickhouse` for `binary_darwin`
     check_for_success_run(s3_helper, f"{s3_path_prefix}/", build_name, version)
-
-    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
-    image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.string)
 
@@ -281,13 +300,17 @@ def main():
     )
     cargo_cache.download()
 
+    docker_image = docker_images_helper.pull_image(
+        docker_images_helper.get_docker_image(IMAGE_NAME)
+    )
+
     packager_cmd = get_packager_cmd(
         build_config,
         repo_path / "docker" / "packager",
         build_output_path,
         cargo_cache.directory,
         version.string,
-        image_version,
+        docker_image.version,
         official_flag,
     )
 

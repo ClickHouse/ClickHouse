@@ -6,6 +6,7 @@ import os
 import sys
 import atexit
 from pathlib import Path
+from typing import List
 
 from github import Github
 
@@ -13,8 +14,8 @@ from env_helper import (
     GITHUB_JOB_URL,
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
-    REPORTS_PATH,
     TEMP_PATH,
+    REPORT_PATH,
 )
 from report import (
     BuildResult,
@@ -26,7 +27,7 @@ from report import (
 )
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import NeedsDataType, PRInfo
+from pr_info import PRInfo
 from commit_status_helper import (
     RerunHelper,
     format_description,
@@ -46,32 +47,32 @@ NEEDS_DATA = os.getenv("NEEDS_DATA", "")
 def main():
     logging.basicConfig(level=logging.INFO)
     temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    logging.info("Reports path %s", REPORTS_PATH)
-    reports_path = Path(REPORTS_PATH)
     logging.info(
         "Reports found:\n %s",
         "\n ".join(p.as_posix() for p in reports_path.rglob("*.json")),
     )
 
     build_check_name = sys.argv[1]
-    needs_data = {}  # type: NeedsDataType
+    needs_data: List[str] = []
     required_builds = 0
-    if os.path.exists(NEEDS_DATA_PATH):
-        with open(NEEDS_DATA_PATH, "rb") as file_handler:
-            needs_data = json.load(file_handler)
 
     if NEEDS_DATA:
         needs_data = json.loads(NEEDS_DATA)
+        # drop non build jobs if any
+        needs_data = [d for d in needs_data if "Build" in d]
+    elif os.path.exists(NEEDS_DATA_PATH):
+        with open(NEEDS_DATA_PATH, "rb") as file_handler:
+            needs_data = list(json.load(file_handler).keys())
+    else:
+        assert False, "NEEDS_DATA env var required"
 
     required_builds = len(needs_data)
 
     if needs_data:
         logging.info("The next builds are required: %s", ", ".join(needs_data))
-        if all(i["result"] == "skipped" for i in needs_data.values()):
-            logging.info("All builds are skipped, exiting")
-            sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
@@ -84,14 +85,13 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    builds_for_check = CI_CONFIG.builds_report_config[build_check_name]
+    builds_for_check = CI_CONFIG.get_builds_for_report(build_check_name)
     required_builds = required_builds or len(builds_for_check)
 
     # Collect reports from json artifacts
     build_results = []
     for build_name in builds_for_check:
-        report_name = BuildResult.get_report_name(build_name).stem
-        build_result = BuildResult.read_json(reports_path / report_name, build_name)
+        build_result = BuildResult.read_json(reports_path, build_name)
         if build_result.is_missing:
             logging.warning("Build results for %s are missing", build_name)
             continue

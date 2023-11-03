@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 
+import bisect
+from dataclasses import asdict
 from hashlib import md5
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Union
 from sys import modules
+
+from docker_images_helper import get_images_info
+from ci_config import DigestConfig
+
+DOCKER_DIGEST_LEN = 12
+JOB_DIGEST_LEN = 10
 
 if TYPE_CHECKING:
     from hashlib import (  # pylint:disable=no-name-in-module,ungrouped-imports
@@ -23,44 +31,53 @@ def _digest_file(file: Path, hash_object: HASH) -> None:
             hash_object.update(chunk)
 
 
-def _digest_directory(directory: Path, hash_object: HASH) -> None:
-    assert directory.is_dir()
-    for p in sorted(directory.rglob("*")):
-        if p.is_symlink() and p.is_dir():
-            # The symlink directory is not listed recursively, so we process it manually
-            (_digest_directory(p, hash_object))
-        if p.is_file():
-            (_digest_file(p, hash_object))
-
-
-def digest_path(path: Path, hash_object: Optional[HASH] = None) -> HASH:
+def digest_path(
+    path: Union[Path, str],
+    hash_object: Optional[HASH] = None,
+    exclude_files: Optional[Iterable[str]] = None,
+    exclude_dirs: Optional[Iterable[Union[Path, str]]] = None,
+) -> HASH:
     """Calculates md5 (or updates existing hash_object) hash of the path, either it's
-    directory or file"""
+    directory or file
+    @exclude_files - file extension(s) or any filename suffix(es) that you want to exclude from digest
+    @exclude_dirs - dir names that you want to exclude from digest
+    """
+    path = Path(path)
     hash_object = hash_object or md5()
-    if path.is_dir():
-        _digest_directory(path, hash_object)
-    elif path.is_file():
-        _digest_file(path, hash_object)
+    if path.is_file():
+        if not exclude_files or not any(path.name.endswith(x) for x in exclude_files):
+            _digest_file(path, hash_object)
+    elif path.is_dir():
+        if not exclude_dirs or not any(path.name == x for x in exclude_dirs):
+            for p in sorted(path.iterdir()):
+                digest_path(p, hash_object, exclude_files, exclude_dirs)
+    else:
+        pass  # broken symlink
     return hash_object
 
 
-def digest_paths(paths: Iterable[Path], hash_object: Optional[HASH] = None) -> HASH:
+def digest_paths(
+    paths: Iterable[Union[Path, str]],
+    hash_object: Optional[HASH] = None,
+    exclude_files: Optional[Iterable[str]] = None,
+    exclude_dirs: Optional[Iterable[Union[Path, str]]] = None,
+) -> HASH:
     """Calculates aggregated md5 (or updates existing hash_object) hash of passed paths.
     The order is processed as given"""
     hash_object = hash_object or md5()
-    for path in paths:
+    paths_all: List[Path] = []
+    for p in paths:
+        if isinstance(p, str) and "*" in p:
+            for path in Path(".").glob(p):
+                bisect.insort(paths_all, path.absolute())  # type: ignore[misc]
+        else:
+            bisect.insort(paths_all, Path(p).absolute())  # type: ignore[misc]
+    for path in paths_all:  # type: ignore
         if path.exists():
-            digest_path(path, hash_object)
+            digest_path(path, hash_object, exclude_files, exclude_dirs)
+        else:
+            raise AssertionError(f"Invalid path: {path}")
     return hash_object
-
-
-def digest_consistent_paths(
-    paths: Iterable[Path], hash_object: Optional[HASH] = None
-) -> HASH:
-    """Calculates aggregated md5 (or updates existing hash_object) hash of passed paths.
-    The order doesn't matter, paths are converted to `absolute` and ordered before
-    calculation"""
-    return digest_paths(sorted(p.absolute() for p in paths), hash_object)
 
 
 def digest_script(path_str: str) -> HASH:
@@ -78,3 +95,77 @@ def digest_script(path_str: str) -> HASH:
         logger.warning("The modules size has changed, retry calculating digest")
         return digest_script(path_str)
     return md5_hash
+
+
+def digest_string(string: str) -> str:
+    hash_object = md5()
+    hash_object.update(string.encode("utf-8"))
+    return hash_object.hexdigest()
+
+
+class DockerDigester:
+    EXCLUDE_FILES = [".md"]
+
+    def __init__(self):
+        self.images_info = get_images_info()
+        assert self.images_info, "Fetch image info error"
+
+    def get_image_digest(self, name: str) -> str:
+        assert isinstance(name, str)
+        deps = [name]
+        digest = None
+        while deps:
+            dep_name = deps.pop(0)
+            digest = digest_path(
+                self.images_info[dep_name]["path"],
+                digest,
+                exclude_files=self.EXCLUDE_FILES,
+            )
+            deps += self.images_info[dep_name]["deps"]
+        assert digest
+        return digest.hexdigest()[0:DOCKER_DIGEST_LEN]
+
+    def get_all_digests(self) -> Dict:
+        res = {}
+        for image_name in self.images_info:
+            res[image_name] = self.get_image_digest(image_name)
+        return res
+
+
+class JobDigester:
+    def __init__(self):
+        self.dd = DockerDigester()
+        self.cache: Dict[str, str] = {}
+
+    @staticmethod
+    def _get_config_hash(digest_config: DigestConfig) -> str:
+        data_dict = asdict(digest_config)
+        hash_obj = md5()
+        hash_obj.update(str(data_dict).encode())
+        hash_string = hash_obj.hexdigest()
+        return hash_string
+
+    def get_job_digest(self, digest_config: DigestConfig) -> str:
+        if not digest_config.include_paths:
+            # job is not for digest
+            res = "f" * JOB_DIGEST_LEN
+        else:
+            cache_key = self._get_config_hash(digest_config)
+            if cache_key in self.cache:
+                return self.cache[cache_key]
+            digest_str: List[str] = []
+            if digest_config.include_paths:
+                digest = digest_paths(
+                    digest_config.include_paths,
+                    hash_object=None,
+                    exclude_files=digest_config.exclude_files,
+                    exclude_dirs=digest_config.exclude_dirs,
+                )
+                digest_str += (digest.hexdigest(),)
+            if digest_config.docker:
+                for image_name in digest_config.docker:
+                    image_digest = self.dd.get_image_digest(image_name)
+                    digest_str += (image_digest,)
+            res = digest_string("-".join(digest_str))[0:JOB_DIGEST_LEN]
+            self.cache[cache_key] = res
+        return res

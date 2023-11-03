@@ -20,9 +20,9 @@ from commit_status_helper import (
     get_commit,
     update_mergeable_check,
 )
-from docker_pull_helper import DockerImage, get_image_with_version
+from docker_images_helper import DockerImage, pull_image, get_docker_image
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults
@@ -98,6 +98,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
     parser.add_argument("kill_timeout", type=int)
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     return parser.parse_args()
 
 
@@ -107,8 +113,9 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
-    reports_path = REPORTS_PATH
 
     args = parse_args()
     check_name = args.check_name
@@ -137,7 +144,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/libfuzzer")
+    docker_image = pull_image(get_docker_image("clickhouse/libfuzzer"))
 
     fuzzers_path = temp_path / "fuzzers"
     fuzzers_path.mkdir(parents=True, exist_ok=True)
