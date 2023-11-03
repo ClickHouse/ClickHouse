@@ -1364,6 +1364,18 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
     paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
+    ActiveDataPartSet empty_unexpected_parts_set(format_version);
+    for (const auto & part : parts)
+    {
+        if (part->rows_count || part->getState() != MergeTreeDataPartState::Active || expected_parts.contains(part->name))
+            continue;
+
+        empty_unexpected_parts_set.add(part->name);
+    }
+    if (auto empty_count = empty_unexpected_parts_set.size())
+        LOG_INFO(log, "Found {} empty unexpected parts (probably some dropped parts were not cleaned up before restart): {}",
+                 empty_count, fmt::join(empty_unexpected_parts_set.getParts(), ", "));
+
     /** To check the adequacy, for the parts that are in the FS, but not in ZK, we will only consider not the most recent parts.
       * Because unexpected new parts usually arise only because they did not have time to enroll in ZK with a rough restart of the server.
       * It also occurs from deduplicated parts that did not have time to retire.
@@ -1386,6 +1398,15 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         String covering_local_part = local_expected_parts_set.getContainingPart(part->name);
         if (!covering_local_part.empty())
         {
+            covered_unexpected_parts.push_back(part->name);
+            continue;
+        }
+
+        String covering_empty_part = empty_unexpected_parts_set.getContainingPart(part->name);
+        if (!covering_empty_part.empty())
+        {
+            LOG_WARNING(log, "Unexpected part {} is covered by empty paty {}, assuming it has been dropped just before restart",
+                        part->name, covering_empty_part);
             covered_unexpected_parts.push_back(part->name);
             continue;
         }
