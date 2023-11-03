@@ -261,8 +261,7 @@ namespace
                            proxy_config.protocol,
                            proxy_config.tunneling,
                            proxy_config.original_request_protocol,
-                           wait_on_pool_size_limit
-                       )
+                           wait_on_pool_size_limit)
                     == std::tie(
                            rhs.target_host,
                            rhs.target_port,
@@ -272,8 +271,7 @@ namespace
                            rhs.proxy_config.protocol,
                            rhs.proxy_config.tunneling,
                            rhs.proxy_config.original_request_protocol,
-                           rhs.wait_on_pool_size_limit
-                       );
+                           rhs.wait_on_pool_size_limit);
             }
         };
 

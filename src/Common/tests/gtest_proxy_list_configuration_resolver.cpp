@@ -17,8 +17,7 @@ TEST(ProxyListConfigurationResolver, SimpleTest)
 
     ProxyListConfigurationResolver resolver(
         {proxy_server1, proxy_server2},
-        ProxyConfiguration::Protocol::HTTP
-    );
+        ProxyConfiguration::Protocol::HTTP);
 
     auto configuration1 = resolver.resolve();
     auto configuration2 = resolver.resolve();
