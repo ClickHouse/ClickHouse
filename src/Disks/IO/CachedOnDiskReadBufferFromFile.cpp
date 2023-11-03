@@ -697,6 +697,9 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
 bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 {
+    if (file_segments->empty())
+        return false;
+
     auto & file_segment = file_segments->front();
     const auto & current_read_range = file_segment.range();
     auto current_state = file_segment.state();
@@ -1069,6 +1072,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         first_offset,
         file_segments->toString());
 
+    if (file_offset_of_buffer_end > current_read_range.right)
+        completeFileSegmentAndGetNext();
+
     /// Release buffer a little bit earlier.
     if (read_until_position == file_offset_of_buffer_end)
         implementation_buffer.reset();
@@ -1232,15 +1238,23 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
         current_file_segment_info);
 }
 
-bool CachedOnDiskReadBufferFromFile::seekIsCheap()
+bool CachedOnDiskReadBufferFromFile::isSeekCheap()
 {
     return !initialized || read_type == ReadType::CACHED;
 }
 
-bool CachedOnDiskReadBufferFromFile::contentIsCached()
+bool CachedOnDiskReadBufferFromFile::isContentCached(size_t offset)
 {
     if (!initialized)
         initialize(file_offset_of_buffer_end, getTotalSizeToRead());
+
+    if (!file_segments->front().range().contains(offset) || offset != file_offset_of_buffer_end)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Assumption is wrong: offset={}, file_offset_of_buffer_end={}, file_segments->front()={}",
+            offset,
+            file_offset_of_buffer_end,
+            file_segments->front().range().toString());
 
     return canStartFromCache(file_offset_of_buffer_end, file_segments->front());
 }

@@ -11,7 +11,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/assert_cast.h>
-#include "Parsers/IAST.h"
 #include "config.h"
 
 #include <future>
@@ -69,22 +68,31 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
     auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
-    if (fd->getReader().contentIsCached())
+    auto & reader = fd->getReader();
+
+    /// `seek` have to be done before checking `isContentCached`, and `set` have to be done prior to `seek`
+    reader.set(request.buf, request.size);
+    reader.seek(request.offset, SEEK_SET);
+
+    if (reader.isContentCached(request.offset))
     {
         std::promise<Result> promise;
         std::future<Result> future = promise.get_future();
-        promise.set_value(execute(request));
+        promise.set_value(execute(request, /*seek_performed=*/true));
         return future;
     }
 
     ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmit);
-    return scheduleFromThreadPool<Result>([request, this]() -> Result { return execute(request); },
-                                          *pool,
-                                          "VFSRead",
-                                          request.priority);
+    return scheduleFromThreadPool<Result>(
+        [request, this]() -> Result { return execute(request, /*seek_performed=*/true); }, *pool, "VFSRead", request.priority);
 }
 
 IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request)
+{
+    return execute(request, /*seek_performed=*/false);
+}
+
+IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, bool seek_performed)
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::RemoteRead};
 
@@ -96,8 +104,12 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request)
 
     auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
 
-    reader.set(request.buf, request.size);
-    reader.seek(request.offset, SEEK_SET);
+    if (!seek_performed)
+    {
+        reader.set(request.buf, request.size);
+        reader.seek(request.offset, SEEK_SET);
+    }
+
     if (request.ignore)
     {
         ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
