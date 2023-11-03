@@ -498,7 +498,7 @@ size_t StorageS3Source::KeysIterator::estimatedKeysCount()
 
 StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     const DB::ReadTaskCallback & callback_,
-    const size_t max_threads_count)
+    size_t max_threads_count)
     : callback(callback_)
 {
     ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, max_threads_count);
@@ -546,7 +546,7 @@ StorageS3Source::StorageS3Source(
     const size_t max_parsing_threads_,
     bool need_only_count_,
     std::optional<SelectQueryInfo> query_info_)
-    : ISource(info.source_header, false)
+    : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
     , bucket(bucket_)
@@ -569,9 +569,17 @@ StorageS3Source::StorageS3Source(
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
+}
+
+void StorageS3Source::lazyInitialize()
+{
+    if (initialized)
+        return;
+
     reader = createReader();
     if (reader)
         reader_future = createReaderAsync();
+    initialized = true;
 }
 
 StorageS3Source::ReaderHolder StorageS3Source::createReader()
@@ -620,8 +628,8 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
             compression_method,
             need_only_count);
 
-        if (query_info.has_value())
-            input_format->setQueryInfo(query_info.value(), getContext());
+        if (key_condition)
+            input_format->setKeyCondition(key_condition);
 
         if (need_only_count)
             input_format->needOnlyCount();
@@ -736,6 +744,8 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
+    lazyInitialize();
+
     while (true)
     {
         if (isCancelled() || !reader)

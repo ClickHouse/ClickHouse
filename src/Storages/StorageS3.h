@@ -11,7 +11,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <Processors/ISource.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/URI.h>
@@ -36,7 +36,7 @@ namespace DB
 class PullingPipelineExecutor;
 class NamedCollection;
 
-class StorageS3Source : public ISource, WithContext
+class StorageS3Source : public SourceWithKeyCondition, WithContext
 {
 public:
 
@@ -120,7 +120,7 @@ public:
     class ReadTaskIterator : public IIterator
     {
     public:
-        explicit ReadTaskIterator(const ReadTaskCallback & callback_, const size_t max_threads_count);
+        explicit ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
         KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
@@ -153,6 +153,16 @@ public:
     ~StorageS3Source() override;
 
     String getName() const override;
+
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
+    {
+        setKeyConditionImpl(query_info_, context_, sample_block);
+    }
+
+    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    {
+        setKeyConditionImpl(nodes, context_, sample_block);
+    }
 
     Chunk generate() override;
 
@@ -245,8 +255,13 @@ private:
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
+    std::atomic<bool> initialized{false};
 
     size_t total_rows_in_file = 0;
+
+    /// Notice: we should initialize reader and future_reader lazily in generate to make sure key_condition
+    /// is set before createReader is invoked for key_condition is read in createReader.
+    void lazyInitialize();
 
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();

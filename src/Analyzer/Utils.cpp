@@ -573,4 +573,36 @@ void replaceColumns(QueryTreeNodePtr & node,
     visitor.visit(node);
 }
 
+namespace
+{
+
+class CollectIdentifiersFullNamesVisitor : public ConstInDepthQueryTreeVisitor<CollectIdentifiersFullNamesVisitor>
+{
+public:
+    explicit CollectIdentifiersFullNamesVisitor(NameSet & used_identifiers_)
+        : used_identifiers(used_identifiers_) { }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        auto * column_node = node->as<IdentifierNode>();
+        if (!column_node)
+            return;
+
+        used_identifiers.insert(column_node->getIdentifier().getFullName());
+    }
+
+    NameSet & used_identifiers;
+};
+
+}
+
+NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
+{
+    NameSet out;
+    CollectIdentifiersFullNamesVisitor visitor(out);
+    visitor.visit(node);
+    return out;
+}
 }
