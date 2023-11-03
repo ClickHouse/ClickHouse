@@ -57,6 +57,7 @@ private:
         void wait();
         MergeTreeReadTask::Readers get();
         bool valid() const { return is_valid; }
+        ~PrefetechedReaders();
 
     private:
         bool is_valid = false;
@@ -75,14 +76,19 @@ private:
 
         ~ThreadTask()
         {
-            if (readers_future.valid())
-                readers_future.wait();
+            if (readers_future && readers_future->valid())
+                readers_future->wait();
+        }
+
+        bool isValidReadersFuture() const
+        {
+            return readers_future && readers_future->valid();
         }
 
         InfoPtr read_info;
         MarkRanges ranges;
         Priority priority;
-        PrefetechedReaders readers_future;
+        std::unique_ptr<PrefetechedReaders> readers_future;
     };
 
     struct TaskHolder

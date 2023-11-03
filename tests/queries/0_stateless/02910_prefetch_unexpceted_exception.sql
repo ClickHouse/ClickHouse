@@ -1,3 +1,6 @@
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- no-parallel -- enables failpoint
+-- no-random-settings -- depend on type of part, should always fail
 drop table if exists prefetched_table;
 
 CREATE TABLE prefetched_table(key UInt64, s String) Engine = MergeTree() order by key;
@@ -14,6 +17,8 @@ SET allow_prefetched_read_pool_for_local_filesystem=1;
 
 SYSTEM ENABLE FAILPOINT prefeteched_reader_pool_failpoint;
 
-SELECT * FROM prefetched_table FORMAT Null;
+SELECT * FROM prefetched_table FORMAT Null; --{serverError 36}
+
+SYSTEM DISABLE FAILPOINT prefeteched_reader_pool_failpoint;
 
 drop table if exists prefetched_table;
