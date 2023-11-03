@@ -104,7 +104,7 @@ AzureObjectStorage::AzureObjectStorage(
 
 ObjectStorageKey AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
-    return ObjectStorageKey::createAsRelativeAnyway(getRandomASCIIString(32));
+    return ObjectStorageKey::createAsRelative(getRandomASCIIString(32));
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const

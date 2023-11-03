@@ -16,7 +16,7 @@ namespace DB
         const String & serialize() const;
 
         static ObjectStorageKey createAsRelative(String prefix_, String suffix_);
-        static ObjectStorageKey createAsRelativeAnyway(String key_);
+        static ObjectStorageKey createAsRelative(String key_);
         static ObjectStorageKey createAsAbsolute(String key_);
 
     private:

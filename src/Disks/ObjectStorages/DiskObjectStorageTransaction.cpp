@@ -689,7 +689,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     if (autocommit)
     {
-        create_metadata_callback = [tx = shared_from_this(), mode, path, object_key](size_t count)
+        create_metadata_callback = [tx = shared_from_this(), mode, path, key_ = std::move(object_key)](size_t count)
         {
             if (mode == WriteMode::Rewrite)
             {
@@ -698,10 +698,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 if (!tx->object_storage.isWriteOnce() && tx->metadata_storage.exists(path))
                     tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
 
-                tx->metadata_transaction->createMetadataFile(path, object_key, count);
+                tx->metadata_transaction->createMetadataFile(path, key_, count);
             }
             else
-                tx->metadata_transaction->addBlobToMetadata(path, object_key, count);
+                tx->metadata_transaction->addBlobToMetadata(path, key_, count);
 
             tx->metadata_transaction->commit();
         };
@@ -710,7 +710,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     {
         auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
-        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation.get(), mode, path, object_key](size_t count)
+        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation.get(), mode, path, key_ = std::move(object_key)](size_t count)
         {
             /// This callback called in WriteBuffer finalize method -- only there we actually know
             /// how many bytes were written. We don't control when this finalize method will be called
@@ -722,7 +722,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             /// ...
             /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
             /// tx->commit()
-            write_op->setOnExecute([object_storage_tx, mode, path, object_key, count](MetadataTransactionPtr tx)
+            write_op->setOnExecute([object_storage_tx, mode, path, key_, count](MetadataTransactionPtr tx)
             {
                 if (mode == WriteMode::Rewrite)
                 {
@@ -734,10 +734,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                             object_storage_tx->metadata_storage.getStorageObjects(path));
                     }
 
-                    tx->createMetadataFile(path, object_key, count);
+                    tx->createMetadataFile(path, key_, count);
                 }
                 else
-                    tx->addBlobToMetadata(path, object_key, count);
+                    tx->addBlobToMetadata(path, key_, count);
             });
         };
 

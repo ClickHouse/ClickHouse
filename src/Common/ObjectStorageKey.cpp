@@ -34,7 +34,7 @@ const String & ObjectStorageKey::serialize() const
     return key;
 }
 
-ObjectStorageKey ObjectStorageKey::createAsRelativeAnyway(String key_)
+ObjectStorageKey ObjectStorageKey::createAsRelative(String key_)
 {
     ObjectStorageKey object_key;
     object_key.suffix = std::move(key_);

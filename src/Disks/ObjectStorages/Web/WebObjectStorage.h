@@ -91,7 +91,7 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
     {
-        return ObjectStorageKey::createAsRelativeAnyway(path);
+        return ObjectStorageKey::createAsRelative(path);
     }
 
     bool isRemote() const override { return true; }
