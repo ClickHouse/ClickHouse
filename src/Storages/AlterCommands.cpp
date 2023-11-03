@@ -1070,7 +1070,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
-            /// Adding a new column of type Object(JSON) is broken, so we don't allow to do it for now. 
+            /// Adding a new column of type Object(JSON) is broken, so we don't allow to do it for now.
             if (const auto * type_object = typeid_cast<const DataTypeObject *>(command.data_type.get()))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of type Object to existing table is not allowed");
 
