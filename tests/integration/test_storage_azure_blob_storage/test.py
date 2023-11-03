@@ -942,7 +942,7 @@ def test_union_schema_inference_mode(cluster):
     )
     result = azure_query(
         node,
-        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union' format TSV",
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') order by tuple(*) settings schema_inference_mode='union' format TSV",
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
     node.query(f"system drop schema cache for hdfs")
