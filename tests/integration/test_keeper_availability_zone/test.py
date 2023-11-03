@@ -1,108 +1,31 @@
-#!/usr/bin/env python3
-
-# Plan:
-# - Simplify the test
-# - Check system.zookeeper to get result.
 import pytest
-import os
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-from kazoo.client import KazooClient, KazooState
+from helpers.keeper_utils import KeeperClient
 
-CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+
 cluster = ClickHouseCluster(__file__)
 
-# clickhouse itself will use external zookeeper
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/enable_keeper.xml"],
+    main_configs=["configs/keeper_config.xml"],
+    with_zookeeper=True,
     stay_alive=True,
 )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
-
         yield cluster
 
     finally:
         cluster.shutdown()
 
 
-def get_connection_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+def test_get_availability_zone():
+    with KeeperClient.from_cluster(cluster, "zoo1") as client1:
+        assert client1.get("/keeper/availability_zone") == "az-zoo1"
 
-
-def restart_clickhouse(feature_flags=[], expect_fail=True):
-    node.stop_clickhouse()
-    node.copy_file_to_container(
-        os.path.join(CURRENT_TEST_DIR, "configs/enable_keeper.xml"),
-        "/etc/clickhouse-server/config.d/enable_keeper.xml",
-    )
-
-    if len(feature_flags) > 0:
-        feature_flags_config = "<feature_flags>"
-
-        for feature, is_enabled in feature_flags:
-            feature_flags_config += f"<{feature}>{is_enabled}<\\/{feature}>"
-
-        feature_flags_config += "<\\/feature_flags>"
-
-        node.replace_in_config(
-            "/etc/clickhouse-server/config.d/enable_keeper.xml",
-            "<!-- FEATURE FLAGS -->",
-            feature_flags_config,
-        )
-
-    node.start_clickhouse(retry_start=not expect_fail)
-    keeper_utils.wait_until_connected(cluster, node)
-
-
-def test_keeper_feature_flags(started_cluster):
-    restart_clickhouse()
-
-    def assert_feature_flags(feature_flags):
-        res = keeper_utils.send_4lw_cmd(started_cluster, node, "ftfl")
-
-        for feature, is_enabled in feature_flags:
-            node.wait_for_log_line(
-                f"ZooKeeperClient: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
-                look_behind_lines=1000,
-            )
-
-            node.wait_for_log_line(
-                f"KeeperContext: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
-                look_behind_lines=1000,
-            )
-
-            assert f"{feature}\t{1 if is_enabled else 0}" in res
-
-    assert_feature_flags(
-        [("filtered_list", 1), ("multi_read", 1), ("check_not_exists", 0)]
-    )
-
-    feature_flags = [("multi_read", 0), ("check_not_exists", 1)]
-    restart_clickhouse(feature_flags)
-    assert_feature_flags(feature_flags + [("filtered_list", 1)])
-
-    feature_flags = [("multi_read", 0), ("check_not_exists", 0), ("filtered_list", 0)]
-    restart_clickhouse(feature_flags)
-    assert_feature_flags(feature_flags)
-
-# Look at other test config to enable 9000.
-# E       AssertionError: assert 'Code: 210. DB::NetException: Connection refused (172.16.1.2:9000). (NETWORK_ERROR)\n\n' == 'never-down-42'                                                 
-# E         - never-down-42                                                                                                                                                                  
-# E         + Code: 210. DB::NetException: Connection refused (172.16.1.2:9000). (NETWORK_ERROR)                                                                                             
-# E         +  
-    with pytest.raises(Exception):
-        restart_clickhouse([("invalid_feature", 1)], expect_fail=True)
-
-    resp = node.query_and_get_error("SELECT value FROM system.zookeeper where path = '/keeper' and name='availability_zone'")
-    assert resp == 'never-down-42'
-
+    with KeeperClient.from_cluster(cluster, "zoo2") as client2:
+        assert client2.get("/keeper/availability_zone") == "az-zoo2"

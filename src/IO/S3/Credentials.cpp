@@ -3,6 +3,7 @@
 #include <IO/S3/Credentials.h>
 #include <boost/algorithm/string/classification.hpp>
 #include <Poco/Exception.h>
+#include "Common/Exception.h"
 
 #if USE_AWS_S3
 
@@ -290,7 +291,8 @@ std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl()
         }
         catch (const DB::Exception & gcp_ex)
         {
-            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Failed to find the availability zone, tried AWS, GCP. AWS Error: {}\nGCP Error: {}", aws_ex.displayText(), gcp_ex.displayText());
+            return std::make_exception_ptr(DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex.displayText(), gcp_ex.displayText()));
         }
     }
 }

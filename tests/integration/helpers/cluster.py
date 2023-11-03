@@ -667,7 +667,6 @@ class ClickHouseCluster:
         self.zookeeper_certfile = zookeeper_certfile
 
         # available when with_zookeper == True
-        # NOTE: reason why needed.
         self.use_keeper = True
         self.zookeeper_port = 2181
         self.keeper_instance_dir_prefix = p.join(
