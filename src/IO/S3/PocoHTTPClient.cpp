@@ -14,6 +14,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
@@ -99,6 +100,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         unsigned int s3_retry_attempts_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
+        bool s3_aggressive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,
         std::function<void(const DB::ProxyConfiguration &)> error_report_)
@@ -111,6 +113,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
     , put_request_throttler(put_request_throttler_)
+    , s3_aggressive_timeouts(s3_aggressive_timeouts_)
     , error_report(error_report_)
 {
 }
@@ -157,6 +160,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
           Poco::Timespan(client_configuration.http_keep_alive_timeout_ms * 1000))) /// flag indicating whether keep-alive is enabled is set to each session upon creation
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
+    , s3_aggressive_timeouts(client_configuration.s3_aggressive_timeouts)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
     , get_request_throttler(client_configuration.get_request_throttler)
@@ -268,6 +272,37 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
+UInt32 extractAttempt(const Aws::String & request_info)
+{
+    static auto key = Aws::String("attempt=");
+
+    auto key_begin = request_info.find(key, 0);
+    if (key_begin == Aws::String::npos)
+        return 1;
+
+    auto val_begin = key_begin + key.size();
+    auto val_end = request_info.find(';', val_begin);
+    if (val_end == Aws::String::npos)
+        val_end = request_info.size();
+
+    Aws::String value = request_info.substr(val_begin, val_end-val_begin);
+
+    UInt32 attempt = 1;
+    ReadBufferFromString buf(value);
+    readIntText(attempt, buf);
+    return attempt;
+}
+
+ConnectionTimeouts PocoHTTPClient::getTimeouts(Aws::Http::HttpRequest & request) const
+{
+    if (!s3_aggressive_timeouts)
+        return timeouts;
+
+    const auto & request_info = request.GetHeaderValue(Aws::Http::SDK_REQUEST_HEADER);
+    auto attempt = extractAttempt(request_info);
+    return timeouts.aggressiveTimeouts(attempt);
+}
+
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
@@ -348,17 +383,17 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 /// This can lead to request signature difference on S3 side.
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit, proxy_configuration);
+                        target_uri, getTimeouts(request), http_connection_pool_size, wait_on_pool_size_limit, proxy_configuration);
                 else
-                    session = makeHTTPSession(target_uri, timeouts, proxy_configuration);
+                    session = makeHTTPSession(target_uri, getTimeouts(request), proxy_configuration);
             }
             else
             {
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
+                        target_uri, getTimeouts(request), http_connection_pool_size, wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(target_uri, timeouts);
+                    session = makeHTTPSession(target_uri, getTimeouts(request));
             }
 
             /// In case of error this address will be written to logs

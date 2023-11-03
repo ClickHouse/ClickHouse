@@ -133,4 +133,24 @@ ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings
         settings.http_receive_timeout);
 }
 
+ConnectionTimeouts ConnectionTimeouts::aggressiveTimeouts(UInt32 attempt) const
+{
+    auto aggressive = *this;
+
+    if (attempt == 2)
+    {
+        auto one_second = Poco::Timespan(1, 0);
+        aggressive.send_timeout = saturate(one_second, send_timeout);
+        aggressive.receive_timeout = saturate(one_second, receive_timeout);
+    }
+    else if (attempt == 1)
+    {
+        auto two_hundred_ms = Poco::Timespan(0, 200 * 1000);
+        aggressive.send_timeout = saturate(two_hundred_ms, send_timeout);
+        aggressive.receive_timeout = saturate(two_hundred_ms, receive_timeout);
+    }
+
+    return aggressive;
+}
+
 }
