@@ -578,7 +578,6 @@ ColumnPtr FunctionArrayElement::executeString(
         return nullptr;
 
     auto col_res = ColumnString::create();
-
     ArrayElementStringImpl::vector<IndexType>(
         col_nested->getChars(),
         col_array->getOffsets(),
@@ -819,11 +818,49 @@ void FunctionArrayElement::executeMatchKeyToIndex(
     const Offsets & offsets, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher)
 {
     size_t rows = offsets.size();
-    for (size_t i = 0; i < rows; ++i)
+    size_t expected_match_pos = 0;
+    bool matched = false;
+    if (!rows)
+        return;
+
+    /// In practice, map keys are usually in the same order, it is worth a try to
+    /// predict the next key position. So it can avoid a lot of unnecessary comparisons.
+    for (size_t j = offsets[-1], end = offsets[0]; j < end; ++j)
     {
-        bool matched = false;
-        size_t begin = offsets[i - 1];
-        size_t end = offsets[i];
+        if (matcher.match(j, 0))
+        {
+            matched_idxs.push_back(j - offsets[-1] + 1);
+            matched = true;
+            expected_match_pos = end + j - offsets[-1];
+            break;
+        }
+    }
+    if (!matched)
+    {
+        expected_match_pos = offsets[0];
+        matched_idxs.push_back(0);
+    }
+    size_t i = 1;
+    for (; i < rows; ++i)
+    {
+        const auto & begin = offsets[i - 1];
+        const auto & end = offsets[i];
+        if (expected_match_pos < end && matcher.match(expected_match_pos, i))
+        {
+            auto map_key_index = expected_match_pos - begin;
+            matched_idxs.push_back(map_key_index + 1);
+            expected_match_pos = end + map_key_index;
+        }
+        else
+            break;
+    }
+
+    // fallback to linear search
+    for (; i < rows; ++i)
+    {
+        matched = false;
+        const auto & begin = offsets[i - 1];
+        const auto & end = offsets[i];
         for (size_t j = begin; j < end; ++j)
         {
             if (matcher.match(j, i))

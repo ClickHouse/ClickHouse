@@ -74,8 +74,17 @@ void resetSessionIfNeeded(bool read_all_range_successfully, std::optional<Aws::S
     }
     else if (auto session = getSession(*read_result); !session.isNull())
     {
-        DB::markSessionForReuse(session);
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromS3PreservedSessions);
+        if (!session->getProxyHost().empty())
+        {
+            /// Reset proxified sessions because proxy can change for every request. See ProxyConfigurationResolver.
+            resetSession(*read_result);
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3ResetSessions);
+        }
+        else
+        {
+            DB::markSessionForReuse(session);
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3PreservedSessions);
+        }
     }
 }
 }

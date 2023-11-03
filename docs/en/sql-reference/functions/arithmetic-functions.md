@@ -441,3 +441,40 @@ DB::Exception: Decimal result's scale is less than argument's one: While process
 │ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
+
+## byteSwap
+
+Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness).
+
+**Syntax**
+
+```sql
+byteSwap(a)
+```
+
+**Example**
+
+```sql
+byteSwap(3351772109)
+```
+
+Result:
+
+```result
+┌─byteSwap(3351772109)─┐
+│           3455829959 │
+└──────────────────────┘
+```
+
+The above example can be worked out in the following manner:
+1. Convert the base-10 integer to its equivalent hexadecimal format in big-endian format, i.e. 3351772109 -> C7 C7 FB CD (4 bytes)
+2. Reverse the bytes, i.e. C7 C7 FB CD -> CD FB C7 C7
+3. Convert the result back to an integer assuming big-endian, i.e. CD FB C7 C7  -> 3455829959
+
+One use case of this function is reversing IPv4s:
+
+```result
+┌─toIPv4(byteSwap(toUInt32(toIPv4('205.251.199.199'))))─┐
+│ 199.199.251.205                                       │
+└───────────────────────────────────────────────────────┘
+```

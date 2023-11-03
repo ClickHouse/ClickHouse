@@ -2435,6 +2435,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
+    {"−",             Operator("minus",           11, 2)},
     {"*",             Operator("multiply",        12, 2)},
     {"/",             Operator("divide",          12, 2)},
     {"%",             Operator("modulo",          12, 2)},
@@ -2448,7 +2449,8 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
     {"NOT",           Operator("not",             5,  1)},
-    {"-",             Operator("negate",          13, 1)}
+    {"-",             Operator("negate",          13, 1)},
+    {"−",             Operator("negate",          13, 1)}
 };
 
 const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);

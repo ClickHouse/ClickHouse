@@ -34,7 +34,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <Processors/ISource.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -925,7 +925,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
 
-class StorageFileSource : public ISource
+class StorageFileSource : public SourceWithKeyCondition
 {
 public:
     class FilesIterator
@@ -1000,7 +1000,7 @@ public:
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
         bool need_only_count_)
-        : ISource(info.source_header, false)
+        : SourceWithKeyCondition(info.source_header, false)
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
         , files_iterator(std::move(files_iterator_))
@@ -1086,6 +1086,17 @@ public:
     {
         return storage->getName();
     }
+
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
+    {
+        setKeyConditionImpl(query_info_, context_, block_for_format);
+    }
+
+    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    {
+        setKeyConditionImpl(nodes, context_, block_for_format);
+    }
+
 
     bool tryGetCountFromCache(const struct stat & file_stat)
     {
@@ -1237,8 +1248,13 @@ public:
                 chassert(file_num > 0);
 
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads / file_num, 1UL);
-                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, need_only_count ? 1 : max_parsing_threads);
-                input_format->setQueryInfo(query_info, context);
+                input_format = FormatFactory::instance().getInput(
+                    storage->format_name, *read_buf, block_for_format, context, max_block_size, storage->format_settings,
+                    max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
+
+                if (key_condition)
+                    input_format->setKeyCondition(key_condition);
+
                 if (need_only_count)
                     input_format->needOnlyCount();
 

@@ -357,9 +357,9 @@ Chunk DDLQueryStatusSource::generateChunkWithUnfinishedHosts() const
         size_t num = 0;
         if (is_replicated_database)
         {
-            auto parts = DatabaseReplicated::parseFullReplicaName(host_id);
-            columns[num++]->insert(parts.shard);
-            columns[num++]->insert(parts.replica);
+            auto [shard, replica] = DatabaseReplicated::parseFullReplicaName(host_id);
+            columns[num++]->insert(shard);
+            columns[num++]->insert(replica);
             if (active_hosts_set.contains(host_id))
                 columns[num++]->insert(IN_PROGRESS);
             else
@@ -511,9 +511,9 @@ Chunk DDLQueryStatusSource::generate()
             {
                 if (status.code != 0)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);
-                auto parts = DatabaseReplicated::parseFullReplicaName(host_id);
-                columns[num++]->insert(parts.shard);
-                columns[num++]->insert(parts.replica);
+                auto [shard, replica] = DatabaseReplicated::parseFullReplicaName(host_id);
+                columns[num++]->insert(shard);
+                columns[num++]->insert(replica);
                 columns[num++]->insert(OK);
             }
             else

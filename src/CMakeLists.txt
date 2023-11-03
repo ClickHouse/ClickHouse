@@ -104,6 +104,7 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/DataLakes)
+add_headers_and_sources(dbms Storages/DataLakes/Iceberg)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -327,10 +328,6 @@ endif()
 
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
-endif()
-
-if (TARGET ch_contrib::crc32_s390x)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
 endif()
 
 if (TARGET ch_contrib::crc32-vpmsum)
@@ -592,7 +589,7 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE
         ch_contrib::gmock_all
-        ch_contrib::gtest_all
+        ch_contrib::gtest
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers

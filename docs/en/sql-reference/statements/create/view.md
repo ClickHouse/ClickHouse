@@ -62,7 +62,7 @@ Materialized views store data transformed by the corresponding [SELECT](../../..
 
 When creating a materialized view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
 
-When creating a materialized view with `TO [db].[table]`, you must not use `POPULATE`.
+When creating a materialized view with `TO [db].[table]`, you can't also use `POPULATE`.
 
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
