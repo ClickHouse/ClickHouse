@@ -48,9 +48,9 @@ public:
 
     off_t getPosition() override { return file_offset_of_buffer_end - available(); }
 
-    bool seekIsCheap() override;
+    bool isSeekCheap() override;
 
-    bool contentIsCached() override;
+    bool isContentCached(size_t offset) override;
 
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);

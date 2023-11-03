@@ -265,16 +265,16 @@ ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
         appendUncachedReadInfo();
 }
 
-bool ReadBufferFromRemoteFSGather::seekIsCheap()
+bool ReadBufferFromRemoteFSGather::isSeekCheap()
 {
-    return !current_buf || current_buf->seekIsCheap();
+    return !current_buf || current_buf->isSeekCheap();
 }
 
-bool ReadBufferFromRemoteFSGather::contentIsCached()
+bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset)
 {
     if (!current_buf)
         initialize();
 
-    return current_buf && current_buf->contentIsCached();
+    return current_buf && current_buf->isContentCached(offset);
 }
 }
