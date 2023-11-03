@@ -454,7 +454,9 @@ void BackupsWorker::doBackup(
             /// Prepare backup entries.
             BackupEntries backup_entries;
             {
-                BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, backup_create_params.read_settings, context};
+                BackupEntriesCollector backup_entries_collector(
+                    backup_query->elements, backup_settings, backup_coordination,
+                    backup_create_params.read_settings, context, *backups_thread_pool);
                 backup_entries = backup_entries_collector.run();
             }
 

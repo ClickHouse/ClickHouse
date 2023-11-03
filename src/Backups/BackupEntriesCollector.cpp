@@ -82,7 +82,8 @@ BackupEntriesCollector::BackupEntriesCollector(
     const BackupSettings & backup_settings_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
     const ReadSettings & read_settings_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    ThreadPool & threadpool_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
@@ -101,10 +102,14 @@ BackupEntriesCollector::BackupEntriesCollector(
         context->getSettingsRef().backup_restore_keeper_max_retries,
         context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
         context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
+    , threadpool(threadpool_)
 {
 }
 
-BackupEntriesCollector::~BackupEntriesCollector() = default;
+BackupEntriesCollector::~BackupEntriesCollector()
+{
+    threadpool.wait();
+}
 
 BackupEntries BackupEntriesCollector::run()
 {
@@ -739,7 +744,13 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
         return;
 
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
-        makeBackupEntriesForTableData(table_name);
+    {
+        threadpool.scheduleOrThrowOnError([&]()
+        {
+            makeBackupEntriesForTableData(table_name);
+        });
+    }
+    threadpool.wait();
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
@@ -775,20 +786,28 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
     }
 }
 
-void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
+void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)
 {
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     backup_entries.emplace_back(file_name, backup_entry);
 }
 
+void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
+{
+    std::lock_guard lock(mutex);
+    addBackupEntryUnlocked(file_name, backup_entry);
+}
+
 void BackupEntriesCollector::addBackupEntry(const std::pair<String, BackupEntryPtr> & backup_entry)
 {
-    addBackupEntry(backup_entry.first, backup_entry.second);
+    std::lock_guard lock(mutex);
+    addBackupEntryUnlocked(backup_entry.first, backup_entry.second);
 }
 
 void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entries_)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, backup_entries_);
@@ -796,6 +815,7 @@ void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entri
 
 void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, std::move(backup_entries_));
@@ -803,6 +823,7 @@ void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 
 void BackupEntriesCollector::addPostTask(std::function<void()> task)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of post tasks is not allowed");
     post_tasks.push(std::move(task));

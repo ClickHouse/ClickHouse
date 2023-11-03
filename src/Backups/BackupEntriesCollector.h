@@ -31,7 +31,8 @@ public:
                            const BackupSettings & backup_settings_,
                            std::shared_ptr<IBackupCoordination> backup_coordination_,
                            const ReadSettings & read_settings_,
-                           const ContextPtr & context_);
+                           const ContextPtr & context_,
+                           ThreadPool & threadpool_);
     ~BackupEntriesCollector();
 
     /// Collects backup entries and returns the result.
@@ -88,6 +89,8 @@ private:
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
+
+    void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
 
     void runPostTasks();
 
@@ -169,6 +172,9 @@ private:
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;
     std::vector<size_t> access_counters;
+
+    ThreadPool & threadpool;
+    std::mutex mutex;
 };
 
 }
