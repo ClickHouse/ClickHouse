@@ -40,6 +40,12 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
     updateOutputSortDescription();
 }
 
+void UnionStep::updateInputStream(DataStreams input_streams_)
+{
+    input_streams = std::move(input_streams_);
+    updateOutputSortDescription();
+}
+
 void UnionStep::updateOutputSortDescription()
 {
     SortDescription common_sort_description = input_streams.front().sort_description;

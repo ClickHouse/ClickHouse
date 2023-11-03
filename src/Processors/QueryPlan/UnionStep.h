@@ -21,6 +21,8 @@ public:
 
     void updateOutputSortDescription();
 
+    void updateInputStream(DataStreams input_streams_);
+
 private:
     Block header;
     size_t max_threads;
