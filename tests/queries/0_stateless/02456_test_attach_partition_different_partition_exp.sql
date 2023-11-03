@@ -83,8 +83,8 @@ SELECT partition_id FROM system.parts where table='destination' AND database = c
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
 
-CREATE TABLE source (timestamp DateTime, key Int64, f Float64) engine=MergeTree ORDER BY (key, timestamp) PARTITION BY toYear(timestamp);
-CREATE TABLE destination (timestamp DateTime, key Int64, f Float64) engine=SummingMergeTree ORDER BY (key, timestamp) PARTITION BY (intDiv(toUInt32(timestamp),86400));
+CREATE TABLE source (timestamp DateTime('UTC'), key Int64, f Float64) engine=MergeTree ORDER BY (key, timestamp) PARTITION BY toYear(timestamp);
+CREATE TABLE destination (timestamp DateTime('UTC'), key Int64, f Float64) engine=SummingMergeTree ORDER BY (key, timestamp) PARTITION BY (intDiv(toUInt32(timestamp),86400));
 
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01',1,1),('2010-03-02 02:01:01',1,1),('2011-02-02 02:01:03',1,1);
 
@@ -98,8 +98,8 @@ SELECT partition_id FROM system.parts where table='destination' AND database = c
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
 
-CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
-CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
+CREATE TABLE source (timestamp DateTime('UTC')) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+CREATE TABLE destination (timestamp DateTime('UTC')) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
 
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-03 02:01:03');
 
