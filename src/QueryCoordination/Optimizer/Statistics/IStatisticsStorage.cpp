@@ -312,7 +312,16 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
     const auto time_now = std::chrono::system_clock::now();
     auto event_time = timeInSeconds(time_now);
 
-    String sql = fmt::format(
+    String delete_sql = fmt::format(
+        "DELETE FROM {}.{} WHERE db='{}' and table='{}'",
+        IStatisticsStorage::STATISTICS_DATABASE_NAME,
+        IStatisticsStorage::TABLE_STATS_TABLE_NAME,
+        storage_id.getDatabaseName(),
+        storage_id.getTableName());
+
+    executeQuery(delete_sql, context, true);
+
+    String insert_sql = fmt::format(
         "INSERT INTO {}.{} SELECT {}, '{}', '{}', count(*) FROM {}",
         IStatisticsStorage::STATISTICS_DATABASE_NAME,
         IStatisticsStorage::TABLE_STATS_TABLE_NAME,
@@ -321,8 +330,7 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
         storage_id.getTableName(),
         storage_id.getFullNameNotQuoted());
 
-    auto block_io = executeQuery(sql, context, true);
-
+    auto block_io = executeQuery(insert_sql, context, true);
     auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
     executor->execute();
 }
@@ -334,19 +342,19 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
 
     for (const auto & column : columns)
     {
-        auto table_meta = DatabaseCatalog::instance().getTable(storage_id, context);
+        /// TODO calculate avg_row_size by datatype and real dataset
+        Float64 avg_row_size = 8.0;
 
-        Float64 avg_row_size;
-        try
-        {
-            avg_row_size = table_meta->getInMemoryMetadata().columns.get(column).type->getSizeOfValueInMemory();
-        }
-        catch (...)
-        {
-            avg_row_size = 8.0;
-        }
+        String delete_sql = fmt::format(
+            "DELETE FROM {}.{} WHERE db='{}' and table='{}' and column='{}'",
+            IStatisticsStorage::STATISTICS_DATABASE_NAME,
+            IStatisticsStorage::COLUMN_STATS_TABLE_NAME,
+            storage_id.getDatabaseName(),
+            storage_id.getTableName(),
+            column);
+        executeQuery(delete_sql, context, true);
 
-        String sql = fmt::format(
+        String insert_sql = fmt::format(
             "INSERT INTO {}.{} SELECT {}, '{}', '{}', '{}', uniqState(cast('{}', 'String')), min(toFloat64OrDefault({})), "
             "max(toFloat64OrDefault({})), {} FROM {}",
             IStatisticsStorage::STATISTICS_DATABASE_NAME,
@@ -361,8 +369,7 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
             avg_row_size,
             storage_id.getFullNameNotQuoted());
 
-        auto block_io = executeQuery(sql, context, true);
-
+        auto block_io = executeQuery(insert_sql, context, true);
         auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
         executor->execute();
     }

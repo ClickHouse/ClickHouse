@@ -37,7 +37,7 @@ Cost Group::getSatisfyBestCost(const PhysicalProperties & required_properties) c
     {
         return best_node->second.cost;
     }
-    return std::numeric_limits<Float64>::max();
+    return Cost::infinite();
 }
 
 std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>>
