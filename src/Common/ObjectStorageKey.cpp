@@ -62,7 +62,7 @@ ObjectStorageKey ObjectStorageKey::createAsAbsolute(String key_)
 {
     ObjectStorageKey object_key;
     object_key.key = std::move(key_);
-    object_key.is_relative = true;
+    object_key.is_relative = false;
     return object_key;
 }
 }
