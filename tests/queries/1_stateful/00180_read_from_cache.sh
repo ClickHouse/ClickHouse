@@ -16,5 +16,5 @@ $CLICKHOUSE_CLIENT --query_id ${query_id} -q "SELECT * FROM test.hits_s3 WHERE U
 
 $CLICKHOUSE_CLIENT -nq "
   SYSTEM FLUSH LOGS;
-  SELECT ProfileEvents['AsynchronousReaderIgnoredBytes'] FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryFinish'
+  SELECT ProfileEvents['AsynchronousReaderIgnoredBytes'] FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()
 "
