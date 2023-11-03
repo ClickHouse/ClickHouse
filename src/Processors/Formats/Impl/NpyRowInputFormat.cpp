@@ -267,7 +267,13 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params par
 
 size_t NpyRowInputFormat::countRows(size_t max_block_size)
 {
-    return int(max_block_size) > header.shape[0] ? header.shape[0] : max_block_size;
+    size_t count;
+    if (counted_rows + max_block_size <= size_t(header.shape[0]))
+        count = max_block_size;
+    else
+        count = header.shape[0] - counted_rows;
+    counted_rows += count;
+    return count;
 }
 
 template <typename ColumnValue, typename DataValue>

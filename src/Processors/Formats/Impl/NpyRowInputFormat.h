@@ -54,6 +54,7 @@ private:
 
     DataTypePtr nested_type;
     NumpyHeader header;
+    size_t counted_rows = 0;
 };
 
 class NpySchemaReader : public ISchemaReader
