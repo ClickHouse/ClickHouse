@@ -670,7 +670,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     if (metadata_helper)
     {
         if (!object_key.hasPrefix())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "metadata helper is not supported with abs paths");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "metadata helper is not supported with absolute paths");
 
         auto revision = metadata_helper->revision_counter + 1;
         metadata_helper->revision_counter++;
