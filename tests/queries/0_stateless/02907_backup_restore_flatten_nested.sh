@@ -8,7 +8,7 @@ ${CLICKHOUSE_CLIENT} -nm --query "
 drop table if exists test;
 set flatten_nested = 0;
 create table test (test Array(Tuple(foo String, bar Float64))) ENGINE = MergeTree() ORDER BY tuple();
-backup table test on cluster test_shard_localhost to Disk('default', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
+backup table test on cluster test_shard_localhost to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
 " | grep -o "BACKUP_CREATED"
 
 ${CLICKHOUSE_CLIENT} --query "show create table test"
@@ -16,7 +16,7 @@ ${CLICKHOUSE_CLIENT} --query "show create table test"
 ${CLICKHOUSE_CLIENT} -nm --query "
 drop table test sync;
 set flatten_nested = 1;
-restore table test on cluster test_shard_localhost from Disk('default', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
+restore table test on cluster test_shard_localhost from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
 " | grep -o "RESTORED"
 
 ${CLICKHOUSE_CLIENT} --query "show create table test"
