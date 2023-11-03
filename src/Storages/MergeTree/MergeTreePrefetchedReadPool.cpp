@@ -61,6 +61,8 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
 {
     try
     {
+        prefetch_futures.reserve(1 + readers.prewhere.size());
+
         prefetch_futures.push_back(pool_.createPrefetchedFuture(readers.main.get(), priority_));
 
         for (const auto & reader : readers.prewhere)
