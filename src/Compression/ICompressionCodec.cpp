@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_DECOMPRESS;
-    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -97,7 +96,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
 
     UInt8 header_size = getHeaderSize();
     if (source_size < header_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                         "Can't decompress data: the compressed data size ({}, this should include header size) "
                         "is less than the header size ({})", source_size, static_cast<size_t>(header_size));
 
@@ -116,7 +115,7 @@ UInt32 ICompressionCodec::readCompressedBlockSize(const char * source)
 {
     UInt32 compressed_block_size = unalignedLoadLittleEndian<UInt32>(&source[1]);
     if (compressed_block_size == 0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: header is corrupt with compressed block size 0");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Can't decompress data: header is corrupt with compressed block size 0");
     return compressed_block_size;
 }
 
@@ -125,7 +124,7 @@ UInt32 ICompressionCodec::readDecompressedBlockSize(const char * source)
 {
     UInt32 decompressed_block_size = unalignedLoadLittleEndian<UInt32>(&source[5]);
     if (decompressed_block_size == 0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: header is corrupt with decompressed block size 0");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Can't decompress data: header is corrupt with decompressed block size 0");
     return decompressed_block_size;
 }
 
