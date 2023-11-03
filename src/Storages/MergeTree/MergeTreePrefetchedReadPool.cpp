@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-    extern const char prefeteched_reader_pool_failpoint[];
+    extern const char prefetched_reader_pool_failpoint[];
 }
 
 bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other) const
@@ -45,14 +45,14 @@ bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other
 }
 
 
-MergeTreePrefetchedReadPool::PrefetechedReaders::~PrefetechedReaders()
+MergeTreePrefetchedReadPool::PrefetchedReaders::~PrefetchedReaders()
 {
     for (auto & prefetch_future : prefetch_futures)
         if (prefetch_future.valid())
             prefetch_future.wait();
 }
 
-MergeTreePrefetchedReadPool::PrefetechedReaders::PrefetechedReaders(
+MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     MergeTreeReadTask::Readers readers_,
     Priority priority_,
     MergeTreePrefetchedReadPool & pool_)
@@ -66,9 +66,9 @@ MergeTreePrefetchedReadPool::PrefetechedReaders::PrefetechedReaders(
         for (const auto & reader : readers.prewhere)
             prefetch_futures.push_back(pool_.createPrefetchedFuture(reader.get(), priority_));
 
-        fiu_do_on(FailPoints::prefeteched_reader_pool_failpoint,
+        fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefeteched reader enabled");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefetched reader enabled");
         });
     }
     catch (...) /// in case of memory exceptions we have to wait
@@ -81,14 +81,14 @@ MergeTreePrefetchedReadPool::PrefetechedReaders::PrefetechedReaders(
     }
 }
 
-void MergeTreePrefetchedReadPool::PrefetechedReaders::wait()
+void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
     for (auto & prefetch_future : prefetch_futures)
         prefetch_future.wait();
 }
 
-MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetechedReaders::get()
+MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
 {
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
@@ -161,7 +161,7 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
 
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges);
-    task.readers_future = std::make_unique<PrefetechedReaders>(std::move(readers), task.priority, *this);
+    task.readers_future = std::make_unique<PrefetchedReaders>(std::move(readers), task.priority, *this);
 }
 
 void MergeTreePrefetchedReadPool::startPrefetches()
