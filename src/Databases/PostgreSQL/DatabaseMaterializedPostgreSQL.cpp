@@ -155,8 +155,8 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
 
 void DatabaseMaterializedPostgreSQL::waitDatabaseStarted() const
 {
-    assert(startup_postgresql_database_task);
-    waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_postgresql_database_task);
+    if (startup_postgresql_database_task)
+        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_postgresql_database_task);
 }
 
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)

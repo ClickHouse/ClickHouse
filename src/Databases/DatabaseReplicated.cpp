@@ -573,8 +573,8 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
 
 void DatabaseReplicated::waitDatabaseStarted() const
 {
-    assert(startup_replicated_database_task);
-    waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_replicated_database_task);
+    if (startup_replicated_database_task)
+        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_replicated_database_task);
 }
 
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const

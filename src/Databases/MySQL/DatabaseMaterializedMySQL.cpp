@@ -85,8 +85,8 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
 
 void DatabaseMaterializedMySQL::waitDatabaseStarted() const
 {
-    assert(startup_mysql_database_task);
-    waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_mysql_database_task);
+    if (startup_mysql_database_task)
+        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_mysql_database_task);
 }
 
 void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
