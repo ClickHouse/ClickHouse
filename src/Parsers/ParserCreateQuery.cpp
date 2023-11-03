@@ -1561,9 +1561,9 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
             return false;
         if (s_not_overridable.ignore(pos, expected))
-            overridability.push_back(SettingChange{changes.back().name, false});
+            overridability.emplace_back(changes.back().name, false);
         else if (s_overridable.ignore(pos, expected))
-            overridability.push_back(SettingChange{changes.back().name, true});
+            overridability.emplace_back(changes.back().name, true);
     }
 
     auto query = std::make_shared<ASTCreateNamedCollectionQuery>();

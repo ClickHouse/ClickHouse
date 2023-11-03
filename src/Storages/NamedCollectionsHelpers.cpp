@@ -98,12 +98,15 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     {
         auto value_override = getKeyValueFromAST(*it, /* fallback_to_ast_value */complex_args != nullptr, context);
 
-        if (!value_override && !(*it)->as<ASTFunction>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
-        if (!value_override && allow_override_by_default)
-            continue;
-        else if (!value_override) // if allow_override_by_default is false we don't allow extra arguments
+        if (!value_override)
+        {
+            if(!(*it)->as<ASTFunction>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
+            if (allow_override_by_default)
+                continue;
+            // if allow_override_by_default is false we don't allow extra arguments
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed");
+        }
         else if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
 
