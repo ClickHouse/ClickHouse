@@ -16,7 +16,7 @@ FROM
     GROUP BY ac, nw
 )
 GROUP BY nw
-ORDER BY R DESC
+ORDER BY nw ASC, R DESC
 LIMIT 10;
 0	2	0
 1	2	0
@@ -36,7 +36,7 @@ FROM
     GROUP BY ac, nw
 )
 GROUP BY nw
-ORDER BY R DESC
+ORDER BY nw ASC, R DESC
 LIMIT 10
 SETTINGS max_threads = 1;
 0	2	0
@@ -93,7 +93,7 @@ FROM
         nw
 )
 GROUP BY nw
-ORDER BY R DESC
+ORDER BY nw ASC, R DESC
 LIMIT 10;
 0	2	0
 1	2	0

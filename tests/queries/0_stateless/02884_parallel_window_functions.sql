@@ -22,7 +22,7 @@ FROM
     GROUP BY ac, nw
 )
 GROUP BY nw
-ORDER BY R DESC
+ORDER BY nw ASC, R DESC
 LIMIT 10) where explain ilike '%ScatterByPartitionTransform%' SETTINGS max_threads = 4;
 
 -- { echoOn }
@@ -42,7 +42,7 @@ FROM
     GROUP BY ac, nw
 )
 GROUP BY nw
-ORDER BY R DESC
+ORDER BY nw ASC, R DESC
 LIMIT 10;
 
 SELECT
@@ -60,7 +60,7 @@ FROM
     GROUP BY ac, nw
 )
 GROUP BY nw
-ORDER BY R DESC
+ORDER BY nw ASC, R DESC
 LIMIT 10
 SETTINGS max_threads = 1;
 
@@ -115,5 +115,5 @@ FROM
         nw
 )
 GROUP BY nw
-ORDER BY R DESC
+ORDER BY nw ASC, R DESC
 LIMIT 10;
