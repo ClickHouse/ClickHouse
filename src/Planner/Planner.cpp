@@ -1373,6 +1373,9 @@ void Planner::buildPlanForQueryNode()
     {
         if (table_expression_data.getPrewhereFilterActions())
             result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
+
+        if (table_expression_data.getRowLevelFilterActions())
+            result_actions_to_execute.push_back(table_expression_data.getRowLevelFilterActions());
     }
 
     if (query_processing_info.isIntermediateStage())

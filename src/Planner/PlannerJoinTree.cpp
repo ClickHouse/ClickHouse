@@ -447,7 +447,7 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     const auto & query_context = planner_context->getQueryContext();
 
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (!row_policy_filter)
+    if (!row_policy_filter || row_policy_filter->empty())
         return {};
 
     return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
@@ -783,6 +783,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context);
                 add_filter(row_policy_filter_info, "Row-level security filter");
+                if (row_policy_filter_info.actions)
+                    table_expression_data.setRowLevelFilterActions(row_policy_filter_info.actions);
 
                 if (query_context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY)
                 {

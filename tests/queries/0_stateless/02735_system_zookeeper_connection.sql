@@ -8,6 +8,8 @@ CREATE TABLE test_zk_connection_table (
 ENGINE ReplicatedMergeTree('zookeeper2:/clickhouse/{database}/02731_zk_connection/{shard}', '{replica}')
 ORDER BY tuple();
 
+SET session_timezone = 'UTC';
+
 select name, host, port, index, is_expired, keeper_api_version, (connected_time between yesterday() and now()),
        (abs(session_uptime_elapsed_seconds  - zookeeperSessionUptime()) < 10), enabled_feature_flags
 from system.zookeeper_connection where name='default';
