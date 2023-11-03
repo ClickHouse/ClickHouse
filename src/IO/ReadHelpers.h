@@ -1008,9 +1008,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
             if (!ok && (buf.eof() || *buf.position() != '.'))
-            {
                 return ReturnType(false);
-            }
         }
     }
 

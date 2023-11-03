@@ -1154,7 +1154,6 @@ template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
 template <typename ReturnType, bool dt64_mode>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
-    std::cout << "Stack trace:" << StackTrace().toString() << std::endl;
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     /// YYYY-MM-DD
@@ -1263,11 +1262,9 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
                 datetime = datetime * 10 + *digit_pos - '0';
         }
         datetime *= negative_multiplier;
-        std::cout << "datetime:" << datetime << ", too_short:" << too_short << std::endl;
 
         if (too_short && negative_multiplier != -1)
         {
-            std::cout << "parse date time failed:" << std::endl;
             if constexpr (throw_exception)
                 throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
