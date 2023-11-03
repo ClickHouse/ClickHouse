@@ -265,6 +265,11 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params par
     nested_type = getNestedType(types[0]);
 }
 
+size_t NpyRowInputFormat::countRows(size_t max_block_size)
+{
+    return int(max_block_size) > header.shape[0] ? header.shape[0] : max_block_size;
+}
+
 template <typename ColumnValue, typename DataValue>
 void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness)
 {
@@ -395,11 +400,16 @@ NpySchemaReader::NpySchemaReader(ReadBuffer & in_)
 
 NamesAndTypesList NpySchemaReader::readSchema()
 {
-    NumpyHeader header = parseHeader(in);
+    header = parseHeader(in);
     DataTypePtr nested_type = getDataTypeFromNumpyType(header.numpy_type);
     DataTypePtr result_type = createNestedArrayType(nested_type, header.shape.size());
 
     return {{"array", result_type}};
+}
+
+std::optional<size_t> NpySchemaReader::readNumberOrRows()
+{
+    return header.shape[0];
 }
 
 void registerInputFormatNpy(FormatFactory & factory)

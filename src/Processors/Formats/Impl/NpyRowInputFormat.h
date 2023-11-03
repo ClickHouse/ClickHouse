@@ -29,6 +29,9 @@ public:
     String getName() const override { return "NpyRowInputFormat"; }
 
 private:
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
+
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
     void readData(MutableColumns & columns);
@@ -59,7 +62,9 @@ public:
     explicit NpySchemaReader(ReadBuffer & in_);
 
 private:
+    std::optional<size_t> readNumberOrRows() override;
     NamesAndTypesList readSchema() override;
+    NumpyHeader header;
 };
 
 }
