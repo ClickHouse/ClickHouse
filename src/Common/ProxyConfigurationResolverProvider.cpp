@@ -51,8 +51,7 @@ namespace
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
-            isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration)
-        );
+            isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
     auto extractURIList(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -155,8 +154,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>(
         request_protocol,
-        isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration)
-    );
+        isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
 }
 
 template <bool is_new_syntax>

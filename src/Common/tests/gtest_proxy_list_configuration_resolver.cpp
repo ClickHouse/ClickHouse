@@ -37,8 +37,7 @@ TEST(ProxyListConfigurationResolver, HTTPSRequestsOverHTTPProxyDefault)
 
     ProxyListConfigurationResolver resolver(
         {proxy_server1, proxy_server2},
-        ProxyConfiguration::Protocol::HTTPS
-    );
+        ProxyConfiguration::Protocol::HTTPS);
 
     auto configuration1 = resolver.resolve();
     auto configuration2 = resolver.resolve();
@@ -60,8 +59,7 @@ TEST(ProxyListConfigurationResolver, SimpleTestTunnelingDisabled)
     ProxyListConfigurationResolver resolver(
         {proxy_server1, proxy_server2},
         ProxyConfiguration::Protocol::HTTPS,
-        disable_tunneling_for_https_requests_over_http_proxy
-    );
+        disable_tunneling_for_https_requests_over_http_proxy);
 
     auto configuration1 = resolver.resolve();
 

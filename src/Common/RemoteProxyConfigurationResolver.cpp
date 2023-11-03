@@ -99,8 +99,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         bool use_tunneling_for_https_requests_over_http_proxy = useTunneling(
             request_protocol,
             cached_config.protocol,
-            disable_tunneling_for_https_requests_over_http_proxy
-        );
+            disable_tunneling_for_https_requests_over_http_proxy);
 
         cached_config.protocol = ProxyConfiguration::protocolFromString(proxy_protocol);
         cached_config.host = proxy_host;
