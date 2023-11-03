@@ -96,7 +96,7 @@ void DiskObjectStorageMetadata::deserializeFromString(const String & data)
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
-    /// There are the changes for backward compatibility
+    /// These are the changes for backward compatibility
     /// No new file should be written as VERSION_FULL_OBJECT_KEY until storage_metadata_write_full_object_key feature is enabled
     /// However, in case of rollback, once file had been written as VERSION_FULL_OBJECT_KEY
     /// it has to be always rewritten as VERSION_FULL_OBJECT_KEY
