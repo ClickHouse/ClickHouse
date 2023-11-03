@@ -3442,8 +3442,6 @@ MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
         if ((*end)->info == part_info)
         {
             result.duplicate_part = *end;
-            result.covering_parts.clear();
-            return result;
         }
 
         if (!part_info.contains((*end)->info))
@@ -3472,10 +3470,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getCoveredOutdatedParts(
     const DataPartPtr & part,
     DataPartsLock & data_parts_lock) const
 {
-    part->assertState({DataPartState::Active, DataPartState::PreActive});
+    part->assertState({DataPartState::Active, DataPartState::PreActive, DataPartState::Outdated});
+    bool is_outdated_part = part->getState() == DataPartState::Outdated;
     PartHierarchy hierarchy = getPartHierarchy(part->info, DataPartState::Outdated, data_parts_lock);
 
-    if (hierarchy.duplicate_part)
+    if (hierarchy.duplicate_part && !is_outdated_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", hierarchy.duplicate_part->getNameWithState());
 
     return hierarchy.covered_parts;
@@ -3649,6 +3648,10 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects part {}. There are {} intersected parts. It is a bug.",
                         part->name, hierarchy.intersected_parts.back()->getNameWithState(), hierarchy.intersected_parts.size());
     }
+
+    if (hierarchy.duplicate_part)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", hierarchy.duplicate_part->getNameWithState());
+
 
     if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
