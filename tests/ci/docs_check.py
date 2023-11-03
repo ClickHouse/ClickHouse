@@ -16,8 +16,8 @@ from commit_status_helper import (
     post_commit_status,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from docker_pull_helper import pull_image
+from env_helper import TEMP_PATH, DOCKER_TAG, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -45,6 +45,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="check the docs even if there no changes",
     )
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     return parser.parse_args()
 
 
@@ -57,7 +63,7 @@ def main():
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
+    reports_path = temp_path
     reports_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
 
@@ -84,7 +90,11 @@ def main():
     elif args.force:
         logging.info("Check the docs because of force flag")
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/docs-builder")
+    assert (
+        args.tag or DOCKER_TAG
+    ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+    image_version = args.tag or DOCKER_TAG
+    docker_image = pull_image("clickhouse/docs-builder", image_version)
 
     test_output = temp_path / "docs_check_log"
     test_output.mkdir(parents=True, exist_ok=True)

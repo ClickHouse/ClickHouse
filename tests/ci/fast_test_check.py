@@ -8,7 +8,7 @@ import sys
 import atexit
 from pathlib import Path
 from typing import List, Tuple
-
+import docker_pull_helper
 from github import Github
 
 from build_check import get_release_or_pr
@@ -23,8 +23,8 @@ from commit_status_helper import (
     update_mergeable_check,
     format_description,
 )
-from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY, REPORTS_PATH
+
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY, DOCKER_TAG
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResult, TestResults, read_test_results
@@ -46,7 +46,7 @@ def get_fasttest_cmd(
     repo_path: Path,
     pr_number: int,
     commit_sha: str,
-    image: DockerImage,
+    image: str,
 ) -> str:
     return (
         f"docker run --cap-add=SYS_PTRACE --user={os.geteuid()}:{os.getegid()} "
@@ -106,6 +106,12 @@ def parse_args() -> argparse.Namespace:
         default=40,
         help="Timeout in minutes",
     )
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     args = parser.parse_args()
     args.timeout = args.timeout * 60
     return args
@@ -118,7 +124,7 @@ def main():
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
+    reports_path = temp_path
     reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
@@ -136,7 +142,12 @@ def main():
             sys.exit(1)
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/fasttest")
+    assert (
+        args.tag or DOCKER_TAG
+    ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+    image_version = args.tag or DOCKER_TAG
+    docker_image = f"clickhouse/fasttest:{image_version}"
+    docker_pull_helper.pull_image(docker_image)
 
     s3_helper = S3Helper()
 

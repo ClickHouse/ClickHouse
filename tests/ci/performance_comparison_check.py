@@ -14,15 +14,15 @@ from github import Github
 
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from ci_config import CI_CONFIG
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import pull_image
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_RUN_URL,
     REPO_COPY,
-    REPORTS_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
     TEMP_PATH,
+    DOCKER_TAG,
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
@@ -77,9 +77,11 @@ def main():
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_tests_path = Path(REPO_COPY, "tests")
-    reports_path = Path(REPORTS_PATH)
 
-    check_name = sys.argv[1]
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
     required_build = CI_CONFIG.test_configs[check_name].required_build
 
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
@@ -141,7 +143,11 @@ def main():
         .replace("/", "_")
     )
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    assert (
+        DOCKER_TAG
+    ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+    image_version = DOCKER_TAG
+    docker_image = pull_image(IMAGE_NAME, image_version)
 
     result_path = temp_path / "result"
     result_path.mkdir(parents=True, exist_ok=True)

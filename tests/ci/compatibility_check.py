@@ -16,8 +16,8 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_pull_helper import get_images_with_versions, DockerImage
-from env_helper import TEMP_PATH, REPORTS_PATH
+from docker_pull_helper import pull_image
+from env_helper import TEMP_PATH, DOCKER_TAG
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -112,8 +112,8 @@ def get_run_commands_distributions(
     build_path: Path,
     result_directory: Path,
     server_log_directory: Path,
-    image_centos: DockerImage,
-    image_ubuntu: DockerImage,
+    image_centos: str,
+    image_ubuntu: str,
 ) -> List[str]:
     return [
         f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
@@ -134,6 +134,12 @@ def parse_args():
     parser.add_argument(
         "--check-distributions", action="store_true"
     )  # currently hardcoded to x86, don't enable for ARM
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     return parser.parse_args()
 
 
@@ -146,7 +152,7 @@ def main():
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
+    reports_path = temp_path
 
     pr_info = PRInfo()
 
@@ -187,15 +193,18 @@ def main():
         run_commands.extend(check_glibc_commands)
 
     if args.check_distributions:
-        docker_images = get_images_with_versions(
-            reports_path, [IMAGE_CENTOS, IMAGE_UBUNTU]
-        )
+        assert (
+            args.tag or DOCKER_TAG
+        ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+        image_version = args.tag or DOCKER_TAG
+        pull_image(IMAGE_CENTOS, image_version)
+        pull_image(IMAGE_CENTOS, image_version)
         check_distributions_commands = get_run_commands_distributions(
             packages_path,
             result_path,
             server_log_path,
-            docker_images[0],
-            docker_images[1],
+            image_centos=f"{IMAGE_CENTOS}:{image_version}",
+            image_ubuntu=f"{IMAGE_UBUNTU}:{image_version}",
         )
         run_commands.extend(check_distributions_commands)
 

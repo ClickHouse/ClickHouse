@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,11 +20,8 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
 )
-from docker_pull_helper import DockerImage, get_image_with_version
-from env_helper import (
-    REPORTS_PATH,
-    TEMP_PATH,
-)
+from docker_pull_helper import pull_image
+from env_helper import DOCKER_TAG, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResult
@@ -40,7 +38,7 @@ def get_run_command(
     build_url: str,
     workspace_path: Path,
     ci_logs_args: str,
-    image: DockerImage,
+    image: str,
 ) -> str:
     envs = [
         f"-e PR_TO_TEST={pr_info.number}",
@@ -70,9 +68,12 @@ def main():
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
+    reports_path = temp_path
 
-    check_name = sys.argv[1]
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
 
     pr_info = PRInfo()
 
@@ -84,7 +85,11 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    assert (
+        DOCKER_TAG
+    ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+    image_version = DOCKER_TAG
+    docker_image = pull_image(IMAGE_NAME, image_version)
 
     build_name = get_build_name_for_check(check_name)
     urls = read_build_urls(build_name, reports_path)

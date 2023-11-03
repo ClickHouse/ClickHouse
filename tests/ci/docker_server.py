@@ -254,7 +254,7 @@ def build_and_push_image(
         single_sw = Stopwatch()
         arch_tag = f"{tag}-{arch}"
         metadata_path = p.join(TEMP_PATH, arch_tag)
-        dockerfile = p.join(image.full_path, f"Dockerfile.{os}")
+        dockerfile = p.join(image.path, f"Dockerfile.{os}")
         cmd_args = list(init_args)
         cmd_args.extend(buildx_args(bucket_prefix, arch))
         if not push:

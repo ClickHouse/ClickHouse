@@ -29,520 +29,565 @@ jobs:
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
-  DockerHubPushAmd64:
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Images check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_images_check.py --suffix amd64
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: changed_images_amd64
-          path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
-  DockerHubPush:
-    needs: [DockerHubPushAmd64, DockerHubPushAarch64]
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
-          filter: tree:0
-      - name: Download changed aarch64 images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images_aarch64
-          path: ${{ runner.temp }}
-      - name: Download changed amd64 images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images_amd64
-          path: ${{ runner.temp }}
-      - name: Images check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ runner.temp }}/changed_images.json
-  CompatibilityCheckX86:
-    needs: [BuilderDebRelease]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Compatibility check X86
-      runner_type: style-checker
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 compatibility_check.py --check-name "Compatibility check (amd64)" --check-glibc --check-distributions
-  CompatibilityCheckAarch64:
-    needs: [BuilderDebAarch64]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Compatibility check X86
-      runner_type: style-checker
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
-#########################################################################################
-#################################### ORDINARY BUILDS ####################################
-#########################################################################################
-  BuilderDebRelease:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_release
-      checkout_depth: 0
-  BuilderDebAarch64:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_aarch64
-      checkout_depth: 0
-  BuilderDebAsan:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_asan
-  BuilderDebUBsan:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_ubsan
-  BuilderDebTsan:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_tsan
-  BuilderDebMsan:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_msan
-  BuilderDebDebug:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_debug
-  BuilderBinDarwin:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: binary_darwin
-      checkout_depth: 0
-  BuilderBinDarwinAarch64:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: binary_darwin_aarch64
-      checkout_depth: 0
-############################################################################################
-##################################### Docker images  #######################################
-############################################################################################
-  DockerServerImages:
-    needs:
-      - BuilderDebRelease
-      - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
-          filter: tree:0
-      - name: Check docker clickhouse/clickhouse-server building
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_server.py --release-type head --no-push \
-            --image-repo clickhouse/clickhouse-server --image-path docker/server
-          python3 docker_server.py --release-type head --no-push \
-            --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH"
-############################################################################################
-##################################### BUILD REPORTER #######################################
-############################################################################################
-  BuilderReport:
-    if: ${{ success() || failure() }}
-    needs:
-      - BuilderDebRelease
-      - BuilderDebAarch64
-      - BuilderDebAsan
-      - BuilderDebTsan
-      - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: ClickHouse build check
-      runner_type: style-checker
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 build_report_check.py "$CHECK_NAME"
-  BuilderSpecialReport:
-    if: ${{ success() || failure() }}
-    needs:
-      - BuilderBinDarwin
-      - BuilderBinDarwinAarch64
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: ClickHouse special build check
-      runner_type: style-checker
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 build_report_check.py "$CHECK_NAME"
-  MarkReleaseReady:
-    needs:
-      - BuilderBinDarwin
-      - BuilderBinDarwinAarch64
-      - BuilderDebRelease
-      - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Mark Commit Release Ready
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 mark_release_ready.py
-############################################################################################
-#################################### INSTALL PACKAGES ######################################
-############################################################################################
-  InstallPackagesTestRelease:
-    needs: [BuilderDebRelease]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Install packages (amd64)
-      runner_type: style-checker
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 install_check.py "$CHECK_NAME"
-  InstallPackagesTestAarch64:
-    needs: [BuilderDebAarch64]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Install packages (arm64)
-      runner_type: style-checker-aarch64
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 install_check.py "$CHECK_NAME"
-##############################################################################################
-########################### FUNCTIONAl STATELESS TESTS #######################################
-##############################################################################################
-  FunctionalStatelessTestRelease:
-    needs: [BuilderDebRelease]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=10800
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatelessTestAarch64:
-    needs: [BuilderDebAarch64]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (aarch64)
-      runner_type: func-tester-aarch64
-      additional_envs: |
-        KILL_TIMEOUT=10800
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatelessTestAsan:
-    needs: [BuilderDebAsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (asan)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=10800
-      batches: 4
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatelessTestTsan:
-    needs: [BuilderDebTsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (tsan)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=10800
-      batches: 5
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatelessTestUBsan:
-    needs: [BuilderDebUBsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (ubsan)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=10800
-      batches: 2
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatelessTestMsan:
-    needs: [BuilderDebMsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (msan)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=10800
-      batches: 6
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatelessTestDebug:
-    needs: [BuilderDebDebug]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (debug)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=10800
-      batches: 5
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-##############################################################################################
-############################ FUNCTIONAl STATEFUL TESTS #######################################
-##############################################################################################
-  FunctionalStatefulTestRelease:
-    needs: [BuilderDebRelease]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (release)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatefulTestAarch64:
-    needs: [BuilderDebAarch64]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (aarch64)
-      runner_type: func-tester-aarch64
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatefulTestAsan:
-    needs: [BuilderDebAsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (asan)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatefulTestTsan:
-    needs: [BuilderDebTsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (tsan)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatefulTestMsan:
-    needs: [BuilderDebMsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (msan)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatefulTestUBsan:
-    needs: [BuilderDebUBsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (ubsan)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatefulTestDebug:
-    needs: [BuilderDebDebug]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (debug)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=3600
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-##############################################################################################
-######################################### STRESS TESTS #######################################
-##############################################################################################
-  StressTestAsan:
-    needs: [BuilderDebAsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stress test (asan)
-      runner_type: stress-tester
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 stress_check.py "$CHECK_NAME"
-  StressTestTsan:
-    needs: [BuilderDebTsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stress test (tsan)
-      runner_type: stress-tester
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 stress_check.py "$CHECK_NAME"
-  StressTestMsan:
-    needs: [BuilderDebMsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stress test (msan)
-      runner_type: stress-tester
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 stress_check.py "$CHECK_NAME"
-  StressTestUBsan:
-    needs: [BuilderDebUBsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stress test (ubsan)
-      runner_type: stress-tester
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 stress_check.py "$CHECK_NAME"
-  StressTestDebug:
-    needs: [BuilderDebDebug]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stress test (debug)
-      runner_type: stress-tester
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 stress_check.py "$CHECK_NAME"
-#############################################################################################
-############################# INTEGRATION TESTS #############################################
-#############################################################################################
-  IntegrationTestsAsan:
-    needs: [BuilderDebAsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Integration tests (asan)
-      runner_type: stress-tester
-      batches: 4
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 integration_test_check.py "$CHECK_NAME"
-  IntegrationTestsAnalyzerAsan:
-    needs: [BuilderDebAsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Integration tests (asan, analyzer)
-      runner_type: stress-tester
-      batches: 6
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 integration_test_check.py "$CHECK_NAME"
-  IntegrationTestsTsan:
-    needs: [BuilderDebTsan]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Integration tests (tsan)
-      runner_type: stress-tester
-      batches: 6
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 integration_test_check.py "$CHECK_NAME"
-  IntegrationTestsRelease:
-    needs: [BuilderDebRelease]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Integration tests (release)
-      runner_type: stress-tester
-      batches: 4
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 integration_test_check.py "$CHECK_NAME"
-  FinishCheck:
-    needs:
-      - DockerHubPush
-      - DockerServerImages
-      - BuilderReport
-      - BuilderSpecialReport
-      - MarkReleaseReady
-      - FunctionalStatelessTestDebug
-      - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestAarch64
-      - FunctionalStatelessTestAsan
-      - FunctionalStatelessTestTsan
-      - FunctionalStatelessTestMsan
-      - FunctionalStatelessTestUBsan
-      - FunctionalStatefulTestDebug
-      - FunctionalStatefulTestRelease
-      - FunctionalStatefulTestAarch64
-      - FunctionalStatefulTestAsan
-      - FunctionalStatefulTestTsan
-      - FunctionalStatefulTestMsan
-      - FunctionalStatefulTestUBsan
-      - StressTestDebug
-      - StressTestAsan
-      - StressTestTsan
-      - StressTestMsan
-      - StressTestUBsan
-      - IntegrationTestsAsan
-      - IntegrationTestsTsan
-      - IntegrationTestsRelease
-      - CompatibilityCheckX86
-      - CompatibilityCheckAarch64
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Finish label
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 finish_check.py
+#   DockerHubPushAmd64:
+#     runs-on: [self-hosted, style-checker]
+#     steps:
+#       - name: Check out repository code
+#         uses: ClickHouse/checkout@v1
+#         with:
+#           clear-repository: true
+#       - name: Images check
+#         run: |
+#           cd "$GITHUB_WORKSPACE/tests/ci"
+#           python3 docker_images_check.py --suffix amd64
+#       - name: Upload images files to artifacts
+#         uses: actions/upload-artifact@v3
+#         with:
+#           name: changed_images_amd64
+#           path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
+#   DockerHubPush:
+#     needs: [DockerHubPushAmd64, DockerHubPushAarch64]
+#     runs-on: [self-hosted, style-checker]
+#     steps:
+#       - name: Check out repository code
+#         uses: ClickHouse/checkout@v1
+#         with:
+#           clear-repository: true
+#           fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
+#           filter: tree:0
+#       - name: Download changed aarch64 images
+#         uses: actions/download-artifact@v3
+#         with:
+#           name: changed_images_aarch64
+#           path: ${{ runner.temp }}
+#       - name: Download changed amd64 images
+#         uses: actions/download-artifact@v3
+#         with:
+#           name: changed_images_amd64
+#           path: ${{ runner.temp }}
+#       - name: Images check
+#         run: |
+#           cd "$GITHUB_WORKSPACE/tests/ci"
+#           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
+#       - name: Upload images files to artifacts
+#         uses: actions/upload-artifact@v3
+#         with:
+#           name: changed_images
+#           path: ${{ runner.temp }}/changed_images.json
+#   CompatibilityCheckX86:
+#     needs: [RunConfig, BuilderDebRelease]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Compatibility check X86
+#       runner_type: style-checker
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 compatibility_check.py --check-name "Compatibility check (amd64)" --check-glibc --check-distributions
+#   CompatibilityCheckAarch64:
+#     needs: [RunConfig, BuilderDebAarch64]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Compatibility check X86
+#       runner_type: style-checker
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
+# #########################################################################################
+# #################################### ORDINARY BUILDS ####################################
+# #########################################################################################
+#   BuilderDebRelease:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: package_release
+#       data: ${{ needs.RunConfig.outputs.data }}
+#       checkout_depth: 0
+#   BuilderDebAarch64:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: package_aarch64
+#       data: ${{ needs.RunConfig.outputs.data }}
+#       checkout_depth: 0
+#   BuilderDebAsan:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: package_asan
+#       data: ${{ needs.RunConfig.outputs.data }}
+#   BuilderDebUBsan:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: package_ubsan
+#       data: ${{ needs.RunConfig.outputs.data }}
+#   BuilderDebTsan:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: package_tsan
+#       data: ${{ needs.RunConfig.outputs.data }}
+#   BuilderDebMsan:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: package_msan
+#       data: ${{ needs.RunConfig.outputs.data }}
+#   BuilderDebDebug:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: package_debug
+#       data: ${{ needs.RunConfig.outputs.data }}
+#   BuilderBinDarwin:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: binary_darwin
+#       data: ${{ needs.RunConfig.outputs.data }}
+#       checkout_depth: 0
+#   BuilderBinDarwinAarch64:
+#     needs: [DockerHubPush]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_build.yml
+#     with:
+#       build_name: binary_darwin_aarch64
+#       data: ${{ needs.RunConfig.outputs.data }}
+#       checkout_depth: 0
+# ############################################################################################
+# ##################################### Docker images  #######################################
+# ############################################################################################
+#   DockerServerImages:
+#     needs:
+#       - BuilderDebRelease
+#       - BuilderDebAarch64
+#     runs-on: [self-hosted, style-checker]
+#     steps:
+#       - name: Check out repository code
+#         uses: ClickHouse/checkout@v1
+#         with:
+#           clear-repository: true
+#           fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
+#           filter: tree:0
+#       - name: Check docker clickhouse/clickhouse-server building
+#         run: |
+#           cd "$GITHUB_WORKSPACE/tests/ci"
+#           python3 docker_server.py --release-type head --no-push \
+#             --image-repo clickhouse/clickhouse-server --image-path docker/server
+#           python3 docker_server.py --release-type head --no-push \
+#             --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+#       - name: Cleanup
+#         if: always()
+#         run: |
+#           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+#           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+#           sudo rm -fr "$TEMP_PATH"
+# ############################################################################################
+# ##################################### BUILD REPORTER #######################################
+# ############################################################################################
+#   BuilderReport:
+#     if: ${{ success() || failure() }}
+#     needs:
+#       - BuilderDebRelease
+#       - BuilderDebAarch64
+#       - BuilderDebAsan
+#       - BuilderDebTsan
+#       - BuilderDebUBsan
+#       - BuilderDebMsan
+#       - BuilderDebDebug
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: ClickHouse build check
+#       runner_type: style-checker
+#       additional_envs: |
+#         NEEDS_DATA<<NDENV
+#         ${{ toJSON(needs) }}
+#         NDENV
+#       run_command: |
+#         cd "$GITHUB_WORKSPACE/tests/ci"
+#         python3 build_report_check.py "$CHECK_NAME"
+#   BuilderSpecialReport:
+#     if: ${{ success() || failure() }}
+#     needs:
+#       - BuilderBinDarwin
+#       - BuilderBinDarwinAarch64
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: ClickHouse special build check
+#       runner_type: style-checker
+#       additional_envs: |
+#         NEEDS_DATA<<NDENV
+#         ${{ toJSON(needs) }}
+#         NDENV
+#       run_command: |
+#         cd "$GITHUB_WORKSPACE/tests/ci"
+#         python3 build_report_check.py "$CHECK_NAME"
+#   MarkReleaseReady:
+#     needs:
+#       - BuilderBinDarwin
+#       - BuilderBinDarwinAarch64
+#       - BuilderDebRelease
+#       - BuilderDebAarch64
+#     runs-on: [self-hosted, style-checker]
+#     steps:
+#       - name: Check out repository code
+#         uses: ClickHouse/checkout@v1
+#         with:
+#           clear-repository: true
+#       - name: Mark Commit Release Ready
+#         run: |
+#           cd "$GITHUB_WORKSPACE/tests/ci"
+#           python3 mark_release_ready.py
+# ############################################################################################
+# #################################### INSTALL PACKAGES ######################################
+# ############################################################################################
+#   InstallPackagesTestRelease:
+#     needs: [RunConfig, BuilderDebRelease]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Install packages (amd64)
+#       runner_type: style-checker
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 install_check.py "$CHECK_NAME"
+#   InstallPackagesTestAarch64:
+#     needs: [RunConfig, BuilderDebAarch64]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Install packages (arm64)
+#       runner_type: style-checker-aarch64
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 install_check.py "$CHECK_NAME"
+# ##############################################################################################
+# ########################### FUNCTIONAl STATELESS TESTS #######################################
+# ##############################################################################################
+#   FunctionalStatelessTestRelease:
+#     needs: [RunConfig, BuilderDebRelease]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateless tests (release)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=10800
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatelessTestAarch64:
+#     needs: [RunConfig, BuilderDebAarch64]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateless tests (aarch64)
+#       runner_type: func-tester-aarch64
+#       additional_envs: |
+#         KILL_TIMEOUT=10800
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatelessTestAsan:
+#     needs: [RunConfig, BuilderDebAsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateless tests (asan)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=10800
+#       batches: 4
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatelessTestTsan:
+#     needs: [RunConfig, BuilderDebTsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateless tests (tsan)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=10800
+#       batches: 5
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatelessTestUBsan:
+#     needs: [RunConfig, BuilderDebUBsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateless tests (ubsan)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=10800
+#       batches: 2
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatelessTestMsan:
+#     needs: [RunConfig, BuilderDebMsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateless tests (msan)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=10800
+#       batches: 6
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatelessTestDebug:
+#     needs: [RunConfig, BuilderDebDebug]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateless tests (debug)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=10800
+#       batches: 5
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+# ##############################################################################################
+# ############################ FUNCTIONAl STATEFUL TESTS #######################################
+# ##############################################################################################
+#   FunctionalStatefulTestRelease:
+#     needs: [RunConfig, BuilderDebRelease]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateful tests (release)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=3600
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatefulTestAarch64:
+#     needs: [RunConfig, BuilderDebAarch64]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateful tests (aarch64)
+#       runner_type: func-tester-aarch64
+#       additional_envs: |
+#         KILL_TIMEOUT=3600
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatefulTestAsan:
+#     needs: [RunConfig, BuilderDebAsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateful tests (asan)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=3600
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatefulTestTsan:
+#     needs: [RunConfig, BuilderDebTsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateful tests (tsan)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=3600
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatefulTestMsan:
+#     needs: [RunConfig, BuilderDebMsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateful tests (msan)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=3600
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatefulTestUBsan:
+#     needs: [RunConfig, BuilderDebUBsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateful tests (ubsan)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=3600
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#   FunctionalStatefulTestDebug:
+#     needs: [RunConfig, BuilderDebDebug]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stateful tests (debug)
+#       runner_type: func-tester
+#       additional_envs: |
+#         KILL_TIMEOUT=3600
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+# ##############################################################################################
+# ######################################### STRESS TESTS #######################################
+# ##############################################################################################
+#   StressTestAsan:
+#     needs: [RunConfig, BuilderDebAsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stress test (asan)
+#       runner_type: stress-tester
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 stress_check.py "$CHECK_NAME"
+#   StressTestTsan:
+#     needs: [RunConfig, BuilderDebTsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stress test (tsan)
+#       runner_type: stress-tester
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 stress_check.py "$CHECK_NAME"
+#   StressTestMsan:
+#     needs: [RunConfig, BuilderDebMsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stress test (msan)
+#       runner_type: stress-tester
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 stress_check.py "$CHECK_NAME"
+#   StressTestUBsan:
+#     needs: [RunConfig, BuilderDebUBsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stress test (ubsan)
+#       runner_type: stress-tester
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 stress_check.py "$CHECK_NAME"
+#   StressTestDebug:
+#     needs: [RunConfig, BuilderDebDebug]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Stress test (debug)
+#       runner_type: stress-tester
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 stress_check.py "$CHECK_NAME"
+# #############################################################################################
+# ############################# INTEGRATION TESTS #############################################
+# #############################################################################################
+#   IntegrationTestsAsan:
+#     needs: [RunConfig, BuilderDebAsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Integration tests (asan)
+#       runner_type: stress-tester
+#       batches: 4
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 integration_test_check.py "$CHECK_NAME"
+#   IntegrationTestsAnalyzerAsan:
+#     needs: [RunConfig, BuilderDebAsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Integration tests (asan, analyzer)
+#       runner_type: stress-tester
+#       batches: 6
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 integration_test_check.py "$CHECK_NAME"
+#   IntegrationTestsTsan:
+#     needs: [RunConfig, BuilderDebTsan]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Integration tests (tsan)
+#       runner_type: stress-tester
+#       batches: 6
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 integration_test_check.py "$CHECK_NAME"
+#   IntegrationTestsRelease:
+#     needs: [RunConfig, BuilderDebRelease]
+#     if: ${{ !failure() && !cancelled() }}
+#     uses: ./.github/workflows/reusable_test.yml
+#     with:
+#       test_name: Integration tests (release)
+#       runner_type: stress-tester
+#       batches: 4
+#       run_command: |
+#         cd "$REPO_COPY/tests/ci"
+#         python3 integration_test_check.py "$CHECK_NAME"
+#   FinishCheck:
+#     needs:
+#       - DockerHubPush
+#       - DockerServerImages
+#       - BuilderReport
+#       - BuilderSpecialReport
+#       - MarkReleaseReady
+#       - FunctionalStatelessTestDebug
+#       - FunctionalStatelessTestRelease
+#       - FunctionalStatelessTestAarch64
+#       - FunctionalStatelessTestAsan
+#       - FunctionalStatelessTestTsan
+#       - FunctionalStatelessTestMsan
+#       - FunctionalStatelessTestUBsan
+#       - FunctionalStatefulTestDebug
+#       - FunctionalStatefulTestRelease
+#       - FunctionalStatefulTestAarch64
+#       - FunctionalStatefulTestAsan
+#       - FunctionalStatefulTestTsan
+#       - FunctionalStatefulTestMsan
+#       - FunctionalStatefulTestUBsan
+#       - StressTestDebug
+#       - StressTestAsan
+#       - StressTestTsan
+#       - StressTestMsan
+#       - StressTestUBsan
+#       - IntegrationTestsAsan
+#       - IntegrationTestsTsan
+#       - IntegrationTestsRelease
+#       - CompatibilityCheckX86
+#       - CompatibilityCheckAarch64
+#     runs-on: [self-hosted, style-checker]
+#     steps:
+#       - name: Check out repository code
+#         uses: ClickHouse/checkout@v1
+#         with:
+#           clear-repository: true
+#       - name: Finish label
+#         run: |
+#           cd "$GITHUB_WORKSPACE/tests/ci"
+#           python3 finish_check.py

@@ -28,9 +28,9 @@ from commit_status_helper import (
     post_commit_status_to_file,
     update_mergeable_check,
 )
-from docker_pull_helper import DockerImage, get_image_with_version
+from docker_pull_helper import pull_image
 from download_release_packages import download_last_release
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import DOCKER_TAG, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResults, read_test_results
@@ -84,7 +84,7 @@ def get_run_command(
     kill_timeout: int,
     additional_envs: List[str],
     ci_logs_args: str,
-    image: DockerImage,
+    image: str,
     flaky_check: bool,
     tests_to_run: List[str],
 ) -> str:
@@ -203,8 +203,21 @@ def process_results(
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("check_name")
-    parser.add_argument("kill_timeout", type=int)
+    parser.add_argument(
+        "--check-name",
+        required=False,
+        default="",
+    )
+    parser.add_argument(
+        "--kill-timeout",
+        required=False,
+        default=0,
+    )
+    parser.add_argument(
+        "--tag",
+        required=False,
+        type=str,
+    )
     parser.add_argument(
         "--validate-bugfix",
         action="store_true",
@@ -228,13 +241,20 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
 
     repo_path = Path(REPO_COPY)
-    reports_path = Path(REPORTS_PATH)
+    reports_path = temp_path
     post_commit_path = temp_path / "functional_commit_status.tsv"
 
     args = parse_args()
-    check_name = args.check_name
-    kill_timeout = args.kill_timeout
+    check_name = args.check_name or os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    kill_timeout = args.kill_timeout or int(os.getenv("KILL_TIMEOUT"))
+    assert (
+        kill_timeout > 0
+    ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
     validate_bugfix_check = args.validate_bugfix
+    print(f"Runnin check [{check_name}] with timeout [{kill_timeout}]")
 
     flaky_check = "flaky" in check_name.lower()
 
@@ -300,7 +320,12 @@ def main():
             sys.exit(0)
 
     image_name = get_image_name(check_name)
-    docker_image = get_image_with_version(reports_path, image_name)
+
+    assert (
+        args.tag or DOCKER_TAG
+    ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+    image_version = args.tag or DOCKER_TAG
+    docker_image = pull_image(image_name, image_version)
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)

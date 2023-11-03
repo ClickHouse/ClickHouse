@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
-
+import docker_pull_helper
 
 from clickhouse_helper import (
     ClickHouseHelper,
@@ -20,8 +20,8 @@ from commit_status_helper import (
     post_commit_status,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
-from env_helper import REPO_COPY, REPORTS_PATH, TEMP_PATH
+
+from env_helper import DOCKER_TAG, REPO_COPY, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from git_helper import git_runner
@@ -80,6 +80,12 @@ def process_result(
 def parse_args():
     parser = argparse.ArgumentParser("Check and report style issues in the repository")
     parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
     parser.add_argument(
         "--no-push",
         action="store_false",
@@ -142,7 +148,7 @@ def main():
     repo_path = Path(REPO_COPY)
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
+    reports_path = temp_path
     reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
@@ -163,13 +169,18 @@ def main():
         code = int(state != "success")
         sys.exit(code)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/style-test")
     s3_helper = S3Helper()
 
+    IMAGE_NAME = "clickhouse/style-test"
+    assert (
+        args.tag or DOCKER_TAG
+    ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+    image_version = args.tag or DOCKER_TAG
+    image = docker_pull_helper.pull_image(IMAGE_NAME, image_version)
     cmd = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"{docker_image}"
+        f"{image}"
     )
 
     logging.info("Is going to run the command: %s", cmd)

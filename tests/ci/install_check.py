@@ -25,8 +25,8 @@ from commit_status_helper import (
     update_mergeable_check,
 )
 from compress_files import compress_fast
-from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
+from docker_pull_helper import pull_image
+from env_helper import CI, TEMP_PATH as TEMP, DOCKER_TAG
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
@@ -115,7 +115,7 @@ exit 1
     (TEMP_PATH / "preserve_logs.sh").write_text(preserve_logs, encoding="utf-8")
 
 
-def test_install_deb(image: DockerImage) -> TestResults:
+def test_install_deb(image: str) -> TestResults:
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb
@@ -131,7 +131,7 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install_rpm(image: DockerImage) -> TestResults:
+def test_install_rpm(image: str) -> TestResults:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
@@ -147,11 +147,11 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install_tgz(image: DockerImage) -> TestResults:
+def test_install_tgz(image: str) -> TestResults:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
-        f"Install server tgz in {image.name}": r"""#!/bin/bash -ex
+        f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/clickhouse-{common,client,server}*tgz; do
     package=${pkg%-*}
@@ -161,7 +161,7 @@ for pkg in /packages/clickhouse-{common,client,server}*tgz; do
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
-        f"Install keeper tgz in {image.name}": r"""#!/bin/bash -ex
+        f"Install keeper tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/clickhouse-keeper*tgz; do
     package=${pkg%-*}
@@ -174,7 +174,7 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
+def test_install(image: str, tests: Dict[str, str]) -> TestResults:
     test_results = []  # type: TestResults
     for name, command in tests.items():
         stopwatch = Stopwatch()
@@ -224,10 +224,15 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="The script to check if the packages are able to install",
     )
-
     parser.add_argument(
         "check_name",
         help="check name, used to download the packages",
+    )
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
     )
     parser.add_argument("--download", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -289,10 +294,13 @@ def main():
             )
             sys.exit(0)
 
-    docker_images = {
-        name: get_image_with_version(REPORTS_PATH, name, args.download)
-        for name in (RPM_IMAGE, DEB_IMAGE)
-    }
+    assert (
+        args.tag or DOCKER_TAG
+    ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+    image_version = args.tag or DOCKER_TAG
+    deb_image = pull_image(DEB_IMAGE, image_version)
+    rpm_image = pull_image(RPM_IMAGE, image_version)
+
     prepare_test_scripts()
 
     if args.download:
@@ -311,9 +319,7 @@ def main():
             is_match = is_match and "-dbg" not in path
             return is_match
 
-        download_builds_filter(
-            args.check_name, REPORTS_PATH, TEMP_PATH, filter_artifacts
-        )
+        download_builds_filter(args.check_name, TEMP_PATH, TEMP_PATH, filter_artifacts)
 
     test_results = []  # type: TestResults
     ch_binary = Path(TEMP_PATH) / "clickhouse"
@@ -325,12 +331,12 @@ def main():
         subprocess.check_output(f"{ch_copy.absolute()} local -q 'SELECT 1'", shell=True)
 
     if args.deb:
-        test_results.extend(test_install_deb(docker_images[DEB_IMAGE]))
+        test_results.extend(test_install_deb(deb_image))
     if args.rpm:
-        test_results.extend(test_install_rpm(docker_images[RPM_IMAGE]))
+        test_results.extend(test_install_rpm(rpm_image))
     if args.tgz:
-        test_results.extend(test_install_tgz(docker_images[DEB_IMAGE]))
-        test_results.extend(test_install_tgz(docker_images[RPM_IMAGE]))
+        test_results.extend(test_install_tgz(deb_image))
+        test_results.extend(test_install_tgz(rpm_image))
 
     state = SUCCESS
     test_status = OK

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
+import bisect
 from hashlib import md5
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING, Iterable, List, Optional, Union
 from sys import modules
 
 if TYPE_CHECKING:
@@ -23,44 +24,53 @@ def _digest_file(file: Path, hash_object: HASH) -> None:
             hash_object.update(chunk)
 
 
-def _digest_directory(directory: Path, hash_object: HASH) -> None:
-    assert directory.is_dir()
-    for p in sorted(directory.rglob("*")):
-        if p.is_symlink() and p.is_dir():
-            # The symlink directory is not listed recursively, so we process it manually
-            (_digest_directory(p, hash_object))
-        if p.is_file():
-            (_digest_file(p, hash_object))
-
-
-def digest_path(path: Path, hash_object: Optional[HASH] = None) -> HASH:
+def digest_path(
+    path: Union[Path, str],
+    hash_object: Optional[HASH] = None,
+    exclude_files: Optional[Iterable[str]] = None,
+    exclude_dirs: Optional[Iterable[str]] = None,
+) -> HASH:
     """Calculates md5 (or updates existing hash_object) hash of the path, either it's
-    directory or file"""
+    directory or file
+    @exclude_files - file extension(s) or any filename suffix(es) that you want to exclude from digest
+    @exclude_dirs - dir names that you want to exclude from digest
+    """
+    path = Path(path)
     hash_object = hash_object or md5()
-    if path.is_dir():
-        _digest_directory(path, hash_object)
-    elif path.is_file():
-        _digest_file(path, hash_object)
+    if path.is_file():
+        if not exclude_files or not any(path.name.endswith(x) for x in exclude_files):
+            _digest_file(path, hash_object)
+    elif path.is_dir():
+        if not exclude_dirs or not any(path.name == x for x in exclude_dirs):
+            for p in sorted(path.iterdir()):
+                digest_path(p, hash_object, exclude_files, exclude_dirs)
+    else:
+        pass  # broken symlink
     return hash_object
 
 
-def digest_paths(paths: Iterable[Path], hash_object: Optional[HASH] = None) -> HASH:
+def digest_paths(
+    paths: Iterable[Union[Path, str]],
+    hash_object: Optional[HASH] = None,
+    exclude_files: Optional[Iterable[str]] = None,
+    exclude_dirs: Optional[Iterable[str]] = None,
+) -> HASH:
     """Calculates aggregated md5 (or updates existing hash_object) hash of passed paths.
     The order is processed as given"""
     hash_object = hash_object or md5()
-    for path in paths:
+    paths_all: List[str] = []
+    for p in paths:
+        if isinstance(p, str) and "*" in p:
+            for path in Path(".").glob(p):
+                bisect.insort(paths_all, path.absolute())
+        else:
+            bisect.insort(paths_all, Path(p).absolute())
+    for path in paths_all:
         if path.exists():
-            digest_path(path, hash_object)
+            digest_path(path, hash_object, exclude_files, exclude_dirs)
+        else:
+            raise AssertionError(f"Invalid path: {path}")
     return hash_object
-
-
-def digest_consistent_paths(
-    paths: Iterable[Path], hash_object: Optional[HASH] = None
-) -> HASH:
-    """Calculates aggregated md5 (or updates existing hash_object) hash of passed paths.
-    The order doesn't matter, paths are converted to `absolute` and ordered before
-    calculation"""
-    return digest_paths(sorted(p.absolute() for p in paths), hash_object)
 
 
 def digest_script(path_str: str) -> HASH:
@@ -78,3 +88,9 @@ def digest_script(path_str: str) -> HASH:
         logger.warning("The modules size has changed, retry calculating digest")
         return digest_script(path_str)
     return md5_hash
+
+
+def digest_string(string: str) -> str:
+    hash_object = md5()
+    hash_object.update(string.encode("utf-8"))
+    return hash_object.hexdigest()

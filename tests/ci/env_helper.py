@@ -12,7 +12,7 @@ git_root = p.abspath(p.join(module_dir, "..", ".."))
 
 CI = bool(os.getenv("CI"))
 TEMP_PATH = os.getenv("TEMP_PATH", p.abspath(p.join(module_dir, "./tmp")))
-
+DOCKER_TAG = os.getenv("DOCKER_TAG")
 CACHES_PATH = os.getenv("CACHES_PATH", TEMP_PATH)
 CLOUDFLARE_TOKEN = os.getenv("CLOUDFLARE_TOKEN")
 GITHUB_EVENT_PATH = os.getenv("GITHUB_EVENT_PATH", "")

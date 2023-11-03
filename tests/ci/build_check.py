@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 from pathlib import Path
 from typing import Tuple
 import subprocess
@@ -9,10 +10,10 @@ import time
 
 from ci_config import CI_CONFIG, BuildConfig
 from ccache_utils import CargoCache
-from docker_pull_helper import get_image_with_version
+
 from env_helper import (
+    DOCKER_TAG,
     GITHUB_JOB_API_URL,
-    IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
@@ -23,6 +24,7 @@ from pr_info import PRInfo
 from report import BuildResult, FAILURE, StatusType, SUCCESS
 from s3_helper import S3Helper
 from tee_popen import TeePopen
+import docker_pull_helper
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
@@ -225,11 +227,30 @@ def upload_master_static_binaries(
     print(f"::notice ::Binary static URL (compact): {url_compact}")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser("Clickhouse builder script")
+    parser.add_argument(
+        "--tag",
+        required=False,
+        default="",
+        help="tag for docker image",
+    )
+    parser.add_argument(
+        "--build-name",
+        required=True,
+        type=str,
+        help="build name",
+    )
+    return parser.parse_args()
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
+    args = parse_args()
+
     stopwatch = Stopwatch()
-    build_name = sys.argv[1]
+    build_name = args.build_name
 
     build_config = CI_CONFIG.build_config[build_name]
 
@@ -256,9 +277,6 @@ def main():
     # put them as github actions artifact (result)
     check_for_success_run(s3_helper, s3_path_prefix, build_name, version)
 
-    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
-    image_version = docker_image.version
-
     logging.info("Got version from repo %s", version.string)
 
     official_flag = pr_info.number == 0
@@ -280,6 +298,12 @@ def main():
         temp_path / "cargo_cache" / "registry", temp_path, s3_helper
     )
     cargo_cache.download()
+
+    assert (
+        args.tag or DOCKER_TAG
+    ), "docker image tag must be provided either with --tag option or DOCKER_TAG env"
+    image_version = args.tag or DOCKER_TAG
+    docker_pull_helper.pull_image(IMAGE_NAME, image_version)
 
     packager_cmd = get_packager_cmd(
         build_config,
