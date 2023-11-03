@@ -3966,6 +3966,10 @@ Possible values:
 
 Default value: `1`.
 
+:::note
+`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
+:::
+
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
 Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
