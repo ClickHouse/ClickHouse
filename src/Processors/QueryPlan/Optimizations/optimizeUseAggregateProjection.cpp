@@ -444,8 +444,33 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     const auto & projections = metadata->projections;
     std::vector<const ProjectionDescription *> agg_projections;
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
+
+    const auto & proj_name_from_settings = context->getSettings().preferred_optimize_projection_name.value;
+    bool is_projection_found = false;
+
+    // Here we iterate over the projections and check if we have the same projections as we specified in preferred_projection_name
+    if (!proj_name_from_settings.empty())
+    {
+        for (const auto & projection : projections)
+        {
+            if (projection.type == ProjectionDescription::Type::Aggregate)
+            {
+                size_t last_dot_pos = projection.name.find_last_of('.');
+                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.name.substr(last_dot_pos + 1) : projection.name;
+                if (proj_name_from_settings == projection_name)
+                {
+                    agg_projections.push_back(&projection);
+                    is_projection_found = true;
+                    break;
+                }
+            }
+        }
+        if (!is_projection_found)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
+                            proj_name_from_settings);
+    }
+    else
+        for (const auto & projection : projections)
             agg_projections.push_back(&projection);
 
     bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection

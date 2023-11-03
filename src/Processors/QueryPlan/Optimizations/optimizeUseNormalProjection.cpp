@@ -7,6 +7,8 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <stack>
 
@@ -131,6 +133,26 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
+    // Here we iterate over the projections and check if we have the same projections as we specified in preferred_projection_name
+    bool is_projection_found = false;
+    const auto & proj_name_from_settings = context->getSettings().preferred_optimize_projection_name.value;
+    if (!proj_name_from_settings.empty())
+    {
+        for (const auto * projection : normal_projections)
+        {
+            size_t last_dot_pos = projection->name.find_last_of('.');
+            std::string projection_name = (last_dot_pos != std::string::npos) ? projection->name.substr(last_dot_pos + 1) : projection->name;
+            if (projection_name == proj_name_from_settings)
+            {
+                is_projection_found = true;
+                break;
+            }
+        }
+        if (!is_projection_found)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
+                            proj_name_from_settings);
+    }
+
     for (const auto * projection : normal_projections)
     {
         if (!hasAllRequiredColumns(projection, required_columns))
@@ -153,7 +175,12 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         if (candidate.sum_marks >= ordinary_reading_marks)
             continue;
 
-        if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
+        size_t last_dot_pos = projection->name.find_last_of('.');
+        std::string projection_name = (last_dot_pos != std::string::npos) ? projection->name.substr(last_dot_pos + 1) : projection->name;
+
+        if (!is_projection_found && (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks))
+            best_candidate = &candidate;
+        else if (is_projection_found && projection_name == proj_name_from_settings)
             best_candidate = &candidate;
     }
 

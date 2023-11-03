@@ -3954,6 +3954,17 @@ Possible values:
 
 Default value: `''`.
 
+## preferred_optimize_projection_name {#preferred_optimize_projection_name}
+
+If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
+
+
+Possible values:
+
+- string: name of preferred projection
+
+Default value: `''`.
+
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
