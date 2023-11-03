@@ -48,12 +48,16 @@ ActionNodeStatistics ExpressionNodeVisitor::visitChildren(const ActionsDAG::Node
 
 ActionNodeStatistics ExpressionNodeVisitor::visitDefault(const ActionsDAG::Node * node, ContextType & context)
 {
-    auto input_nodes = getInputNodes(node);
-    /// TODO check random(), now()
-    chassert(!input_nodes.empty());
-
     ActionNodeStatistics node_stats;
     node_stats.selectivity = 1.0;
+
+    auto input_nodes = getInputNodes(node);
+    if (input_nodes.empty())
+    {
+        /// for example: ran(), now(), materialize('str')
+        node_stats.value = 0.0; /// TODO real value
+        return node_stats;
+    }
 
     for (auto input_node : input_nodes)
     {
@@ -62,7 +66,6 @@ ActionNodeStatistics ExpressionNodeVisitor::visitDefault(const ActionsDAG::Node 
         node_stats.set(input_node, input_stats);
         input_stats->setDataType(input_node->result_type);
     }
-
     return node_stats;
 }
 
@@ -170,12 +173,18 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
         {
             statistics.addColumnStatistics(output_node->result_name, ColumnStatistics::unknown());
         }
-        else
+        /// for 'col1 + 1'
+        else if (context[output_node].input_node_stats.size() == 1)
         {
             auto output_node_stats = context[output_node].get();
-            chassert(output_node_stats);
             statistics.addColumnStatistics(output_node->result_name, output_node_stats->clone());
         }
+        /// for rand()
+        else
+        {
+            statistics.addColumnStatistics(output_node->result_name, ColumnStatistics::create(*context[output_node].value));
+        }
+
     }
 
     return statistics;
