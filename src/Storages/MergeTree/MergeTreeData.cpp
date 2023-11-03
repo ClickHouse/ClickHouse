@@ -3461,6 +3461,9 @@ MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
         ++end;
     }
 
+    if (begin != committed_parts_range.end() && (*begin)->info == part_info)
+        ++begin;
+
     result.covered_parts.insert(result.covered_parts.end(), begin, end);
 
     return result;
@@ -3881,8 +3884,11 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
 
         MergeTreePartInfo empty_info = drop_range;
         empty_info.level = empty_info.mutation = 0;
+        if (!empty_info.min_block)
+            empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
         for (const auto & part : parts_to_remove)
         {
+            empty_info.min_block = std::min(empty_info.min_block, part->info.min_block);
             empty_info.level = std::max(empty_info.level, part->info.level);
             empty_info.mutation = std::max(empty_info.mutation, part->info.mutation);
         }
@@ -3897,6 +3903,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
 
         /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
         transaction.rollback(&lock);
+        new_data_part->remove_time.store(0, std::memory_order_relaxed);
     }
 
     /// Since we can return parts in Deleting state, we have to use a wrapper that restricts access to such parts.
