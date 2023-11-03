@@ -379,9 +379,12 @@ public:
         return access("checkExistsAndGetCreateAncestorsOps", path, [&]() { return keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
     }
 
-    void handleEphemeralNodeExistenceNoFailureInjection(const std::string & path, const std::string & fast_delete_if_equal_value)
+    void deleteEphemeralNodeIfContentMatchesNoFailureInjection(const std::string & path, const std::string & fast_delete_if_equal_value)
     {
-        return access<false, false, false>("handleEphemeralNodeExistence", path, [&]() { return keeper->handleEphemeralNodeExistence(path, fast_delete_if_equal_value); });
+        return access<false, false, false>(
+            "deleteEphemeralNodeIfContentMatches",
+            path,
+            [&]() { return keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
     }
 
     void cleanupEphemeralNodes()
