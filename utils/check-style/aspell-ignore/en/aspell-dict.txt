@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2646 
+personal_ws-1.1 en 2646
 AArch
 ACLs
 ALTERs
@@ -1512,6 +1512,7 @@ fromUnixTimestampInJodaSyntax
 fsync
 func
 fuzzBits
+fuzzJSON
 fuzzer
 fuzzers
 gRPC
