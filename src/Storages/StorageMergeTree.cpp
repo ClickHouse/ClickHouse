@@ -2208,20 +2208,24 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
         background_moves_assignee.trigger();
 }
 
-IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(const ASTPtr & query, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
+    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
     DataPartsVector data_parts;
-    if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
+    if (const auto * partition_opt = std::get_if<ASTPtr>(&check_task_filter))
     {
-        String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
+        const auto & partition = *partition_opt;
+        if (!partition->as<ASTPartition>())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected partition, got {}", partition->formatForErrorMessage());
+        String partition_id = getPartitionIDFromQuery(partition, local_context);
         data_parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
     }
-    else if (!check_query.part_name.empty())
+    else if (const auto * part_name = std::get_if<String>(&check_task_filter))
     {
-        auto part = getPartIfExists(check_query.part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+        auto part = getPartIfExists(*part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
         if (!part)
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No such data part '{}' to check in table '{}'",
-                            check_query.part_name, getStorageID().getFullTableName());
+                            *part_name, getStorageID().getFullTableName());
         data_parts.emplace_back(std::move(part));
     }
     else
