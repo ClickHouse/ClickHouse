@@ -28,6 +28,9 @@ enum class LoadBalancing
     FIRST_OR_RANDOM,
     // round robin across replicas with the same number of errors.
     ROUND_ROBIN,
+    // Prefer the keeper that runs within the same availability zone of ClickHouse server.
+    // This is only supported for ClickHouse keeper.
+    // LOCAL_AVAILABILITY_ZONE,
 };
 
 DECLARE_SETTING_ENUM(LoadBalancing)

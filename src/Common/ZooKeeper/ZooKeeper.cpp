@@ -1,6 +1,7 @@
 #include "ZooKeeper.h"
 #include "Coordination/KeeperConstants.h"
 #include "Coordination/KeeperFeatureFlags.h"
+#include "Core/SettingsEnums.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
@@ -56,6 +57,7 @@ static void check(Coordination::Error code, const std::string & path)
 }
 
 
+/// NOTE: boils down to change the init method here.
 void ZooKeeper::init(ZooKeeperArgs args_)
 
 {
@@ -75,6 +77,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
         std::vector<ShuffleHost> shuffled_hosts = shuffleHosts();
 
+        // Ignore this for now.
         bool dns_error = false;
         for (auto & host : shuffled_hosts)
         {
@@ -118,6 +121,9 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         /// NOTE: basically the nodes arg order does matter?
         /// TODO: check how the failover work.
         impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+
+        // Do this one by one, and then reshuffle.
+        // impl->get("/keeper/availability", GetCallback callback, WatchCallbackPtr watch)
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
@@ -170,11 +176,41 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
     init(ZooKeeperArgs(config, config_name));
 }
 
-/// NOTE: where the get priority func is invoked.
-std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
+std::vector<ShuffleHost> ZooKeeper::shuffleHosts() 
 {
     std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
+
+    /// Works fine.
+    // if (args.get_priority_load_balancing.load_balancing == DB::LoadBalancing::LOCAL_AVAILABILITY_ZONE)
+    // {
+    // [0] for now.
+    Coordination::ZooKeeper::Nodes nodes;
+    Coordination::ZooKeeper::Node node;
+    node.address = Poco::Net::SocketAddress(args.hosts[0]);
+    node.original_index = 0;
+    // bool secure = startsWith(node.host., "secure://");
+    nodes.emplace_back(node);
+
+    impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+    auto future = promise->get_future();
+
+    // NOTE: more todo: we probably need a sync version for availability zone zk response.
+    auto callback = [promise ](const Coordination::GetResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+
+    /// Probably make this part of the ZooKeeperImpl directly, to make code here simpler.
+    impl->get("/keeper/availability_zone", std::move(callback),{});
+    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Jianfei unable to find az in the shuffle");
+    auto response = future.get();
+    LOG_DEBUG(log, "Jianfei debug, checking availability value {}", response.data);
+        // return shuffle_hosts;
+    // }
+
     for (size_t i = 0; i < args.hosts.size(); ++i)
     {
         ShuffleHost shuffle_host;
