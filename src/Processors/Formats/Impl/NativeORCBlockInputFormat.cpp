@@ -778,6 +778,9 @@ static void updateIncludeTypeIds(
             return;
         }
         case orc::STRUCT: {
+            /// To make sure tuple field pruning work fine, we should include only the fields of orc struct type which are also contained in CH tuple types, instead of all fields of orc struct type.
+            /// For example, CH tupe type in header is "x Tuple(a String)", ORC struct type is "x struct<a:string, b:long>", then only type id of field "x.a" should be included.
+            /// For tuple field pruning purpose, we should never include "x.b" for it is not required in format header.
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(non_nullable_type.get());
             if (tuple_type)
             {
