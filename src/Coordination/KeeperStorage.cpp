@@ -2324,13 +2324,15 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
                     ? list_watches
                     : watches;
 
-                watches_type[zk_request->getPath()].emplace(session_id);
-                sessions_and_watchers[session_id].emplace(zk_request->getPath());
+                auto add_watch_result = watches_type[zk_request->getPath()].emplace(session_id);
+                if (add_watch_result.second)
+                    sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
             else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
             {
-                watches[zk_request->getPath()].emplace(session_id);
-                sessions_and_watchers[session_id].emplace(zk_request->getPath());
+                auto add_watch_result = watches[zk_request->getPath()].emplace(session_id);
+                if (add_watch_result.second)
+                    sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
         }
 

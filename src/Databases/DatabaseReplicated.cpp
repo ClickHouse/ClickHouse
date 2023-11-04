@@ -236,6 +236,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
                                                                  "because replicas are created or removed concurrently");
 
+    LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
+              fmt::join(unfiltered_hosts, ", "), fmt::join(hosts, ", "), fmt::join(host_ids, ", "));
+
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
     String current_shard = parseFullReplicaName(hosts.front()).first;

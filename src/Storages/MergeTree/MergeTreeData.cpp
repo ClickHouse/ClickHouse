@@ -1592,7 +1592,7 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
 }
 
 
-void MergeTreeData::loadDataParts(bool skip_sanity_checks)
+void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
     LOG_DEBUG(log, "Loading data parts");
 
@@ -1716,6 +1716,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     size_t suspicious_broken_parts = 0;
     size_t suspicious_broken_parts_bytes = 0;
+    size_t suspicious_broken_unexpected_parts = 0;
+    size_t suspicious_broken_unexpected_parts_bytes = 0;
     bool have_adaptive_parts = false;
     bool have_non_adaptive_parts = false;
     bool have_lightweight_in_parts = false;
@@ -1732,9 +1734,23 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (res.is_broken)
             {
                 broken_parts_to_detach.push_back(res.part);
-                ++suspicious_broken_parts;
+                bool unexpected = expected_parts != std::nullopt && !expected_parts->contains(res.part->name);
+                if (unexpected)
+                {
+                    LOG_DEBUG(log, "loadDataParts: Part {} is broken, but it's not expected to be in parts set, "
+                              " will not count it as suspicious broken part", res.part->name);
+                    ++suspicious_broken_unexpected_parts;
+                }
+                else
+                    ++suspicious_broken_parts;
+
                 if (res.size_of_part)
-                    suspicious_broken_parts_bytes += *res.size_of_part;
+                {
+                    if (unexpected)
+                        suspicious_broken_unexpected_parts_bytes += *res.size_of_part;
+                    else
+                        suspicious_broken_parts_bytes += *res.size_of_part;
+                }
             }
             else if (res.part->is_duplicate)
             {
@@ -1768,23 +1784,34 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     has_lightweight_delete_parts = have_lightweight_in_parts;
     transactions_enabled = have_parts_with_version_metadata;
 
-    if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
-        throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-                        "Suspiciously many ({} parts, {} in total) broken parts "
-                        "to remove while maximum allowed broken parts count is {}. You can change the maximum value "
-                        "with merge tree setting 'max_suspicious_broken_parts' "
-                        "in <merge_tree> configuration section or in table settings in .sql file "
-                        "(don't forget to return setting back to default value)",
-                        suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-                        settings->max_suspicious_broken_parts);
+    if (!skip_sanity_checks)
+    {
+        if (suspicious_broken_parts > settings->max_suspicious_broken_parts)
+            throw Exception(
+                ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
+                "Suspiciously many ({} parts, {} in total) broken parts "
+                "to remove while maximum allowed broken parts count is {}. You can change the maximum value "
+                "with merge tree setting 'max_suspicious_broken_parts' in <merge_tree> configuration section or in table settings in .sql file "
+                "(don't forget to return setting back to default value)",
+                suspicious_broken_parts,
+                formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
+                settings->max_suspicious_broken_parts);
 
-    if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes && !skip_sanity_checks)
-        throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-            "Suspiciously big size ({} parts, {} in total) of all broken parts to remove while maximum allowed broken parts size is {}. "
-            "You can change the maximum value with merge tree setting 'max_suspicious_broken_parts_bytes' in <merge_tree> configuration "
-            "section or in table settings in .sql file (don't forget to return setting back to default value)",
-            suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-            formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
+        if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes)
+            throw Exception(
+                ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
+                "Suspiciously big size ({} parts, {} in total) of all broken "
+                "parts to remove while maximum allowed broken parts size is {}. "
+                "You can change the maximum value with merge tree setting 'max_suspicious_broken_parts_bytes' in <merge_tree> configuration "
+                "section or in table settings in .sql file (don't forget to return setting back to default value)",
+                suspicious_broken_parts,
+                formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
+                formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
+    }
+
+    if (suspicious_broken_unexpected_parts != 0)
+        LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
+
 
     if (!is_static_storage)
         for (auto & part : broken_parts_to_detach)
@@ -3930,7 +3957,9 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
         auto is_appropriate_state = [] (DataPartState state)
         {
-            return state == DataPartState::Active || state == DataPartState::Outdated;
+            if (state != DataPartState::Outdated)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to restore a part from unexpected state: {}", state);
+            return true;
         };
 
         auto activate_part = [this, &restored_active_part](auto it)
