@@ -783,22 +783,31 @@ static void updateIncludeTypeIds(
             {
                 if (tuple_type->haveExplicitNames())
                 {
-                    const auto & names = tuple_type->getElementNames();
-                    for (size_t tuple_i = 0; tuple_i < names.size(); ++tuple_i)
+                    std::unordered_map<String, size_t> orc_field_name_to_index;
+                    orc_field_name_to_index.reserve(orc_type->getSubtypeCount());
+                    for (size_t struct_i = 0; struct_i < orc_type->getSubtypeCount(); ++struct_i)
                     {
-                        const auto & name = names[tuple_i];
-                        for (size_t struct_i = 0; struct_i < orc_type->getSubtypeCount(); ++struct_i)
+                        String field_name = orc_type->getFieldName(struct_i);
+                        if (ignore_case)
+                            boost::to_lower(field_name);
+
+                        orc_field_name_to_index[field_name] = struct_i;
+                    }
+
+                    const auto & element_names = tuple_type->getElementNames();
+                    for (size_t tuple_i = 0; tuple_i < element_names.size(); ++tuple_i)
+                    {
+                        String element_name = element_names[tuple_i];
+                        if (ignore_case)
+                            boost::to_lower(element_name);
+
+                        if (orc_field_name_to_index.contains(element_name))
                         {
-                            if (boost::equals(orc_type->getFieldName(struct_i), name)
-                                || (ignore_case && boost::iequals(orc_type->getFieldName(struct_i), name)))
-                            {
-                                updateIncludeTypeIds(
-                                    tuple_type->getElement(tuple_i),
-                                    orc_type->getSubtype(struct_i),
-                                    ignore_case,
-                                    include_typeids);
-                                break;
-                            }
+                            updateIncludeTypeIds(
+                                tuple_type->getElement(tuple_i),
+                                orc_type->getSubtype(orc_field_name_to_index[element_name]),
+                                ignore_case,
+                                include_typeids);
                         }
                     }
                 }
