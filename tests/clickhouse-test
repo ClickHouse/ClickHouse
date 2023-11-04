@@ -1174,7 +1174,10 @@ class TestCase:
 
         description_full += result.description
 
-        if args.collect_per_test_coverage and BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+        if (
+            args.collect_per_test_coverage
+            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        ):
             clickhouse_execute(
                 args,
                 f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
@@ -1248,7 +1251,10 @@ class TestCase:
             )
 
         # We want to calculate per-test code coverage. That's why we reset it before each test.
-        if args.collect_per_test_coverage and BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+        if (
+            args.collect_per_test_coverage
+            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        ):
             clickhouse_execute(
                 args,
                 "SYSTEM RESET COVERAGE",
@@ -2363,7 +2369,10 @@ def main(args):
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
 
-    if args.collect_per_test_coverage and BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+    if (
+        args.collect_per_test_coverage
+        and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+    ):
         clickhouse_execute(
             args,
             """
