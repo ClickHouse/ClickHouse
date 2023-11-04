@@ -3904,6 +3904,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
         transaction.rollback(&lock);
         new_data_part->remove_time.store(0, std::memory_order_relaxed);
+        new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
     }
 
     /// Since we can return parts in Deleting state, we have to use a wrapper that restricts access to such parts.

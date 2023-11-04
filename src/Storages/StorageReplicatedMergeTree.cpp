@@ -1365,12 +1365,13 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
     ActiveDataPartSet empty_unexpected_parts_set(format_version);
-    for (const auto & part : parts)
+    for (auto & part : parts)
     {
         if (part->rows_count || part->getState() != MergeTreeDataPartState::Active || expected_parts.contains(part->name))
             continue;
 
         empty_unexpected_parts_set.add(part->name);
+        const_cast<DataPart &>(*part).remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
     }
     if (auto empty_count = empty_unexpected_parts_set.size())
         LOG_INFO(log, "Found {} empty unexpected parts (probably some dropped parts were not cleaned up before restart): {}",
@@ -9113,6 +9114,14 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
                      can_remove_blobs ? "will be removed" : "have to be preserved");
             return std::make_pair(can_remove_blobs, NameSet{});
         }
+    }
+
+    if (part.rows_count == 0 && part.remove_tmp_policy == IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS)
+    {
+        /// It's a non-replicated empty part that was created to avoid unexpected parts after DROP_RANGE
+        LOG_INFO(log, "Looks like {} is a non-replicated empty part that was created to avoid unexpected parts after DROP_RANGE, "
+                      "blobs can be removed", part.name);
+        return std::make_pair(true, NameSet{});
     }
 
     if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
