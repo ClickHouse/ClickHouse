@@ -4072,6 +4072,7 @@ arguments, result_type, input_rows_count); \
     WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
     {
         using EnumType = DataTypeEnum<FieldType>;
+        using Function = typename FunctionTo<EnumType>::Type;
 
         if (const auto * from_enum8 = checkAndGetDataType<DataTypeEnum8>(from_type.get()))
             checkEnumToEnumConversion(from_enum8, to_type);
@@ -4103,6 +4104,12 @@ arguments, result_type, input_rows_count); \
             return createNumberToEnumWrapper<ColumnFloat32, EnumType>();
         else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
             return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
+
+        if (isEnum(from_type))
+        {
+            auto function = Function::create();
+            return createFunctionAdaptor(function, from_type);
+        }
 
         if (cast_type == CastType::accurateOrNull)
             return createToNullableColumnWrapper();
