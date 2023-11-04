@@ -1174,7 +1174,7 @@ class TestCase:
 
         description_full += result.description
 
-        if BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+        if args.collect_per_test_coverage and BuildFlags.SANITIZE_COVERAGE in args.build_flags:
             clickhouse_execute(
                 args,
                 f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
@@ -1248,7 +1248,7 @@ class TestCase:
             )
 
         # We want to calculate per-test code coverage. That's why we reset it before each test.
-        if BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+        if args.collect_per_test_coverage and BuildFlags.SANITIZE_COVERAGE in args.build_flags:
             clickhouse_execute(
                 args,
                 "SYSTEM RESET COVERAGE",
@@ -2363,7 +2363,7 @@ def main(args):
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
 
-    if BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+    if args.collect_per_test_coverage and BuildFlags.SANITIZE_COVERAGE in args.build_flags:
         clickhouse_execute(
             args,
             """
@@ -2725,6 +2725,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Check what high-level server components were covered by tests",
+    )
+    parser.add_argument(
+        "--collect-per-test-coverage",
+        action="store_true",
+        default=False,
+        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
     )
     parser.add_argument(
         "--report-logs-stats",
