@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+
 DROP TABLE IF EXISTS index_test;
 
 CREATE TABLE index_test
