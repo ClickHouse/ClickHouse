@@ -61,6 +61,8 @@ std::pair<String, StoragePtr> createTableFromAST(
     bool force_restore)
 {
     ast_create_query.attach = true;
+    context->setAttachQuery(true);
+    SCOPE_EXIT(context->setAttachQuery(false));
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
