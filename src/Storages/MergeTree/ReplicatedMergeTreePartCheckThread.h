@@ -74,10 +74,9 @@ public:
 
 private:
     void run();
-    std::optional<time_t> enqueueBackgroundCheckIfNeeded();
     MergeTreeDataPartPtr choosePartForBackgroundCheck();
-    void doBackgroundPartCheck(const String & part_name);
-    void enqueuePart(const String & name, time_t delay_to_check_seconds, bool background_check);
+    void doBackgroundPartCheck();
+    void enqueueBackgroundCheck();
 
     ReplicatedCheckResult checkPartImpl(const String & part_name);
     ReplicatedCheckResult checkActivePart(MergeTreeDataPartPtr part);
@@ -98,9 +97,10 @@ private:
     using StringSet = std::set<String>;
     struct PartToCheck
     {
+        using TimePoint = std::chrono::steady_clock::time_point;
         String name;
-        time_t time;
-        bool background = false;
+        TimePoint time;
+        bool isBackgroundCheck() const { return name.empty(); }
     };
     using PartsToCheckQueue = std::list<PartToCheck>;
 
@@ -119,14 +119,19 @@ private:
     std::atomic<bool> need_stop { false };
     BackgroundSchedulePool::TaskHolder task;
 
-    // background part check
+    // Background part check:
+    // (1) part for background check should be chosen from active parts but time to execute the check is chosen upfront
+    //     Therefore, background check is scheduled by enqueueing part check with empty part name,
+    //     so the part to check will be chosen among currently active parts at check time
+    // (2) after candidate for background check is chosen, we check latest time the part was checked.
+    //     If the part was checked recently (see background_part_check_delay_seconds), try to chose another part
     std::mt19937_64 gen;
     MergeTreePartInfo last_randomly_checked_part;
     std::chrono::time_point<std::chrono::steady_clock> last_check_finish_time;
     std::chrono::time_point<std::chrono::steady_clock> last_time_to_create_background_check;
     std::chrono::duration<float> last_check_duration;
     double background_part_check_time_to_total_time_ratio = 0.01;
-    time_t background_part_check_delay_seconds = 10;
+    std::chrono::seconds background_part_check_delay_seconds{10};
 };
 
 }

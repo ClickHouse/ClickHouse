@@ -33,6 +33,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
+    enqueueBackgroundCheck();
     task->schedule();
 }
 
@@ -60,24 +61,37 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
-    constexpr bool background_check = false;
-    enqueuePart(name, delay_to_check_seconds, background_check);
-}
-
-void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds, bool background_check)
-{
     std::lock_guard lock(parts_mutex);
 
     if (parts_set.contains(name))
         return;
 
-    if (!background_check)
-        LOG_TRACE(log, "Enqueueing {} for check after after {}s", name, delay_to_check_seconds);
-    else
-        LOG_TRACE(log, "Enqueueing {} for background check after after {}s", name, delay_to_check_seconds);
+    LOG_TRACE(log, "Enqueueing {} for check after {}s", name, delay_to_check_seconds);
 
-    parts_queue.emplace_back(name, time(nullptr) + delay_to_check_seconds, background_check);
+    parts_queue.emplace_back(name, std::chrono::steady_clock::now() + std::chrono::seconds(delay_to_check_seconds));
     parts_set.insert(name);
+    task->schedule();
+}
+
+void ReplicatedMergeTreePartCheckThread::enqueueBackgroundCheck()
+{
+    std::lock_guard lock(parts_mutex);
+
+    using namespace std::chrono;
+    milliseconds next_check_after_ms{0};
+    auto last_check_duration_ms = duration_cast<milliseconds>(last_check_duration);
+    if (last_check_duration_ms.count())
+    {
+        last_check_duration_ms *= static_cast<size_t>(1 / background_part_check_time_to_total_time_ratio);
+        next_check_after_ms = last_check_duration_ms;
+    }
+
+    next_check_after_ms = std::max(next_check_after_ms, duration_cast<milliseconds>(background_part_check_delay_seconds));
+
+    LOG_TRACE(log, "Enqueueing background check after {}s", duration_cast<seconds>(next_check_after_ms).count());
+
+    parts_queue.emplace_back("", steady_clock::now() + next_check_after_ms);
+    parts_set.insert("");
     task->schedule();
 }
 
@@ -127,12 +141,8 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of parts to remove from parts_queue: should be {}, got {}",
                         parts_to_remove.size(), count);
 
-    bool update_background_check = false;
-    auto new_end = std::remove_if(parts_queue.begin(), parts_queue.end(), [&removed_parts, &update_background_check] (const auto & elem)
+    auto new_end = std::remove_if(parts_queue.begin(), parts_queue.end(), [&removed_parts] (const auto & elem)
     {
-        if (elem.background)
-          update_background_check=true;
-
         return removed_parts.contains(elem.name);
     });
 
@@ -140,9 +150,6 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
 
     for (const auto & elem : removed_parts)
         parts_set.erase(elem);
-
-    if (update_background_check)
-        task->schedule();
 }
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
@@ -619,65 +626,42 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
 }
 
 
-std::optional<time_t> ReplicatedMergeTreePartCheckThread::enqueueBackgroundCheckIfNeeded()
+void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
 {
-    const auto it = std::find_if(begin(parts_queue), end(parts_queue), [](const auto & part_check) { return part_check.background; });
-    if (it != end(parts_queue))
-        return it->time;
-
     // check if background check is already scheduled
     auto part_to_check = choosePartForBackgroundCheck();
     if (!part_to_check)
-        return {};
+        return;
 
-    const auto current_time = time(nullptr);
-    if (last_randomly_checked_part == MergeTreePartInfo{})
     {
-        enqueuePart(part_to_check->name, 0, true);
-        // todo: randomize first check
-        return current_time;
+        auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
+
+        LOG_DEBUG(log, "Background part check: going to check part {}", part_to_check->name);
+
+        last_randomly_checked_part = part_to_check->info;
+        auto check_start = std::chrono::steady_clock::now();
+        auto result = checkActivePart(part_to_check);
+        last_check_finish_time = std::chrono::steady_clock::now();
+        last_check_duration = last_check_finish_time - check_start;
+
+        LOG_DEBUG(log, "Background part check took {} ms", duration_cast<std::chrono::milliseconds>(last_check_duration).count());
+
+        if (result.status.success)
+        {
+            LOG_DEBUG(log, "Background part check succeeded: part={} path={}", part_to_check->name, result.status.fs_path);
+        }
+        else
+        {
+            LOG_WARNING(
+                log,
+                "Background part check is failed: part={} path={} message={}",
+                part_to_check->name,
+                result.status.fs_path,
+                result.status.failure_message);
+        }
     }
 
-    auto check_duration = duration_cast<std::chrono::milliseconds>(last_check_duration).count();
-    auto next_check_after_ms = check_duration * (1 / background_part_check_time_to_total_time_ratio);
-    if (next_check_after_ms < 1000)
-        next_check_after_ms = 1000;
-
-    const size_t next_check_after_seconds = static_cast<size_t>(next_check_after_ms / 1000);
-    enqueuePart(part_to_check->name, next_check_after_seconds, true);
-    return current_time + next_check_after_seconds;
-}
-
-
-void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck(const String & part_name)
-{
-    auto part_to_check = storage.getActiveContainingPart(part_name);
-
-    auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
-
-    LOG_DEBUG(log, "Background part check: going to check part {}", part_to_check->name);
-
-    last_randomly_checked_part = part_to_check->info;
-    auto check_start = std::chrono::steady_clock::now();
-    auto result = checkActivePart(part_to_check);
-    last_check_finish_time = std::chrono::steady_clock::now();
-    last_check_duration = last_check_finish_time - check_start;
-
-    LOG_DEBUG(log, "Background part check took {} ms", duration_cast<std::chrono::milliseconds>(last_check_duration).count());
-
-    if (result.status.success)
-    {
-        LOG_DEBUG(log, "Background part check succeeded: part={} path={}", part_to_check->name, result.status.fs_path);
-    }
-    else
-    {
-        LOG_WARNING(
-            log,
-            "Background part check is failed: part={} path={} message={}",
-            part_to_check->name,
-            result.status.fs_path,
-            result.status.failure_message);
-    }
+    enqueueBackgroundCheck();
 }
 
 
@@ -688,7 +672,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
     try
     {
-        time_t current_time = time(nullptr);
+        const auto current_time = std::chrono::steady_clock::now();
 
         /// Take part from the queue for verification.
         PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated
@@ -711,19 +695,13 @@ void ReplicatedMergeTreePartCheckThread::run()
                 // Find next part to check in the queue and schedule the check
                 // Otherwise, scheduled for later checks won't be executed until
                 // a new check is enqueued (i.e. task is scheduled again)
-                time_t next_time = current_time;
                 auto next_it = std::min_element(
                     begin(parts_queue), end(parts_queue), [](const auto & l, const auto & r) { return l.time < r.time; });
                 if (next_it != parts_queue.end())
                 {
-                    next_time = next_it->time;
+                    auto delay = next_it->time - current_time;
+                    task->scheduleAfter(duration_cast<std::chrono::milliseconds>(delay).count());
                 }
-                auto next_time_background_check = enqueueBackgroundCheckIfNeeded();
-                if (next_time_background_check.has_value() && next_time_background_check < next_time)
-                    next_time = *next_time_background_check;
-
-                const auto delay = next_time - current_time;
-                task->scheduleAfter(delay * 1000);
                 return;
             }
 
@@ -731,9 +709,9 @@ void ReplicatedMergeTreePartCheckThread::run()
             parts_queue.splice(parts_queue.end(), parts_queue, selected);
         }
 
-        if (selected->background)
+        if (selected->isBackgroundCheck())
         {
-            doBackgroundPartCheck(selected->name);
+            doBackgroundPartCheck();
             task->schedule();
             return;
         }
@@ -754,8 +732,8 @@ void ReplicatedMergeTreePartCheckThread::run()
             }
             else if (recheck_after.has_value())
             {
-                LOG_TRACE(log, "Will recheck part {} after after {}s", selected->time, *recheck_after);
-                selected->time = time(nullptr) + *recheck_after;
+                LOG_TRACE(log, "Will recheck part {} after {}s", selected->name, *recheck_after);
+                selected->time = std::chrono::steady_clock::now() + std::chrono::seconds(*recheck_after);
             }
             else
             {
