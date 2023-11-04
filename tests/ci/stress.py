@@ -65,6 +65,9 @@ def get_options(i: int, upgrade_check: bool) -> str:
             f"partial_result_update_duration_ms={random.randint(10, 1000)}"
         )
 
+    if random.random() < 0.1:
+        client_options.append("optimize_trivial_approximate_count_query=1")
+
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 
@@ -131,20 +134,17 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
 
     # We attach gdb to clickhouse-server before running tests
     # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
-    # However, it obstruct checking for hung queries.
+    # However, it obstructs checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
     call_with_retry("tail --pid=$(pidof gdb) -f /dev/null")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid)"
+        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
-    call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
-
-    call_with_retry(make_query_command("SELECT 1 FORMAT Null"))
-
+    call_with_retry(make_query_command("SYSTEM STOP THREAD FUZZER"))
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
     # Possibly we should fix tests and forbid to use such queries without specifying table.

@@ -67,13 +67,13 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             UInt16 port = static_cast<UInt16>(Poco::NumberParser::parseUnsigned(host_port.substr(offset + 1)));
 
             UInt32 uptime = zookeeper->getSessionUptime();
-            time_t time = timeInSeconds(std::chrono::system_clock::now()) - uptime;
+            time_t connected_time = time(nullptr) - uptime;
 
             columns[0]->insert(name);
             columns[1]->insert(host);
             columns[2]->insert(port);
             columns[3]->insert(index);
-            columns[4]->insert(time);
+            columns[4]->insert(connected_time);
             columns[5]->insert(uptime);
             columns[6]->insert(zookeeper->expired());
             columns[7]->insert(0);

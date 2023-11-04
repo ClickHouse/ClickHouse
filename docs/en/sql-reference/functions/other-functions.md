@@ -68,45 +68,6 @@ WHERE macro = 'test';
 └───────┴──────────────┘
 ```
 
-## getHttpHeader  
-Returns the value of specified http header.If there is no such header or the request method is not http, it will return empty string.  
-
-**Syntax**  
-
-```sql
-getHttpHeader(name);
-``` 
-
-**Arguments**  
-
-- `name` — Http header name .[String](../../sql-reference/data-types/string.md#string)  
-
-**Returned value**
-
-Value of the specified header.  
-Type:[String](../../sql-reference/data-types/string.md#string).
-
-  
-When we use `clickhouse-client` to execute this function, we'll always get empty string, because client doesn't use http protocol.
-```sql
-SELECT getHttpHeader('test')
-```
-result:  
-
-```text
-┌─getHttpHeader('test')─┐
-│                       │
-└───────────────────────┘
-```  
-Try to use http request:  
-```shell 
-echo "select getHttpHeader('X-Clickhouse-User')" | curl -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: ' 'http://localhost:8123/' -d @-
-
-#result
-default
-```
-
-
 ## FQDN
 
 Returns the fully qualified domain name of the ClickHouse server.
@@ -2793,4 +2754,72 @@ message Root
     bytes column1 = 1;
     uint32 column2 = 2;
 }
+```
+
+## formatQuery
+
+Returns a formatted, possibly multi-line, version of the given SQL query.
+
+**Syntax**
+
+```sql
+formatQuery(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT
+    a,
+    b
+FROM tab
+WHERE (a > 3) AND (b < 3)            │
+└───────────────────────────────────────────────────────────────┘
+```
+
+## formatQuerySingleLine
+
+Like formatQuery() but the returned formatted string contains no line breaks.
+
+**Syntax**
+
+```sql
+formatQuerySingleLine(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```

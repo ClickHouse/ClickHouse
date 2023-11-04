@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterShowColumnsQuery.h>
 
 #include <Common/quoteString.h>
+#include <Common/escapeString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>
@@ -31,12 +32,8 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 
     WriteBufferFromOwnString buf_database;
     String resolved_database = getContext()->resolveDatabase(query.database);
-    writeEscapedString(resolved_database, buf_database);
-    String database = buf_database.str();
-
-    WriteBufferFromOwnString buf_table;
-    writeEscapedString(query.table, buf_table);
-    String table = buf_table.str();
+    String database = escapeString(resolved_database);
+    String table = escapeString(query.table);
 
     String rewritten_query;
     if (use_mysql_types)

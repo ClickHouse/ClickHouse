@@ -230,7 +230,8 @@ public:
     /// Add a part to the queue of parts whose data you want to check in the background thread.
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
@@ -640,6 +641,10 @@ private:
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
+    bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
+                                             std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
+                                             Coordination::Requests & ops, size_t & num_check_ops);
+
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
 
@@ -995,6 +1000,34 @@ private:
     bool waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait) override;
 
     void startupImpl(bool from_attach_thread);
+
+    struct DataValidationTasks : public IStorage::DataValidationTasksBase
+    {
+        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
+            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
+        {}
+
+        DataPartPtr next()
+        {
+            std::lock_guard lock(mutex);
+            if (it == parts.end())
+                return nullptr;
+            return *(it++);
+        }
+
+        size_t size() const override
+        {
+            std::lock_guard lock(mutex);
+            return std::distance(it, parts.end());
+        }
+
+        std::unique_lock<std::mutex> parts_check_lock;
+
+        mutable std::mutex mutex;
+        DataPartsVector parts;
+        DataPartsVector::const_iterator it;
+    };
+
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

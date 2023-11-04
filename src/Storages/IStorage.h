@@ -600,8 +600,46 @@ public:
     /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
-    /// Checks validity of the data
-    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName()); }
+
+    /** A list of tasks to check a validity of data.
+      * Each IStorage implementation may interpret this task in its own way.
+      * E.g. for some storages it's a list of files in filesystem, for others it can be a list of parts.
+      * Also it may hold resources (e.g. locks) required during check.
+      */
+    struct DataValidationTasksBase
+    {
+        /// Number of entries left to check.
+        /// It decreases after each call to checkDataNext().
+        virtual size_t size() const = 0;
+        virtual ~DataValidationTasksBase() = default;
+    };
+
+    using DataValidationTasksPtr = std::shared_ptr<DataValidationTasksBase>;
+
+    /// Specifies to check all data / partition / part
+    using CheckTaskFilter = std::variant<std::monostate, ASTPtr, String>;
+    virtual DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & /* check_task_filter */, ContextPtr /* context */);
+
+    /** Executes one task from the list.
+      * If no tasks left - returns nullopt.
+      * Note: Function `checkDataNext` is accessing `check_task_list` thread-safely,
+      *   and can be called simultaneously for the same `getCheckTaskList` result
+      *   to process different tasks in parallel.
+      * Usage:
+      *
+      * auto check_task_list = storage.getCheckTaskList({}, context);
+      * size_t total_tasks = check_task_list->size();
+      * while (true)
+      * {
+      *     size_t tasks_left = check_task_list->size();
+      *     std::cout << "Checking data: " << (total_tasks - tasks_left) << " / " << total_tasks << " tasks done." << std::endl;
+      *     auto result = storage.checkDataNext(check_task_list);
+      *     if (!result)
+      *         break;
+      *     doSomething(*result);
+      * }
+      */
+    virtual std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list);
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.

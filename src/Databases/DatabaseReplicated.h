@@ -56,6 +56,7 @@ public:
 
     String getShardName() const { return shard_name; }
     String getReplicaName() const { return replica_name; }
+    String getReplicaGroupName() const { return replica_group_name; }
     String getFullReplicaName() const;
     static String getFullReplicaName(const String & shard, const String & replica);
     static std::pair<String, String> parseFullReplicaName(const String & name);
@@ -126,6 +127,7 @@ private:
     String zookeeper_path;
     String shard_name;
     String replica_name;
+    String replica_group_name;
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 

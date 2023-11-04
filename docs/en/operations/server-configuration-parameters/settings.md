@@ -1395,6 +1395,23 @@ For more information, see the section [Creating replicated tables](../../engines
 <macros incl="macros" optional="true" />
 ```
 
+## replica_group_name {#replica_group_name}
+
+Replica group name for database Replicated.
+
+The cluster created by Replicated database will consist of replicas in the same group.
+DDL queries will only wait for the replicas in the same group.
+
+Empty by default.
+
+**Example**
+
+``` xml
+<replica_group_name>backups</replica_group_name>
+```
+
+Default value: ``.
+
 ## max_open_files {#max-open-files}
 
 The maximum number of open files.
@@ -1805,6 +1822,10 @@ The trailing slash is mandatory.
 ```
 
 ## Prometheus {#prometheus}
+
+:::note
+ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+:::
 
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
@@ -2741,3 +2762,7 @@ Proxy settings are determined in the following order:
 ClickHouse will check the highest priority resolver type for the request protocol. If it is not defined,
 it will check the next highest priority resolver type, until it reaches the environment resolver.
 This also allows a mix of resolver types can be used.
+
+### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.

@@ -112,7 +112,8 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
 
-    loadDataParts(has_force_restore_data_flag);
+
+    loadDataParts(has_force_restore_data_flag, std::nullopt);
 
     if (!attach && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -2207,19 +2208,37 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
         background_moves_assignee.trigger();
 }
 
-CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
+    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
-    CheckResults results;
     DataPartsVector data_parts;
-    if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
+    if (const auto * partition_opt = std::get_if<ASTPtr>(&check_task_filter))
     {
-        String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
+        const auto & partition = *partition_opt;
+        if (!partition->as<ASTPartition>())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected partition, got {}", partition->formatForErrorMessage());
+        String partition_id = getPartitionIDFromQuery(partition, local_context);
         data_parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    }
+    else if (const auto * part_name = std::get_if<String>(&check_task_filter))
+    {
+        auto part = getPartIfExists(*part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+        if (!part)
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No such data part '{}' to check in table '{}'",
+                            *part_name, getStorageID().getFullTableName());
+        data_parts.emplace_back(std::move(part));
     }
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    for (auto & part : data_parts)
+    return std::make_unique<DataValidationTasks>(std::move(data_parts), local_context);
+}
+
+std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
+{
+    auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
+    auto local_context = data_validation_tasks->context;
+    if (auto part = data_validation_tasks->next())
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
@@ -2233,7 +2252,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
-                results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
+                return CheckResult(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (...)
             {
@@ -2241,7 +2260,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                     throw;
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                results.emplace_back(part->name, false, "Check of part finished with error: '" + getCurrentExceptionMessage(false) + "'");
+                return CheckResult(part->name, false, "Check of part finished with error: '" + getCurrentExceptionMessage(false) + "'");
             }
         }
         else
@@ -2249,18 +2268,19 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             try
             {
                 checkDataPart(part, true);
-                results.emplace_back(part->name, true, "");
+                return CheckResult(part->name, true, "");
             }
             catch (...)
             {
                 if (isRetryableException(std::current_exception()))
                     throw;
 
-                results.emplace_back(part->name, false, getCurrentExceptionMessage(false));
+                return CheckResult(part->name, false, getCurrentExceptionMessage(false));
             }
         }
     }
-    return results;
+
+    return {};
 }
 
 

@@ -586,7 +586,6 @@
     M(704, CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS) \
     M(705, TABLE_NOT_EMPTY) \
     M(706, LIBSSH_ERROR) \
-    M(707, ILLEGAL_JSON_OBJECT_FORMAT) \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
@@ -607,7 +606,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 3000;
+    constexpr ErrorCode END = 1002;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
