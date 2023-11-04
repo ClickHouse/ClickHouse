@@ -39,7 +39,7 @@ void BrotliWriteBuffer::nextImpl()
     {
         do
         {
-            auto in_data_ptr = in_data;
+            const auto * in_data_ptr = in_data;
             out->nextIfAtEnd();
             out_data = reinterpret_cast<unsigned char *>(out->position());
             out_capacity = out->buffer().end() - out->position();

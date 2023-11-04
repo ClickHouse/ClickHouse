@@ -107,7 +107,7 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus(status));
-        writeResponse(*out.get());
+        writeResponse(*out);
     }
     catch (...)
     {
@@ -115,7 +115,7 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         int exception_code = getCurrentExceptionCode();
         std::string exception_message = getCurrentExceptionMessage(false, true);
-        trySendExceptionToClient(exception_message, exception_code, request, response, *out.get());
+        trySendExceptionToClient(exception_message, exception_code, request, response, *out);
     }
 
     out->finalize();

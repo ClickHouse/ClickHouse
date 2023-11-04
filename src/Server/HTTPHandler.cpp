@@ -969,12 +969,12 @@ try
             /// Also HTTP code 200 could have already been sent.
 
             /// If buffer has data, and that data wasn't sent yet, then no need to send that data
-            bool data_sent = used_output.out_holder.get()->count() != used_output.out_holder.get()->offset();
+            bool data_sent = used_output.out_holder->count() != used_output.out_holder->offset();
 
             if (!data_sent)
             {
                 used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
-                used_output.out_holder.get()->position() = used_output.out_holder.get()->buffer().begin();
+                used_output.out_holder->position() = used_output.out_holder->buffer().begin();
             }
 
             writeString(s, *used_output.out_maybe_compressed);
