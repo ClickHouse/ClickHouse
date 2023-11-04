@@ -42,7 +42,7 @@ public:
     HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
     virtual ~HTTPHandler() override;
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & write_metric = CurrentMetrics::end()) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & write_metric) override;
 
     /// This method is called right before the query execution.
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}

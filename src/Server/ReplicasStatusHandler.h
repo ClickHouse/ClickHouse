@@ -14,7 +14,7 @@ class ReplicasStatusHandler : public HTTPRequestHandler, WithContext
 public:
     explicit ReplicasStatusHandler(IServer & server_);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & write_metric = CurrentMetrics::end()) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & write_metric) override;
 };
 
 

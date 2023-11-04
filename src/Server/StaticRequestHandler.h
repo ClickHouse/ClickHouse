@@ -29,7 +29,7 @@ public:
 
     void writeResponse(WriteBuffer & out);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & write_metric = CurrentMetrics::end()) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & write_metric) override;
 };
 
 }
