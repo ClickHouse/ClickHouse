@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
+#include "Common/Exception.h"
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
@@ -45,6 +46,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_READ_ONLY;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 template<bool async_insert>
@@ -800,8 +802,48 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                             "Conflict block ids and block number lock should not "
                             "be empty at the same time for async inserts");
 
-        /// Information about the part.
-        storage.getCommitPartOps(ops, part, block_id_path);
+        if constexpr (!async_insert)
+        {
+            if (!existing_part_name.empty())
+            {
+                LOG_DEBUG(log, "Will check part {} checksums", existing_part_name);
+                try
+                {
+                    NameSet unused;
+                    /// if we found part in deduplication hashes part must exists on some replica
+                    storage.checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, existing_part_name, unused);
+                }
+                catch (const zkutil::KeeperException &)
+                {
+                    throw;
+                }
+                catch (const Exception & ex)
+                {
+                    if (ex.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH)
+                    {
+                        LOG_INFO(
+                            log,
+                            "Block with ID {} has the same deduplication hash as other part {} on other replica, but checksums (which "
+                            "include metadata files like columns.txt) doesn't match, will not write it locally",
+                            block_id,
+                            existing_part_name);
+                        return;
+                    }
+                    throw;
+                }
+            }
+            else
+            {
+                /// Information about the part.
+                storage.getCommitPartOps(ops, part, block_id_path);
+            }
+        }
+        else
+        {
+            chassert(existing_part_name.empty());
+            storage.getCommitPartOps(ops, part, block_id_path);
+        }
+
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
