@@ -1365,7 +1365,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
     ActiveDataPartSet empty_unexpected_parts_set(format_version);
-    for (auto & part : parts)
+    for (const auto & part : parts)
     {
         if (part->rows_count || part->getState() != MergeTreeDataPartState::Active || expected_parts.contains(part->name))
             continue;

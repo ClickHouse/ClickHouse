@@ -73,6 +73,9 @@ def test_merge_doesnt_work_without_zookeeper(start_cluster):
         == "0\n"
     )
 
+    node1.query("DETACH TABLE test_table SYNC")
+    node1.query("ATTACH TABLE test_table")
+
     node1.query(
         "INSERT INTO test_table VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)"
     )
