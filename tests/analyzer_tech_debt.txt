@@ -38,7 +38,6 @@
 02345_implicit_transaction
 02352_grouby_shadows_arg
 02354_annoy
-02366_union_decimal_conversion
 02375_rocksdb_with_filters
 02402_merge_engine_with_view
 02404_memory_bound_merging
