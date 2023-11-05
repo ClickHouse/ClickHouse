@@ -186,6 +186,7 @@ namespace ErrorCodes
     extern const int NOT_INITIALIZED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int TABLE_IS_DROPPED;
+    extern const int CANNOT_BACKUP_TABLE;
 }
 
 namespace ActionLocks
@@ -9965,8 +9966,15 @@ void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_quer
     applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
 
     /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
-    if (tryGetTableSharedIDFromCreateQuery(*create_query, getContext()) != getTableSharedID())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} has its shared ID to be different from one from the create query");
+    auto actual_table_shared_id = getTableSharedID();
+    auto expected_table_shared_id = tryGetTableSharedIDFromCreateQuery(*create_query, getContext());
+    if (actual_table_shared_id != expected_table_shared_id)
+    {
+        throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Table {} has its shared ID different from one from the create query: "
+                        "actual shared id = {}, expected shared id = {}, create query = {}",
+                        getStorageID().getNameForLogs(), actual_table_shared_id, expected_table_shared_id.value_or("nullopt"),
+                        create_query);
+    }
 }
 
 void StorageReplicatedMergeTree::backupData(
