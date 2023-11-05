@@ -20,7 +20,7 @@ namespace ErrorCodes
 class KeyMapping
 {
 public:
-    KeyMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
+    explicit KeyMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
         : relative_accuracy(relative_accuracy_), offset(offset_)
     {
 
@@ -36,7 +36,7 @@ public:
         max_possible = std::numeric_limits<Float64>::max() / gamma;
     }
 
-    virtual ~KeyMapping() {}  // Virtual destructor
+    virtual ~KeyMapping() = default;  // Virtual destructor
 
     virtual Float64 logGamma(Float64 value) const = 0;
     virtual Float64 powGamma(Float64 value) const = 0;
@@ -90,13 +90,13 @@ protected:
 class LogarithmicMapping : public KeyMapping
 {
 public:
-    LogarithmicMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
+    explicit LogarithmicMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
         : KeyMapping(relative_accuracy_, offset_)
     {
         multiplier *= std::log(2);
     }
 
-    virtual ~LogarithmicMapping() override {}  // Virtual destructor
+    ~LogarithmicMapping() override = default;  // Virtual destructor
 
     Float64 logGamma(Float64 value) const override
     {
