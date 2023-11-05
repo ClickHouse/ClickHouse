@@ -7,6 +7,7 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <AggregateFunctions/DDSketchEncoding.h>
 
 
 // We start with 128 bins and grow the number of bins by 128
@@ -29,15 +30,15 @@ public:
 
     virtual void copy(Store* store) = 0;
     virtual int length() = 0;
-    virtual void add(int key, Float64 weight = 1.0) = 0;
-    virtual int keyAtRank(Float64 rank, bool lower = true) = 0;
+    virtual void add(int key, Float64 weight) = 0;
+    virtual int keyAtRank(Float64 rank, bool lower) = 0;
     virtual void merge(Store* store) = 0;
 };
 
 class DenseStore : public Store
 {
 public:
-    DenseStore(int chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
+    explicit DenseStore(int chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
 
     void copy(Store* other) override
     {
@@ -53,14 +54,14 @@ public:
         return static_cast<int>(bins.size());
     }
 
-    void add(int key, Float64 weight = 1.0) override
+    void add(int key, Float64 weight) override
     {
         int idx = getIndex(key);
         bins[idx] += weight;
         count += weight;
     }
 
-    int keyAtRank(Float64 rank, bool lower = true) override
+    int keyAtRank(Float64 rank, bool lower) override
     {
         Float64 running_ct = 0.0;
         for (size_t i = 0; i < bins.size(); ++i)
@@ -128,7 +129,7 @@ public:
         if (dense_encoding_size <= sparse_encoding_size)
         {
             // Write the dense encoding
-            writeVarInt(1, buf); // Flag for dense encoding
+            writeBinary(enc.BinEncodingContiguousCounts, buf); // Flag for dense encoding
             writeVarUInt(num_bins, buf);
             writeVarInt(min_key, buf);
             writeVarInt(1, buf); // indexDelta in dense encoding
@@ -140,7 +141,7 @@ public:
         else
         {
             // Write the sparse encoding
-            writeVarInt(0, buf); // Flag for sparse encoding
+            writeBinary(enc.BinEncodingIndexDeltasAndCounts, buf); // Flag for sparse encoding
             writeVarUInt(num_non_empty_bins, buf);
             previous_index = 0;
             for (int index = min_key; index <= max_key; ++index)
@@ -158,10 +159,9 @@ public:
 
     void deserialize(ReadBuffer& buf)
     {
-        int is_dense_encoding;
-        readVarInt(is_dense_encoding, buf);
-
-        if (is_dense_encoding)
+        UInt8 encoding_mode;
+        readBinary(encoding_mode, buf);
+        if (encoding_mode == enc.BinEncodingContiguousCounts)
         {
             UInt64 num_bins;
             readVarUInt(num_bins, buf);
@@ -197,6 +197,7 @@ public:
 
 private:
     int chunk_size;
+    DDSketchEncoding enc;
 
     int getIndex(int key)
     {
@@ -207,7 +208,7 @@ private:
         return key - offset;
     }
 
-    int getNewLength(int new_min_key, int new_max_key)
+    int getNewLength(int new_min_key, int new_max_key) const
     {
         int desired_length = new_max_key - new_min_key + 1;
         return static_cast<int>(chunk_size * std::ceil(static_cast<Float64>(desired_length) / chunk_size)); // Fixed float conversion
