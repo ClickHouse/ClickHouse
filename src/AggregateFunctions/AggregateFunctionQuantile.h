@@ -113,6 +113,27 @@ public:
                     getName(),
                     accuracy);
         }
+
+        if constexpr (is_quantile_ddsketch)
+        {
+            if (params.empty())
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one param", getName());
+
+            const auto & relative_accuracy_field = params[0];
+            if (!isFloat64FieldType(relative_accuracy_field.getType()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires relative accuracy parameter with Float64 type", getName());
+
+            relative_accuracy = relative_accuracy_field.get<Float64>();
+
+            if (relative_accuracy <= 0 || relative_accuracy >= 1)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires relative accuracy parameter with value between 0 and 1 but is {}",
+                    getName(),
+                    relative_accuracy);
+        }
     }
 
     String getName() const override { return Name::name; }
