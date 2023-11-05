@@ -12,6 +12,7 @@
 
 #include <AggregateFunctions/Mapping.h>
 #include <AggregateFunctions/Store.h>
+#include <AggregateFunctions/DDSketchEncoding.h>
 
 namespace DB
 {
@@ -74,7 +75,7 @@ public:
         }
         else
         {
-            int key = store->keyAtRank(rank - zero_count - negative_store->count);
+            int key = store->keyAtRank(rank - zero_count - negative_store->count, true);
             quantile_value = mapping->value(key);
         }
         return quantile_value;
@@ -105,7 +106,8 @@ public:
             }
             else
             {
-                *this = changeMapping(other.mapping->getGamma());
+                BaseQuantileDDSketch new_sketch = changeMapping(other.mapping->getGamma());
+                copy(new_sketch);
             }
         }
 
@@ -131,17 +133,54 @@ public:
 
     void serialize(WriteBuffer& buf) const
     {
+        // Write the mapping
+        writeBinary(enc.FlagIndexMappingBaseLogarithmic.byte, buf);
         mapping->serialize(buf);
+
+        // Write the positive and negative stores
+        writeBinary(enc.FlagTypePositiveStore, buf);
         store->serialize(buf);
+
+        writeBinary(enc.FlagTypeNegativeStore, buf);
         negative_store->serialize(buf);
+
+        // Write the zero count
+        writeBinary(enc.FlagZeroCountVarFloat.byte, buf);
         writeBinary(zero_count, buf);
     }
 
     void deserialize(ReadBuffer& buf)
     {
+        // Read the mapping
+        UInt8 flag = 0;
+        readBinary(flag, buf);
+        if (flag != enc.FlagIndexMappingBaseLogarithmic.byte)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for mapping");
+        }
         mapping->deserialize(buf);
+
+        // Read the positive and negative stores
+        readBinary(flag, buf);
+        if (flag != enc.FlagTypePositiveStore)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for positive store");
+        }
         store->deserialize(buf);
+
+        readBinary(flag, buf);
+        if (flag != enc.FlagTypeNegativeStore)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for negative store");
+        }
         negative_store->deserialize(buf);
+
+        // Read the zero count
+        readBinary(flag, buf);
+        if (flag != enc.FlagZeroCountVarFloat.byte)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for zero count");
+        }
         readBinary(zero_count, buf);
         count = static_cast<Float64>(negative_store->count + zero_count + store->count);
     }
@@ -152,6 +191,7 @@ private:
     std::unique_ptr<DenseStore> negative_store;
     Float64 zero_count;
     Float64 count;
+    DDSketchEncoding enc;
     Poco::Logger * log = &Poco::Logger::get("DDSketch");
 
 
@@ -189,7 +229,7 @@ private:
 class DDSketch : public BaseQuantileDDSketch
 {
 public:
-    DDSketch(Float64 relative_accuracy = 0.01)
+    explicit DDSketch(Float64 relative_accuracy = 0.01)
         : BaseQuantileDDSketch(std::make_unique<LogarithmicMapping>(relative_accuracy),
                                std::make_unique<DenseStore>(),
                                std::make_unique<DenseStore>(), 0.0) {}
