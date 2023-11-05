@@ -39,4 +39,4 @@ public:
     static constexpr UInt8 BinEncodingContiguousCounts = 3 << numBitsForType;
 };
 
-} // namespace DB
+}
