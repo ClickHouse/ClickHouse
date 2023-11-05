@@ -33,7 +33,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
-    enqueueBackgroundCheck();
+    enqueueBackgroundPartCheck();
     task->schedule();
 }
 
@@ -72,7 +72,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     task->schedule();
 }
 
-void ReplicatedMergeTreePartCheckThread::enqueueBackgroundCheck()
+void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck()
 {
     std::lock_guard lock(parts_mutex);
 
@@ -91,7 +91,7 @@ void ReplicatedMergeTreePartCheckThread::enqueueBackgroundCheck()
 
     parts_queue.emplace_back("", steady_clock::now() + next_check_after_ms);
     parts_set.insert("");
-    task->schedule();
+    task->scheduleAfter(next_check_after_ms.count());
 }
 
 std::unique_lock<std::mutex> ReplicatedMergeTreePartCheckThread::pausePartsCheck()
@@ -587,39 +587,37 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
     auto active_parts = storage.getDataPartsStateRange(MergeTreeDataPartState::Active);
     if (active_parts.empty())
     {
-        // LOG_DEBUG(log, "Background part check: no active parts");
+        LOG_DEBUG(log, "Background part check: no active parts");
         return nullptr;
     }
+
     LOG_DEBUG(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
 
     MergeTreeDataPartPtr part;
-    MergeTreeDataPartPtr covering_part;
-    do
+    if (last_randomly_checked_part == MergeTreePartInfo{})
     {
-        if (last_randomly_checked_part == MergeTreePartInfo{})
-        {
-            const size_t active_parts_size = std::distance(active_parts.begin(), active_parts.end());
-            std::uniform_int_distribution<size_t> dist(0, active_parts_size - 1);
-            size_t i = dist(gen);
-            chassert(i < active_parts_size);
+        const size_t active_parts_size = std::distance(active_parts.begin(), active_parts.end());
+        std::uniform_int_distribution<size_t> dist(0, active_parts_size - 1);
+        const size_t i = dist(gen);
+        chassert(i < active_parts_size);
 
-            part = *(active_parts.advance_begin(i).begin());
+        part = *(active_parts.advance_begin(i).begin());
 
-            LOG_DEBUG(log, "Background part check: first part to check {}", part->name);
-        }
-        else
-        {
-            auto next_it = storage.data_parts_by_state_and_info.upper_bound(
-                MergeTreeData::DataPartStateAndInfo{MergeTreeDataPartState::Active, last_randomly_checked_part});
-            if (next_it == storage.data_parts_by_state_and_info.end())
-                next_it = storage.data_parts_by_state_and_info.begin();
+        LOG_DEBUG(log, "Background part check: first part to check {}", part->name);
+    }
+    else
+    {
+        auto next_it = storage.data_parts_by_state_and_info.upper_bound(
+            MergeTreeData::DataPartStateAndInfo{MergeTreeDataPartState::Active, last_randomly_checked_part});
+        if (next_it == storage.data_parts_by_state_and_info.end())
+            next_it = storage.data_parts_by_state_and_info.begin();
 
-            part = *next_it;
-        }
+        part = *next_it;
+    }
 
-        covering_part = storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock);
-
-    } while (covering_part != part);
+    MergeTreeDataPartPtr covering_part = storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock);
+    if (covering_part != part)
+        part = covering_part;
 
     return part;
 }
@@ -627,11 +625,11 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
 
 void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
 {
-    // check if background check is already scheduled
     auto part_to_check = choosePartForBackgroundCheck();
     if (!part_to_check)
         return;
 
+    try
     {
         auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
 
@@ -659,8 +657,19 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
                 result.status.failure_message);
         }
     }
+    catch (const Coordination::Exception & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-    enqueueBackgroundCheck();
+        if (Coordination::isHardwareError(e.code))
+            return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+    }
+
+    enqueueBackgroundPartCheck();
 }
 
 
@@ -711,7 +720,6 @@ void ReplicatedMergeTreePartCheckThread::run()
         if (selected->isBackgroundCheck())
         {
             doBackgroundPartCheck();
-            task->schedule();
             return;
         }
 

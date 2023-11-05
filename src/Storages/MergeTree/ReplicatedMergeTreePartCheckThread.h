@@ -76,7 +76,7 @@ private:
     void run();
     MergeTreeDataPartPtr choosePartForBackgroundCheck();
     void doBackgroundPartCheck();
-    void enqueueBackgroundCheck();
+    void enqueueBackgroundPartCheck();
 
     ReplicatedCheckResult checkPartImpl(const String & part_name);
     ReplicatedCheckResult checkActivePart(MergeTreeDataPartPtr part);
