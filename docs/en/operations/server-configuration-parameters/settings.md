@@ -2652,6 +2652,14 @@ Possible values:
 
 Default value: 0.
 
+## background_part_check_time_to_total_time_ratio
+
+Limit on ratio of time spent by background check to total time spent on part checks. 0.01 means background checks can't spent more than 1% of time for part checks
+
+Type: Double
+
+Default: 0.5
+
 ## proxy {#proxy}
 
 Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
@@ -2763,10 +2771,6 @@ ClickHouse will check the highest priority resolver type for the request protoco
 it will check the next highest priority resolver type, until it reaches the environment resolver.
 This also allows a mix of resolver types can be used.
 
-## background_part_check_time_to_total_time_ratio
+### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 
-Limit on ratio of time spent by background check to total time spent on part checks. 0.01 means background checks can't spent more than 1% of time for part checks
-
-Type: Double
-
-Default: 0.5
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.

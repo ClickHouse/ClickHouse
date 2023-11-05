@@ -37,7 +37,7 @@ struct ReplicatedCheckResult
 
     bool exists_in_zookeeper;
     MergeTreeDataPartPtr part;
-    time_t recheck_after = 0;
+    time_t recheck_after_seconds = 0;
 };
 
 /** Checks the integrity of the parts requested for validation.

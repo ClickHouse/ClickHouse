@@ -176,7 +176,8 @@ ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) co
     return part_info_to_name.end();
 }
 
-Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
+
+std::vector<std::map<MergeTreePartInfo, String>::const_iterator> ActiveDataPartSet::getPartsCoveredByImpl(const MergeTreePartInfo & part_info) const
 {
     auto it_middle = part_info_to_name.lower_bound(part_info);
     auto begin = it_middle;
@@ -207,10 +208,26 @@ Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info
         ++end;
     }
 
-    Strings covered;
+    std::vector<std::map<MergeTreePartInfo, String>::const_iterator> covered;
     for (auto it = begin; it != end; ++it)
-        covered.push_back(it->second);
+        covered.push_back(it);
 
+    return covered;
+}
+
+Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
+{
+    Strings covered;
+    for (const auto & it : getPartsCoveredByImpl(part_info))
+        covered.push_back(it->second);
+    return covered;
+}
+
+std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfosCoveredBy(const MergeTreePartInfo & part_info) const
+{
+    std::vector<MergeTreePartInfo> covered;
+    for (const auto & it : getPartsCoveredByImpl(part_info))
+        covered.push_back(it->first);
     return covered;
 }
 

@@ -168,7 +168,7 @@ bool isPartitionKeySuitsGroupByKey(
 
     const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(group_by_actions);
 
-    const auto matches = matchTrees(*group_by_actions, partition_actions);
+    const auto matches = matchTrees(group_by_actions->getOutputs(), partition_actions);
 
     return allOutputsDependsOnlyOnAllowedNodes(partition_actions, irreducibe_nodes, matches);
 }
