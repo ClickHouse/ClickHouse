@@ -628,6 +628,9 @@ public:
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
 
+    // Returns the availability zone of the connected keeper server.
+    virtual String getAvailabilityZone() const {return ""; }
+
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.
     virtual bool hasReachedDeadline() const = 0;

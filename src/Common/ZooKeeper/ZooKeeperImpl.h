@@ -220,6 +220,8 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
+    String getAvailabilityZone() const override { return availability_zone; }
+
 private:
     ACLs default_acls;
 
@@ -343,6 +345,7 @@ private:
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
     void initFeatureFlags();
+    void initAvailabilityZone();
 
     void checkSessionDeadline() const;
 
@@ -350,6 +353,8 @@ private:
     std::shared_ptr<ZooKeeperLog> zk_log;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
+
+    String availability_zone;
 };
 
 }

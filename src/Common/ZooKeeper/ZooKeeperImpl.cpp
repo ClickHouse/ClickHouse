@@ -392,14 +392,13 @@ ZooKeeper::ZooKeeper(
 
     try
     {
-        /// NOTE: maybe send_thread is started somewhere, maybe not, do not matter.
-        /// important thing is that separate thread and async, and we need to join in finalize, already done.
         send_thread = ThreadFromGlobalPool([this] { sendThread(); });
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
-        /// NOTE: send is after connect.
         initFeatureFlags();
         keeper_feature_flags.logFlags(log);
+
+        initAvailabilityZone();
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -523,19 +522,8 @@ void ZooKeeper::connect(
                     node.address.toString(), i, session_lifetime_seconds);
                 }
 
-                // break;
-                LOG_DEBUG(log, "Jianfei debug, connection index {}, address{}", i, node.address.toString());
-                /// NOTE: TODO, understand promise and future.
-                auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
-                auto future = promise->get_future();
-
-                // NOTE: more todo: we probably need a sync version for availability zone zk response.
-                auto callback = [promise, logger = this->log ](const Coordination::GetResponse & response) mutable
-                {
-                    LOG_DEBUG(logger, "Jianfei debug, checking availability value {}", response.data);
-                };
-
-                get("/keeper/availability_zone", std::move(callback), {});
+                if (connected)
+                    break;
             }
             catch (...)
             {
@@ -1221,7 +1209,6 @@ void ZooKeeper::initFeatureFlags()
 {
     const auto try_get = [&](const std::string & path, const std::string & description) -> std::optional<std::string>
     {
-        /// NOTE: TODO, understand promise and future.
         auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
         auto future = promise->get_future();
 
@@ -1271,6 +1258,42 @@ void ZooKeeper::initFeatureFlags()
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
     LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
     keeper_feature_flags.fromApiVersion(keeper_api_version);
+}
+
+void ZooKeeper::initAvailabilityZone()
+{
+    const auto try_get = [&]() -> std::optional<String>
+    {
+        auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+        auto future = promise->get_future();
+        const String az_zk_path = "/keeper/availability_zone";
+
+        auto callback = [promise](const Coordination::GetResponse & response) mutable
+        {
+            promise->set_value(response);
+        };
+
+        get(az_zk_path, std::move(callback), {});
+        if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+            throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", az_zk_path);
+        auto response = future.get();
+        if (response.error == Coordination::Error::ZNONODE)
+        {
+            LOG_TRACE(log, "Failed to get {}", az_zk_path);
+            return std::nullopt;
+        }
+        else if (response.error != Coordination::Error::ZOK)
+        {
+            LOG_INFO(log, "Failed to get {}: {}", az_zk_path, response.error);
+            return std::nullopt;
+        }
+        return std::move(response.data);
+    };
+    if (auto az = try_get(); az.has_value())
+    {
+        availability_zone = std::move(*az);
+        return;
+    }
 }
 
 
