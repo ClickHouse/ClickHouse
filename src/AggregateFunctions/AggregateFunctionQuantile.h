@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
-
+template <typename> class QuantileDDSketch;
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -63,6 +63,7 @@ private:
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static constexpr bool is_quantile_gk = std::is_same_v<Data, QuantileGK<Value>>;
+    static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDDSketch<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -73,13 +74,16 @@ private:
     /// Used for the approximate version of the algorithm (Greenwald-Khanna)
     ssize_t accuracy = 10000;
 
+    /// Used for the quantile sketch
+    Float64 relative_accuracy = 0.01;
+
     DataTypePtr & argument_type;
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
             argument_types_, params, createResultType(argument_types_))
-        , levels(is_quantile_gk && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
+        , levels((is_quantile_gk || is_quantile_ddsketch) && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
     {
@@ -109,6 +113,27 @@ public:
                     getName(),
                     accuracy);
         }
+
+        if constexpr (is_quantile_ddsketch)
+        {
+            if (params.empty())
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one param", getName());
+
+            const auto & relative_accuracy_field = params[0];
+            if (!isFloat64FieldType(relative_accuracy_field.getType()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires relative accuracy parameter with Float64 type", getName());
+
+            relative_accuracy = relative_accuracy_field.get<Float64>();
+
+            if (relative_accuracy <= 0 || relative_accuracy >= 1)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires relative accuracy parameter with value between 0 and 1 but is {}",
+                    getName(),
+                    relative_accuracy);
+        }
     }
 
     String getName() const override { return Name::name; }
@@ -117,6 +142,8 @@ public:
     {
         if constexpr (is_quantile_gk)
             new (place) Data(accuracy);
+        else if constexpr (is_quantile_ddsketch)
+            new (place) Data(relative_accuracy);
         else
             new (place) Data;
     }
@@ -146,6 +173,10 @@ public:
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
+        if constexpr (is_quantile_gk)
+            params = {accuracy, 1};
+        else if constexpr (is_quantile_ddsketch)
+            params = {relative_accuracy, 1};
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(
@@ -293,5 +324,8 @@ struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBF
 
 struct NameQuantileGK { static constexpr auto name = "quantileGK"; };
 struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
+
+struct NameQuantileDDSketch { static constexpr auto name = "quantileDDSketch"; };
+struct NameQuantilesDDSketch { static constexpr auto name = "quantilesDDSketch"; };
 
 }
