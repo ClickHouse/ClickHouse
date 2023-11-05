@@ -24,6 +24,7 @@
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
+#include <Poco/String.h>
 
 
 namespace fs = std::filesystem;
@@ -186,12 +187,13 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts()
     /// The rest of hostname_levenshtein_distance take effect in the server.
     /// alternatively make the name clear it's only for server & keeper load balancing options.
     // if (args.get_priority_load_balancing.load_balancing == DB::LoadBalancing::LOCAL_AVAILABILITY_ZONE)
-    const String local_az = "az-zoo2";
+    const String local_az = args.availability_zone;
     std::map<std::string, std::string> host_az_map;
     LOG_INFO(log, "Jianfei debug, node size {}, node[0] host {}", args.hosts.size(), args.hosts[0]);
 
     // NOTE: should add try catch here in case some host is not reachable, we still proceed as before.
     // Ctrl-C az-zoo1, not working. Need to address.
+    // HERE: still not working, probrably need 3 replica.
     for (size_t i = 0; i < args.hosts.size(); i++)
     {
         Coordination::ZooKeeper::Nodes nodes;
@@ -201,13 +203,19 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts()
         node.secure = false;
         // bool secure = startsWith(node.host., "secure://");
         nodes.emplace_back(node);
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
-        auto az = impl->getAvailabilityZone();
-        if (!az.empty())
+        try
         {
-            host_az_map[args.hosts[i]] = az;
+            impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+            auto az = impl->getAvailabilityZone();
+            if (!az.empty())
+                host_az_map[args.hosts[i]] = az;
+            LOG_INFO(log, "Jianfei debug, checking availability value {} for index {}, node address {}, args zone {}",
+                az, i, nodes[0].address.toString(), args.availability_zone);
         }
-        LOG_INFO(log, "Jianfei debug, checking availability value {} for index {}, node address {}", az, i, nodes[0].address.toString());
+        catch(...)
+        {
+            LOG_ERROR(log, "Failed to connecting to the node {} to get availability zone, assuming it's unknown", args.hosts[i]);
+        }
     }
 
     get_priority = [host_az_map, local_az, this](size_t i)->Priority     {

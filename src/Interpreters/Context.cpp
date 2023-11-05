@@ -2929,6 +2929,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
 
+    /// NOTE: plumbing az value here. Guess the config is only zookeeper configuration.
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     // NOTE: here change the keeper constructor flow entry point.
     if (!shared->zookeeper)

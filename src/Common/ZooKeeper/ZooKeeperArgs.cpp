@@ -25,6 +25,13 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     else
         initFromKeeperSection(config, config_name);
 
+    // Availability zone information is shared regardless of keeper or zookeeper as it's the attribute for the service.
+
+    // It's not a good idea to overload `keeper_server.availability_zone` https://github.com/ClickHouse/ClickHouse/pull/56104/files
+    // As this change is intended for client side.
+    // discuss on PR maybe use only one field. change 56104 as well.
+    availability_zone = config.getString("availability_zone", "");
+
     if (!chroot.empty())
     {
         if (chroot.front() != '/')
@@ -134,6 +141,8 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);
+
+    // NOTE: I suspect the config is not top level, but only the local part. This is fine though.
 
     for (const auto & key : keys)
     {
