@@ -72,7 +72,7 @@ struct QueryPlanOptimizationSettings
 
     bool sorting_with_data_hints = false;
 
-    static QueryPlanOptimizationSettings fromSettings(const Settings & from, bool aggregation_with_data_hints);
+    static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };
 
