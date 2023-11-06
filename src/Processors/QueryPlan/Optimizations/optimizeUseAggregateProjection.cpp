@@ -444,7 +444,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     const auto & projections = metadata->projections;
     std::vector<const ProjectionDescription *> agg_projections;
-    
+
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
