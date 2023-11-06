@@ -26,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-static constexpr size_t max_events = 32;
+constexpr size_t max_events = 32;
 
 template <typename T>
 struct AggregateFunctionWindowFunnelData
