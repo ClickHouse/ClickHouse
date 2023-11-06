@@ -38,14 +38,14 @@ stringJaccardIndex
 0.8571428571428571
 0.4
 0
-0.8571428571428571
-0.8571428571428571
-0.4
-0.4
+nan
+nan
+nan
+nan
+nan
 0
 0
-0
-0
+nan
 0.25	0.625
 editDistance
 7

@@ -211,10 +211,13 @@ struct ByteJaccardIndexImpl
             union_size = haystack_utf8_set.size() + needle_utf8_set.size() - intersection;
         }
 
-        for (size_t i = 0; i < max_size; ++i)
+        else
         {
-            intersection += haystack_set[i] & needle_set[i];
-            union_size += haystack_set[i] | needle_set[i];
+            for (size_t i = 0; i < max_size; ++i)
+            {
+                intersection += haystack_set[i] & needle_set[i];
+                union_size += haystack_set[i] | needle_set[i];
+            }
         }
 
         return static_cast<ResultType>(intersection) / static_cast<ResultType>(union_size);
