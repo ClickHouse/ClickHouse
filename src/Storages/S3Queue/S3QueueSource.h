@@ -66,7 +66,8 @@ public:
         const std::atomic<bool> & shutdown_called_,
         const std::atomic<bool> & table_is_being_dropped_,
         std::shared_ptr<S3QueueLog> s3_queue_log_,
-        const StorageID & storage_id_);
+        const StorageID & storage_id_,
+        Poco::Logger * log_);
 
     ~StorageS3QueueSource() override;
 

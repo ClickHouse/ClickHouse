@@ -84,7 +84,8 @@ StorageS3QueueSource::StorageS3QueueSource(
     const std::atomic<bool> & shutdown_called_,
     const std::atomic<bool> & table_is_being_dropped_,
     std::shared_ptr<S3QueueLog> s3_queue_log_,
-    const StorageID & storage_id_)
+    const StorageID & storage_id_,
+    Poco::Logger * log_)
     : ISource(header_)
     , WithContext(context_)
     , name(std::move(name_))
@@ -97,7 +98,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     , s3_queue_log(s3_queue_log_)
     , storage_id(storage_id_)
     , remove_file_func(remove_file_func_)
-    , log(&Poco::Logger::get("StorageS3QueueSource"))
+    , log(log_)
 {
 }
 
