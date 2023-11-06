@@ -743,14 +743,20 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
+    std::vector<std::future<void>> futures;
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
-        threadpool.scheduleOrThrowOnError([&]()
+        futures.push_back(scheduleFromThreadPool<void>([&]()
         {
             makeBackupEntriesForTableData(table_name);
-        });
+        }, threadpool, "BackupEntriesCollect"));
     }
-    threadpool.wait();
+    /// Wait for all tasks.
+    for (auto & future : futures)
+        future.wait();
+    /// Make sure there is no exception.
+    for (auto & future : futures)
+        future.get();
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
