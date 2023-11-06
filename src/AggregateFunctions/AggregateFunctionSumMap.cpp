@@ -495,7 +495,7 @@ public:
         }
     }
 
-    bool keepKey(const Field & key) const { return keys_to_keep.count(key); }
+    bool keepKey(const Field & key) const { return keys_to_keep.contains(key); }
 };
 
 
