@@ -244,7 +244,7 @@ protected:
     /// The value id is allocated from 1. 0 is reserved for null.
     UInt64 allocated_value_id = 0;
 
-    /// If the value id set is realy small (size < value_id_cache_line_num * sizeof(HashValueIdCacheLine::value_ids))
+    /// If the value id set is really small (size < value_id_cache_line_num * sizeof(HashValueIdCacheLine::value_ids))
     /// then we could try accelate the lookup by avx512 instruction.
     static constexpr size_t value_id_cache_line_num = 1;
     static constexpr size_t value_id_cache_line_num_mask = value_id_cache_line_num - 1;
@@ -396,7 +396,6 @@ protected:
         }
     }
 };
-
 
 class StringHashValueIdGenerator : public IHashValueIdGenerator
 {
