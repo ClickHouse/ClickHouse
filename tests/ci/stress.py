@@ -137,7 +137,10 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # However, it obstructs checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
-    call_with_retry("timeout 50s tail --pid=$(pidof gdb) -f /dev/null || kill -9 $(pidof gdb) ||:", timeout=60)
+    call_with_retry(
+        "timeout 50s tail --pid=$(pidof gdb) -f /dev/null || kill -9 $(pidof gdb) ||:",
+        timeout=60,
+    )
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
         "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client -q 'SELECT 1 FORMAT Null'"
