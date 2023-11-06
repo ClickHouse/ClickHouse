@@ -12,8 +12,10 @@ namespace DB
 {
 
 OptimizeInputs::OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_)
-    : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_)), log(&Poco::Logger::get("OptimizeInputs"))
+    : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_))
 {
+    auto & group = task_context->getCurrentGroup();
+    log = &Poco::Logger::get("OptimizeInputs group(" + std::to_string(group.getId()) + ") group node(" + group_node->getStep()->getName() + ")");
 }
 
 void OptimizeInputs::execute()
@@ -31,8 +33,7 @@ void OptimizeInputs::execute()
     if (!frame)
         frame = std::make_unique<Frame>(group_node);
 
-    String log_name = "OptimizeInputs group(" + std::to_string(group.getId()) + ") group node(" + group_node->getStep()->getName() + ")";
-    LOG_TRACE(&Poco::Logger::get(log_name), "It's upper bound cost: {}", task_context->getUpperBoundCost().toString());
+    LOG_TRACE(log, "It's upper bound cost: {}", task_context->getUpperBoundCost().toString());
 
     /// every alternative prop, required to child
     for (; frame->prop_idx < static_cast<Int32>(frame->alternative_child_prop.size()); ++frame->prop_idx)
@@ -44,7 +45,7 @@ void OptimizeInputs::execute()
             CostCalculator cost_calc(group.getStatistics(), task_context->getQueryContext(), children_statistics, required_child_props);
             frame->local_cost = group_node->accept(cost_calc);
 
-            LOG_TRACE(&Poco::Logger::get(log_name), "It's local cost: {}", frame->local_cost.toString());
+            LOG_TRACE(log, "It's local cost: {}", frame->local_cost.toString());
 
             frame->total_cost = frame->local_cost;
         }

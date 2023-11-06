@@ -44,7 +44,7 @@ public:
 
     std::shared_ptr<TopNStep> makePreliminary(bool exact_rows_before_limit);
 
-    std::shared_ptr<TopNStep> makeFinal(size_t max_block_size, bool exact_rows_before_limit);
+    std::shared_ptr<TopNStep> makeFinal(const DataStream & input_stream, size_t max_block_size, bool exact_rows_before_limit);
 
     StepType stepType() const override
     {

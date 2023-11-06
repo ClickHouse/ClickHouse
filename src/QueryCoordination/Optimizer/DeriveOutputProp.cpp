@@ -1,7 +1,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <QueryCoordination/Optimizer/CalculateSortProp.h>
 #include <QueryCoordination/Optimizer/DeriveOutputProp.h>
 
 

@@ -30,7 +30,7 @@ std::vector<StepTree> SplitTopN::transform(StepTree & step_tree, ContextPtr cont
     auto pre_topn = topn_step->makePreliminary(exact_rows_before_limit);
 
     const auto max_block_size = context->getSettingsRef().max_block_size;
-    auto final_topn = topn_step->makeFinal(max_block_size, exact_rows_before_limit);
+    auto final_topn = topn_step->makeFinal(pre_topn->getOutputStream(), max_block_size, exact_rows_before_limit);
 
     StepTree res_step_tree;
     res_step_tree.addStep(child_step);

@@ -33,7 +33,7 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
         return {};
     }
 
-    /// E.g select count(id) from distribute_table where name='a'
+    /// E.g select count() from distribute_table where name='a'
     /// Filter has empty header. ExchangeData has empty header. But there is real data, we construct a fake header.
     size_t rows;
     if (unlikely(!getPort().getHeader()))
