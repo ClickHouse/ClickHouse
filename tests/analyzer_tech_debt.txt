@@ -14,7 +14,6 @@
 01268_shard_avgweighted
 01455_shard_leaf_max_rows_bytes_to_read
 01495_subqueries_in_with_statement
-01504_rocksdb
 01560_merge_distributed_join
 01584_distributed_buffer_cannot_find_column
 01586_columns_pruning
@@ -39,7 +38,6 @@
 02352_grouby_shadows_arg
 02354_annoy
 02366_union_decimal_conversion
-02375_rocksdb_with_filters
 02402_merge_engine_with_view
 02404_memory_bound_merging
 02426_orc_bug
