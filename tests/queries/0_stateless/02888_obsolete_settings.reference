@@ -45,6 +45,7 @@ query_plan_optimize_projection
 replication_alter_columns_timeout
 restore_threads
 temporary_live_view_timeout
+use_mysql_types_in_show_columns
 -- Obsolete merge tree settings
 check_delay_period
 in_memory_parts_enable_wal
