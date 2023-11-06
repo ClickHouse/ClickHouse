@@ -57,7 +57,7 @@ struct GroupArrayTrait
 };
 
 template <typename Trait>
-static constexpr const char * getNameByTrait()
+constexpr const char * getNameByTrait()
 {
     if (Trait::last)
         return "groupArrayLast";

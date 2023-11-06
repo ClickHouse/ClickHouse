@@ -56,7 +56,7 @@ enum SequenceBase
 };
 
 /// This is for security
-static const UInt64 max_node_size_deserialize = 0xFFFFFF;
+const UInt64 max_node_size_deserialize = 0xFFFFFF;
 
 /// NodeBase used to implement a linked list for storage of SequenceNextNodeImpl
 template <typename Node, size_t MaxEventsSize>

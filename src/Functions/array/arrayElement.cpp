@@ -902,7 +902,7 @@ void FunctionArrayElement::executeMatchConstKeyToIndex(
 }
 
 template <typename F>
-static bool castColumnString(const IColumn * column, F && f)
+bool castColumnString(const IColumn * column, F && f)
 {
     return castTypeToEither<ColumnString, ColumnFixedString>(column, std::forward<F>(f));
 }
@@ -945,13 +945,13 @@ bool FunctionArrayElement::matchKeyToIndexString(
 }
 
 template <typename FromType, typename ToType>
-static constexpr bool areConvertibleTypes =
+constexpr bool areConvertibleTypes =
     std::is_same_v<FromType, ToType>
         || (is_integer<FromType> && is_integer<ToType>
             && std::is_convertible_v<FromType, ToType>);
 
 template <typename F>
-static bool castColumnNumeric(const IColumn * column, F && f)
+bool castColumnNumeric(const IColumn * column, F && f)
 {
     return castTypeToEither<
         ColumnVector<UInt8>,

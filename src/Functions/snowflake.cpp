@@ -28,8 +28,8 @@ namespace
  * https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake
  * https://ws-dl.blogspot.com/2019/08/2019-08-03-tweetedat-finding-tweet.html
 */
-static constexpr size_t snowflake_epoch = 1288834974657L;
-static constexpr int time_shift = 22;
+constexpr size_t snowflake_epoch = 1288834974657L;
+constexpr int time_shift = 22;
 
 class FunctionDateTimeToSnowflake : public IFunction
 {

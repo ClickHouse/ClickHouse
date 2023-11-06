@@ -45,7 +45,7 @@ struct ComparePairFirst final
     }
 };
 
-static constexpr size_t max_events = 32;
+constexpr size_t max_events = 32;
 
 template <typename T>
 struct AggregateFunctionSequenceMatchData final
