@@ -863,3 +863,33 @@ def test_max_set_size(started_cluster):
     time.sleep(10)
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
     assert res1 == [total_values[1]]
+
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_drop"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 300
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_cleanup_interval_min_ms": 0,
+            "s3queue_cleanup_interval_max_ms": 0,
+            "s3queue_processing_threads_num": 1,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+    create_mv(node, table_name, dst_table_name)
+    node.wait_for_log_line(f"StorageS3Queue ({table_name}): Started streaming to 1 attached views")
+    node.query(f"DROP TABLE {table_name} SYNC")
+    node.wait_for_log_line(f"StorageS3Queue ({table_name}): Table is being dropped")

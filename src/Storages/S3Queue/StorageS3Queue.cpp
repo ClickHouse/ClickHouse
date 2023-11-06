@@ -258,7 +258,7 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     return std::make_shared<StorageS3QueueSource>(
         getName(), read_from_format_info.source_header, std::move(internal_source),
         files_metadata, after_processing, file_deleter, read_from_format_info.requested_virtual_columns,
-        local_context, shutdown_called, table_is_being_dropped, s3_queue_log, getStorageID());
+        local_context, shutdown_called, table_is_being_dropped, s3_queue_log, getStorageID(), log);
 }
 
 bool StorageS3Queue::hasDependencies(const StorageID & table_id)
