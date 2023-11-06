@@ -905,6 +905,8 @@ void HTTPHandler::processQuery(
         {},
         handle_exception_in_output_format);
 
+    session->releaseSessionID();
+
     if (used_output.hasDelayed())
     {
         /// TODO: set Content-Length if possible
