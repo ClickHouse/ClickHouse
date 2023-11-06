@@ -87,7 +87,7 @@ static bool callOnBasicType(TypeIndex number, F && f)
 
 /// Unroll template using TypeIndex
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-static bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
+static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
     if constexpr (_int)
     {

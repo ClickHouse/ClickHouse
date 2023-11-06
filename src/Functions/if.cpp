@@ -1086,7 +1086,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
 
-        auto call = [&](const auto & types) NO_INLINE -> bool
+        auto call = [&](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using T0 = typename Types::LeftType;

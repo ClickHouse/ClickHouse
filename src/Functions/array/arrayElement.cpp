@@ -951,7 +951,7 @@ static constexpr bool areConvertibleTypes =
             && std::is_convertible_v<FromType, ToType>);
 
 template <typename F>
-static NO_INLINE bool castColumnNumeric(const IColumn * column, F && f)
+static bool castColumnNumeric(const IColumn * column, F && f)
 {
     return castTypeToEither<
         ColumnVector<UInt8>,
