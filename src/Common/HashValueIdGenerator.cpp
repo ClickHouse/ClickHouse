@@ -51,7 +51,8 @@ void StringHashValueIdGenerator::tryInitialize(const IColumn *col)
             enable_range_mode = false;
             break;
         }
-        auto val = str2Int64<DYNAMIC_STR_LEN>(char_pos, str_len - 1);
+        UInt64 val = 0;
+        shortStringToUInt64(char_pos, str_len - 1, val);
         if (val > range_max)
             range_max = val;
         if (val < range_min)
@@ -95,10 +96,10 @@ std::unique_ptr<IHashValueIdGenerator> HashValueIdGeneratorFactory::getGenerator
     using Date = UInt16;
     using Date32 = UInt32;
     using DateTime = UInt32;
-#define APPLY_ON_NUMBER_COLUMN(type, nested_col, col) \
+#define APPLY_ON_NUMBER_COLUMN(type, nested_col, col, is_basic_number) \
     else if (const auto * col##type = typeid_cast<const Column##type *>(nested_col)) \
     { \
-        return std::make_unique<NumericHashValueIdGenerator<type, Column##type>>(col, state_, max_distinct_values_); \
+        return std::make_unique<NumericHashValueIdGenerator<type, Column##type, is_basic_number>>(col, state_, max_distinct_values_); \
     }
 
     WhichDataType which_type(nested_col->getDataType());
@@ -127,27 +128,27 @@ std::unique_ptr<IHashValueIdGenerator> HashValueIdGeneratorFactory::getGenerator
             return std::make_unique<FixedStringHashValueIdGenerator<8>>(col, state_, max_distinct_values_);
         return std::make_unique<FixedStringHashValueIdGenerator<0>>(col, state_, max_distinct_values_);
     }
-    APPLY_ON_NUMBER_COLUMN(UInt8, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(UInt16, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(UInt32, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(UInt64, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(UInt128, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(UInt256, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Int8, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Int16, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Int32, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Int64, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Int128, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Int256, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Float32, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Float64, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(UUID, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(IPv4, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(IPv6, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Date, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(Date32, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(DateTime, nested_col, col)
-    APPLY_ON_NUMBER_COLUMN(DateTime64, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(UInt8, nested_col, col, true)
+    APPLY_ON_NUMBER_COLUMN(UInt16, nested_col, col, true)
+    APPLY_ON_NUMBER_COLUMN(UInt32, nested_col, col, true)
+    APPLY_ON_NUMBER_COLUMN(UInt64, nested_col, col, true)
+    APPLY_ON_NUMBER_COLUMN(UInt128, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(UInt256, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(Int8, nested_col, col, true)
+    APPLY_ON_NUMBER_COLUMN(Int16, nested_col, col, true)
+    APPLY_ON_NUMBER_COLUMN(Int32, nested_col, col, true)
+    APPLY_ON_NUMBER_COLUMN(Int64, nested_col, col, true)
+    APPLY_ON_NUMBER_COLUMN(Int128, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(Int256, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(Float32, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(Float64, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(UUID, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(IPv4, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(IPv6, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(Date, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(Date32, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(DateTime, nested_col, col, false)
+    APPLY_ON_NUMBER_COLUMN(DateTime64, nested_col, col, false)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column type: {}", col->getName());
 }
 

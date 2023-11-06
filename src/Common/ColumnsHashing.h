@@ -725,8 +725,8 @@ class AdaptiveHashMethodContext : public HashMethodContext
 {
 public:
 
-    /// Each HashValueIdGeneratorState is bound to one Aggregator.
-    struct HashValueIdGeneratorState
+    /// Each AggregatorContext is bound to one Aggregator.
+    struct AggregatorContext
     {
         // shared_keys_holder_state is shared between all AdaptiveKeysHolder.
         AdaptiveKeysHolder::State shared_keys_holder_state;
@@ -735,7 +735,7 @@ public:
         HashValueIdGenerators value_id_generators;
     };
     std::mutex mutex;
-    std::unordered_map<UInt64, HashValueIdGeneratorState> value_id_generators;
+    std::unordered_map<UInt64, AggregatorContext> aggregator_contexts;
 };
 
 /// If all the keys are low cardinality, we could assign unique values for different keys combinations.
@@ -755,7 +755,7 @@ struct HashMethodKeysAdaptive
     size_t keys_size;
     HashMethodContextPtr ctx;
     Columns full_key_columns;
-    AdaptiveHashMethodContext::HashValueIdGeneratorState * value_id_generators_state = nullptr;
+    AdaptiveHashMethodContext::AggregatorContext * aggregator_context = nullptr;
 
     mutable PaddedPODArray<UInt64> value_ids;
 
@@ -773,45 +773,45 @@ struct HashMethodKeysAdaptive
 
         auto * adaptive_ctx = static_cast<DB::ColumnsHashing::AdaptiveHashMethodContext *>(ctx.get());
         {
-            /// Find the corresponding HashValueIdGeneratorState.
+            /// Find the corresponding AggregatorContext.
             std::lock_guard lock(adaptive_ctx->mutex);
-            auto it = adaptive_ctx->value_id_generators.find(variant_index);
-            if (it == adaptive_ctx->value_id_generators.end())
+            auto it = adaptive_ctx->aggregator_contexts.find(variant_index);
+            if (it == adaptive_ctx->aggregator_contexts.end())
             {
-                adaptive_ctx->value_id_generators[variant_index] = AdaptiveHashMethodContext::HashValueIdGeneratorState();
-                value_id_generators_state = &adaptive_ctx->value_id_generators[variant_index];
-                value_id_generators_state->shared_keys_holder_state.pool = std::make_shared<Arena>();
+                adaptive_ctx->aggregator_contexts[variant_index] = AdaptiveHashMethodContext::AggregatorContext();
+                aggregator_context = &adaptive_ctx->aggregator_contexts[variant_index];
+                aggregator_context->shared_keys_holder_state.pool = std::make_shared<Arena>();
             }
             else
             {
-                value_id_generators_state = &it->second;
+                aggregator_context = &it->second;
             }
         }
-        if (value_id_generators_state->value_id_generators.empty())
+        if (aggregator_context->value_id_generators.empty())
         {
             auto max_value_id_num_for_key = max_value_id_number/key_columns.size();
             max_value_id_num_for_key = 256 > max_value_id_num_for_key ? 256 : max_value_id_num_for_key;
             for (size_t i = 0, n = key_columns.size(); i < n; ++i)
             {
-                value_id_generators_state->value_id_generators.emplace_back(HashValueIdGeneratorFactory::instance().getGenerator(
-                    &(value_id_generators_state->shared_keys_holder_state), max_value_id_num_for_key, full_key_columns[i].get()));
+                aggregator_context->value_id_generators.emplace_back(HashValueIdGeneratorFactory::instance().getGenerator(
+                    &(aggregator_context->shared_keys_holder_state), max_value_id_num_for_key, full_key_columns[i].get()));
             }
         }
 
-        if (value_id_generators_state->shared_keys_holder_state.cached_values.size() >= max_value_id_number)
+        if (aggregator_context->shared_keys_holder_state.cached_values.size() >= max_value_id_number)
         {
-            value_id_generators_state->shared_keys_holder_state.hash_mode = AdaptiveKeysHolder::State::HASH;
+            aggregator_context->shared_keys_holder_state.hash_mode = AdaptiveKeysHolder::State::HASH;
             for (size_t i = 0; i < keys_size; ++i)
             {
-                value_id_generators_state->value_id_generators[i]->release();
+                aggregator_context->value_id_generators[i]->release();
             }
         }
-        if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        if (aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             value_ids.clear();
             value_ids.resize_fill(key_columns[0]->size(), 0);
             for (size_t i = 0; i < keys_size; ++i)
-                value_id_generators_state->value_id_generators[i]->computeValueId(full_key_columns[i].get(), &value_ids[0]);
+                aggregator_context->value_id_generators[i]->computeValueId(full_key_columns[i].get(), &value_ids[0]);
         }
     }
 
@@ -819,15 +819,15 @@ struct HashMethodKeysAdaptive
 
     ALWAYS_INLINE AdaptiveKeysHolder getKeyHolder(size_t row, Arena & pool [[maybe_unused]]) const
     {
-        if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        if (aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             auto & value_id = value_ids[row];
-            auto & cached_values = value_id_generators_state->shared_keys_holder_state.cached_values;
+            auto & cached_values = aggregator_context->shared_keys_holder_state.cached_values;
 
             /// For small enough value_id set, simd could accelate the query.
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-            auto & value_cache_lines = value_id_generators_state->shared_keys_holder_state.value_cache_lines;
-            auto & value_cache_line = value_cache_lines[value_id & value_id_generators_state->shared_keys_holder_state.cache_line_num_mask];
+            auto & value_cache_lines = aggregator_context->shared_keys_holder_state.value_cache_lines;
+            auto & value_cache_line = value_cache_lines[value_id & aggregator_context->shared_keys_holder_state.cache_line_num_mask];
             if (value_cache_line.allocated_num <= 8)
             {
                 auto value_id_v = _mm512_set1_epi64(value_id);
@@ -840,14 +840,14 @@ struct HashMethodKeysAdaptive
                     {
                         auto current_index = value_cache_line.allocated_num++;
                         auto serialized_keys = serializeKeysToPoolContiguous(
-                            row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
+                            row, keys_size, key_columns, *aggregator_context->shared_keys_holder_state.pool);
                         auto hash = ::DefaultHash<StringRef>()(serialized_keys);
 
                         cached_values[value_id] = AdaptiveKeysHolder::StateRef(
                             serialized_keys,
                             value_id,
                             hash,
-                            &value_id_generators_state->shared_keys_holder_state);
+                            &aggregator_context->shared_keys_holder_state);
 
                         value_cache_line.value_ids[current_index] = value_id;
                         value_id_cache_line.cached_values[current_index] = &cached_values[value_id];
@@ -855,7 +855,7 @@ struct HashMethodKeysAdaptive
                         return AdaptiveKeysHolder{
                             serialized_keys,
                             value_id_cache_line.cached_values[current_index],
-                            value_id_generators_state->shared_keys_holder_state.pool.get()};
+                            aggregator_context->shared_keys_holder_state.pool.get()};
                     }
                     else
                     {
@@ -867,7 +867,7 @@ struct HashMethodKeysAdaptive
                     return AdaptiveKeysHolder{
                         value_id_cache_line.cached_values[hit_pos]->serialized_keys,
                         value_id_cache_line.cached_values[hit_pos],
-                        value_id_generators_state->shared_keys_holder_state.pool.get()};
+                        aggregator_context->shared_keys_holder_state.pool.get()};
                 }
             }
 #endif
@@ -875,20 +875,20 @@ struct HashMethodKeysAdaptive
             if (cache_it == cached_values.end()) [[unlikely]]
             {
                 auto serialized_keys
-                    = serializeKeysToPoolContiguous(row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
+                    = serializeKeysToPoolContiguous(row, keys_size, key_columns, *aggregator_context->shared_keys_holder_state.pool);
                 auto hash = ::DefaultHash<StringRef>()(serialized_keys);
 
                 cached_values[value_id] = AdaptiveKeysHolder::StateRef(
                     serialized_keys,
                     value_id,
                     hash,
-                    &value_id_generators_state->shared_keys_holder_state);
+                    &aggregator_context->shared_keys_holder_state);
                 return AdaptiveKeysHolder{
-                    serialized_keys, &cached_values[value_id], value_id_generators_state->shared_keys_holder_state.pool.get()};
+                    serialized_keys, &cached_values[value_id], aggregator_context->shared_keys_holder_state.pool.get()};
             }
             else
                 return AdaptiveKeysHolder{
-                    cache_it->second.serialized_keys, &cache_it->second, value_id_generators_state->shared_keys_holder_state.pool.get()};
+                    cache_it->second.serialized_keys, &cache_it->second, aggregator_context->shared_keys_holder_state.pool.get()};
         }
         else
         {
