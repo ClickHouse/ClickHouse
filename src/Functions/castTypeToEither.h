@@ -7,13 +7,13 @@ namespace DB
 {
 
 template <typename... Ts, typename T, typename F>
-static NO_INLINE bool castTypeToEither(const T * type, F && f)
+static bool castTypeToEither(const T * type, F && f)
 {
     return ((typeid_cast<const Ts *>(type) && f(*typeid_cast<const Ts *>(type))) || ...);
 }
 
 template <class ...Args>
-static NO_INLINE bool castTypeToEither(TypeList<Args...>, const auto * type, auto && f)
+static bool castTypeToEither(TypeList<Args...>, const auto * type, auto && f)
 {
     return ((typeid_cast<const Args *>(type) != nullptr && std::forward<decltype(f)>(f)(*typeid_cast<const Args *>(type))) || ...);
 }
