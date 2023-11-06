@@ -172,6 +172,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
         factory.registerCommand(feature_flags_command);
 
+        FourLetterCommandPtr yield_leader_command = std::make_shared<YieldLeaderCommand>(keeper_dispatcher);
+        factory.registerCommand(yield_leader_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -577,6 +580,11 @@ String FeatureFlagsCommand::run()
     }
 
     return ret.str();
+}
+
+String YieldLeaderCommand::run()
+{
+    return keeper_dispatcher.yieldLeader() ? "Sent yield leadership request to leader." : "Failed to send yield leadership request to leader.";
 }
 
 }

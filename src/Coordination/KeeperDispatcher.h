@@ -237,6 +237,12 @@ public:
         return server->requestLeader();
     }
 
+    /// Yield to be leader.
+    bool yieldLeader()
+    {
+        return server->yieldLeader();
+    }
+
     void recalculateStorageStats()
     {
         return server->recalculateStorageStats();
