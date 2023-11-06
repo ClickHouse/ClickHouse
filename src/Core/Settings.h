@@ -837,7 +837,7 @@ class IColumn;
     MAKE_OBSOLETE(M, Bool, allow_experimental_bigint_types, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_window_functions, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_geo_types, true) \
-    MAKE_OBSOLETE(M, allow_experimental_query_cache, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_query_cache, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
