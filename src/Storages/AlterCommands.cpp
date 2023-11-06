@@ -1070,13 +1070,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
-            /// FIXME: Adding a new column of type Object(JSON) is broken.
-            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
-            /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
-            /// So we don't allow to do it for now.
-            if (command.data_type && command.data_type->hasDynamicSubcolumns())
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
-
             if (all_columns.has(column_name) || all_columns.hasNested(column_name))
             {
                 if (!command.if_not_exists)
@@ -1090,6 +1083,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (!command.data_type)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
+
+            /// FIXME: Adding a new column of type Object(JSON) is broken.
+            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
+            /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
+            /// So we don't allow to do it for now.
+            if (command.data_type->hasDynamicSubcolumns())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
 
             if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
