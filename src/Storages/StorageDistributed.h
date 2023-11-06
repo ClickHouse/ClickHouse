@@ -271,6 +271,7 @@ private:
         std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
         ConnectionPoolPtr connection_pool;
         Cluster::Addresses addresses;
+        size_t clusters_version;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;

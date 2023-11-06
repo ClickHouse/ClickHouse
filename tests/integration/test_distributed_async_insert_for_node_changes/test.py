@@ -81,16 +81,11 @@ def started_cluster():
 
 
 def test_distributed_async_insert(started_cluster):
-        # for i in range(0, 100):
-        #     limit = 100e3
-        #     node2.query(
-        #         f"insert into dist select number/100, number from system.numbers limit {limit} offset {limit*i}",
-        #         },
-        #     )
         node1.query("insert into dist select number,'A' from system.numbers limit 10;")
         node1.query("system flush distributed dist;")
 
-        assert int(node3.query("select count() from dist_local")) == 5
+        assert int(node3.query("select count() from dist_local where c2 = 'A'")) == 5
+        assert int(node1.query("select count() from dist_local where c2 = 'A'")) == 5
 
         # Add node2
         node1.replace_config(
@@ -111,8 +106,9 @@ def test_distributed_async_insert(started_cluster):
         node1.query("insert into dist select number,'B' from system.numbers limit 12;")
         node1.query("system flush distributed dist;")
 
-        assert int(node2.query("select count() from dist_local")) == 4
-        assert int(node3.query("select count() from dist_local")) == 9
+        assert int(node1.query("select count() from dist_local where c2 = 'B'")) == 4
+        assert int(node2.query("select count() from dist_local where c2 = 'B'")) == 4
+        assert int(node3.query("select count() from dist_local where c2 = 'B'")) == 4
 
         # Delete node2
         node1.replace_config(
@@ -133,5 +129,6 @@ def test_distributed_async_insert(started_cluster):
         node1.query("insert into dist select number,'C' from system.numbers limit 10;")
         node1.query("system flush distributed dist;")
 
-        assert int(node2.query("select count() from dist_local")) == 4
-        assert int(node3.query("select count() from dist_local")) == 14
+        assert int(node1.query("select count() from dist_local where c2 = 'C'")) == 5
+        assert int(node2.query("select count() from dist_local where c2 = 'C'")) == 0
+        assert int(node3.query("select count() from dist_local where c2 = 'C'")) == 5

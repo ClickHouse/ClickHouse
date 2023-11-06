@@ -75,30 +75,6 @@ ConnectionPoolPtrs createPoolsForAddresses(const Cluster::Addresses & addresses,
         }
     };
 
-//    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
-//    {
-//        const std::string & dirname = boost::copy_range<std::string>(*it);
-//        Cluster::Address address = Cluster::Address::fromFullString(dirname);
-//        if (address.shard_index && dirname.ends_with("_all_replicas"))
-//        {
-//            if (address.shard_index > shards_info.size())
-//            {
-//                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-//                continue;
-//            }
-//
-//            const auto & shard_info = shards_info[address.shard_index - 1];
-//            size_t replicas = shard_info.per_replica_pools.size();
-//
-//            for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
-//            {
-//                address.replica_index = static_cast<UInt32>(replica_index);
-//                make_connection(address);
-//            }
-//        }
-//        else
-//            make_connection(address);
-//    }
     for (const auto & address : addresses)
         make_connection(address);
 

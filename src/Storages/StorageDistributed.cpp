@@ -1368,11 +1368,12 @@ DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(con
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    Cluster::Addresses addresses = parseAddresses(name);
     /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
-    if (!node_data.directory_monitor  || node_data.addresses != addresses)
+    if (!node_data.directory_queue
+        || (node_data.clusters_version < getContext()->getClustersVersion() && node_data.addresses != parseAddresses(name)))
     {
-        node_data.addresses = addresses;
+        node_data.addresses = parseAddresses(name);
+        node_data.clusters_version = getContext()->getClustersVersion();
         node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
         node_data.directory_queue = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
