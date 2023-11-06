@@ -15,11 +15,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 /// Normal projection analysis result in case it can be applied.
 /// For now, it is empty.
 /// Normal projection can be used only if it contains all required source columns.
