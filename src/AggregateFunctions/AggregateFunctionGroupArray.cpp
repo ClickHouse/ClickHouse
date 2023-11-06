@@ -138,11 +138,11 @@ class GroupArrayNumericImpl final
     using Data = GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>;
     static constexpr bool limit_num_elems = Trait::has_limit;
     UInt64 max_elems;
-    UInt64 seed;
+    std::optional<UInt64> seed;
 
 public:
     explicit GroupArrayNumericImpl(
-        const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_, UInt64 seed_ = 123456)
+        const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_, std::optional<UInt64> seed_)
         : IAggregateFunctionDataHelper<GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>, GroupArrayNumericImpl<T, Trait>>(
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , max_elems(max_elems_)
@@ -169,7 +169,7 @@ public:
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)
-            a->rng.seed(seed);
+            a->rng.seed(seed.value_or(thread_local_rng()));
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -474,10 +474,10 @@ class GroupArrayGeneralImpl final
 
     DataTypePtr & data_type;
     UInt64 max_elems;
-    UInt64 seed;
+    std::optional<UInt64> seed;
 
 public:
-    GroupArrayGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_, UInt64 seed_ = 123456)
+    GroupArrayGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_, std::optional<UInt64> seed_)
         : IAggregateFunctionDataHelper<GroupArrayGeneralData<Node, Trait::sampler != Sampler::NONE>, GroupArrayGeneralImpl<Node, Trait>>(
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , data_type(this->argument_types[0])
@@ -505,7 +505,7 @@ public:
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)
-            a->rng.seed(seed);
+            a->rng.seed(seed.value_or(thread_local_rng()));
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -766,10 +766,10 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     {
         if (Tlast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())");
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems, std::nullopt);
     }
     else
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems, std::nullopt);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArraySample(
@@ -796,11 +796,9 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 
     UInt64 max_elems = get_parameter(0);
 
-    UInt64 seed;
+    std::optional<UInt64> seed;
     if (parameters.size() >= 2)
         seed = get_parameter(1);
-    else
-        seed = thread_local_rng();
 
     return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, /* Tlast= */ false, /* Tsampler= */ Sampler::RNG>>(argument_types[0], parameters, max_elems, seed);
 }
