@@ -64,6 +64,8 @@ def test_upload_after_check_works(cluster, broken_s3):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
+        SETTINGS
+            storage_policy='broken_s3'
         """
     )
 
@@ -87,7 +89,8 @@ def get_counters(node, query_id, log_type="ExceptionWhileProcessing"):
                 SELECT
                     ProfileEvents['S3CreateMultipartUpload'],
                     ProfileEvents['S3UploadPart'],
-                    ProfileEvents['S3WriteRequestsErrors']
+                    ProfileEvents['S3WriteRequestsErrors'],
+                    ProfileEvents['S3PutObject'],
                 FROM system.query_log
                 WHERE query_id='{query_id}'
                     AND type='{log_type}'
@@ -129,7 +132,7 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
     assert "Code: 499" in error, error
     assert "mock s3 injected error" in error, error
 
-    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors, _ = get_counters(
         node, insert_query_id
     )
     assert count_create_multi_part_uploads == 1
@@ -172,7 +175,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     assert "Code: 499" in error, error
     assert "mock s3 injected error" in error, error
 
-    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors, _ = get_counters(
         node, insert_query_id
     )
     assert count_create_multi_part_uploads == 1
@@ -207,7 +210,7 @@ def test_when_s3_connection_refused_is_retried(cluster, broken_s3):
         query_id=insert_query_id,
     )
 
-    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors, _ = get_counters(
         node, insert_query_id, log_type="QueryFinish"
     )
     assert count_create_multi_part_uploads == 1
@@ -279,7 +282,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         query_id=insert_query_id,
     )
 
-    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors, _ = get_counters(
         node, insert_query_id, log_type="QueryFinish"
     )
 
@@ -361,7 +364,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         query_id=insert_query_id,
     )
 
-    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors, _ = get_counters(
         node, insert_query_id, log_type="QueryFinish"
     )
 
@@ -438,7 +441,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         query_id=insert_query_id,
     )
 
-    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors, _ = get_counters(
         node, insert_query_id, log_type="QueryFinish"
     )
 
@@ -533,3 +536,60 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         retry_count=120,
         sleep_time=1,
     )
+
+
+@pytest.mark.parametrize("node_name", ["node", "node_with_inf_s3_retries"])
+def test_aggressive_timeouts(cluster, broken_s3, node_name):
+    node = cluster.instances[node_name]
+
+    broken_s3.setup_fake_puts(part_length=1)
+    broken_s3.setup_slow_answers(
+        timeout=5,
+        count=1000000,
+    )
+
+    insert_query_id = f"TEST_AGGRESSIVE_TIMEOUTS_{node_name}"
+    node.query(
+        f"""
+            INSERT INTO
+                TABLE FUNCTION s3(
+                    'http://resolver:8083/root/data/aggressive_timeouts',
+                    'minio', 'minio123',
+                    'CSV', auto, 'none'
+                )
+            SELECT
+                *
+            FROM system.numbers
+            LIMIT 1
+            SETTINGS
+                s3_request_timeout_ms=30000,
+                s3_check_objects_after_upload=0
+            """,
+        query_id=insert_query_id,
+    )
+
+    broken_s3.reset()
+
+    _, _, count_s3_errors, count_s3_puts = get_counters(
+        node, insert_query_id, log_type="QueryFinish"
+    )
+
+    assert count_s3_puts == 1
+
+    s3_aggressive_timeouts_state = node.query(
+        f"""
+        SELECT
+            value
+        FROM system.settings
+        WHERE
+            name='s3_aggressive_timeouts'
+        """
+    ).strip()
+
+    if node_name == "node_with_inf_s3_retries":
+        # first 2 attempts failed
+        assert s3_aggressive_timeouts_state == "1"
+        assert count_s3_errors == 2
+    else:
+        assert s3_aggressive_timeouts_state == "0"
+        assert count_s3_errors == 0
