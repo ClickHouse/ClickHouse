@@ -1557,10 +1557,10 @@ Returns for a given date, the number of days passed since [1 January 0000](https
 toDaysSinceYearZero(date[, time_zone])
 ```
 
-Aliases: `TO_DAYS`
-
+Alias: `TO_DAYS`
 
 **Arguments**
+
 - `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
@@ -1583,6 +1583,56 @@ Result:
 │                                     713569 │
 └────────────────────────────────────────────┘
 ```
+
+**See Also**
+
+- [fromDaysSinceYearZero](#fromDaysSinceYearZero)
+
+## fromDaysSinceYearZero
+
+Returns for a given number of days passed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero) the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar). The calculation is the same as in MySQL's [`FROM_DAYS()`](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_from-days) function.
+
+The result is undefined if it cannot be represented within the bounds of the [Date](../../sql-reference/data-types/date.md) type.
+
+**Syntax**
+
+``` sql
+fromDaysSinceYearZero(days)
+```
+
+Alias: `FROM_DAYS`
+
+**Arguments**
+
+- `days` — The number of days passed since year zero.
+
+**Returned value**
+
+The date corresponding to the number of days passed since year zero.
+
+Type: [Date](../../sql-reference/data-types/date.md).
+
+**Example**
+
+``` sql
+SELECT fromDaysSinceYearZero(739136), fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')));
+```
+
+Result:
+
+``` text
+┌─fromDaysSinceYearZero(739136)─┬─fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')))─┐
+│                    2023-09-08 │                                                       2023-09-08 │
+└───────────────────────────────┴──────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [toDaysSinceYearZero](#toDaysSinceYearZero)
+
+## fromDaysSinceYearZero32
+
+Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../../sql-reference/data-types/date32.md).
 
 ## age
 
@@ -2016,7 +2066,7 @@ Result:
 
 ## addDate
 
-Adds the time interval or date interval to the provided date or date with time.
+Adds the time interval to the provided date, date with time or String-encoded date / date with time.
 
 If the addition results in a value outside the bounds of the data type, the result is undefined.
 
@@ -2028,7 +2078,7 @@ addDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), or [String](../../sql-reference/data-types/string.md)
 - `interval` — Interval to add. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
@@ -2059,7 +2109,7 @@ Alias: `ADDDATE`
 
 ## subDate
 
-Subtracts the time interval or date interval from the provided date or date with time.
+Subtracts the time interval from the provided date, date with time or String-encoded date / date with time.
 
 If the subtraction results in a value outside the bounds of the data type, the result is undefined.
 
@@ -2071,7 +2121,7 @@ subDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), or [String](../../sql-reference/data-types/string.md)
 - `interval` — Interval to subtract. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**

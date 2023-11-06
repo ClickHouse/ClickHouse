@@ -1823,6 +1823,10 @@ The trailing slash is mandatory.
 
 ## Prometheus {#prometheus}
 
+:::note
+ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+:::
+
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
 Settings:
@@ -2758,3 +2762,7 @@ Proxy settings are determined in the following order:
 ClickHouse will check the highest priority resolver type for the request protocol. If it is not defined,
 it will check the next highest priority resolver type, until it reaches the environment resolver.
 This also allows a mix of resolver types can be used.
+
+### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.

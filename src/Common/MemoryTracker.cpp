@@ -1,18 +1,19 @@
 #include "MemoryTracker.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/VariableContext.h>
-#include <Common/TraceSender.h>
 #include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/formatReadable.h>
-#include <Common/ProfileEvents.h>
-#include <Common/thread_local_rng.h>
 #include <Common/OvercommitTracker.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
+#include <Common/TraceSender.h>
+#include <Common/VariableContext.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 
 #include "config.h"
 
@@ -587,6 +588,16 @@ bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
 {
     /// We can avoid comparison min_allocation_size_bytes with zero, because we cannot have 0 bytes allocation/deallocation
     return ((max_allocation_size_bytes == 0 || size <= max_allocation_size_bytes) && size >= min_allocation_size_bytes);
+}
+
+void MemoryTracker::setParent(MemoryTracker * elem)
+{
+    /// Untracked memory shouldn't be accounted to a query or a user if it was allocated before the thread was attached
+    /// to a query thread group or a user group, because this memory will be (🤞) freed outside of these scopes.
+    if (level == VariableContext::Thread && DB::current_thread)
+        DB::current_thread->flushUntrackedMemory();
+
+    parent.store(elem, std::memory_order_relaxed);
 }
 
 bool canEnqueueBackgroundTask()

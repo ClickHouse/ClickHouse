@@ -149,8 +149,15 @@ public:
         return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override { return getNested()->getCheckTaskList(query, context); }
-    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override { return getNested()->checkDataNext(check_task_list); }
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
+    {
+        return getNested()->getCheckTaskList(check_task_filter, context);
+    }
+
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override
+    {
+        return getNested()->checkDataNext(check_task_list);
+    }
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
 
