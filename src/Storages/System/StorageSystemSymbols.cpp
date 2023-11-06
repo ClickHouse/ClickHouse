@@ -28,6 +28,8 @@ StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
 }
 
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+
 namespace
 {
 
@@ -84,6 +86,8 @@ protected:
 };
 
 }
+
+#endif
 
 
 Pipe StorageSystemSymbols::read(
