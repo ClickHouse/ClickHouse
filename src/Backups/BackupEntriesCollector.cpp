@@ -749,7 +749,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
         futures.push_back(scheduleFromThreadPool<void>([&]()
         {
             makeBackupEntriesForTableData(table_name);
-        }, threadpool, "BackupEntriesCollect"));
+        }, threadpool, "BackupCollect"));
     }
     /// Wait for all tasks.
     for (auto & future : futures)
