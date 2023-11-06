@@ -362,7 +362,7 @@ def main():
         )
         hung_check_log = args.output_folder / "hung_check.log"  # type: Path
         tee = Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE)
-        res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
+        res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600)
         if tee.stdin is not None:
             tee.stdin.close()
         if res != 0 and have_long_running_queries and not suppress_hung_check:
