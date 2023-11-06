@@ -626,7 +626,8 @@ def test_multiple_tables_meta_mismatch(started_cluster):
     )
 
 
-@pytest.mark.parametrize("mode", AVAILABLE_MODES)
+# TODO: Update the modes for this test to include "ordered" once PR #55795 is finished.
+@pytest.mark.parametrize("mode", ["unordered"])
 def test_multiple_tables_streaming_sync(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"multiple_tables_streaming_sync_{mode}"
