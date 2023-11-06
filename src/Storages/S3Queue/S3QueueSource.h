@@ -30,11 +30,9 @@ public:
         S3QueueKeyWithInfo(
                 const std::string & key_,
                 std::optional<S3::ObjectInfo> info_,
-                Metadata::ProcessingNodeHolderPtr processing_holder_,
-                FileStatusPtr file_status_);
+                Metadata::ProcessingNodeHolderPtr processing_holder_);
 
         Metadata::ProcessingNodeHolderPtr processing_holder;
-        FileStatusPtr file_status;
     };
 
     class FileIterator : public IIterator
