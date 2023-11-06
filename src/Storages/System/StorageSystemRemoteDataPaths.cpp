@@ -80,7 +80,6 @@ Pipe StorageSystemRemoteDataPaths::read(
                     col_size->insert(object.bytes_size);
 
                     col_namespace->insertDefault();
-                    //col_namespace->insert(common_prefox_for_objects);
 
                     if (cache)
                     {
