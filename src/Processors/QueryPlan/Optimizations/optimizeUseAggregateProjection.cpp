@@ -444,28 +444,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     const auto & projections = metadata->projections;
     std::vector<const ProjectionDescription *> agg_projections;
-
-    const auto & proj_name_from_settings = context->getSettings().preferred_optimize_projection_name.value;
-    bool is_projection_found = false;
-
-    // Here we iterate over the projections and check if we have the same projections as we specified in preferred_projection_name
-    if (!proj_name_from_settings.empty())
-    {
-        for (const auto & projection : projections)
-        {
-            if ((projection.type == ProjectionDescription::Type::Aggregate) && (proj_name_from_settings == projection.name))
-            {
-                agg_projections.push_back(&projection);
-                is_projection_found = true;
-                break;
-            }
-        }
-        if (!is_projection_found)
-            for (const auto & projection : projections)
-                agg_projections.push_back(&projection);
-    }
-    else
-        for (const auto & projection : projections)
+    
+    for (const auto & projection : projections)
+        if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
     bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
@@ -604,6 +585,9 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     auto ordinary_reading_select_result = reading->selectRangesToRead(parts, /* alter_conversions = */ {});
     size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
 
+    const auto & proj_name_from_settings = context->getSettings().preferred_optimize_projection_name.value;
+    bool found_best_candidate = false;
+
     /// Selecting best candidate.
     for (auto & candidate : candidates.real)
     {
@@ -622,8 +606,13 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         if (candidate.sum_marks > ordinary_reading_marks)
             continue;
 
-        if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
+        if ((best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks) && !found_best_candidate)
             best_candidate = &candidate;
+        if (!proj_name_from_settings.empty() && candidate.projection->name == proj_name_from_settings)
+        {
+            best_candidate = &candidate;
+            found_best_candidate = true;
+        }
     }
 
     if (!best_candidate)
