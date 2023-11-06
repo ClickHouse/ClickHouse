@@ -18,11 +18,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 class HashJoin;
 using StorageJoinPtr = std::shared_ptr<StorageJoin>;
+
+namespace
+{
 
 template <bool or_null>
 class ExecutableFunctionJoinGet final : public IExecutableFunction, WithContext
