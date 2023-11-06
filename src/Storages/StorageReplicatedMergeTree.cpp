@@ -133,6 +133,7 @@ namespace ProfileEvents
     extern const Event CreatedLogEntryForMutation;
     extern const Event NotCreatedLogEntryForMutation;
     extern const Event ReplicaPartialShutdown;
+    extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
 }
 
 namespace CurrentMetrics
@@ -1318,6 +1319,7 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
         {
             LOG_WARNING(log, "Part {} exists in ZooKeeper and covered by another part in ZooKeeper ({}), but doesn't exist on any disk. "
                         "It may cause false-positive 'part is lost forever' messages", part_name, covering_part);
+            ProfileEvents::increment(ProfileEvents::ReplicatedCoveredPartsInZooKeeperOnStart);
             chassert(false);
         }
     }
