@@ -1152,7 +1152,7 @@ void StorageDistributed::initializeFromDisk()
 }
 
 
-void StorageDistributed::shutdown()
+void StorageDistributed::shutdown(bool)
 {
     monitors_blocker.cancelForever();
 
@@ -1173,7 +1173,7 @@ void StorageDistributed::drop()
     // And second time shutdown() should be fast, since none of
     // DirectoryMonitor should do anything, because ActionBlocker is canceled
     // (in shutdown()).
-    shutdown();
+    shutdown(true);
 
     // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())

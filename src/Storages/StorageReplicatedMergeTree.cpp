@@ -4933,7 +4933,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
             }
             else
             {
-                shutdown();
+                shutdown(false);
             }
         }
         catch (...)
@@ -5008,7 +5008,7 @@ void StorageReplicatedMergeTree::partialShutdown()
     LOG_TRACE(log, "Threads finished");
 }
 
-void StorageReplicatedMergeTree::shutdown()
+void StorageReplicatedMergeTree::shutdown(bool)
 {
     if (shutdown_called.exchange(true))
         return;
@@ -5062,7 +5062,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 {
     try
     {
-        shutdown();
+        shutdown(false);
     }
     catch (...)
     {

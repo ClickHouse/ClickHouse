@@ -137,7 +137,7 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void initializeFromDisk();
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
     void flushAndPrepareForShutdown() override;
     void drop() override;
 

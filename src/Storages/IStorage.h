@@ -564,10 +564,10 @@ public:
       * @see shutdown()
       * @see flushAndPrepareForShutdown()
       */
-    void flushAndShutdown()
+    void flushAndShutdown(bool is_drop = false)
     {
         flushAndPrepareForShutdown();
-        shutdown();
+        shutdown(is_drop);
     }
 
     /** If the table have to do some complicated work when destroying an object - do it in advance.
@@ -575,7 +575,7 @@ public:
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
-    virtual void shutdown() {}
+    virtual void shutdown(bool is_drop = false) { UNUSED(is_drop); } // NOLINT
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
