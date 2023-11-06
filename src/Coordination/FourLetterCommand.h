@@ -415,17 +415,17 @@ struct FeatureFlagsCommand : public IFourLetterCommand
     ~FeatureFlagsCommand() override = default;
 };
 
-/// Yield to be leader.
-struct YieldLeaderCommand : public IFourLetterCommand
+/// Yield leadership and become follower.
+struct YieldLeadershipCommand : public IFourLetterCommand
 {
-    explicit YieldLeaderCommand(KeeperDispatcher & keeper_dispatcher_)
+    explicit YieldLeadershipCommand(KeeperDispatcher & keeper_dispatcher_)
         : IFourLetterCommand(keeper_dispatcher_)
     {
     }
 
     String name() override { return "ydld"; }
     String run() override;
-    ~YieldLeaderCommand() override = default;
+    ~YieldLeadershipCommand() override = default;
 };
 
 }
