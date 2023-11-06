@@ -986,11 +986,11 @@ TEST_F(FileCacheTest, CachedReadBuffer)
             file_path, key, cache, read_buffer_creator, modified_settings, "test", s.size(), false, false, std::nullopt, nullptr);
 
         cached_buffer->next();
-        assertEqual(cache->dumpQueue(), { Range(5, 9), Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4) });
+        assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9)});
 
         cached_buffer->position() = cached_buffer->buffer().end();
         cached_buffer->next();
-        assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9) });
+        assertEqual(cache->dumpQueue(), {Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9), Range(10, 14)});
     }
 }
 

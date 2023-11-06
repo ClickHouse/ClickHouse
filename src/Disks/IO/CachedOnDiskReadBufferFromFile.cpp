@@ -697,9 +697,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
 bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 {
-    if (file_segments->empty())
-        return false;
-
+    chassert(!file_segments->empty());
     auto & file_segment = file_segments->front();
     const auto & current_read_range = file_segment.range();
     auto current_state = file_segment.state();
