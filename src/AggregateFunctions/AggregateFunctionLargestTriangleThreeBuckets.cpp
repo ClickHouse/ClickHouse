@@ -277,11 +277,11 @@ public:
         auto column_x_adder_func = getColumnAdderFunc(x_type);
         auto column_y_adder_func = getColumnAdderFunc(y_type);
 
-        for (size_t i = 0; i < res.size(); ++i)
+        for (const auto & elem : res)
         {
             auto & column_tuple = assert_cast<ColumnTuple &>(col.getData());
-            column_x_adder_func(column_tuple.getColumn(0), res[i].first);
-            column_y_adder_func(column_tuple.getColumn(1), res[i].second);
+            column_x_adder_func(column_tuple.getColumn(0), elem.first);
+            column_y_adder_func(column_tuple.getColumn(1), elem.second);
         }
 
         col_offsets.getData().push_back(col.getData().size());
