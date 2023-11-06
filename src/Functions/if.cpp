@@ -234,7 +234,7 @@ private:
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
-    NO_INLINE ColumnPtr executeRightType(
+    ColumnPtr executeRightType(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const ColVecT0 * col_left) const
@@ -266,7 +266,7 @@ private:
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
-    NO_INLINE ColumnPtr executeConstRightType(
+    ColumnPtr executeConstRightType(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const ColumnConst * col_left) const
@@ -298,7 +298,7 @@ private:
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
-    NO_INLINE ColumnPtr executeRightTypeArray(
+    ColumnPtr executeRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const DataTypePtr result_type,
@@ -355,7 +355,7 @@ private:
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
-    NO_INLINE ColumnPtr executeConstRightTypeArray(
+    ColumnPtr executeConstRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const DataTypePtr & result_type,
@@ -413,7 +413,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    NO_INLINE ColumnPtr executeTyped(
+    ColumnPtr executeTyped(
         const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         using ColVecT0 = ColumnVectorOrDecimal<T0>;
