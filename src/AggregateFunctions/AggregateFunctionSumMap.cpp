@@ -10,7 +10,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 
 #include <Common/FieldVisitorSum.h>
@@ -18,16 +17,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <map>
-
-
-namespace std
-{
-    template <typename T>
-    struct hash<DB::DecimalField<T>>
-    {
-        size_t operator()(const DB::DecimalField<T> & x) const { return hash<T>()(x.getValue()); }
-    };
-}
 
 
 namespace DB
@@ -46,11 +35,10 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename T>
 struct AggregateFunctionMapData
 {
     // Map needs to be ordered to maintain function properties
-    std::map<T, Array> merged_maps;
+    std::map<Field, Array> merged_maps;
 };
 
 /** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -
@@ -74,9 +62,9 @@ struct AggregateFunctionMapData
   * NOTE: The implementation of these functions are "amateur grade" - not efficient and low quality.
   */
 
-template <typename T, typename Derived, typename Visitor, bool overflow, bool tuple_argument, bool compact>
+template <typename Derived, typename Visitor, bool overflow, bool tuple_argument, bool compact>
 class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
-    AggregateFunctionMapData<T>, Derived>
+    AggregateFunctionMapData, Derived>
 {
 private:
     static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
@@ -88,8 +76,7 @@ private:
     Serializations promoted_values_serializations;
 
 public:
-    using Base = IAggregateFunctionDataHelper<
-        AggregateFunctionMapData<T>, Derived>;
+    using Base = IAggregateFunctionDataHelper<AggregateFunctionMapData, Derived>;
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
@@ -232,7 +219,7 @@ public:
             for (size_t i = 0; i < keys_vec_size; ++i)
             {
                 auto value = value_column[values_vec_offset + i];
-                T key = static_cast<T>(key_column[keys_vec_offset + i].get<T>());
+                Field key = key_column[keys_vec_offset + i];
 
                 if (!keepKey(key))
                     continue;
@@ -349,7 +336,7 @@ public:
             for (size_t col = 0; col < values_types.size(); ++col)
                 deserialize(col, values);
 
-            merged_maps[key.get<T>()] = values;
+            merged_maps[key] = values;
         }
     }
 
@@ -420,17 +407,17 @@ public:
         }
     }
 
-    bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
+    bool keepKey(const Field & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
     String getName() const override { return Derived::getNameImpl(); }
 };
 
-template <typename T, bool overflow, bool tuple_argument>
+template <bool overflow, bool tuple_argument>
 class AggregateFunctionSumMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionSumMap<T, overflow, tuple_argument>, FieldVisitorSum, overflow, tuple_argument, true>
+    public AggregateFunctionMapBase<AggregateFunctionSumMap<overflow, tuple_argument>, FieldVisitorSum, overflow, tuple_argument, true>
 {
 private:
-    using Self = AggregateFunctionSumMap<T, overflow, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
+    using Self = AggregateFunctionSumMap<overflow, tuple_argument>;
+    using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
 public:
     AggregateFunctionSumMap(const DataTypePtr & keys_type_,
@@ -455,25 +442,24 @@ public:
         }
     }
 
-    bool keepKey(const T &) const { return true; }
+    bool keepKey(const Field &) const { return true; }
 };
 
 
-template <typename T, bool overflow, bool tuple_argument>
+template <bool overflow, bool tuple_argument>
 class AggregateFunctionSumMapFiltered final :
-    public AggregateFunctionMapBase<T,
-        AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>,
+    public AggregateFunctionMapBase<
+        AggregateFunctionSumMapFiltered<overflow, tuple_argument>,
         FieldVisitorSum,
         overflow,
         tuple_argument,
         true>
 {
 private:
-    using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
+    using Self = AggregateFunctionSumMapFiltered<overflow, tuple_argument>;
+    using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
-    using ContainerT = std::unordered_set<T>;
-
+    using ContainerT = std::set<Field>;
     ContainerT keys_to_keep;
 
 public:
@@ -495,10 +481,8 @@ public:
 
         this->parameters = params_;
 
-        keys_to_keep.reserve(keys_to_keep_values.size());
-
         for (const Field & f : keys_to_keep_values)
-            keys_to_keep.emplace(f.safeGet<T>());
+            keys_to_keep.emplace(f);
     }
 
     static String getNameImpl()
@@ -513,7 +497,7 @@ public:
         }
     }
 
-    bool keepKey(const T & key) const { return keys_to_keep.count(key); }
+    bool keepKey(const Field & key) const { return keys_to_keep.count(key); }
 };
 
 
@@ -599,13 +583,13 @@ public:
 };
 
 
-template <typename T, bool tuple_argument>
+template <bool tuple_argument>
 class AggregateFunctionMinMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionMinMap<T, tuple_argument>, FieldVisitorMin, true, tuple_argument, false>
+    public AggregateFunctionMapBase<AggregateFunctionMinMap<tuple_argument>, FieldVisitorMin, true, tuple_argument, false>
 {
 private:
-    using Self = AggregateFunctionMinMap<T, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMin, true, tuple_argument, false>;
+    using Self = AggregateFunctionMinMap<tuple_argument>;
+    using Base = AggregateFunctionMapBase<Self, FieldVisitorMin, true, tuple_argument, false>;
 
 public:
     AggregateFunctionMinMap(const DataTypePtr & keys_type_,
@@ -620,16 +604,16 @@ public:
 
     static String getNameImpl() { return "minMap"; }
 
-    bool keepKey(const T &) const { return true; }
+    bool keepKey(const Field &) const { return true; }
 };
 
-template <typename T, bool tuple_argument>
+template <bool tuple_argument>
 class AggregateFunctionMaxMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionMaxMap<T, tuple_argument>, FieldVisitorMax, true, tuple_argument, false>
+    public AggregateFunctionMapBase<AggregateFunctionMaxMap<tuple_argument>, FieldVisitorMax, true, tuple_argument, false>
 {
 private:
-    using Self = AggregateFunctionMaxMap<T, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMax, true, tuple_argument, false>;
+    using Self = AggregateFunctionMaxMap<tuple_argument>;
+    using Base = AggregateFunctionMapBase<Self, FieldVisitorMax, true, tuple_argument, false>;
 
 public:
     AggregateFunctionMaxMap(const DataTypePtr & keys_type_,
@@ -644,7 +628,7 @@ public:
 
     static String getNameImpl() { return "maxMap"; }
 
-    bool keepKey(const T &) const { return true; }
+    bool keepKey(const Field &) const { return true; }
 };
 
 
@@ -746,8 +730,8 @@ struct SumMapVariants
     {
         template <typename T>
         using F = std::conditional_t<filtered,
-            AggregateFunctionSumMapFiltered<NearestFieldType<T>, overflow, tuple_argument>,
-            AggregateFunctionSumMap<NearestFieldType<T>, overflow, tuple_argument>>;
+            AggregateFunctionSumMapFiltered<overflow, tuple_argument>,
+            AggregateFunctionSumMap<overflow, tuple_argument>>;
     };
 };
 
@@ -757,7 +741,7 @@ template <bool tuple_argument>
 struct MinMapDispatchOnTupleArgument
 {
     template <typename T>
-    using F = AggregateFunctionMinMap<NearestFieldType<T>, tuple_argument>;
+    using F = AggregateFunctionMinMap<tuple_argument>;
 };
 
 // This template gives an aggregate function template that is narrowed
@@ -766,7 +750,7 @@ template <bool tuple_argument>
 struct MaxMapDispatchOnTupleArgument
 {
     template <typename T>
-    using F = AggregateFunctionMaxMap<NearestFieldType<T>, tuple_argument>;
+    using F = AggregateFunctionMaxMap<tuple_argument>;
 };
 
 }
