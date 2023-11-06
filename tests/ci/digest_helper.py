@@ -46,12 +46,21 @@ def digest_path(path: Path, hash_object: Optional[HASH] = None) -> HASH:
 
 def digest_paths(paths: Iterable[Path], hash_object: Optional[HASH] = None) -> HASH:
     """Calculates aggregated md5 (or updates existing hash_object) hash of passed paths.
-    The order matters"""
+    The order is processed as given"""
     hash_object = hash_object or md5()
     for path in paths:
         if path.exists():
             digest_path(path, hash_object)
     return hash_object
+
+
+def digest_consistent_paths(
+    paths: Iterable[Path], hash_object: Optional[HASH] = None
+) -> HASH:
+    """Calculates aggregated md5 (or updates existing hash_object) hash of passed paths.
+    The order doesn't matter, paths are converted to `absolute` and ordered before
+    calculation"""
+    return digest_paths(sorted(p.absolute() for p in paths), hash_object)
 
 
 def digest_script(path_str: str) -> HASH:
