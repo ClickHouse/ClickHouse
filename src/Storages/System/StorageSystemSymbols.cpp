@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemSymbols.h>
@@ -102,10 +101,14 @@ Pipe StorageSystemSymbols::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     const auto & symbols = SymbolIndex::instance().symbols();
 
     return Pipe(std::make_shared<SymbolsBlockSource>(
         symbols.cbegin(), symbols.cend(), std::move(columns_mask), std::move(res_block), max_block_size));
+#else
+    return Pipe(std::make_shared<NullSource>(std::move(res_block)));
+#endif
 }
 
 }
