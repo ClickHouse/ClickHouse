@@ -171,10 +171,7 @@ class PRInfo:
                     response_json = user_orgs_response.json()
                     self.user_orgs = set(org["id"] for org in response_json)
 
-            self.diff_urls.append(
-                f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                f"compare/master...{github_event['pull_request']['head']['label']}"
-            )
+            self.diff_urls.append(self.compare_pr_url(github_event["pull_request"]))
 
         elif "commits" in github_event:
             # `head_commit` always comes with `commits`
@@ -201,8 +198,7 @@ class PRInfo:
                 self.head_ref = ref
                 self.head_name = self.repo_full_name
                 self.diff_urls.append(
-                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                    f"compare/{github_event['before']}...{self.sha}"
+                    self.compare_url(github_event["before"], self.sha)
                 )
             else:
                 self.number = pull_request["number"]
@@ -219,25 +215,31 @@ class PRInfo:
                     # files changed in upstream AND master...{self.head_ref}
                     # to get files, changed in current HEAD
                     self.diff_urls.append(
-                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/master...{pull_request['head']['label']}"
+                        self.compare_url(
+                            pull_request["base"]["repo"]["default_branch"],
+                            pull_request["head"]["label"],
+                        )
                     )
                     self.diff_urls.append(
-                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/{pull_request['head']['label']}...master"
+                        self.compare_url(
+                            pull_request["head"]["label"],
+                            pull_request["base"]["repo"]["default_branch"],
+                        )
                     )
                     # Get release PR number.
                     self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
                         "number"
                     ]
                 else:
-                    self.diff_urls.append(pull_request["diff_url"])
+                    self.diff_urls.append(self.compare_pr_url(pull_request))
                 if "release" in self.labels:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
-                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/{pull_request['head']['label']}...master"
+                        self.compare_url(
+                            pull_request["head"]["label"],
+                            pull_request["base"]["repo"]["default_branch"],
+                        )
                     )
         else:
             print("event.json does not match pull_request or push:")
@@ -259,6 +261,16 @@ class PRInfo:
 
         if need_changed_files:
             self.fetch_changed_files()
+
+    def compare_pr_url(self, pr_object: dict) -> str:
+        return self.compare_url(pr_object["base"]["label"], pr_object["head"]["label"])
+
+    @staticmethod
+    def compare_url(first: str, second: str) -> str:
+        return (
+            "https://api.github.com/repos/"
+            f"{GITHUB_REPOSITORY}/compare/{first}...{second}"
+        )
 
     def fetch_changed_files(self):
         if not getattr(self, "diff_urls", False):
