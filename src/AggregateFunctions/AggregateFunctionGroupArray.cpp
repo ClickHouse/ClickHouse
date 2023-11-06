@@ -89,7 +89,7 @@ struct GroupArraySamplerData
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (lim <= static_cast<UInt64>(rng.max()))
-            return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
+            return rng() % lim;
         else
             return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
