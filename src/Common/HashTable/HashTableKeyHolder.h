@@ -7,9 +7,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/Exception.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we
   * start with a temporary key object, and if it turns out to be a new key,
@@ -172,7 +169,8 @@ struct AdaptiveKeysHolder
         };
         HashMode hash_mode = VALUE_ID;
         std::shared_ptr<Arena> pool;
-#if defined(__AVX512F__) && defined(__AVX512BW__)
+
+        /// If the table size is small, use avx512 to accelate lookup.
         static constexpr size_t cache_line_num = 1;
         static constexpr size_t cache_line_num_mask = cache_line_num - 1;
         struct ValueCacheLine
@@ -181,10 +179,9 @@ struct AdaptiveKeysHolder
             alignas(64) UInt64 value_ids[8] = {-1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL};
             StateRef * cached_values[8] = {nullptr};
         };
-        ValueIdCacheLine value_cache_lines[cache_line_num];
-#endif
-        std::unordered_map<UInt64, StateRef> cached_values;
+        ValueCacheLine value_cache_lines[cache_line_num];
 
+        std::unordered_map<UInt64, StateRef> cached_values;
     };
 
     /// be careful with all fields, their default value must be zero bits.

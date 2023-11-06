@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 /// Check whether we could use range mode to generate value id by sampling.
-void StringHashValueIdGenerator::tryInitialize(const IColumn *col)
+void StringHashValueIdGenerator::setup(const IColumn *col)
 {
     is_nullable = col->isNullable();
 

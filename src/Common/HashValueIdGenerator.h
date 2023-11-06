@@ -55,7 +55,7 @@ inline void extendValuesToUInt64(const UInt8 * __restrict values, UInt64 * __res
     {
         if constexpr (sizeof(T) < 8)
             ids[j] = static_cast<UInt64>(*reinterpret_cast<const T *>(&values[j * sizeof(T)])) & ((1UL << sizeof(T)) - 1);
-        else    
+        else
             ids[j] = static_cast<UInt64>(*reinterpret_cast<const T *>(&values[j * sizeof(T)]));
     }
 }
@@ -98,7 +98,8 @@ inline bool isAllShortString(const UInt64 * __restrict lens, size_t n)
 )
 
 DECLARE_AVX512BW_SPECIFIC_CODE(
-inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * __restrict value_ids, size_t multiplier, size_t n) {
+inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * __restrict value_ids, size_t multiplier, size_t n)
+{
     size_t i = 0;
     for (; i + 8 < n; i += 8)
     {
@@ -116,7 +117,8 @@ inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * 
         value_ids[i] = value_ids[i] * multiplier + local_value_ids[i];
 }
 
-inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start, size_t n = 8) {
+inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start, size_t n)
+{
     size_t i = 0;
     for (; i + 8 < n; i += 8)
     {
@@ -130,7 +132,8 @@ inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start
         value_ids[i] -= range_start;
 }
 
-inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, size_t start, size_t n, UInt64 * lens) {
+inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, size_t start, size_t n, UInt64 * lens)
+{
     size_t i = 0;
     for (; i + 8 < n; i += 8)
     {
@@ -147,7 +150,8 @@ inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, si
     }
 }
 
-inline bool isAllShortString(const UInt64 * __restrict lens, size_t n) {
+inline bool isAllShortString(const UInt64 * __restrict lens, size_t n)
+{
     bool res = true;
     size_t i = 0;
     for (; i + 8 < n; i += 8)
@@ -288,7 +292,8 @@ protected:
     MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
         MULTITARGET_FUNCTION_HEADER(void NO_SANITIZE_UNDEFINED NO_INLINE),
         getValueIdImpl,
-        MULTITARGET_FUNCTION_BODY((const StringRef & raw_value, UInt64 serialized_value, UInt64 & value_id) {
+        MULTITARGET_FUNCTION_BODY((const StringRef & raw_value, UInt64 serialized_value, UInt64 & value_id)
+        {
             if (enable_value_id_cache_line)
             {
                 // If the value id set is too large, give up to check in cache
@@ -399,11 +404,11 @@ public:
     explicit StringHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, size_t max_distinct_values_)
         : IHashValueIdGenerator(col_, state_, max_distinct_values_)
     {
-        tryInitialize(col_);
+        setup(col_);
     }
 
 private:
-    void tryInitialize(const IColumn * col);
+    void setup(const IColumn * col);
 
     void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
     {
@@ -453,7 +458,7 @@ private:
 #endif
             {
                 TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
-            }         
+            }
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
             computeValueIdForString(char_pos, str_lens, batch_size, tmp_value_ids, null_map_pos);
 #if USE_MULTITARGET_CODE
@@ -539,11 +544,11 @@ public:
     explicit FixedStringHashValueIdGenerator(const IColumn *col_, AdaptiveKeysHolder::State *state_, size_t max_distinct_values_)
         : IHashValueIdGenerator(col_, state_, max_distinct_values_)
     {
-        tryInitialize(col_);
+        setup(col_);
     }
 
 private:
-    void tryInitialize(const IColumn * col)
+    void setup(const IColumn * col)
     {
         is_nullable = col->isNullable();
         const auto * nested_col = col;
@@ -660,10 +665,10 @@ public:
     explicit NumericHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, size_t max_distinct_values_)
         : IHashValueIdGenerator(col_, state_, max_distinct_values_)
     {
-        tryInitialize(col_);
+        setup(col_);
     }
 private:
-    void tryInitialize(const IColumn * col)
+    void setup(const IColumn * col)
     {
         /// Find the min and max value in the column
         is_nullable = col->isNullable();
@@ -752,7 +757,7 @@ private:
             {
                 TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
             }
-            
+
             data_pos += element_bytes * batch_step;
             value_ids_pos += batch_step;
         }
@@ -760,8 +765,8 @@ private:
         if (i < n)
         {
             const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
-            if constexpr(is_basic_number)
-                if(enable_range_mode)
+            if constexpr (is_basic_number)
+                if (enable_range_mode)
                     computeValueIdsInRangeMode<ElementType, true, true>(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
                 else
                     computeValueIdsInNormalMode(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
