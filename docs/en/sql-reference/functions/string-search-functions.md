@@ -689,47 +689,47 @@ Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance
 **Syntax**
 
 ```sql
-byteHammingDistance(string2, string2)
+byteHammingDistance(string1, string2)
 ```
 
 **Examples**
 
 ``` sql
-SELECT byteHammingDistance('abc', 'ab') ;
+SELECT byteHammingDistance('karolin', 'kathrin');
 ```
 
 Result:
 
 ``` text
-┌─byteHammingDistance('abc', 'ab')─┐
-│                                1 │
-└──────────────────────────────────┘
+┌─byteHammingDistance('karolin', 'kathrin')─┐
+│                                         3 │
+└───────────────────────────────────────────┘
 ```
 
-- Alias: mismatches
+Alias: mismatches
 
-## jaccardIndex
+## stringJaccardIndex
 
 Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
 
 **Syntax**
 
 ```sql
-byteJaccardIndex(string1, string2)
+stringJaccardIndex(string1, string2)
 ```
 
 **Examples**
 
 ``` sql
-SELECT jaccardIndex('clickhouse', 'mouse');
+SELECT stringJaccardIndex('clickhouse', 'mouse');
 ```
 
 Result:
 
 ``` text
-┌─jaccardIndex('clickhouse', 'mouse')─┐
-│                                     0.4 │
-└─────────────────────────────────────────┘
+┌─stringJaccardIndex('clickhouse', 'mouse')─┐
+│                                       0.4 │
+└───────────────────────────────────────────┘
 ```
 
 ## editDistance
@@ -752,8 +752,8 @@ Result:
 
 ``` text
 ┌─editDistance('clickhouse', 'mouse')─┐
-│                                       6 │
-└─────────────────────────────────────────┘
+│                                   6 │
+└─────────────────────────────────────┘
 ```
 
-- Alias: levenshteinDistance
+Alias: levenshteinDistance
