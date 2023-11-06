@@ -38,7 +38,7 @@ namespace ErrorCodes
 namespace
 {
 
-static inline constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
+inline constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
 
 template <typename T>
 struct AggregateFunctionTopKData
