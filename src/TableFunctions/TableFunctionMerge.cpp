@@ -126,7 +126,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
         {
             auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, table}, context);
             if (storage)
-                return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
+              return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};  // !!!
         }
     }
 

@@ -193,6 +193,7 @@ private:
         const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
         Names real_column_names,
+        std::unique_ptr<RowPolicyData> row_policy_data_ptr,
         ContextMutablePtr modified_context,
         size_t streams_num,
         bool concat_streams = false);
@@ -201,6 +202,7 @@ private:
         const Block & header,
         const StorageMetadataPtr & metadata_snapshot,
         const Aliases & aliases,
+        std::unique_ptr<RowPolicyData> row_policy_data_ptr,
         ContextPtr context,
         QueryPipelineBuilder & builder,
         QueryProcessingStage::Enum processed_stage);
