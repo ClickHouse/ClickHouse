@@ -119,12 +119,18 @@ private:
             {
                 if constexpr (error_handling == ErrorHandling::Null)
                 {
+                    const size_t res_data_new_size = res_data_size + 1;
+                    if (res_data_new_size > res_data.size())
+                        res_data.resize(2 * res_data_new_size);
+
                     res_data[res_data_size] = '\0';
                     res_data_size += 1;
 
                     res_offsets[i] = res_data_size;
                     prev_offset = offsets[i];
+
                     res_null_map->getData()[i] = 1;
+
                     continue;
                 }
                 else
