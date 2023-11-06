@@ -208,9 +208,8 @@ class IColumn;
     M(Bool, allow_experimental_inverted_index, false, "If it is set to true, allow to use experimental inverted index.", 0) \
     \
     M(UInt64, mysql_max_rows_to_insert, 65536, "The maximum number of rows in MySQL batch insertion of the MySQL storage engine", 0) \
-    M(Bool, use_mysql_types_in_show_columns, false, "Show native MySQL types in SHOW [FULL] COLUMNS", 0) \
-    M(Bool, mysql_map_string_to_text_in_show_columns, false, "If enabled, String type will be mapped to TEXT in SHOW [FULL] COLUMNS, BLOB otherwise. Will only take effect if use_mysql_types_in_show_columns is enabled too", 0) \
-    M(Bool, mysql_map_fixed_string_to_text_in_show_columns, false, "If enabled, FixedString type will be mapped to TEXT in SHOW [FULL] COLUMNS, BLOB otherwise. Will only take effect if use_mysql_types_in_show_columns is enabled too", 0) \
+    M(Bool, mysql_map_string_to_text_in_show_columns, false, "If enabled, String type will be mapped to TEXT in SHOW [FULL] COLUMNS, BLOB otherwise.", 0) \
+    M(Bool, mysql_map_fixed_string_to_text_in_show_columns, false, "If enabled, FixedString type will be mapped to TEXT in SHOW [FULL] COLUMNS, BLOB otherwise.", 0) \
     \
     M(UInt64, optimize_min_equality_disjunction_chain_length, 3, "The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization ", 0) \
     \
@@ -848,6 +847,7 @@ class IColumn;
     MAKE_OBSOLETE(M, UInt64, merge_tree_clear_old_parts_interval_seconds, 1) \
     MAKE_OBSOLETE(M, UInt64, partial_merge_join_optimizations, 0) \
     MAKE_OBSOLETE(M, MaxThreads, max_alter_threads, 0) \
+    MAKE_OBSOLETE(M, Bool, use_mysql_types_in_show_columns, false) \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \

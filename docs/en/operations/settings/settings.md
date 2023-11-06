@@ -3310,22 +3310,11 @@ Possible values:
 
 Default value: `0`.
 
-## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
-
-Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Possible values:
-
-- 0 - Show names of native ClickHouse data types.
-- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
-
-Default value: `0`.
-
 ## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
 
 When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+Has an effect only when the connection is made through the MySQL wire protocol.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3336,7 +3325,7 @@ Default value: `0`.
 
 When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+Has an effect only when the connection is made through the MySQL wire protocol.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
