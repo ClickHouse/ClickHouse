@@ -97,10 +97,10 @@
     M(DiskObjectStorageAsyncThreadsActive, "Obsolete metric, shows nothing.") \
     M(StorageHiveThreads, "Number of threads in the StorageHive thread pool.") \
     M(StorageHiveThreadsActive, "Number of threads in the StorageHive thread pool running a task.") \
-    M(AsyncLoaderBackgroundThreads, "Number of threads in the async loader background thread pool.") \
-    M(AsyncLoaderBackgroundThreadsActive, "Number of threads in the async loader background thread pool running a task.") \
-    M(AsyncLoaderForegroundThreads, "Number of threads in the async loader foreground thread pool.") \
-    M(AsyncLoaderForegroundThreadsActive, "Number of threads in the async loader foreground thread pool running a task.") \
+    M(TablesLoaderBackgroundThreads, "Number of threads in the async loader background thread pool.") \
+    M(TablesLoaderBackgroundThreadsActive, "Number of threads in the async loader background thread pool running a task.") \
+    M(TablesLoaderForegroundThreads, "Number of threads in the async loader foreground thread pool.") \
+    M(TablesLoaderForegroundThreadsActive, "Number of threads in the async loader foreground thread pool running a task.") \
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseCatalogThreads, "Number of threads in the DatabaseCatalog thread pool.") \

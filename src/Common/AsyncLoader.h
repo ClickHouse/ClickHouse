@@ -196,8 +196,8 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
 // Basic usage example:
 //     // Start async_loader with two thread pools (0=fg, 1=bg):
 //     AsyncLoader async_loader({
-//         {"FgPool", CurrentMetrics::AsyncLoaderForegroundThreads, CurrentMetrics::AsyncLoaderForegroundThreadsActive, .max_threads = 2, .priority{0}},
-//         {"BgPool", CurrentMetrics::AsyncLoaderBackgroundThreads, CurrentMetrics::AsyncLoaderBackgroundThreadsActive, .max_threads = 1, .priority{1}},
+//         {"FgPool", CurrentMetrics::TablesLoaderForegroundThreads, CurrentMetrics::TablesLoaderForegroundThreadsActive, .max_threads = 2, .priority{0}},
+//         {"BgPool", CurrentMetrics::TablesLoaderBackgroundThreads, CurrentMetrics::TablesLoaderBackgroundThreadsActive, .max_threads = 1, .priority{1}},
 //     });
 //
 //     // Create and schedule a task consisting of three jobs. Job1 has no dependencies and is run first.

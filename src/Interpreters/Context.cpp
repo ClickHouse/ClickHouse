@@ -142,10 +142,10 @@ namespace CurrentMetrics
     extern const Metric IOPrefetchThreadsActive;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
-    extern const Metric AsyncLoaderBackgroundThreads;
-    extern const Metric AsyncLoaderBackgroundThreadsActive;
-    extern const Metric AsyncLoaderForegroundThreads;
-    extern const Metric AsyncLoaderForegroundThreadsActive;
+    extern const Metric TablesLoaderBackgroundThreads;
+    extern const Metric TablesLoaderBackgroundThreadsActive;
+    extern const Metric TablesLoaderForegroundThreads;
+    extern const Metric TablesLoaderForegroundThreadsActive;
 }
 
 
@@ -2254,22 +2254,22 @@ AsyncLoader & Context::getAsyncLoader() const
                 // IMPORTANT: Pool declaration order should match the order in `AsyncLoaderPoolId.h` to get the indices right.
                 { // AsyncLoaderPoolId::Foreground
                     "FgLoad",
-                    CurrentMetrics::AsyncLoaderForegroundThreads,
-                    CurrentMetrics::AsyncLoaderForegroundThreadsActive,
+                    CurrentMetrics::TablesLoaderForegroundThreads,
+                    CurrentMetrics::TablesLoaderForegroundThreadsActive,
                     shared->server_settings.tables_loader_foreground_pool_size,
                     Priority{0}
                 },
                 { // AsyncLoaderPoolId::BackgroundLoad
                     "BgLoad",
-                    CurrentMetrics::AsyncLoaderBackgroundThreads,
-                    CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
+                    CurrentMetrics::TablesLoaderBackgroundThreads,
+                    CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     shared->server_settings.tables_loader_background_pool_size,
                     Priority{1}
                 },
                 { // AsyncLoaderPoolId::BackgroundStartup
                     "BgStartup",
-                    CurrentMetrics::AsyncLoaderBackgroundThreads,
-                    CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
+                    CurrentMetrics::TablesLoaderBackgroundThreads,
+                    CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     shared->server_settings.tables_loader_background_pool_size,
                     Priority{2}
                 }

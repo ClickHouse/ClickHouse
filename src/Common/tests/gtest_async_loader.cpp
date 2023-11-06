@@ -23,8 +23,8 @@ using namespace DB;
 
 namespace CurrentMetrics
 {
-    extern const Metric AsyncLoaderBackgroundThreads;
-    extern const Metric AsyncLoaderBackgroundThreadsActive;
+    extern const Metric TablesLoaderBackgroundThreads;
+    extern const Metric TablesLoaderBackgroundThreadsActive;
 }
 
 namespace DB::ErrorCodes
@@ -64,8 +64,8 @@ struct AsyncLoaderTest
         {
             result.push_back({
                 .name = fmt::format("Pool{}", pool_id),
-                .metric_threads = CurrentMetrics::AsyncLoaderBackgroundThreads,
-                .metric_active_threads = CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
+                .metric_threads = CurrentMetrics::TablesLoaderBackgroundThreads,
+                .metric_active_threads = CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                 .max_threads = desc.max_threads,
                 .priority = desc.priority
             });

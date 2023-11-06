@@ -45,19 +45,19 @@ Number of threads in the Aggregator thread pool.
 
 Number of threads in the Aggregator thread pool running a task.
 
-### AsyncLoaderForegroundThreads
+### TablesLoaderForegroundThreads
 
 Number of threads in the async loader foreground thread pool.
 
-### AsyncLoaderForegroundThreadsActive
+### TablesLoaderForegroundThreadsActive
 
 Number of threads in the async loader foreground thread pool running a task.
 
-### AsyncLoaderBackgroundThreads
+### TablesLoaderBackgroundThreads
 
 Number of threads in the async loader background thread pool.
 
-### AsyncLoaderBackgroundThreadsActive
+### TablesLoaderBackgroundThreadsActive
 
 Number of threads in the async loader background thread pool running a task.
 
