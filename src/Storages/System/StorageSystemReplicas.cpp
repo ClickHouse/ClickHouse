@@ -107,12 +107,20 @@ public:
             /// TODO: handle failure when trying to schedule a request: need to either retry or set an error in the promise.
             thread_pool.scheduleOrThrowOnError([this, storage, with_zk_fields, promise] () mutable
             {
-                ReplicatedTableStatus status;
-                if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+                try
                 {
-                    replicated_table->getStatus(status, with_zk_fields);
+                    ReplicatedTableStatus status;
+                    if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+                    {
+                        replicated_table->getStatus(status, with_zk_fields);
+                    }
+                    promise->set_value(std::move(status));
                 }
-                promise->set_value(std::move(status));
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Error getting status for table " + storage->getStorageID().getNameForLogs());
+                    promise->set_exception(std::current_exception());
+                }
 
                 /// Remove the completed request
                 {
