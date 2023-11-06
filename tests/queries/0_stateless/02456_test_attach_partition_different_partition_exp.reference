@@ -82,7 +82,7 @@ SELECT partition_id FROM system.parts where table='destination' AND database = c
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp DateTime('UTC'), key Int64, f Float64) engine=MergeTree ORDER BY (key, timestamp) PARTITION BY toYear(timestamp);
-CREATE TABLE destination (timestamp DateTime('UTC'), key Int64, f Float64) engine=SummingMergeTree ORDER BY (key, timestamp) PARTITION BY (intDiv(toUInt32(timestamp),86400));
+CREATE TABLE destination (timestamp DateTime('UTC'), key Int64, f Float64) engine=MergeTree ORDER BY (key, timestamp) PARTITION BY (intDiv(toUInt32(timestamp),86400));
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01',1,1),('2010-03-02 02:01:01',1,1),('2011-02-02 02:01:03',1,1);
 ALTER TABLE destination ATTACH PARTITION ID '2010' FROM source;
 SELECT * FROM source ORDER BY timestamp;
