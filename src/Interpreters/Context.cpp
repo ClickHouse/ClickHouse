@@ -2943,6 +2943,7 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
         });
 
     shared->ddl_worker_startup_task = makeLoadTask(getAsyncLoader(), {job});
+    shared->ddl_worker_startup_task->schedule();
 }
 
 DDLWorker & Context::getDDLWorker() const
