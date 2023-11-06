@@ -331,7 +331,6 @@ createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, con
 {
     assertBinary(name, argument_types);
 
-
     if (!(isNumber(argument_types[0]) || isDateOrDate32(argument_types[0]) || isDateTime(argument_types[0])
           || isDateTime64(argument_types[0])))
         throw Exception(
