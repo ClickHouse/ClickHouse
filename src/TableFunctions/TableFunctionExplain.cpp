@@ -127,7 +127,7 @@ ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr cont
     return columns_description;
 }
 
-static Block executeMonoBlock(QueryPipeline & pipeline)
+Block executeMonoBlock(QueryPipeline & pipeline)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected pulling pipeline");
