@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int MISMATCH_REPLICAS_DATA_SOURCES;
     extern const int LOGICAL_ERROR;
     extern const int SOCKET_TIMEOUT;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
@@ -59,6 +60,9 @@ HedgedConnections::HedgedConnections(
     active_connection_count = connections.size();
     offsets_with_disabled_changing_replica = 0;
     pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
+
+    remote_query_timeout.setRelative(settings.remote_query_timeout);
+    epoll.add(remote_query_timeout.getDescriptor());
 }
 
 void HedgedConnections::Pipeline::add(std::function<void(ReplicaState & replica)> send_function)
@@ -263,6 +267,8 @@ Packet HedgedConnections::drain()
     while (!epoll.empty())
     {
         ReplicaLocation location = getReadyReplicaLocation();
+        if (location.remote_query_timeout_exceeded)
+            continue;
         Packet packet = receivePacketFromReplica(location);
         switch (packet.type)
         {
@@ -303,6 +309,14 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending events in epoll.");
 
     ReplicaLocation location = getReadyReplicaLocation(std::move(async_callback));
+    if (location.remote_query_timeout_exceeded)
+    {
+        if (!context->getSettings().allow_remote_query_timeout)
+            throw Exception("Remote query timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
+        Packet packet;
+        packet.type = Protocol::Server::RemoteQueryTimeout;
+        return packet;
+    }
     return receivePacketFromReplica(location);
 }
 
@@ -325,6 +339,8 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
 
         if (event_fd == hedged_connections_factory.getFileDescriptor())
             checkNewReplica();
+        else if (event_fd == remote_query_timeout.getDescriptor())
+            return ReplicaLocation{0, 0, true};
         else if (fd_to_replica_location.contains(event_fd))
         {
             ReplicaLocation location = fd_to_replica_location[event_fd];

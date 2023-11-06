@@ -450,7 +450,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
             return output_getter(output, sample, format_settings);
         };
 
-        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
+        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads, context};
 
         if (context->hasQueryContext() && settings.log_queries)
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);

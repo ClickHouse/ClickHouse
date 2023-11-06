@@ -430,6 +430,12 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
+    /// A counter indicating how many remote query executions failed due to remote query timeout exceeded. this is only for query context.
+    mutable std::shared_ptr<UInt32> remote_query_timeout_count_ptr = nullptr;
+
+    /// Total number of child local/remote queries generated for a distributed query (may involve multiple distributed tables), and subquery does not count here. this is only for query context.
+    mutable std::shared_ptr<UInt32> total_child_query_count_ptr = nullptr;    
+
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -1226,6 +1232,18 @@ public:
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
     const ServerSettings & getServerSettings() const;
+
+    void initRemoteQueryTimeoutCount() const;
+
+    UInt32 getRemoteQueryTimeoutCount() const;
+
+    void incrementRemoteQueryTimeoutCount() const;
+
+    void initTotalChildQueryCount() const;
+
+    UInt32 getTotalChildQueryCount() const;
+
+    void incrementTotalChildQueryCount(UInt32 cnt) const;
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;

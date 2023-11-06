@@ -1,7 +1,10 @@
+#include <string>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
+#include "Interpreters/Context_fwd.h"
+#include "Server/HTTP/WriteBufferFromHTTPServerResponse.h"
 
 namespace DB
 {
@@ -153,6 +156,20 @@ namespace DB
 
                 /// Use this copy to after notification to stop the execution.
                 auto copy_of_unit_type = unit.type;
+
+                /// TODO : Make other output formats who does not support parralel formatting return extra parameters for remote query timeout in the header of http response as well.
+                if (auto * write_buffer_from_http_response = reinterpret_cast<WriteBufferFromHTTPServerResponse *>(&out))
+                {
+                    auto & http_response = write_buffer_from_http_response->getHTTPResponse();
+                    auto remote_timeout_count = context->getRemoteQueryTimeoutCount();
+                    if (remote_timeout_count)
+                    {
+                        if(!http_response.has("X-ClickHouse-Remote-Query-Timeout-Count"))
+                            http_response.add("X-ClickHouse-Remote-Query-Timeout-Count", std::to_string(remote_timeout_count));
+                        if (remote_timeout_count && !http_response.has("X-ClickHouse-Total-Child-Query-Count"))
+                            http_response.add("X-ClickHouse-Total-Child-Query-Count", std::to_string(context->getTotalChildQueryCount()));
+                    }
+                }
 
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);

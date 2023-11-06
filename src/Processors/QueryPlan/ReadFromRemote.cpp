@@ -119,6 +119,7 @@ ReadFromRemote::ReadFromRemote(
     , shard_count(shard_count_)
     , cluster_name(cluster_name_)
 {
+    context->incrementTotalChildQueryCount(shard_count);
 }
 
 void ReadFromRemote::enforceSorting(SortDescription output_sort_description)

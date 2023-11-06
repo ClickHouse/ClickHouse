@@ -68,6 +68,7 @@ public:
     {
         size_t offset;
         size_t index;
+        bool remote_query_timeout_exceeded = false;
     };
 
     HedgedConnections(const ConnectionPoolWithFailoverPtr & pool_,
@@ -166,6 +167,9 @@ private:
 
     /// Map socket file descriptor to replica location (it's offset and index in OffsetState.replicas).
     std::unordered_map<int, ReplicaLocation> fd_to_replica_location;
+
+    /// the remote query timeout.
+    TimerDescriptor remote_query_timeout;
 
     /// Map receive data timeout file descriptor to replica location.
     std::unordered_map<int, ReplicaLocation> timeout_fd_to_replica_location;

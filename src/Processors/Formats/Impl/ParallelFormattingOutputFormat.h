@@ -13,6 +13,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
+#include <Interpreters/Context.h>
 
 #include <deque>
 #include <atomic>
@@ -73,6 +74,7 @@ public:
         const Block & header;
         InternalFormatterCreator internal_formatter_creator;
         const size_t max_threads_for_parallel_formatting;
+        ContextPtr context = nullptr;
     };
 
     ParallelFormattingOutputFormat() = delete;
@@ -81,7 +83,7 @@ public:
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
         , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, params.max_threads_for_parallel_formatting)
-
+        , context(params.context)
     {
         LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
@@ -233,6 +235,9 @@ private:
 
     // There are multiple "formatters", that's why we use thread pool.
     ThreadPool pool;
+
+    ContextPtr context;
+
     // Collecting all memory to original ReadBuffer
     ThreadFromGlobalPool collector_thread;
     std::mutex collector_thread_mutex;

@@ -77,6 +77,11 @@ public:
 
     void setExceptionCode(int exception_code_) { exception_code = exception_code_; }
 
+    HTTPServerResponse & getHTTPResponse()
+    {
+        return response;
+    }
+
 private:
     /// Send at least HTTP headers if no data has been sent yet.
     /// Use after the data has possibly been sent and no error happened (and thus you do not plan
