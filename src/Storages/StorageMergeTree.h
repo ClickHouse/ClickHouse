@@ -45,7 +45,7 @@ public:
         bool has_force_restore_data_flag);
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     ~StorageMergeTree() override;
 

@@ -64,6 +64,7 @@ public:
         const NamesAndTypesList & requested_virtual_columns_,
         ContextPtr context_,
         const std::atomic<bool> & shutdown_called_,
+        const std::atomic<bool> & table_is_being_dropped_,
         std::shared_ptr<S3QueueLog> s3_queue_log_,
         const StorageID & storage_id_);
 
@@ -82,6 +83,7 @@ private:
     const std::shared_ptr<StorageS3Source> internal_source;
     const NamesAndTypesList requested_virtual_columns;
     const std::atomic<bool> & shutdown_called;
+    const std::atomic<bool> & table_is_being_dropped;
     const std::shared_ptr<S3QueueLog> s3_queue_log;
     const StorageID storage_id;
 

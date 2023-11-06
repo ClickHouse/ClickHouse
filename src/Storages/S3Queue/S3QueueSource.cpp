@@ -82,6 +82,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     const NamesAndTypesList & requested_virtual_columns_,
     ContextPtr context_,
     const std::atomic<bool> & shutdown_called_,
+    const std::atomic<bool> & table_is_being_dropped_,
     std::shared_ptr<S3QueueLog> s3_queue_log_,
     const StorageID & storage_id_)
     : ISource(header_)
@@ -92,6 +93,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     , internal_source(std::move(internal_source_))
     , requested_virtual_columns(requested_virtual_columns_)
     , shutdown_called(shutdown_called_)
+    , table_is_being_dropped(table_is_being_dropped_)
     , s3_queue_log(s3_queue_log_)
     , storage_id(storage_id_)
     , remove_file_func(remove_file_func_)
@@ -156,19 +158,18 @@ Chunk StorageS3QueueSource::generate()
 
         if (shutdown_called)
         {
-            if (processed_rows_from_file)
+            if (processed_rows_from_file == 0)
+                break;
+
+            if (table_is_being_dropped)
             {
-                /// We could delay shutdown until files, which already started processing before the shutdown, finished.
-                /// But if files are big and `s3queue_processing_threads_num` is not small, it can take a significant time.
-                /// Anyway we cannot do anything in case of SIGTERM, so destination table must anyway support deduplication,
-                /// so here we will rely on it here as well.
-                LOG_WARNING(
-                    log, "Shutdown called, {} rows are already processed, but file is not fully processed",
-                    processed_rows_from_file);
+                LOG_DEBUG(
+                    log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
+                    processed_rows_from_file, reader.getFile());
 
                 try
                 {
-                    files_metadata->setFileFailed(key_with_info->processing_holder, "Shutdown");
+                    files_metadata->setFileFailed(key_with_info->processing_holder, "Table is dropped");
                 }
                 catch (...)
                 {
@@ -176,8 +177,14 @@ Chunk StorageS3QueueSource::generate()
                 }
 
                 appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+
+                /// Leave the file half processed. Table is being dropped, so we do not care.
+                break;
             }
-            break;
+
+            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
+                     "Will process the file fully and then shutdown",
+                     reader.getFile(), processed_rows_from_file);
         }
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
