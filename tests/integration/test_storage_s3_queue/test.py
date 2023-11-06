@@ -915,6 +915,8 @@ def test_drop_table(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
     create_mv(node, table_name, dst_table_name)
-    node.wait_for_log_line(f"StorageS3Queue ({table_name}): Started streaming to 1 attached views")
+    node.wait_for_log_line(
+        f"StorageS3Queue ({table_name}): Started streaming to 1 attached views"
+    )
     node.query(f"DROP TABLE {table_name} SYNC")
     node.wait_for_log_line(f"StorageS3Queue ({table_name}): Table is being dropped")
