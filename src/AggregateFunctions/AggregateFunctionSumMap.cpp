@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Helpers.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <IO/ReadHelpers.h>
@@ -682,77 +681,6 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
     return std::tuple<DataTypePtr, DataTypes, bool>{std::move(keys_type), std::move(values_types), tuple_argument};
 }
 
-// This function instantiates a particular overload of the sumMap family of
-// functions.
-// The template parameter MappedFunction<bool template_argument> is an aggregate
-// function template that allows to choose the aggregate function variant that
-// accepts either normal arguments or tuple argument.
-template <template <bool tuple_argument> typename MappedFunction>
-AggregateFunctionPtr createAggregateFunctionMap(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
-{
-    auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
-
-    AggregateFunctionPtr res;
-    if (tuple_argument)
-    {
-        res.reset(createWithNumericBasedType<MappedFunction<true>::template F>(*keys_type, keys_type, values_types, arguments, params));
-        if (!res)
-            res.reset(createWithDecimalType<MappedFunction<true>::template F>(*keys_type, keys_type, values_types, arguments, params));
-        if (!res)
-            res.reset(createWithStringType<MappedFunction<true>::template F>(*keys_type, keys_type, values_types, arguments, params));
-    }
-    else
-    {
-        res.reset(createWithNumericBasedType<MappedFunction<false>::template F>(*keys_type, keys_type, values_types, arguments, params));
-        if (!res)
-            res.reset(createWithDecimalType<MappedFunction<false>::template F>(*keys_type, keys_type, values_types, arguments, params));
-        if (!res)
-            res.reset(createWithStringType<MappedFunction<false>::template F>(*keys_type, keys_type, values_types, arguments, params));
-    }
-    if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for aggregate function {}", name);
-
-    return res;
-}
-
-// This template chooses the sumMap variant with given filtering and overflow
-// handling.
-template <bool filtered, bool overflow>
-struct SumMapVariants
-{
-    // SumMapVariants chooses the `overflow` and `filtered` parameters of the
-    // aggregate functions. The `tuple_argument` and the value type `T` are left
-    // as free parameters.
-    // DispatchOnTupleArgument chooses `tuple_argument`, and the value type `T`
-    // is left free.
-    template <bool tuple_argument>
-    struct DispatchOnTupleArgument
-    {
-        template <typename T>
-        using F = std::conditional_t<filtered,
-            AggregateFunctionSumMapFiltered<overflow, tuple_argument>,
-            AggregateFunctionSumMap<overflow, tuple_argument>>;
-    };
-};
-
-// This template gives an aggregate function template that is narrowed
-// to accept either tuple argumen or normal arguments.
-template <bool tuple_argument>
-struct MinMapDispatchOnTupleArgument
-{
-    template <typename T>
-    using F = AggregateFunctionMinMap<tuple_argument>;
-};
-
-// This template gives an aggregate function template that is narrowed
-// to accept either tuple argumen or normal arguments.
-template <bool tuple_argument>
-struct MaxMapDispatchOnTupleArgument
-{
-    template <typename T>
-    using F = AggregateFunctionMaxMap<tuple_argument>;
-};
-
 }
 
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
@@ -760,26 +688,61 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
     // these functions used to be called *Map, with now these names occupied by
     // Map combinator, which redirects calls here if was called with
     // array or tuple arguments.
-    factory.registerFunction("sumMappedArrays", createAggregateFunctionMap<
-        SumMapVariants<false, false>::DispatchOnTupleArgument>);
+    factory.registerFunction("sumMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    {
+        auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+        if (tuple_argument)
+            return std::make_shared<AggregateFunctionSumMap<false, true>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
+    });
 
-    factory.registerFunction("minMappedArrays",
-        createAggregateFunctionMap<MinMapDispatchOnTupleArgument>);
+    factory.registerFunction("minMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    {
+        auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+        if (tuple_argument)
+            return std::make_shared<AggregateFunctionMinMap<true>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
+    });
 
-    factory.registerFunction("maxMappedArrays",
-        createAggregateFunctionMap<MaxMapDispatchOnTupleArgument>);
+    factory.registerFunction("maxMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    {
+        auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+        if (tuple_argument)
+            return std::make_shared<AggregateFunctionMaxMap<true>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
+    });
 
     // these functions could be renamed to *MappedArrays too, but it would
     // break backward compatibility
-    factory.registerFunction("sumMapWithOverflow", createAggregateFunctionMap<
-        SumMapVariants<false, true>::DispatchOnTupleArgument>);
+    factory.registerFunction("sumMapWithOverflow", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    {
+        auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+        if (tuple_argument)
+            return std::make_shared<AggregateFunctionSumMap<true, true>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionSumMap<true, false>>(keys_type, values_types, arguments, params);
+    });
 
-    factory.registerFunction("sumMapFiltered", createAggregateFunctionMap<
-        SumMapVariants<true, false>::DispatchOnTupleArgument>);
+    factory.registerFunction("sumMapFiltered", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    {
+        auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+        if (tuple_argument)
+            return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
+    });
 
-    factory.registerFunction("sumMapFilteredWithOverflow",
-        createAggregateFunctionMap<
-            SumMapVariants<true, true>::DispatchOnTupleArgument>);
+    factory.registerFunction("sumMapFilteredWithOverflow", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    {
+        auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
+        if (tuple_argument)
+            return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
+    });
 }
 
 }
