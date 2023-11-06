@@ -234,7 +234,7 @@ private:
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
-    ColumnPtr executeRightType(
+    NO_INLINE ColumnPtr executeRightType(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const ColVecT0 * col_left) const
@@ -266,7 +266,7 @@ private:
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
-    ColumnPtr executeConstRightType(
+    NO_INLINE ColumnPtr executeConstRightType(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const ColumnConst * col_left) const
@@ -298,7 +298,7 @@ private:
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
-    ColumnPtr executeRightTypeArray(
+    NO_INLINE ColumnPtr executeRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const DataTypePtr result_type,
@@ -355,7 +355,7 @@ private:
     }
 
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
-    ColumnPtr executeConstRightTypeArray(
+    NO_INLINE ColumnPtr executeConstRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const DataTypePtr & result_type,
@@ -413,7 +413,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    ColumnPtr executeTyped(
+    NO_INLINE ColumnPtr executeTyped(
         const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         using ColVecT0 = ColumnVectorOrDecimal<T0>;
@@ -1086,7 +1086,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&](const auto & types) NO_INLINE -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using T0 = typename Types::LeftType;
