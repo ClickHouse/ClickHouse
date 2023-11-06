@@ -289,6 +289,8 @@ public:
                 serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
                 break;
             }
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown version {}, of -Map aggregate function serialization state", *version);
         }
 
         for (const auto & elem : merged_maps)
@@ -321,6 +323,8 @@ public:
                 deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
                 break;
             }
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of -Map aggregate function serialization state", *version);
         }
 
         for (size_t i = 0; i < size; ++i)
