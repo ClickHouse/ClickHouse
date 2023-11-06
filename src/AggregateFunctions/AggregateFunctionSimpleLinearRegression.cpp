@@ -26,16 +26,15 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename T>
 struct AggregateFunctionSimpleLinearRegressionData final
 {
     size_t count = 0;
-    T sum_x = 0;
-    T sum_y = 0;
-    T sum_xx = 0;
-    T sum_xy = 0;
+    Float64 sum_x = 0;
+    Float64 sum_y = 0;
+    Float64 sum_xx = 0;
+    Float64 sum_xy = 0;
 
-    void add(T x, T y)
+    void add(Float64 x, Float64 y)
     {
         count += 1;
         sum_x += x;
@@ -71,20 +70,20 @@ struct AggregateFunctionSimpleLinearRegressionData final
         readBinary(sum_xy, buf);
     }
 
-    T getK() const
+    Float64 getK() const
     {
-        T divisor = sum_xx * count - sum_x * sum_x;
+        Float64 divisor = sum_xx * count - sum_x * sum_x;
 
         if (divisor == 0)
-            return std::numeric_limits<T>::quiet_NaN();
+            return std::numeric_limits<Float64>::quiet_NaN();
 
         return (sum_xy * count - sum_x * sum_y) / divisor;
     }
 
-    T getB(T k) const
+    Float64 getB(Float64 k) const
     {
         if (count == 0)
-            return std::numeric_limits<T>::quiet_NaN();
+            return std::numeric_limits<Float64>::quiet_NaN();
 
         return (sum_y - k * sum_x) / count;
     }
@@ -92,11 +91,9 @@ struct AggregateFunctionSimpleLinearRegressionData final
 
 /// Calculates simple linear regression parameters.
 /// Result is a tuple (k, b) for y = k * x + b equation, solved by least squares approximation.
-template <typename X, typename Y, typename Ret = Float64>
 class AggregateFunctionSimpleLinearRegression final : public IAggregateFunctionDataHelper<
-    AggregateFunctionSimpleLinearRegressionData<Ret>,
-    AggregateFunctionSimpleLinearRegression<X, Y, Ret>
->
+    AggregateFunctionSimpleLinearRegressionData,
+    AggregateFunctionSimpleLinearRegression>
 {
 public:
     AggregateFunctionSimpleLinearRegression(
@@ -104,8 +101,8 @@ public:
         const Array & params
     ):
         IAggregateFunctionDataHelper<
-            AggregateFunctionSimpleLinearRegressionData<Ret>,
-            AggregateFunctionSimpleLinearRegression<X, Y, Ret>
+            AggregateFunctionSimpleLinearRegressionData,
+            AggregateFunctionSimpleLinearRegression
         > {arguments, params, createResultType()}
     {
         // notice: arguments has been checked before
@@ -123,11 +120,8 @@ public:
         Arena *
     ) const override
     {
-        auto col_x = assert_cast<const ColumnVector<X> *>(columns[0]);
-        auto col_y = assert_cast<const ColumnVector<Y> *>(columns[1]);
-
-        X x = col_x->getData()[row_num];
-        Y y = col_y->getData()[row_num];
+        Float64 x = columns[0]->getFloat64(row_num);
+        Float64 y = columns[1]->getFloat64(row_num);
 
         this->data(place).add(x, y);
     }
@@ -151,8 +145,8 @@ public:
     {
         DataTypes types
         {
-            std::make_shared<DataTypeNumber<Ret>>(),
-            std::make_shared<DataTypeNumber<Ret>>(),
+            std::make_shared<DataTypeNumber<Float64>>(),
+            std::make_shared<DataTypeNumber<Float64>>(),
         };
 
         Strings names
@@ -174,12 +168,12 @@ public:
         IColumn & to,
         Arena *) const override
     {
-        Ret k = this->data(place).getK();
-        Ret b = this->data(place).getB(k);
+        Float64 k = this->data(place).getK();
+        Float64 b = this->data(place).getB(k);
 
         auto & col_tuple = assert_cast<ColumnTuple &>(to);
-        auto & col_k = assert_cast<ColumnVector<Ret> &>(col_tuple.getColumn(0));
-        auto & col_b = assert_cast<ColumnVector<Ret> &>(col_tuple.getColumn(1));
+        auto & col_k = assert_cast<ColumnVector<Float64> &>(col_tuple.getColumn(0));
+        auto & col_b = assert_cast<ColumnVector<Float64> &>(col_tuple.getColumn(1));
 
         col_k.getData().push_back(k);
         col_b.getData().push_back(b);
@@ -196,51 +190,12 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
     assertNoParameters(name, params);
     assertBinary(name, arguments);
 
-    const IDataType * x_arg = arguments.front().get();
-    WhichDataType which_x = x_arg;
+    if (!isNumber(arguments[0]) || !isNumber(arguments[1]))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal types ({}, {}) of arguments of aggregate function {}, must "
+            "be Native Ints, Native UInts or Floats", arguments[0]->getName(), arguments[1]->getName(), name);
 
-    const IDataType * y_arg = arguments.back().get();
-    WhichDataType which_y = y_arg;
-
-
-    #define FOR_LEASTSQR_TYPES_2(M, T) \
-        M(T, UInt8) \
-        M(T, UInt16) \
-        M(T, UInt32) \
-        M(T, UInt64) \
-        M(T, Int8) \
-        M(T, Int16) \
-        M(T, Int32) \
-        M(T, Int64) \
-        M(T, Float32) \
-        M(T, Float64)
-    #define FOR_LEASTSQR_TYPES(M) \
-        FOR_LEASTSQR_TYPES_2(M, UInt8) \
-        FOR_LEASTSQR_TYPES_2(M, UInt16) \
-        FOR_LEASTSQR_TYPES_2(M, UInt32) \
-        FOR_LEASTSQR_TYPES_2(M, UInt64) \
-        FOR_LEASTSQR_TYPES_2(M, Int8) \
-        FOR_LEASTSQR_TYPES_2(M, Int16) \
-        FOR_LEASTSQR_TYPES_2(M, Int32) \
-        FOR_LEASTSQR_TYPES_2(M, Int64) \
-        FOR_LEASTSQR_TYPES_2(M, Float32) \
-        FOR_LEASTSQR_TYPES_2(M, Float64)
-    #define DISPATCH(T1, T2) \
-        if (which_x.idx == TypeIndex::T1 && which_y.idx == TypeIndex::T2) \
-            return std::make_shared<AggregateFunctionSimpleLinearRegression<T1, T2>>(/* NOLINT */ \
-                arguments, \
-                params \
-            );
-
-    FOR_LEASTSQR_TYPES(DISPATCH)
-
-    #undef FOR_LEASTSQR_TYPES_2
-    #undef FOR_LEASTSQR_TYPES
-    #undef DISPATCH
-
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types ({}, {}) of arguments of aggregate function {}, must "
-                    "be Native Ints, Native UInts or Floats", x_arg->getName(), y_arg->getName(), name);
+    return std::make_shared<AggregateFunctionSimpleLinearRegression>(arguments, params);
 }
 
 }
