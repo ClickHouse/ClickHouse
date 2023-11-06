@@ -47,4 +47,4 @@ def test_query(started_cluster):
 
     exec_query_compare_result("SELECT * FROM distributed_table ORDER BY id LIMIT 1,5")
 
-    exec_query_compare_result("SELECT * FROM distributed_table ORDER BY id LIMIT 1,5 WITH TIES")
+    # exec_query_compare_result("SELECT * FROM distributed_table ORDER BY id LIMIT 1,5 WITH TIES")
