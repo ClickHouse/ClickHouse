@@ -1074,7 +1074,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
             /// So we don't allow to do it for now.
-            if (command.data_type->hasDynamicSubcolumns())
+            if (command.data_type && command.data_type->hasDynamicSubcolumns())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
 
             if (all_columns.has(column_name) || all_columns.hasNested(column_name))
