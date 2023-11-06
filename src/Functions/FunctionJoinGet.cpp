@@ -3,8 +3,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin.h>
-#include <Storages/StorageJoin.h>
-
 #include <Functions/IFunction.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/TableLockHolder.h>
