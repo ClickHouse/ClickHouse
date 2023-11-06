@@ -105,8 +105,13 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
     {
         std::lock_guard lock(parts_mutex);
         for (const auto & elem : parts_queue)
+        {
+            if (elem.name.empty())
+                continue;
+
             if (drop_range_info.contains(MergeTreePartInfo::fromPartName(elem.name, storage.format_version)))
                 parts_to_remove.push_back(elem.name);
+        }
     }
 
     /// We have to remove parts that were not removed by removePartAndEnqueueFetch
@@ -127,6 +132,9 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
     std::lock_guard lock(parts_mutex);
     for (const auto & elem : parts_queue)
     {
+        if (elem.name.empty())
+            continue;
+
         bool is_removed = removed_parts.contains(elem.name);
         bool should_have_been_removed = drop_range_info.contains(MergeTreePartInfo::fromPartName(elem.name, storage.format_version));
         if (is_removed != should_have_been_removed)
