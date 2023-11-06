@@ -114,7 +114,8 @@ static void readHeaderAndGetCodecAndSize(
     CompressionCodecPtr & codec,
     size_t & size_decompressed,
     size_t & size_compressed_without_checksum,
-    bool allow_different_codecs)
+    bool allow_different_codecs,
+    bool external_data)
 {
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
@@ -136,8 +137,11 @@ static void readHeaderAndGetCodecAndSize(
         }
     }
 
-    size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(compressed_buffer);
-    size_decompressed = ICompressionCodec::readDecompressedBlockSize(compressed_buffer);
+    if (external_data)
+        codec->setExternalDataFlag();
+
+    size_compressed_without_checksum = codec->readCompressedBlockSize(compressed_buffer);
+    size_decompressed = codec->readDecompressedBlockSize(compressed_buffer);
 
     /// This is for clang static analyzer.
     assert(size_decompressed > 0);
@@ -170,7 +174,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         codec,
         size_decompressed,
         size_compressed_without_checksum,
-        allow_different_codecs);
+        allow_different_codecs,
+        external_data);
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -221,7 +226,8 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
         codec,
         size_decompressed,
         size_compressed_without_checksum,
-        allow_different_codecs);
+        allow_different_codecs,
+        external_data);
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -254,7 +260,8 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
     }
 }
 
-static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec, bool allow_different_codecs)
+static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
+                                  bool allow_different_codecs, bool external_data)
 {
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
@@ -278,17 +285,20 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
                             getHexUIntLowercase(method), getHexUIntLowercase(codec->getMethodByte()));
         }
     }
+
+    if (external_data)
+        codec->setExternalDataFlag();
 }
 
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
     codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to);
 }
 
 void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
 
     if (codec->isNone())
     {
@@ -320,8 +330,8 @@ void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mo
 }
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_)
-    : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_)
+CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_, bool external_data_)
+    : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_), external_data(external_data_)
 {
 }
 
