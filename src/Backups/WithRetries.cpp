@@ -38,7 +38,17 @@ void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
         zookeeper = get_zookeeper();
         my_faulty_zookeeper->setKeeper(zookeeper);
 
-        callback(my_faulty_zookeeper);
+        try
+        {
+            /// The callback might itself fail with a new ZK error
+            callback(my_faulty_zookeeper);
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+            my_faulty_zookeeper->setKeeper(nullptr);
+        }
     }
 }
 

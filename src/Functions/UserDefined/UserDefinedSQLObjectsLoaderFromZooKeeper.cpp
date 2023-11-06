@@ -148,12 +148,12 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::processWatchQueue()
             UserDefinedSQLObjectTypeAndName watched_object;
 
             /// Re-initialize ZooKeeper session if expired and refresh objects
-            initZooKeeperIfNeeded();
+            initZooKeeperIfNeeded(); /// TODO: Better to introduce keeper retries instead of this
 
             if (!watch_queue->tryPop(watched_object, /* timeout_ms: */ 10000))
                 continue;
 
-            auto zookeeper = getZooKeeper();
+            auto zookeeper = getZooKeeper(); /// TODO: Add keeper retries
             const auto & [object_type, object_name] = watched_object;
 
             if (object_name.empty())
@@ -181,7 +181,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::stopWatching()
 
 void UserDefinedSQLObjectsLoaderFromZooKeeper::reloadObjects()
 {
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeper(); /// TODO: Add keeper retries
     refreshAllObjects(zookeeper);
     startWatchingThread();
 }
@@ -189,7 +189,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::reloadObjects()
 
 void UserDefinedSQLObjectsLoaderFromZooKeeper::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeper(); /// TODO: Add keeper retries
     refreshObject(zookeeper, object_type, object_name);
 }
 
@@ -216,7 +216,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeper(); /// TODO: Add keeper retries
 
     size_t num_attempts = 10;
     while (true)
@@ -258,7 +258,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::removeObject(
     String path = getNodePath(zookeeper_path, object_type, object_name);
     LOG_DEBUG(log, "Removing user-defined object {} at zk path {}", backQuote(object_name), path);
 
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeper(); /// TODO: Add keeper retries
 
     auto code = zookeeper->tryRemove(path);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNONODE))

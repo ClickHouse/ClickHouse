@@ -99,7 +99,10 @@ private:
     Poco::Logger * const log;
 
     /// The order of these two fields matters, because stage_sync holds a reference to with_retries object
+public:
     mutable WithRetries with_retries;
+
+private:
     std::optional<BackupCoordinationStageSync> stage_sync;
 
     mutable std::optional<BackupCoordinationReplicatedTables> TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;

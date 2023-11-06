@@ -587,7 +587,6 @@ private:
             /// save valid pointer to clean up ephemeral nodes later if necessary
             if (keeper)
                 keeper_prev = keeper;
-            keeper.reset();
 
             /// for try*NoThrow() methods
             if constexpr (no_throw_access)

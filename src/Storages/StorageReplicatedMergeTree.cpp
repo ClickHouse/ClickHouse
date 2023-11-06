@@ -95,6 +95,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 
 
+#include <Backups/BackupCoordinationRemote.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
@@ -10071,6 +10072,25 @@ void StorageReplicatedMergeTree::backupData(
     const auto & read_settings = backup_entries_collector.getReadSettings();
     auto local_context = backup_entries_collector.getContext();
     auto zookeeper_retries_info = backup_entries_collector.getZooKeeperRetriesInfo();
+    WithRetries::KeeperSettings zookeeper_settings
+    {
+        .keeper_max_retries = local_context->getSettingsRef().backup_restore_keeper_max_retries,
+        .keeper_retry_initial_backoff_ms = local_context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+        .keeper_retry_max_backoff_ms = local_context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
+        .batch_size_for_keeper_multiread = local_context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
+        .keeper_fault_injection_probability = local_context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
+        .keeper_fault_injection_seed = local_context->getSettingsRef().backup_restore_keeper_fault_injection_seed,
+        .keeper_value_max_size = local_context->getSettingsRef().backup_restore_keeper_value_max_size,
+    };
+
+    const auto * backup_coordinator_remote
+        = dynamic_cast<BackupCoordinationRemote *>(backup_entries_collector.getBackupCoordination().get());
+    WithRetries local_with_retries(
+        log,
+        [&local_context]() { return local_context->getZooKeeper(); },
+        zookeeper_settings,
+        [](WithRetries::FaultyKeeper &) {});
+    WithRetries & final_with_retries = backup_coordinator_remote ? backup_coordinator_remote->with_retries : local_with_retries;
 
     DataPartsVector data_parts;
     if (partitions)
@@ -10096,16 +10116,15 @@ void StorageReplicatedMergeTree::backupData(
     /// Send a list of mutations to the coordination too (we need to find the mutations which are not finished for added part names).
     {
         const fs::path mutations_node_path = fs::path(zookeeper_path) / "mutations";
-        zkutil::ZooKeeperPtr zookeeper;
 
         bool exists = false;
         Strings mutation_ids;
         {
-            ZooKeeperRetriesControl retries_ctl("getMutations", zookeeper_retries_info, nullptr);
-            retries_ctl.retryLoop([&]()
+            zkutil::ZooKeeperPtr zookeeper;
+            auto holder = final_with_retries.createRetriesControlHolder("getMutations");
+            holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
             {
-                if (!zookeeper || zookeeper->expired())
-                    zookeeper = local_context->getZooKeeper();
+                final_with_retries.renewZooKeeper(zookeeper);
                 exists = (zookeeper->tryGetChildren(mutations_node_path, mutation_ids) == Coordination::Error::ZOK);
             });
         }
@@ -10120,11 +10139,11 @@ void StorageReplicatedMergeTree::backupData(
                 bool mutation_id_exists = false;
                 String mutation;
 
-                ZooKeeperRetriesControl retries_ctl("getMutation", zookeeper_retries_info, nullptr);
-                retries_ctl.retryLoop([&]()
+                zkutil::ZooKeeperPtr zookeeper;
+                auto holder = final_with_retries.createRetriesControlHolder("getMutation");
+                holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
                 {
-                    if (!zookeeper || zookeeper->expired())
-                        zookeeper = local_context->getZooKeeper();
+                    final_with_retries.renewZooKeeper(zookeeper);
                     mutation_id_exists = zookeeper->tryGet(mutations_node_path / mutation_id, mutation);
                 });
 
