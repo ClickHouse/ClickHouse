@@ -1071,7 +1071,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         if (command.type == AlterCommand::ADD_COLUMN)
         {
             /// FIXME: Adding a new column of type Object(JSON) is broken.
-            /// Looks like there is something around default expession for this column (method `getDefault` is not implemented for the data type Object).
+            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
             /// So we don't allow to do it for now.
             if (command.data_type->hasDynamicSubcolumns())
@@ -1154,7 +1154,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             /// FIXME: Modifying the column to/from Object(JSON) is broken.
-            /// Looks like there is something around default expession for this column (method `getDefault` is not implemented for the data type Object).
+            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
             /// But after ALTER TABLE MODIFY COLUMN we need to fill existing rows with something (exactly the default value) or calculate the common type for it.
             /// So we don't allow to do it for now.
             if (command.data_type)
