@@ -33,8 +33,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
-    enqueueBackgroundPartCheck();
-    task->schedule();
+    enqueueBackgroundPartCheck(std::chrono::milliseconds{0});
 }
 
 ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
@@ -72,19 +71,19 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     task->schedule();
 }
 
-void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck()
+void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck(std::chrono::milliseconds last_check_duration)
 {
     std::lock_guard lock(parts_mutex);
 
     using namespace std::chrono;
-    milliseconds next_check_after_ms{0};
-    auto last_check_duration_ms = duration_cast<milliseconds>(last_check_duration);
-    if (last_check_duration_ms.count())
+    milliseconds next_check_after_ms{last_check_duration};
+    if (last_check_duration.count())
     {
-        last_check_duration_ms *= static_cast<size_t>(1 / background_part_check_time_to_total_time_ratio);
-        next_check_after_ms = last_check_duration_ms;
+        const auto background_part_check_time_to_total_time_ratio = storage.getSettings()->background_part_check_time_to_total_time_ratio;
+        next_check_after_ms *= static_cast<size_t>(1 / background_part_check_time_to_total_time_ratio);
     }
 
+    const auto background_part_check_delay_seconds = seconds{storage.getSettings()->background_part_check_delay_seconds};
     next_check_after_ms = std::max(next_check_after_ms, duration_cast<milliseconds>(background_part_check_delay_seconds));
 
     LOG_TRACE(log, "Enqueueing background check after {}s", duration_cast<seconds>(next_check_after_ms).count());
@@ -473,7 +472,6 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & p
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
     ReplicatedCheckResult result = checkPartImpl(part_name);
-    last_check_finish_time = std::chrono::steady_clock::now();
     switch (result.action)
     {
         case ReplicatedCheckResult::None: UNREACHABLE();
@@ -629,6 +627,7 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
     if (!part_to_check)
         return;
 
+    std::chrono::milliseconds check_duration_ms{0};
     try
     {
         auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
@@ -638,10 +637,9 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
         last_randomly_checked_part = part_to_check->info;
         auto check_start = std::chrono::steady_clock::now();
         auto result = checkActivePart(part_to_check);
-        last_check_finish_time = std::chrono::steady_clock::now();
-        last_check_duration = last_check_finish_time - check_start;
+        check_duration_ms = duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - check_start);
 
-        LOG_DEBUG(log, "Background part check took {} ms", duration_cast<std::chrono::milliseconds>(last_check_duration).count());
+        LOG_DEBUG(log, "Background part check took {} ms", check_duration_ms.count());
 
         if (result.status.success)
         {
@@ -669,7 +667,7 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    enqueueBackgroundPartCheck();
+    enqueueBackgroundPartCheck(check_duration_ms);
 }
 
 

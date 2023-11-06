@@ -76,7 +76,7 @@ private:
     void run();
     MergeTreeDataPartPtr choosePartForBackgroundCheck();
     void doBackgroundPartCheck();
-    void enqueueBackgroundPartCheck();
+    void enqueueBackgroundPartCheck(std::chrono::milliseconds last_check_duration);
 
     ReplicatedCheckResult checkPartImpl(const String & part_name);
     ReplicatedCheckResult checkActivePart(MergeTreeDataPartPtr part);
@@ -127,11 +127,6 @@ private:
     //     If the part was checked recently (see background_part_check_delay_seconds), try to chose another part
     std::mt19937_64 gen;
     MergeTreePartInfo last_randomly_checked_part;
-    std::chrono::time_point<std::chrono::steady_clock> last_check_finish_time;
-    std::chrono::time_point<std::chrono::steady_clock> last_time_to_create_background_check;
-    std::chrono::duration<float> last_check_duration;
-    double background_part_check_time_to_total_time_ratio = 0.01;
-    std::chrono::seconds background_part_check_delay_seconds{10};
 };
 
 }

@@ -183,6 +183,9 @@ struct Settings;
     M(String, primary_key_compression_codec, "ZSTD(3)", "Compression encoding used by primary, primary key is small enough and cached, so the default compression is ZSTD(3).", 0) \
     M(UInt64, marks_compress_block_size, 65536, "Mark compress block size, the actual size of the block to compress.", 0) \
     M(UInt64, primary_key_compress_block_size, 65536, "Primary compress block size, the actual size of the block to compress.", 0) \
+    M(Float, background_part_check_time_to_total_time_ratio, 0.01f, "Ratio of time spent by background check to total time spent on part checks. 0.01 means background checks can't spent more than 1% of time for part checks", 0) \
+    M(UInt64, background_part_check_delay_seconds, 10*60, "", 0) \
+    M(UInt64, delay_between_background_part_checks_for_individual_part_seconds, 24*60, "", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
