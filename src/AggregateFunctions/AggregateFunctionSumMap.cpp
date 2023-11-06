@@ -79,7 +79,7 @@ public:
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
-        : Base(argument_types_, {} /* parameters */, createResultType(keys_type_, values_types_, getName()))
+        : Base(argument_types_, {} /* parameters */, createResultType(keys_type_, values_types_))
         , keys_type(keys_type_)
         , keys_serialization(keys_type->getDefaultSerialization())
         , values_types(values_types_)
@@ -118,8 +118,7 @@ public:
 
     static DataTypePtr createResultType(
         const DataTypePtr & keys_type_,
-        const DataTypes & values_types_,
-        const String & name_)
+        const DataTypes & values_types_)
     {
         DataTypes types;
         types.emplace_back(std::make_shared<DataTypeArray>(keys_type_));
@@ -130,8 +129,8 @@ public:
             {
                 if (!value_type->isSummable())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Values for {} cannot be summed, passed type {}",
-                        name_, value_type->getName()};
+                        "Values for -Map cannot be summed, passed type {}",
+                        value_type->getName()};
             }
 
             DataTypePtr result_type;
@@ -140,8 +139,8 @@ public:
             {
                 if (value_type->onlyNull())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Cannot calculate {} of type {}",
-                        name_, value_type->getName()};
+                        "Cannot calculate -Map of type {}",
+                        value_type->getName()};
 
                 // Overflow, meaning that the returned type is the same as
                 // the input type. Nulls are skipped.
@@ -154,8 +153,8 @@ public:
                 // No overflow, meaning we promote the types if necessary.
                 if (!value_type_without_nullable->canBePromoted())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
-                        name_, value_type->getName()};
+                        "Values for -Map are expected to be Numeric, Float or Decimal, passed type {}",
+                        value_type->getName()};
 
                 WhichDataType value_type_to_check(value_type_without_nullable);
 
@@ -177,7 +176,7 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    static const auto & getArgumentColumns(const IColumn**& columns)
+    static auto getArgumentColumns(const IColumn ** columns)
     {
         if constexpr (tuple_argument)
         {
