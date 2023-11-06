@@ -1070,9 +1070,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
-            /// Adding a new column of type Object(JSON) is broken, so we don't allow to do it for now.
-            if (const auto * type_object = typeid_cast<const DataTypeObject *>(command.data_type.get()))
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of type Object to existing table is not allowed");
+            /// FIXME: Adding a new column of type Object(JSON) is broken.
+            /// Looks like there is something around default expession for this column (method `getDefault` is not implemented for the data type Object).
+            /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
+            /// So we don't allow to do it for now.
+            if (command.data_type->hasDynamicSubcolumns())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
 
             if (all_columns.has(column_name) || all_columns.hasNested(column_name))
             {
@@ -1150,19 +1153,22 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
 
-            /// The change of data type to/from Object is broken, so disable it for now
+            /// FIXME: Modifying the column to/from Object(JSON) is broken.
+            /// Looks like there is something around default expession for this column (method `getDefault` is not implemented for the data type Object).
+            /// But after ALTER TABLE MODIFY COLUMN we need to fill existing rows with something (exactly the default value) or calculate the common type for it.
+            /// So we don't allow to do it for now.
             if (command.data_type)
             {
                 const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                bool new_type_is_object = !!typeid_cast<const DataTypeObject *>(command.data_type.get());
-                bool old_type_is_object = !!typeid_cast<const DataTypeObject *>(old_data_type.get());
+                bool new_type_has_object = command.data_type->hasDynamicSubcolumns();
+                bool old_type_has_object = old_data_type->hasDynamicSubcolumns();
 
-                if (new_type_is_object || old_type_is_object)
+                if (new_type_has_object || old_type_has_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The change of data type {} of column {} to {} is not allowed",
+                        "The change of data type {} of column {} to {} is not allowed. It has known bugs",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 
