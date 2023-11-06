@@ -453,21 +453,16 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         for (const auto & projection : projections)
         {
-            if (projection.type == ProjectionDescription::Type::Aggregate)
+            if ((projection.type == ProjectionDescription::Type::Aggregate) && (proj_name_from_settings == projection.name))
             {
-                size_t last_dot_pos = projection.name.find_last_of('.');
-                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.name.substr(last_dot_pos + 1) : projection.name;
-                if (proj_name_from_settings == projection_name)
-                {
-                    agg_projections.push_back(&projection);
-                    is_projection_found = true;
-                    break;
-                }
+                agg_projections.push_back(&projection);
+                is_projection_found = true;
+                break;
             }
         }
         if (!is_projection_found)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
-                            proj_name_from_settings);
+            for (const auto & projection : projections)
+                agg_projections.push_back(&projection);
     }
     else
         for (const auto & projection : projections)

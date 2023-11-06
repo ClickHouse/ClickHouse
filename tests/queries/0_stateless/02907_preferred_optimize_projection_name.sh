@@ -77,9 +77,15 @@ FROM system.query_log
 WHERE query_id = '02907_test_1' AND arrayElement(projections, 1) LIKE '%projection_test_by_string'
 LIMIT 1" | grep -o "projection_test_by_string" || true
 
-$CLICKHOUSE_CLIENT --query_id '02907_test_1' --preferred_optimize_projection_name 'non_existing_projection' -q "
+$CLICKHOUSE_CLIENT --query_id '02907_test_2' --preferred_optimize_projection_name 'non_existing_projection' -q "
 SELECT test_string
 FROM test
 WHERE (test_id > 50)
     AND (test_id < 150)
-GROUP BY test_string;" 2>&1 | grep -c "BAD_ARGUMENTS" || true
+GROUP BY test_string;"
+
+$CLICKHOUSE_CLIENT -q "
+SELECT projections
+FROM system.query_log
+WHERE query_id = '02907_test_2' AND arrayElement(projections, 1) LIKE '%projection_test_by_string'
+LIMIT 1"  | grep -o "projection_test_by_string" || true

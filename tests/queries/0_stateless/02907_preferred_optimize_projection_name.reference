@@ -3,4 +3,5 @@ projection_test_by_string
 Executing query with setting
 test
 projection_test_by_more
-0
+test
+projection_test_by_string

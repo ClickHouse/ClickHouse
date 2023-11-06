@@ -140,17 +140,12 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     {
         for (const auto * projection : normal_projections)
         {
-            size_t last_dot_pos = projection->name.find_last_of('.');
-            std::string projection_name = (last_dot_pos != std::string::npos) ? projection->name.substr(last_dot_pos + 1) : projection->name;
-            if (projection_name == proj_name_from_settings)
+            if (projection->name == proj_name_from_settings)
             {
                 is_projection_found = true;
                 break;
             }
         }
-        if (!is_projection_found)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
-                            proj_name_from_settings);
     }
 
     for (const auto * projection : normal_projections)
@@ -175,12 +170,9 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         if (candidate.sum_marks >= ordinary_reading_marks)
             continue;
 
-        size_t last_dot_pos = projection->name.find_last_of('.');
-        std::string projection_name = (last_dot_pos != std::string::npos) ? projection->name.substr(last_dot_pos + 1) : projection->name;
-
         if (!is_projection_found && (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks))
             best_candidate = &candidate;
-        else if (is_projection_found && projection_name == proj_name_from_settings)
+        else if (is_projection_found && projection->name == proj_name_from_settings)
             best_candidate = &candidate;
     }
 
