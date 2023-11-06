@@ -85,6 +85,7 @@
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemScheduler.h>
 #include <Storages/System/StorageSystemS3Queue.h>
+#include <Storages/System/StorageSystemSymbols.h>
 
 #if USE_RDKAFKA
 #include <Storages/System/StorageSystemKafkaConsumers.h>
@@ -151,6 +152,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
     attach<StorageSystemScheduler>(context, system_database, "scheduler");
+    attach<StorageSystemSymbols>(context, system_database, "symbols");
 #if USE_RDKAFKA
     attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers");
 #endif
