@@ -85,6 +85,8 @@ struct GroupArraySamplerData
 
     UInt64 genRandom(size_t lim)
     {
+        chassert(lim != 0);
+
         /// With a large number of values, we will generate random numbers several times slower.
         if (lim <= static_cast<UInt64>(rng.max()))
             return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
@@ -94,7 +96,10 @@ struct GroupArraySamplerData
 
     void randomShuffle()
     {
-        for (size_t i = 1; i < value.size(); ++i)
+        size_t size = value.size();
+        chassert(size < std::numeric_limits<size_t>::max());
+
+        for (size_t i = 1; i < size; ++i)
         {
             size_t j = genRandom(i + 1);
             std::swap(value[i], value[j]);
