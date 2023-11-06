@@ -5,7 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
-#include <Common/AsyncLoaderPoolId.h>
+#include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
 #include <Storages/StorageMaterializedView.h>
@@ -451,7 +451,7 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
     auto base = DatabaseOrdinary::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
     auto job = makeLoadJob(
         base->goals(),
-        AsyncLoaderPoolId::BackgroundStartup,
+        TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Atomic database {}", getDatabaseName()),
         [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
@@ -473,7 +473,7 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
 void DatabaseAtomic::waitDatabaseStarted() const
 {
     if (startup_atomic_database_task)
-        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_atomic_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_atomic_database_task);
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)

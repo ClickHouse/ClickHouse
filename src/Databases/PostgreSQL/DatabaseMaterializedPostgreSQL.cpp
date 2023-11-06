@@ -7,7 +7,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
-#include <Common/AsyncLoaderPoolId.h>
+#include <Common/PoolId.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -144,7 +144,7 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
     auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
     auto job = makeLoadJob(
         base->goals(),
-        AsyncLoaderPoolId::BackgroundStartup,
+        TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
@@ -156,7 +156,7 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
 void DatabaseMaterializedPostgreSQL::waitDatabaseStarted() const
 {
     if (startup_postgresql_database_task)
-        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_postgresql_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_postgresql_database_task);
 }
 
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)

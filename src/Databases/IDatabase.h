@@ -8,7 +8,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/AsyncLoader.h>
-#include <Common/AsyncLoaderPoolId.h>
+#include <Common/PoolId.h>
 #include <Common/ThreadPool_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 
@@ -112,7 +112,7 @@ public:
     const StoragePtr & table() const override
     {
         if (auto task = tasks.find(it->first); task != tasks.end())
-            waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), task->second);
+            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task->second);
         return it->second;
     }
 

@@ -6,7 +6,7 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
 #include <Common/AsyncLoader.h>
-#include <Common/AsyncLoaderPoolId.h>
+#include <Common/PoolId.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
 #include <Common/Stopwatch.h>
@@ -2251,27 +2251,27 @@ AsyncLoader & Context::getAsyncLoader() const
 {
     callOnce(shared->async_loader_initialized, [&] {
         shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
-                // IMPORTANT: Pool declaration order should match the order in `AsyncLoaderPoolId.h` to get the indices right.
-                { // AsyncLoaderPoolId::Foreground
+                // IMPORTANT: Pool declaration order should match the order in `PoolId.h` to get the indices right.
+                { // TablesLoaderForegroundPoolId
                     "FgLoad",
                     CurrentMetrics::TablesLoaderForegroundThreads,
                     CurrentMetrics::TablesLoaderForegroundThreadsActive,
                     shared->server_settings.tables_loader_foreground_pool_size,
-                    Priority{0}
+                    TablesLoaderForegroundPriority
                 },
-                { // AsyncLoaderPoolId::BackgroundLoad
+                { // TablesLoaderBackgroundLoadPoolId
                     "BgLoad",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     shared->server_settings.tables_loader_background_pool_size,
-                    Priority{1}
+                    TablesLoaderBackgroundLoadPriority
                 },
-                { // AsyncLoaderPoolId::BackgroundStartup
+                { // TablesLoaderBackgroundStartupPoolId
                     "BgStartup",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     shared->server_settings.tables_loader_background_pool_size,
-                    Priority{2}
+                    TablesLoaderBackgroundStartupPriority
                 }
             },
             /* log_failures = */ true,
@@ -2934,7 +2934,7 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
 
     auto job = makeLoadJob(
         getGoals(startup_after),
-        AsyncLoaderPoolId::BackgroundStartup,
+        TablesLoaderBackgroundStartupPoolId,
         "startup ddl worker",
         [this] (AsyncLoader &, const LoadJobPtr &)
         {

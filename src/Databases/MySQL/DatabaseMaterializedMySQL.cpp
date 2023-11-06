@@ -10,7 +10,7 @@
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Storages/StorageMaterializedMySQL.h>
 #    include <Common/setThreadName.h>
-#    include <Common/AsyncLoaderPoolId.h>
+#    include <Common/PoolId.h>
 #    include <filesystem>
 
 namespace fs = std::filesystem;
@@ -69,7 +69,7 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
     auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
     auto job = makeLoadJob(
         base->goals(),
-        AsyncLoaderPoolId::BackgroundStartup,
+        TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
         [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
@@ -86,7 +86,7 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
 void DatabaseMaterializedMySQL::waitDatabaseStarted() const
 {
     if (startup_mysql_database_task)
-        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_mysql_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_mysql_database_task);
 }
 
 void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)

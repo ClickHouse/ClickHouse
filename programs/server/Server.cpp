@@ -20,7 +20,7 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
-#include <Common/AsyncLoaderPoolId.h>
+#include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -1319,9 +1319,9 @@ try
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
 
-            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::Foreground, server_settings_.tables_loader_foreground_pool_size);
-            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::BackgroundLoad, server_settings_.tables_loader_background_pool_size);
-            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::BackgroundStartup, server_settings_.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, server_settings_.tables_loader_foreground_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, server_settings_.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, server_settings_.tables_loader_background_pool_size);
 
             getIOThreadPool().reloadConfiguration(
                 server_settings.max_io_thread_pool_size,
@@ -1668,7 +1668,7 @@ try
         /// This has to be done before the initialization of system logs,
         /// otherwise there is a race condition between the system database initialization
         /// and creation of new tables in the database.
-        waitLoad(AsyncLoaderPoolId::Foreground, system_startup_tasks);
+        waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();

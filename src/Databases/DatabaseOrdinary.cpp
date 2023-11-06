@@ -22,7 +22,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Common/AsyncLoaderPoolId.h>
+#include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -171,7 +171,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
-        AsyncLoaderPoolId::BackgroundLoad,
+        TablesLoaderBackgroundLoadPoolId,
         fmt::format("load table {}", name.getFullName()),
         [this, local_context, file_path, name, ast, mode] (AsyncLoader &, const LoadJobPtr &)
         {
@@ -198,7 +198,7 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
 
     auto job = makeLoadJob(
         std::move(startup_after),
-        AsyncLoaderPoolId::BackgroundStartup,
+        TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup table {}", name.getFullName()),
         [this, name] (AsyncLoader &, const LoadJobPtr &)
         {
@@ -226,7 +226,7 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     // NOTE: this task is empty, but it is required for correct dependency handling (startup should be done after tables loading)
     auto job = makeLoadJob(
         std::move(startup_after),
-        AsyncLoaderPoolId::BackgroundStartup,
+        TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Ordinary database {}", getDatabaseName()));
     return startup_database_task = makeLoadTask(async_loader, {job});
 }
@@ -242,14 +242,14 @@ void DatabaseOrdinary::waitTableStarted(const String & name) const
     }
 
     if (task)
-        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
 }
 
 void DatabaseOrdinary::waitDatabaseStarted() const
 {
     /// Prioritize load and startup of all tables and database itself and wait for them synchronously
     if (startup_database_task)
-        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_database_task);
 }
 
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const

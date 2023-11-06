@@ -1,5 +1,5 @@
 #include <Common/ThreadPool.h>
-#include <Common/AsyncLoaderPoolId.h>
+#include <Common/PoolId.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -246,7 +246,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
         // All startup jobs are assigned to pool with lower priority than load jobs pool.
         // So all tables will finish loading before the first table startup if there are no queries (or dependencies).
-        // Query waiting for a table boosts its priority by moving jobs into `AsyncLoaderPoolId::Foreground` pool
+        // Query waiting for a table boosts its priority by moving jobs into `TablesLoaderForegroundPoolId` pool
         // to finish table startup faster than load of the other tables.
         scheduleLoad(load_tasks);
         scheduleLoad(startup_tasks);
@@ -259,8 +259,8 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         LOG_INFO(log, "Start synchronous loading of databases");
 
         // Note that wait implicitly calls schedule
-        waitLoad(AsyncLoaderPoolId::Foreground, load_tasks); // First prioritize, schedule and wait all the load table tasks
-        waitLoad(AsyncLoaderPoolId::Foreground, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
+        waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
+        waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
         return {};
     }
 }
@@ -396,7 +396,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         if (startup_tasks) // NOTE: only for system database
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            waitLoad(AsyncLoaderPoolId::Foreground, *startup_tasks);
+            waitLoad(TablesLoaderForegroundPoolId, *startup_tasks);
             startup_tasks->clear();
         }
 
@@ -447,14 +447,14 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
             {database_name, DatabaseCatalog::instance().getDatabase(database_name)},
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-        waitLoad(AsyncLoaderPoolId::Foreground, loader.loadTablesAsync());
+        waitLoad(TablesLoaderForegroundPoolId, loader.loadTablesAsync());
 
         /// Startup tables if they were started before conversion and detach/attach
         if (startup_tasks) // NOTE: only for system database
             *startup_tasks = loader.startupTablesAsync(); // We have loaded old database(s), replace tasks to startup new database
         else
             // An old database was already loaded, so we should load new one as well
-            waitLoad(AsyncLoaderPoolId::Foreground, loader.startupTablesAsync());
+            waitLoad(TablesLoaderForegroundPoolId, loader.startupTablesAsync());
     }
     catch (Exception & e)
     {
@@ -485,7 +485,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
                                                  "will try to convert all Ordinary databases to Atomic");
 
     // Wait for all table to be loaded and started
-    waitLoad(AsyncLoaderPoolId::Foreground, load_metadata);
+    waitLoad(TablesLoaderForegroundPoolId, load_metadata);
 
     for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
@@ -509,7 +509,7 @@ LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context)
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
     auto tasks = loader.loadTablesAsync();
-    waitLoad(AsyncLoaderPoolId::Foreground, tasks);
+    waitLoad(TablesLoaderForegroundPoolId, tasks);
 
     /// Will startup tables in system database after all databases are loaded.
     return loader.startupTablesAsync();

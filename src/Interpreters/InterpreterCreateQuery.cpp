@@ -9,7 +9,7 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
-#include <Common/AsyncLoaderPoolId.h>
+#include <Common/PoolId.h>
 #include <Common/logger_useful.h>
 #include <base/hex.h>
 
@@ -339,9 +339,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             else
             {
                 /// First prioritize, schedule and wait all the load table tasks
-                waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), load_tasks);
+                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
                 /// Only then prioritize, schedule and wait all the startup tasks
-                waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_tasks);
+                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
             }
         }
     }
