@@ -4,6 +4,7 @@
 
 #include <Core/Types.h>
 
+
 namespace DB
 {
 
@@ -16,7 +17,7 @@ struct TypePair
 
 
 template <typename T, bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-bool callOnBasicType(TypeIndex number, F && f)
+static bool NO_INLINE callOnBasicType(TypeIndex number, F && f)
 {
     if constexpr (_int)
     {
@@ -86,7 +87,7 @@ bool callOnBasicType(TypeIndex number, F && f)
 
 /// Unroll template using TypeIndex
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
+static NO_INLINE bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
     if constexpr (_int)
     {
@@ -170,7 +171,7 @@ template <is_decimal T> class DataTypeDecimal;
 
 
 template <typename T, typename F, typename... ExtraArgs>
-bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
+static NO_INLINE bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
 {
     switch (number)
     {
@@ -219,7 +220,7 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
 }
 
 template <typename F>
-static bool callOnTwoTypeIndexes(TypeIndex left_type, TypeIndex right_type, F && func)
+static NO_INLINE bool callOnTwoTypeIndexes(TypeIndex left_type, TypeIndex right_type, F && func)
 {
     return callOnIndexAndDataType<void>(left_type, [&](const auto & left_types) -> bool
     {
