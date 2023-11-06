@@ -37,7 +37,6 @@
 02345_implicit_transaction
 02352_grouby_shadows_arg
 02354_annoy
-02366_union_decimal_conversion
 02402_merge_engine_with_view
 02404_memory_bound_merging
 02426_orc_bug
@@ -66,4 +65,3 @@
 02815_range_dict_no_direct_join
 02845_threads_count_in_distributed_queries
 02861_join_on_nullsafe_compare
-01019_alter_materialized_view_consistent

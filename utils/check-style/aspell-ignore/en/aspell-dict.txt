@@ -1500,6 +1500,7 @@ formated
 formatschema
 formatter
 freezed
+fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
@@ -2284,6 +2285,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringJaccardIndex
 stringToH
 stripelog
 strtod

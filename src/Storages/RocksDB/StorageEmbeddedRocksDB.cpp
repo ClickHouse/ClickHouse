@@ -324,6 +324,7 @@ void StorageEmbeddedRocksDB::initDB()
     base.info_log_level = rocksdb::ERROR_LEVEL;
 
     rocksdb::Options merged = base;
+    rocksdb::BlockBasedTableOptions table_options;
 
     const auto & config = getContext()->getConfigRef();
     if (config.has("rocksdb.options"))
@@ -342,7 +343,17 @@ void StorageEmbeddedRocksDB::initDB()
         status = rocksdb::GetColumnFamilyOptionsFromMap(merged, column_family_options, &merged);
         if (!status.ok())
         {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' at: {}: {}",
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.column_family_options' at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+    }
+    if (config.has("rocksdb.block_based_table_options"))
+    {
+        auto block_based_table_options = getOptionsFromConfig(config, "rocksdb.block_based_table_options");
+        status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.block_based_table_options' at: {}: {}",
                 rocksdb_dir, status.ToString());
         }
     }
@@ -383,8 +394,22 @@ void StorageEmbeddedRocksDB::initDB()
                         config_key, rocksdb_dir, status.ToString());
                 }
             }
+
+            config_key = key_prefix + ".block_based_table_options";
+            if (config.has(config_key))
+            {
+                auto block_based_table_options = getOptionsFromConfig(config, config_key);
+                status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+                if (!status.ok())
+                {
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
+                        config_key, rocksdb_dir, status.ToString());
+                }
+            }
         }
     }
+
+    merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
 
     if (ttl > 0)
     {

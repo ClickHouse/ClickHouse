@@ -343,7 +343,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
     pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(pool_settings.min_marks_for_concurrent_read * context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier);
-    size_t total_rows = parts_with_range.getRowsCountAllParts();
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
@@ -371,14 +370,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             actions_settings, block_size_copy, reader_settings, virt_column_names);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
-
-        /// Set the approximate number of rows for the first source only
-        /// In case of parallel processing on replicas do not set approximate rows at all.
-        /// Because the value will be identical on every replicas and will be accounted
-        /// multiple times (settings.max_parallel_replicas times more)
-        if (i == 0 && !client_info.collaborate_with_initiator)
-            source->addTotalRowsApprox(total_rows);
-
         pipes.emplace_back(std::move(source));
     }
 
