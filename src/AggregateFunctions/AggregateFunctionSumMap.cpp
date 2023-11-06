@@ -20,8 +20,19 @@
 #include <map>
 
 
+namespace std
+{
+    template <typename T>
+    struct hash<DB::DecimalField<T>>
+    {
+        size_t operator()(const DB::DecimalField<T> & x) const { return hash<T>()(x.getValue()); }
+    };
+}
+
+
 namespace DB
 {
+
 struct Settings;
 
 namespace ErrorCodes
@@ -65,7 +76,7 @@ struct AggregateFunctionMapData
 
 template <typename T, typename Derived, typename Visitor, bool overflow, bool tuple_argument, bool compact>
 class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
-    AggregateFunctionMapData<NearestFieldType<T>>, Derived>
+    AggregateFunctionMapData<T>, Derived>
 {
 private:
     static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
@@ -78,7 +89,7 @@ private:
 
 public:
     using Base = IAggregateFunctionDataHelper<
-        AggregateFunctionMapData<NearestFieldType<T>>, Derived>;
+        AggregateFunctionMapData<T>, Derived>;
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
@@ -227,15 +238,7 @@ public:
                     continue;
 
                 decltype(merged_maps.begin()) it;
-                if constexpr (is_decimal<T>)
-                {
-                    // FIXME why is storing NearestFieldType not enough, and we
-                    // have to check for decimals again here?
-                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
-                    it = merged_maps.find(DecimalField<T>(key, scale));
-                }
-                else
-                    it = merged_maps.find(key);
+                it = merged_maps.find(key);
 
                 if (it != merged_maps.end())
                 {
@@ -254,15 +257,7 @@ public:
                     new_values.resize(size);
                     new_values[col] = value;
 
-                    if constexpr (is_decimal<T>)
-                    {
-                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
-                        merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
-                    }
-                    else
-                    {
-                        merged_maps.emplace(key, std::move(new_values));
-                    }
+                    merged_maps.emplace(key, std::move(new_values));
                 }
             }
         }
@@ -354,10 +349,7 @@ public:
             for (size_t col = 0; col < values_types.size(); ++col)
                 deserialize(col, values);
 
-            if constexpr (is_decimal<T>)
-                merged_maps[key.get<DecimalField<T>>()] = values;
-            else
-                merged_maps[key.get<T>()] = values;
+            merged_maps[key.get<T>()] = values;
         }
     }
 
@@ -711,7 +703,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 // The template parameter MappedFunction<bool template_argument> is an aggregate
 // function template that allows to choose the aggregate function variant that
 // accepts either normal arguments or tuple argument.
-template<template <bool tuple_argument> typename MappedFunction>
+template <template <bool tuple_argument> typename MappedFunction>
 AggregateFunctionPtr createAggregateFunctionMap(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
 {
     auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
@@ -754,8 +746,8 @@ struct SumMapVariants
     {
         template <typename T>
         using F = std::conditional_t<filtered,
-            AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>,
-            AggregateFunctionSumMap<T, overflow, tuple_argument>>;
+            AggregateFunctionSumMapFiltered<NearestFieldType<T>, overflow, tuple_argument>,
+            AggregateFunctionSumMap<NearestFieldType<T>, overflow, tuple_argument>>;
     };
 };
 
@@ -765,7 +757,7 @@ template <bool tuple_argument>
 struct MinMapDispatchOnTupleArgument
 {
     template <typename T>
-    using F = AggregateFunctionMinMap<T, tuple_argument>;
+    using F = AggregateFunctionMinMap<NearestFieldType<T>, tuple_argument>;
 };
 
 // This template gives an aggregate function template that is narrowed
@@ -774,7 +766,7 @@ template <bool tuple_argument>
 struct MaxMapDispatchOnTupleArgument
 {
     template <typename T>
-    using F = AggregateFunctionMaxMap<T, tuple_argument>;
+    using F = AggregateFunctionMaxMap<NearestFieldType<T>, tuple_argument>;
 };
 
 }
