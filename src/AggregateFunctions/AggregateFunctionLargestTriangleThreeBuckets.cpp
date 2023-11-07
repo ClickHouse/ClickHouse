@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
-#include <Common/PODArray_fwd.h>
+#include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 
 #include <boost/math/distributions/normal.hpp>

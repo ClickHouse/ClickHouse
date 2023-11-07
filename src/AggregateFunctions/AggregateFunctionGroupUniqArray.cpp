@@ -5,8 +5,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 
-#include <cassert>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
@@ -225,7 +223,7 @@ public:
                 return;
 
             // We have to copy the keys to our arena.
-            assert(arena != nullptr);
+            chassert(arena != nullptr);
             cur_set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
         }
     }

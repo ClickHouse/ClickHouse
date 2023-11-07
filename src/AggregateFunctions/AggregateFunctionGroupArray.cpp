@@ -229,7 +229,7 @@ public:
             cur_elems.value[cur_elems.total_values % max_elems] = value;
             ++cur_elems.total_values;
         }
-        assert(rhs_elems.total_values >= rhs_elems.value.size());
+        chassert(rhs_elems.total_values >= rhs_elems.value.size());
         cur_elems.total_values += rhs_elems.total_values - rhs_elems.value.size();
     }
 
@@ -568,7 +568,7 @@ public:
             cur_elems.value[cur_elems.total_values % max_elems] = value->clone(arena);
             ++cur_elems.total_values;
         }
-        assert(rhs_elems.total_values >= rhs_elems.value.size());
+        chassert(rhs_elems.total_values >= rhs_elems.value.size());
         cur_elems.total_values += rhs_elems.total_values - rhs_elems.value.size();
     }
 

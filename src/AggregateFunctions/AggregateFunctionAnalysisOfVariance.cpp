@@ -9,7 +9,7 @@
 #include <Columns/ColumnNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Moments.h>
-#include "Common/NaNUtils.h"
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 
 

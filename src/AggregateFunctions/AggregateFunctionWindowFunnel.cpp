@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -113,7 +114,8 @@ struct AggregateFunctionWindowFunnelData
         size_t size;
         readBinary(size, buf);
 
-        /// TODO Protection against huge size
+        if (size > 100'000'000) /// The constant is arbitrary
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
         events_list.reserve(size);
