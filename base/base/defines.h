@@ -125,11 +125,7 @@
         #define UNREACHABLE() abort()
         // clang-format off
     #else
-        /// Here sizeof() trick is used to suppress unused warning for result,
-        /// since simple "(void)x" will evaluate the expression, while
-        /// "sizeof(!(x))" will not.
-        #define NIL_EXPRESSION(x) (void)sizeof(!(x))
-        #define chassert(x) NIL_EXPRESSION(x)
+        #define chassert(x) (void)sizeof(!(x))
         #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif
