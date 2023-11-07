@@ -4820,3 +4820,10 @@ When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY`
 When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
 
 Default value: `false`.
+
+## s3_aggressive_timeouts {#s3_aggressive_timeouts}
+
+When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
+When set to `false` than all attempts are made with identical timeouts.
+
+Default value: `true`.
