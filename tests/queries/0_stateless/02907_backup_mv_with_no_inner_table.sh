@@ -17,7 +17,7 @@ inner_table=".inner_id.${uuid}"
 ${CLICKHOUSE_CLIENT} -nm --query "drop table \`$inner_table\` sync"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
-set send_logs_level = 'fatal';
+set send_logs_level = 'error';
 backup table ${CLICKHOUSE_DATABASE}.\`mv\` to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
 " | grep -o "BACKUP_CREATED"
 
