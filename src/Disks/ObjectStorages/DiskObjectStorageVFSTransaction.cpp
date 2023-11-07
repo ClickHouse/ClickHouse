@@ -34,6 +34,7 @@ DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction( //NOLINT
 
 void DiskObjectStorageVFSTransaction::replaceFile(const String & from_path, const String & to_path)
 {
+    LOG_TRACE(log, "replaceFile");
     DiskObjectStorageTransaction::replaceFile(from_path, to_path);
     if (!metadata_storage.exists(to_path))
         return;
@@ -43,19 +44,20 @@ void DiskObjectStorageVFSTransaction::replaceFile(const String & from_path, cons
 
 void DiskObjectStorageVFSTransaction::removeFileIfExists(const String & path)
 {
+    LOG_TRACE(log, "removeFileIfExists");
     removeSharedFileIfExists(path, true);
 }
 
 void DiskObjectStorageVFSTransaction::removeSharedFile(const String & path, bool)
 {
-    // This doesn't remove anything yet, safe to reference metadata after
+    LOG_TRACE(log, "removeSharedFile");
     DiskObjectStorageTransaction::removeSharedFile(path, /*keep_shared_data=*/true);
     addStoredObjectsOp(VFSTransactionLogItem::Type::Unlink, metadata_storage.getStorageObjects(path));
 }
 
 void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & path, bool)
 {
-    // This doesn't remove anything yet, safe to reference metadata after
+    LOG_TRACE(log, "removeSharedFileIfExists");
     DiskObjectStorageTransaction::removeSharedFileIfExists(path, /*keep_shared_data=*/true);
     addStoredObjectsOp(VFSTransactionLogItem::Type::Unlink, metadata_storage.getStorageObjects(path));
 }
@@ -91,6 +93,7 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
 
 void DiskObjectStorageVFSTransaction::removeSharedRecursive(const String & path, bool, const NameSet &)
 {
+    LOG_TRACE(log, "removeSharedRecursive");
     operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveObjectStorageVFSOperation>( //NOLINT
         object_storage,
         metadata_storage,
@@ -100,6 +103,7 @@ void DiskObjectStorageVFSTransaction::removeSharedRecursive(const String & path,
 
 void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool, const NameSet &)
 {
+    LOG_TRACE(log, "removeSharedFiles");
     // TODO myrrc should have something better than that, but not critical as for now
     for (const auto & file : files)
         removeSharedFileIfExists(file.path, false);
@@ -112,14 +116,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
     const WriteSettings & settings,
     bool autocommit)
 {
+    LOG_TRACE(log, "writeFile(autocommit={})", autocommit);
     StoredObjects currently_existing_blobs = metadata_storage.exists(path) ? metadata_storage.getStorageObjects(path) : StoredObjects{};
     StoredObject blob;
 
     auto buffer = writeFileOps(path, buf_size, mode, settings, autocommit, blob);
 
-    // TODO myrrc this is possibly wrong when autocommit=off
+    // TODO myrrc this is not committed when autocommit=on
     // And this possibly should be grouped in a single Keeper transaction instead of three
-
     const StoredObjects objects = {{std::move(blob)}};
     addStoredObjectsOp(VFSTransactionLogItem::Type::CreateInode, objects);
     addStoredObjectsOp(VFSTransactionLogItem::Type::Link, objects);
@@ -133,6 +137,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
 void DiskObjectStorageVFSTransaction::writeFileUsingBlobWritingFunction(
     const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
+    LOG_TRACE(log, "writeFileWithFunction");
     StoredObjects currently_existing_blobs = metadata_storage.exists(path) ? metadata_storage.getStorageObjects(path) : StoredObjects{};
     StoredObject blob;
 
@@ -150,6 +155,7 @@ void DiskObjectStorageVFSTransaction::writeFileUsingBlobWritingFunction(
 
 void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, const String & dst_path)
 {
+    LOG_TRACE(log, "createHardLink");
     DiskObjectStorageTransaction::createHardLink(src_path, dst_path);
     addStoredObjectsOp(VFSTransactionLogItem::Type::Link, metadata_storage.getStorageObjects(src_path));
 }
@@ -197,6 +203,7 @@ void DiskObjectStorageVFSTransaction::copyFile( //NOLINT
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
+    LOG_TRACE(log, "copyFile");
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>( //NOLINT
         object_storage,
         metadata_storage,
@@ -209,12 +216,13 @@ void DiskObjectStorageVFSTransaction::copyFile( //NOLINT
 
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(VFSTransactionLogItem::Type type, const StoredObjects & objects)
 {
-    LOG_TRACE(log, "{} {}", type, fmt::join(objects, ", "));
+    LOG_TRACE(log, "Pushing {} {}", type, fmt::join(objects, ", "));
     operations_to_execute.emplace_back(std::make_unique<KeeperOperation>(
         object_storage,
         metadata_storage,
-        [zk = this->zookeeper, type, objects]
+        [zk = this->zookeeper, type, objects, log = this->log]
         {
+            LOG_TRACE(log, "Executing {} {}", type, fmt::join(objects, ", "));
             Coordination::Requests ops;
             getStoredObjectsVFSLogOps(type, objects, ops);
             zk->multi(ops);

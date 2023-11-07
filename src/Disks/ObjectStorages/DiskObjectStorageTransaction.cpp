@@ -613,7 +613,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             else
                 tx->metadata_transaction->addBlobToMetadata(path, key_, count);
 
-            tx->metadata_transaction->commit();
+            // Inheriting files e.g. DiskObjectStorageVFSTransaction can add something to
+            // operations_to_execute, so we can't just commit metadata
+            tx->commit();
         };
     }
     else
