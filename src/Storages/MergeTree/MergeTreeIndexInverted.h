@@ -24,8 +24,8 @@ struct MergeTreeIndexGranuleInverted final : public IMergeTreeIndexGranule
 
     bool empty() const override { return !has_elems; }
 
-    String index_name;
-    GinFilterParameters params;
+    const String index_name;
+    const GinFilterParameters params;
     GinFilters gin_filters;
     bool has_elems;
 };

@@ -1479,6 +1479,15 @@
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
 
     <!-- You can also configure rocksdb like this: -->
+    <!-- Full list of options:
+         - options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/options.h#L1452
+         - column_family_options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/options.h#L66
+         - block_based_table_options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/table/block_based/block_based_table_factory.cc#L228
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/table.h#L129
+    -->
     <!--
     <rocksdb>
         <options>
@@ -1487,6 +1496,9 @@
         <column_family_options>
             <num_levels>2</num_levels>
         </column_family_options>
+        <block_based_table_options>
+            <block_size>1024</block_size>
+        </block_based_table_options>
         <tables>
             <table>
                 <name>TABLE</name>
@@ -1496,6 +1508,9 @@
                 <column_family_options>
                     <num_levels>2</num_levels>
                 </column_family_options>
+                <block_based_table_options>
+                    <block_size>1024</block_size>
+                </block_based_table_options>
             </table>
         </tables>
     </rocksdb>

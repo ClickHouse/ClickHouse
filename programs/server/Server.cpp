@@ -537,6 +537,16 @@ static void sanityChecks(Server & server)
     {
     }
 
+    try
+    {
+        const char * filename = "/proc/sys/kernel/task_delayacct";
+        if (readNumber(filename) == 0)
+            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. Check " + String(filename));
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
         server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));

@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543
+personal_ws-1.1 en 2633 
 AArch
 ACLs
 ALTERs
@@ -152,6 +152,7 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
+Clangd
 ClickBench
 ClickCat
 ClickHouse
@@ -197,7 +198,9 @@ DDLWorker
 DDLWorkerThreads
 DDLWorkerThreadsActive
 DECRYPT
+DELETEs
 DESC
+DIEs
 DOGEFI
 DataGrip
 DataLens
@@ -279,6 +282,7 @@ FilesystemMainPathTotalBytes
 FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
+FileLog
 FixedString
 Flink
 ForEach
@@ -341,6 +345,8 @@ Hudi
 HyperLogLog
 Hypot
 IANA
+IDE
+IDEs
 IMDS
 INFILE
 INSERTed
@@ -354,6 +360,7 @@ IOUringPendingEvents
 IOWriterThreads
 IOWriterThreadsActive
 IPTrie
+IProcessor
 IPv
 Identifiant
 Incrementing
@@ -363,6 +370,7 @@ Instana
 IntN
 Integrations
 IntelliJ
+IntelliSense
 InterserverConnection
 InterserverThreads
 IsPentagon
@@ -436,13 +444,13 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
-Levenshtein
 LGPL
 LLDB
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
+Levenshtein
 LibFuzzer
 LightHouse
 LineAsString
@@ -573,6 +581,7 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+NumPy
 OFNS
 OLAP
 OLTP
@@ -586,6 +595,7 @@ OSGuestTimeNormalized
 OSIOWaitTime
 OSIOWaitTimeCPU
 OSIOWaitTimeNormalized
+OSIOWaitMicroseconds
 OSIdleTime
 OSIdleTimeCPU
 OSIdleTimeNormalized
@@ -1068,7 +1078,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -1183,15 +1192,11 @@ bugfix
 buildId
 buildable
 builtins
+byteHammingDistance
 byteSize
 byteSwap
 bytebase
 bytesToCutForIPv
-editDistance
-byteHammingDistance
-jaccardIndex
-levenshteinDistance
-clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1236,7 +1241,9 @@ cipherList
 ciphertext
 cityHash
 cityhash
+clangd
 cli
+clickcache
 clickcat
 clickhouse
 clickhousedb
@@ -1362,12 +1369,12 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
-deltalake
 deltaLake
-deltasum
 deltaSum
-deltasumtimestamp
 deltaSumTimestamp
+deltalake
+deltasum
+deltasumtimestamp
 demangle
 denormalize
 denormalized
@@ -1413,6 +1420,7 @@ dropoff
 dumpColumnStructure
 durations
 ecto
+editDistance
 embeddings
 emptyArray
 emptyArrayDate
@@ -1469,6 +1477,7 @@ filesystemAvailable
 filesystemCapacity
 filesystemFree
 filesystems
+filelog
 finalizeAggregation
 fips
 firstLine
@@ -1495,6 +1504,7 @@ formated
 formatschema
 formatter
 freezed
+fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
@@ -1525,7 +1535,6 @@ geohashesInBox
 geoip
 geospatial
 getMacro
-getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1585,6 +1594,7 @@ hadoop
 halfMD
 halfday
 hardlink
+hardlinked
 hardlinks
 hasAll
 hasAny
@@ -1644,7 +1654,6 @@ innogames
 inodes
 instantiation
 instantiations
-DIEs
 intDiv
 intDivOrZero
 intExp
@@ -1670,6 +1679,7 @@ isValidUTF
 isZeroOrNull
 iteratively
 jaccard
+jaccardIndex
 javaHash
 javaHashUTF
 jbod
@@ -1677,6 +1687,7 @@ jdbc
 jemalloc
 joinGet
 json
+jsonMergePatch
 jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
@@ -1691,7 +1702,6 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
-jsonMergePatch
 jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
@@ -1731,6 +1741,7 @@ lemmatized
 lengthUTF
 lessOrEquals
 levenshtein
+levenshteinDistance
 lexicographically
 lgamma
 libFuzzer
@@ -1838,7 +1849,6 @@ monthName
 moscow
 msgpack
 msgpk
-multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -1852,6 +1862,7 @@ multiSearchAny
 multiSearchFirstIndex
 multiSearchFirstPosition
 multibyte
+multidirectory
 multiline
 multiplyDecimal
 multipolygon
@@ -2158,9 +2169,9 @@ repo
 representable
 requestor
 requireTLSv
-resolvers
 resharding
 reshards
+resolvers
 resultset
 retentions
 rethrow
@@ -2245,12 +2256,12 @@ sparkbar
 sparsehash
 speedscope
 splitBy
-splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp
 splitByString
 splitByWhitespace
+splitby
 sql
 sqlalchemy
 sqlinsert
@@ -2278,6 +2289,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringJaccardIndex
 stringToH
 stripelog
 strtod
@@ -2355,6 +2367,7 @@ symlinks
 syntaxes
 syscall
 syscalls
+sysctl
 syslog
 syslogd
 systemd

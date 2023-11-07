@@ -25,8 +25,9 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 
     bool empty() const override { return hyperrectangle.empty(); }
 
-    String index_name;
-    Block index_sample_block;
+    const String index_name;
+    const Block index_sample_block;
+
     std::vector<Range> hyperrectangle;
 };
 
