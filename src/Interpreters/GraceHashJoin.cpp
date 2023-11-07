@@ -268,6 +268,7 @@ GraceHashJoin::GraceHashJoin(
     , any_take_last_row{any_take_last_row_}
     , max_num_buckets{context->getSettingsRef().grace_hash_join_max_buckets}
     , max_block_size{context->getSettingsRef().max_block_size}
+    , max_block_rows_to_join{context->getSettingsRef().grace_hash_join_block_max_rows}
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(std::make_unique<TemporaryDataOnDisk>(tmp_data_, CurrentMetrics::TemporaryFilesForJoin))
@@ -436,7 +437,39 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
         hash_join->joinBlock(block, not_processed);
         return;
     }
+    auto joinBySlice = [&] (Block & data, std::shared_ptr<ExtraBlock> & extra_data, size_t max_block_rows) -> void
+    {
+        Block slice;
+        Block extra_slice;
+        if (data.rows() > max_block_rows)
+        {
+            slice = data.cloneWithCutColumns(0, max_block_rows);
+            extra_slice = data.cloneWithCutColumns(max_block_rows, data.rows() - max_block_rows);
+        }
+        else
+        {
+            slice = std::move(data);
+        }
+        hash_join->joinBlock(slice, extra_data);
+        data = std::move(slice);
+        if(extra_slice.rows() > 0)
+        {
+            ExtraBlock extra;
+            extra.block = std::move(extra_slice);
+            extra.slice_flag = true;
+            extra_data = std::make_shared<ExtraBlock>(std::move(extra));
+        }
+        else
+        {
+            extra_data = nullptr;
+        }
+    };
 
+    if (not_processed && not_processed->slice_flag)
+    {
+        joinBySlice(block, not_processed, max_block_rows_to_join);
+        return;
+    }
     materializeBlockInplace(block);
 
     /// number of buckets doesn't change after right table is split to buckets, i.e. read-only access to buckets
@@ -445,10 +478,16 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
     Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
 
     block = std::move(blocks[current_bucket->idx]);
-
-    hash_join->joinBlock(block, not_processed);
-    if (not_processed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
+    if (max_block_rows_to_join > 0 && block.rows() > max_block_rows_to_join)
+    {
+        joinBySlice(block, not_processed, max_block_rows_to_join);
+    }
+    else
+    {
+        hash_join->joinBlock(block, not_processed);
+        if (not_processed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
+    }
 
     flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
 }

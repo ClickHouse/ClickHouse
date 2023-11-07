@@ -183,7 +183,7 @@ using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 struct ExtraBlock
 {
     Block block;
-
+    bool slice_flag = false;
     bool empty() const { return !block; }
 };
 

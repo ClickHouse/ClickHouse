@@ -130,6 +130,7 @@ private:
     bool any_take_last_row;
     const size_t max_num_buckets;
     size_t max_block_size;
+    size_t max_block_rows_to_join;
 
     Names left_key_names;
     Names right_key_names;
