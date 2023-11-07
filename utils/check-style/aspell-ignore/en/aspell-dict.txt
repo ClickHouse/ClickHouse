@@ -2287,6 +2287,7 @@ stochasticlogisticregression
 storages
 storig
 stringJaccardIndex
+stringJaccardIndexUTF
 stringToH
 stripelog
 strtod
