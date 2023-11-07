@@ -37,7 +37,7 @@ public:
     {
         FunctionArgumentDescriptors args{
             {"array", &isArray<IDataType>, nullptr, "Array"},
-            {"samples", &isUnsignedInteger<IDataType>, isColumnConst, "const UInt*"},
+            {"samples", &isUInt<IDataType>, isColumnConst, "const UInt*"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
