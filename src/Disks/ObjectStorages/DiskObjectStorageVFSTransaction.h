@@ -35,26 +35,20 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
     void removeFileIfExists(const String & path) override;
     // removeDirectory handles only empty directories, so no hardlink updates
     void removeSharedFile(const String & path, bool) override;
-    void
-    removeSharedRecursive(const String & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only) override;
+    void removeSharedRecursive(const String & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only) override;
     void removeSharedFileIfExists(const String & path, bool keep_shared_data) override;
     void
     removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
-private:
-    zkutil::ZooKeeperPtr zookeeper;
-    void addStoredObjectsOp(VFSTransactionLogItem::Type type, const StoredObjects & objects);
-
-    /// TODO myrrc alternative
-    ///    std::shared_ptr<DiskObjectStorageVFSTransaction> shared_from_this()
-    ///{
-    ///    return std::static_pointer_cast<DiskObjectStorageVFSTransaction>(DiskObjectStorageTransaction::shared_from_this());
-    ///}
-    std::shared_ptr<DiskObjectStorageTransaction> shared() override
+    auto shared_from_this()
     {
         return std::static_pointer_cast<DiskObjectStorageVFSTransaction>(DiskObjectStorageTransaction::shared_from_this());
     }
+
+private:
+    zkutil::ZooKeeperPtr zookeeper;
+    void addStoredObjectsOp(VFSTransactionLogItem::Type type, const StoredObjects & objects);
 };
 }

@@ -31,7 +31,7 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
     const auto config_prefix = "storage_configuration.disks." + name;
     return std::make_shared<DiskObjectStorageVFS>(
         getName(),
-        object_storage_root_path,
+        object_key_prefix,
         getName(),
         metadata_storage,
         object_storage,
@@ -47,9 +47,6 @@ String DiskObjectStorageVFS::getStructure() const
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageVFSTransaction>(
-        *object_storage,
-        *metadata_storage,
-        zookeeper);
+    return std::make_shared<DiskObjectStorageVFSTransaction>(*object_storage, *metadata_storage, zookeeper);
 }
 }

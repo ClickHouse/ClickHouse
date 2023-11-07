@@ -77,8 +77,6 @@ protected:
         bool autocommit,
         StoredObject& object);
 
-    virtual std::shared_ptr<DiskObjectStorageTransaction> shared() { return shared_from_this(); }
-
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,

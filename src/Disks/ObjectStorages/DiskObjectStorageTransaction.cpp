@@ -366,6 +366,7 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 };
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
@@ -431,8 +432,6 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
 }
 
-=======
->>>>>>> 7c90aef913a (Initial: disk, transactions, basic test)
 void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 {
     operations_to_execute.emplace_back(
@@ -561,11 +560,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
-<<<<<<< HEAD
-    auto object_key = object_storage.generateObjectKeyForPath(path);
-    std::optional<ObjectAttributes> object_attributes;
-
-=======
     StoredObject blob;
     return writeFileOps(path, buf_size, mode, settings, autocommit, blob);
 }
@@ -578,10 +572,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     bool autocommit,
     StoredObject& object)
 {
+    auto object_key = object_storage.generateObjectKeyForPath(path);
     std::optional<ObjectAttributes> object_attributes;
 
-    String blob_name = object_storage.generateBlobNameForPath(path);
->>>>>>> 7c90aef913a (Initial: disk, transactions, basic test)
     if (metadata_helper)
     {
         if (!object_key.hasPrefix())
@@ -598,26 +591,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             "r" + revisionToString(revision) + "-file-" + object_key.getSuffix());
     }
 
-<<<<<<< HEAD
     /// seems ok
-<<<<<<< HEAD
-    auto object = StoredObject(object_key.serialize(), path);
-=======
-    auto object = StoredObject(object_key.serialize());
-=======
-    object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    object = StoredObject(object_key.serialize(), path);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
->>>>>>> 7c90aef913a (Initial: disk, transactions, basic test)
->>>>>>> 465a74e0ec2 (Initial: disk, transactions, basic test)
     std::function<void(size_t count)> create_metadata_callback;
 
     if (autocommit)
     {
-<<<<<<< HEAD
         create_metadata_callback = [tx = shared_from_this(), mode, path, key_ = std::move(object_key)](size_t count)
-=======
-        create_metadata_callback = [tx = shared(), mode, path, blob_name](size_t count)
->>>>>>> 7c90aef913a (Initial: disk, transactions, basic test)
         {
             if (mode == WriteMode::Rewrite)
             {
@@ -636,13 +617,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     }
     else
     {
-<<<<<<< HEAD
         auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
         create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation.get(), mode, path, key_ = std::move(object_key)](size_t count)
-=======
-        create_metadata_callback = [object_storage_tx = shared(), write_op = write_operation.get(), mode, path, blob_name](size_t count)
->>>>>>> 7c90aef913a (Initial: disk, transactions, basic test)
         {
             /// This callback called in WriteBuffer finalize method -- only there we actually know
             /// how many bytes were written. We don't control when this finalize method will be called
@@ -719,16 +696,8 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunctionOps(
             "r" + revisionToString(revision) + "-file-" + object_key.getSuffix());
     }
 
-<<<<<<< HEAD
     /// seems ok
-<<<<<<< HEAD
-    auto object = StoredObject(object_key.serialize(), path);
-=======
-    auto object = StoredObject(object_key.serialize());
-=======
-    object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
->>>>>>> 7c90aef913a (Initial: disk, transactions, basic test)
->>>>>>> 465a74e0ec2 (Initial: disk, transactions, basic test)
+    object = StoredObject(object_key.serialize(), path);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
     operations_to_execute.emplace_back(std::move(write_operation));
