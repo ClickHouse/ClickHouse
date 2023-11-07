@@ -54,7 +54,9 @@ inline void extendValuesToUInt64(const UInt8 * __restrict values, UInt64 * __res
     for (size_t j = 0; j < n; ++j)
     {
         if constexpr (sizeof(T) < 8)
-            ids[j] = static_cast<UInt64>(*reinterpret_cast<const T *>(&values[j * sizeof(T)])) & ((1UL << sizeof(T)) - 1);
+        {
+            ids[j] = static_cast<UInt64>(*reinterpret_cast<const T *>(&values[j * sizeof(T)])) & ((1UL << 8 * sizeof(T)) - 1);
+        }
         else
             ids[j] = static_cast<UInt64>(*reinterpret_cast<const T *>(&values[j * sizeof(T)]));
     }
@@ -78,9 +80,9 @@ inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start
         value_ids[i] -= range_start;
 }
 
-inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, size_t start, size_t n, UInt64 * lens)
+inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, Int64 start, Int64 n, UInt64 * lens)
 {
-    for (size_t i = 0; i < n; ++i)
+    for (Int64 i = 0; i < n; ++i)
         lens[i] = offsets[start + i] - offsets[start + i - 1];
 }
 
@@ -131,9 +133,9 @@ inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start
         value_ids[i] -= range_start;
 }
 
-inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, size_t start, size_t n, UInt64 * lens)
+inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, Int64 start, Int64 n, UInt64 * lens)
 {
-    size_t i = 0;
+    Int64 i = 0;
     auto tmp_lens = lens;
     for (; i + 8 < n; i += 8)
     {
@@ -146,7 +148,7 @@ inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, si
     }
     for (; i < n; ++i)
     {
-        lens[i] = offsets[start + i] - offsets[start + i];
+        lens[i] = offsets[start + i] - offsets[start + i - 1];
     }
 }
 
