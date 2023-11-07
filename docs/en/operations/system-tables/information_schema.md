@@ -385,10 +385,10 @@ Columns:
 - `table_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
 - `table_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
 - `table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
-- `non_unique` [Int32](../../sql-reference/data-types/int-uint.md) — Currently unused.
+- `non_unique` ([Int32](../../sql-reference/data-types/int-uint.md)) — Currently unused.
 - `index_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
 - `index_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
-- `seq_in_index` [UInt32](../../sql-reference/data-types/int-uint.md) — Currently unused.
+- `seq_in_index` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Currently unused.
 - `column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
 - `collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
 - `cardinality` ([Nullable](../../sql-reference/data-types/nullable.md)([Int64](../../sql-reference/data-types/int-uint.md))) — Currently unused.
