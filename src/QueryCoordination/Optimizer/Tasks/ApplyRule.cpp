@@ -25,7 +25,7 @@ void ApplyRule::execute()
         for (auto & transformed_step_tree : transformed_step_trees)
         {
             auto & group = task_context->getCurrentGroup();
-            auto added_node = task_context->getMemo().addPlanNodeToGroup(*transformed_step_tree.getRoot(), &group);
+            auto added_node = task_context->getMemo().addPlanNodeToGroup(*transformed_step_tree.getRootNode(), &group);
 
             pushTask(std::make_unique<OptimizeInputs>(added_node, task_context));
             pushTask(std::make_unique<OptimizeNode>(added_node, task_context));

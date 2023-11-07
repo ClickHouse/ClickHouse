@@ -16,7 +16,7 @@ ConvertToTopN::ConvertToTopN()
 
 std::vector<StepTree> ConvertToTopN::transform(StepTree & step_tree, ContextPtr /*context*/)
 {
-    auto * limit_step = typeid_cast<LimitStep *>(step_tree.getRoot()->step.get());
+    auto * limit_step = typeid_cast<LimitStep *>(step_tree.getRootNode()->step.get());
 
     if (!limit_step)
         return {};
@@ -24,12 +24,12 @@ std::vector<StepTree> ConvertToTopN::transform(StepTree & step_tree, ContextPtr 
     if (limit_step->getPhase() != LimitStep::Phase::Unknown)
         return {};
 
-    auto group_step = step_tree.getRoot()->children[0]->children[0]->step;
+    auto group_step = step_tree.getRootNode()->children[0]->children[0]->step;
     if (!typeid_cast<GroupStep *>(group_step.get()))
         return {};
 
-    auto sorting_step = step_tree.getRoot()->children[0]->step;
-    auto topn = std::make_shared<TopNStep>(sorting_step, step_tree.getRoot()->step);
+    auto sorting_step = step_tree.getRootNode()->children[0]->step;
+    auto topn = std::make_shared<TopNStep>(sorting_step, step_tree.getRootNode()->step);
 
     StepTree res_step_tree;
     res_step_tree.addStep(group_step);

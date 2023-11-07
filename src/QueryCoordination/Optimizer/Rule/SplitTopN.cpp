@@ -13,7 +13,7 @@ SplitTopN::SplitTopN()
 
 std::vector<StepTree> SplitTopN::transform(StepTree & step_tree, ContextPtr context)
 {
-    auto * topn_step = typeid_cast<TopNStep *>(step_tree.getRoot()->step.get());
+    auto * topn_step = typeid_cast<TopNStep *>(step_tree.getRootNode()->step.get());
 
     if (!topn_step)
         return {};
@@ -21,7 +21,7 @@ std::vector<StepTree> SplitTopN::transform(StepTree & step_tree, ContextPtr cont
     if (topn_step->getPhase() != TopNStep::Phase::Unknown)
         return {};
 
-    auto child_step = step_tree.getRoot()->children[0]->step;
+    auto child_step = step_tree.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};

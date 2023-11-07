@@ -50,12 +50,12 @@ class QueryPlan
 {
 public:
     QueryPlan();
-    ~QueryPlan();
     QueryPlan(QueryPlan &&) noexcept;
-    QueryPlan & operator=(QueryPlan &&) noexcept;
+    virtual ~QueryPlan();
+    virtual QueryPlan & operator=(QueryPlan &&) noexcept;
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
-    void addStep(QueryPlanStepPtr step);
+    virtual void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
@@ -121,18 +121,18 @@ public:
 
     const QueryPlanResourceHolder & getResources() const { return resources; }
 
-private:
+protected:
+    void checkInitialized() const;
+    void checkNotCompleted() const;
+
     QueryPlanResourceHolder resources;
     Nodes nodes;
     Node * root = nullptr;
-
-    void checkInitialized() const;
-    void checkNotCompleted() const;
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
 };
 
-std::string debugExplainStep(const IQueryPlanStep & step);
+std::string debugExplainStep(const PlanNode & node);
 
 }

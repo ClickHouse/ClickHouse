@@ -146,7 +146,7 @@ StepTree Memo::extractPlan(Group & group, const PhysicalProperties & required_pr
         plan.addStep(group_node.getStep());
     }
 
-    auto * root = plan.getRoot();
+    auto * root = plan.getRootNode();
     root->cost = prop_group_node->second.cost;
     root->statistics = group.getStatistics().clone();
 

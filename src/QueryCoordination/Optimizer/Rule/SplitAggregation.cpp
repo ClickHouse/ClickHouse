@@ -16,7 +16,7 @@ SplitAggregation::SplitAggregation()
 
 std::vector<StepTree> SplitAggregation::transform(StepTree & step_tree, ContextPtr context)
 {
-    auto * aggregate_step = typeid_cast<AggregatingStep *>(step_tree.getRoot()->step.get());
+    auto * aggregate_step = typeid_cast<AggregatingStep *>(step_tree.getRootNode()->step.get());
 
     if (!aggregate_step)
         return {};
@@ -24,7 +24,7 @@ std::vector<StepTree> SplitAggregation::transform(StepTree & step_tree, ContextP
     if (aggregate_step->isPreliminaryAgg())
         return {};
 
-    auto child_step = step_tree.getRoot()->children[0]->step;
+    auto child_step = step_tree.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};

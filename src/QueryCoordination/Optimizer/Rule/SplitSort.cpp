@@ -14,7 +14,7 @@ SplitSort::SplitSort()
 
 std::vector<StepTree> SplitSort::transform(StepTree & step_tree, ContextPtr context)
 {
-    auto * sorting_step = typeid_cast<SortingStep *>(step_tree.getRoot()->step.get());
+    auto * sorting_step = typeid_cast<SortingStep *>(step_tree.getRootNode()->step.get());
 
     if (!sorting_step)
         return {};
@@ -22,7 +22,7 @@ std::vector<StepTree> SplitSort::transform(StepTree & step_tree, ContextPtr cont
     if (sorting_step->getPhase() != SortingStep::Phase::Unknown)
         return {};
 
-    auto child_step = step_tree.getRoot()->children[0]->step;
+    auto child_step = step_tree.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};

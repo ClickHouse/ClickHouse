@@ -1,59 +1,33 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <Core/Names.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/Context_fwd.h>
-#include <QueryCoordination/PlanNode.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
-#include <list>
-#include <memory>
-#include <set>
-#include <vector>
 
 namespace DB
 {
 
-class StepTree
+class StepTree;
+using StepTreePtr = std::shared_ptr<StepTree>;
+
+/**
+ * Represent part or whole of a QueryPlan, used by CBO optimizer.
+ * The only difference between StepTree and QueryPlan is that the leaf nodes of QueryPlan must have no input.
+ */
+class StepTree : public QueryPlan
 {
 public:
-    using Node = PlanNode;
-    using ExplainPlanOptions = QueryPlan::ExplainPlanOptions;
+    using Base = QueryPlan;
 
-    StepTree() = default;
-    ~StepTree() = default;
+    StepTree() : Base() { }
     StepTree(StepTree &&) noexcept = default;
+    ~StepTree() override = default;
     StepTree & operator=(StepTree &&) noexcept = default;
 
-    bool isInitialized() const { return root != nullptr; }
+    /// Add single step to sub query plan
+    void addStep(QueryPlanStepPtr step) override;
 
-    void addStep(QueryPlanStepPtr step);
-
-    const DataStream & getCurrentDataStream() const;
-
-    void unitePlans(QueryPlanStepPtr step, std::vector<std::shared_ptr<StepTree>> & plans);
-
-    Node * getRoot() const
-    {
-        return root;
-    }
-
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options) const;
-    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
-
-private:
-    using Nodes = std::list<Node>;
-
-    void checkInitialized() const;
-    bool isCompleted() const;
-    void checkNotCompleted() const;
-
-    Nodes nodes;
-    Node * root = nullptr;
+    /// Unite with other plans, used by queries like union, join etc.
+    void unitePlans(QueryPlanStepPtr step, std::vector<StepTreePtr> plans);
 };
-
-using StepTreePtr = std::shared_ptr<StepTree>;
 
 }
