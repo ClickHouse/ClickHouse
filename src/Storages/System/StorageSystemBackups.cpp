@@ -52,7 +52,7 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_compressed_size = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_read_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_read_bytes = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
-    auto & column_profile_events = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
+    auto & column_profile_events = assert_cast<ColumnMap &>(*res_columns[column_index++]);
 
     auto add_row = [&](const BackupOperationInfo & info)
     {
