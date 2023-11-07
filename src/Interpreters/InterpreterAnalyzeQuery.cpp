@@ -19,13 +19,13 @@ namespace ErrorCodes
 
 BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
 {
-    auto query = query_ptr->as<ASTAnalyzeQuery>();
+    auto * query = query_ptr->as<ASTAnalyzeQuery>();
     auto statistics_storage = context->getStatisticsStorage();
 
-    auto database = query->database->as<ASTIdentifier>();
-    auto table = query->table->as<ASTIdentifier>();
+    auto * database = query->database->as<ASTIdentifier>();
+    auto * table = query->table->as<ASTIdentifier>();
 
-    StorageID storage_id(database->name(), table->name());
+    StorageID storage_id(database == nullptr ? context->getCurrentDatabase() : database->name(), table->name());
     auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
     if (!storage)
@@ -42,11 +42,11 @@ BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
 
     if (query->column_list)
     {
-        auto column_exprs = query->column_list->as<ASTExpressionList>();
+        auto * column_exprs = query->column_list->as<ASTExpressionList>();
 
         for (auto & column_expr : column_exprs->children)
         {
-            if (auto column_name = column_expr->as<ASTIdentifier>())
+            if (auto * column_name = column_expr->as<ASTIdentifier>())
             {
                 if (!table_columns.has(column_name->name()))
                     throw Exception(ErrorCodes::UNKNOWN_COLUMN, "Column {} does not exist", column_name->name());
@@ -56,13 +56,13 @@ BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
     }
     else
     {
-        for (auto column : table_columns.getAll())
+        for (const auto & column : table_columns.getAll())
             column_names.push_back(column.name);
     }
 
     if (query->settings)
     {
-        if (auto set_query = query->settings->as<ASTSetQuery>())
+        if (auto * set_query = query->settings->as<ASTSetQuery>())
             context->applySettingsChanges(set_query->changes);
     }
 

@@ -1,15 +1,12 @@
 #include <Parsers/ParserAnalyzeQuery.h>
 #include <Parsers/ASTAnalyzeQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserPartition.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/assert_cast.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
