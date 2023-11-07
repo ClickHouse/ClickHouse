@@ -27,7 +27,7 @@ def cluster():
         "new_node",
         main_configs=[
             "configs/new_node.xml",
-            "configs/storage_conf.xml",
+            "configs/storage_conf_new.xml",
         ],
         user_configs=[
             "configs/settings.xml",
@@ -49,6 +49,7 @@ def cluster():
         with_zookeeper=True,
         stay_alive=True,
     )
+
     logging.info("Starting cluster...")
     cluster.start()
     logging.info("Cluster started")
@@ -294,3 +295,33 @@ def test_log_table(cluster, storage_policy):
     assert "4" == node.query("SELECT count() FROM test_log_table").strip()
 
     node.query("DROP TABLE test_log_table SYNC")
+
+
+def test_template_key(cluster):
+    old_node = cluster.instances["node"]
+    new_node = cluster.instances["new_node"]
+
+    def get_create_statement(storage_policy):
+        create_table_statement = f"""
+            CREATE TABLE test_template_key (
+                id Int64,
+                val String
+            ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_template_key', '{{replica}}')
+            PARTITION BY id
+            ORDER BY (id, val)
+            SETTINGS
+                storage_policy='{storage_policy}'
+            """
+        return create_table_statement
+
+    old_node.query(get_create_statement("s3"))
+    new_node.query(get_create_statement("s3_template_key"))
+
+    old_node.query("INSERT INTO test_template_key VALUES (0, 'a')")
+    new_node.query("INSERT INTO test_template_key VALUES (1, 'b')")
+
+    old_node.query("SYSTEM SYNC REPLICA test_template_key")
+    new_node.query("SYSTEM SYNC REPLICA test_template_key")
+
+    assert "2" == old_node.query("SELECT count() FROM test_template_key").strip()
+    assert "2" == new_node.query("SELECT count() FROM test_template_key").strip()
