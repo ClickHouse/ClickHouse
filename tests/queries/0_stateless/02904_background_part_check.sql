@@ -14,7 +14,7 @@ SYSTEM SYNC REPLICA part_check_t3;
 
 SELECT count() > 0
 FROM system.text_log
-WHERE (logger_name ILIKE '%part_check_t%ReplicatedMergeTreePartCheckThread%') AND (message ILIKE '%Background part check succeeded%')
+WHERE logger_name ILIKE '%' || currentDatabase() || '%part_check_t%ReplicatedMergeTreePartCheckThread%' AND message ILIKE '%Background part check succeeded%' AND event_date >= yesterday()
 GROUP BY logger_name;
 
 DROP TABLE part_check_t1 SYNC;

@@ -646,7 +646,10 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
     auto part_to_check = choosePartForBackgroundCheck();
     if (!part_to_check)
     {
-        const auto background_part_check_delay_seconds = seconds{storage.getSettings()->background_part_check_delay_seconds};
+        auto background_part_check_delay_seconds = seconds{storage.getSettings()->background_part_check_delay_seconds};
+        if (!background_part_check_delay_seconds.count())
+            background_part_check_delay_seconds = seconds{1};
+
         enqueueBackgroundPartCheck(duration_cast<milliseconds>(background_part_check_delay_seconds));
         return;
     }
