@@ -363,8 +363,8 @@ Statistics DeriveStatistics::visit(UnionStep & step)
 {
     Statistics statistics;
 
-    chassert(input_statistics.size() == 2);
-    chassert(step.getInputStreams().size() == 2);
+    chassert(input_statistics.size() > 1);
+    chassert(step.getInputStreams().size() == input_statistics.size());
 
     auto output_columns = step.getOutputStream().header.getNames();
 
@@ -384,22 +384,25 @@ Statistics DeriveStatistics::visit(UnionStep & step)
         statistics.addColumnStatistics(output_columns[i], column_stats);
     }
 
-    /// merge the second input
-    auto second_input_columns = step.getInputStreams()[1].header.getNames();
-    auto & second_stats = input_statistics[1];
-
-    for (size_t i = 0; i < output_columns.size(); i++)
+    /// merge the left inputs
+    for (size_t i = 1; i < step.getInputStreams().size(); i++)
     {
-        auto column_stats = second_stats.getColumnStatistics(second_input_columns[i]);
-        auto output_column_stats = statistics.getColumnStatistics(output_columns[i]);
+        auto left_input_columns = step.getInputStreams()[i].header.getNames();
+        auto & left_stats = input_statistics[i];
 
-        /// merge min_value / max_value
-        output_column_stats->mergeColumnValueByUnion(column_stats);
+        for (size_t j = 0; j < output_columns.size(); j++)
+        {
+            auto column_stats = left_stats.getColumnStatistics(left_input_columns[j]);
+            auto output_column_stats = statistics.getColumnStatistics(output_columns[j]);
 
-        /// merge ndv
-        auto ndv = std::max(column_stats->getNdv(), output_column_stats->getNdv());
-        ndv = ndv + (ndv - std::min(column_stats->getNdv(), output_column_stats->getNdv())) * 0.1; /// TODO add to settings
-        output_column_stats->setNdv(ndv);
+            /// merge min_value / max_value
+            output_column_stats->mergeColumnValueByUnion(column_stats);
+
+            /// merge ndv
+            auto ndv = std::max(column_stats->getNdv(), output_column_stats->getNdv());
+            ndv = ndv + (ndv - std::min(column_stats->getNdv(), output_column_stats->getNdv())) * 0.1; /// TODO add to settings
+            output_column_stats->setNdv(ndv);
+        }
     }
 
     /// calculate output row size;
