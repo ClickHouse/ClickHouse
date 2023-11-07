@@ -70,7 +70,7 @@ public:
         }
     }
 
-    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto place_data = &this->data(place);
         auto rhs_data = &this->data(rhs);

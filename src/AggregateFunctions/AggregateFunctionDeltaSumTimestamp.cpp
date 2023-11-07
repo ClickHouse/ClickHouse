@@ -100,7 +100,7 @@ public:
         return false;
     }
 
-    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto place_data = &this->data(place);
         auto rhs_data = &this->data(rhs);
@@ -115,7 +115,9 @@ public:
             place_data->last_ts = rhs_data->last_ts;
         }
         else if (place_data->seen && !rhs_data->seen)
+        {
             return;
+        }
         else if (before(place_data, rhs_data))
         {
             // This state came before the rhs state
@@ -183,10 +185,7 @@ AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
     const Settings *)
 {
     assertNoParameters(name, params);
-
-    if (arguments.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Incorrect number of arguments for aggregate function {}", name);
+    assertBinary(name, arguments);
 
     if (!isInteger(arguments[0]) && !isFloat(arguments[0]) && !isDate(arguments[0]) && !isDateTime(arguments[0]))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
