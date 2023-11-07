@@ -975,6 +975,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     auto old_status = info.status;
 
     info.status = status;
+    info.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(CurrentThread::getProfileEvents().getPartiallyAtomicSnapshot());
 
     if (isFinalStatus(status))
         info.end_time = std::chrono::system_clock::now();
