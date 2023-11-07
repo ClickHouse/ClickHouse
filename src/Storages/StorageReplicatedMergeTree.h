@@ -201,7 +201,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -230,7 +230,8 @@ public:
     /// Add a part to the queue of parts whose data you want to check in the background thread.
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
@@ -347,7 +348,7 @@ public:
     // Return table id, common for different replicas
     String getTableSharedID() const override;
 
-    size_t getNumberOfUnfinishedMutations() const override;
+    std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
@@ -385,7 +386,7 @@ private:
     friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
-    friend class AsyncBlockIDsCache;
+    friend class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
@@ -512,7 +513,7 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
-    AsyncBlockIDsCache async_block_ids_cache;
+    AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
@@ -631,10 +632,18 @@ private:
       * Adds actions to `ops` that add data about the part into ZooKeeper.
       * Call under lockForShare.
       */
-    void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const DataPartPtr & part,
-                                           Coordination::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+    bool checkPartChecksumsAndAddCommitOps(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        const DataPartPtr & part,
+        Coordination::Requests & ops,
+        String part_name,
+        NameSet & absent_replicas_paths);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
+
+    bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
+                                             std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
+                                             Coordination::Requests & ops, size_t & num_check_ops);
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
@@ -991,6 +1000,34 @@ private:
     bool waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait) override;
 
     void startupImpl(bool from_attach_thread);
+
+    struct DataValidationTasks : public IStorage::DataValidationTasksBase
+    {
+        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
+            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
+        {}
+
+        DataPartPtr next()
+        {
+            std::lock_guard lock(mutex);
+            if (it == parts.end())
+                return nullptr;
+            return *(it++);
+        }
+
+        size_t size() const override
+        {
+            std::lock_guard lock(mutex);
+            return std::distance(it, parts.end());
+        }
+
+        std::unique_lock<std::mutex> parts_check_lock;
+
+        mutable std::mutex mutex;
+        DataPartsVector parts;
+        DataPartsVector::const_iterator it;
+    };
+
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

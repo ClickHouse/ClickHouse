@@ -174,6 +174,8 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
         dag->mergeInplace(std::move(*expression->clone()));
     else
         dag = expression->clone();
+
+    dag->projectInput(false);
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
@@ -234,15 +236,20 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
 
         const auto & array_joined_columns = array_join->arrayJoin()->columns;
 
-        /// Remove array joined columns from outputs.
-        /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
-        ActionsDAG::NodeRawConstPtrs outputs;
-        outputs.reserve(dag->getOutputs().size());
-
-        for (const auto & output : dag->getOutputs())
+        if (dag)
         {
-            if (!array_joined_columns.contains(output->result_name))
-                outputs.push_back(output);
+            /// Remove array joined columns from outputs.
+            /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
+            ActionsDAG::NodeRawConstPtrs outputs;
+            outputs.reserve(dag->getOutputs().size());
+
+            for (const auto & output : dag->getOutputs())
+            {
+                if (!array_joined_columns.contains(output->result_name))
+                    outputs.push_back(output);
+            }
+
+            dag->getOutputs() = std::move(outputs);
         }
     }
 }
@@ -337,7 +344,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag, *dag);
+        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
@@ -506,7 +513,7 @@ AggregationInputOrder buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag, *dag);
+        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {

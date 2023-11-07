@@ -268,7 +268,7 @@ StorageKafka::StorageKafka(
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
 {
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         kafka_settings->input_format_allow_errors_num = 0;
         kafka_settings->input_format_allow_errors_ratio = 0;
@@ -513,8 +513,9 @@ KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance
     // significantly, but may lead to bigger memory consumption.
-    size_t default_queued_min_messages = 100000; // we don't want to decrease the default
-    conf.set("queued.min.messages", std::max(getMaxBlockSize(),default_queued_min_messages));
+    size_t default_queued_min_messages = 100000; // must be greater than or equal to default
+    size_t max_allowed_queued_min_messages = 10000000; // must be less than or equal to max allowed value
+    conf.set("queued.min.messages", std::min(std::max(getMaxBlockSize(), default_queued_min_messages), max_allowed_queued_min_messages));
 
     /// a reference to the consumer is needed in statistic callback
     /// although the consumer does not exist when callback is being registered
@@ -732,6 +733,8 @@ void StorageKafka::threadFunc(size_t idx)
 {
     assert(idx < tasks.size());
     auto task = tasks[idx];
+    std::string exception_str;
+
     try
     {
         auto table_id = getStorageID();
@@ -771,7 +774,24 @@ void StorageKafka::threadFunc(size_t idx)
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// do bare minimum in catch block
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        exception_str = getCurrentExceptionMessage(true /* with_stacktrace */);
+    }
+
+    if (!exception_str.empty())
+    {
+        LOG_ERROR(log, "{} {}", __PRETTY_FUNCTION__, exception_str);
+
+        auto safe_consumers = getSafeConsumers();
+        for (auto const & consumer_ptr_weak : safe_consumers.consumers)
+        {
+            /// propagate materialized view exception to all consumers
+            if (auto consumer_ptr = consumer_ptr_weak.lock())
+            {
+                consumer_ptr->setExceptionInfo(exception_str, false /* no stacktrace, reuse passed one */);
+            }
+        }
     }
 
     mv_attached.store(false);
@@ -846,6 +866,7 @@ bool StorageKafka::streamToViews()
         // we need to read all consumers in parallel (sequential read may lead to situation
         // when some of consumers are not used, and will break some Kafka consumer invariants)
         block_io.pipeline.setNumThreads(stream_count);
+        block_io.pipeline.setConcurrencyControl(kafka_context->getSettingsRef().use_concurrency_control);
 
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
@@ -1036,7 +1057,7 @@ NamesAndTypesList StorageKafka::getVirtuals() const
         {"_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3))},
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}};
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         result.push_back({"_raw_message", std::make_shared<DataTypeString>()});
         result.push_back({"_error", std::make_shared<DataTypeString>()});
@@ -1056,7 +1077,7 @@ Names StorageKafka::getVirtualColumnNames() const
         "_headers.name",
         "_headers.value",
     };
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         result.push_back({"_raw_message"});
         result.push_back({"_error"});

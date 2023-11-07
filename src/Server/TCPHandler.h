@@ -24,6 +24,7 @@
 #include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 
 #include "IServer.h"
+#include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
@@ -77,6 +78,8 @@ struct QueryState
 
     /// Query text.
     String query;
+    /// Parsed query
+    ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
@@ -208,6 +211,7 @@ private:
 
     String default_database;
 
+    bool is_ssh_based_auth = false;
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
@@ -237,6 +241,7 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
+    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();
@@ -261,7 +266,9 @@ private:
     bool receiveBeginExecutePipelines();
 
     /// Process INSERT query
+    void startInsertQuery();
     void processInsertQuery();
+    AsynchronousInsertQueue::PushResult processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue);
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
@@ -282,7 +289,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
     void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);

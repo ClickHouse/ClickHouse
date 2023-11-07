@@ -681,3 +681,79 @@ Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are U
 ## hasSubsequenceCaseInsensitiveUTF8
 
 Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
+
+## byteHammingDistance
+
+Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+byteHammingDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT byteHammingDistance('karolin', 'kathrin');
+```
+
+Result:
+
+``` text
+┌─byteHammingDistance('karolin', 'kathrin')─┐
+│                                         3 │
+└───────────────────────────────────────────┘
+```
+
+Alias: mismatches
+
+## stringJaccardIndex
+
+Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
+
+**Syntax**
+
+```sql
+stringJaccardIndex(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT stringJaccardIndex('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─stringJaccardIndex('clickhouse', 'mouse')─┐
+│                                       0.4 │
+└───────────────────────────────────────────┘
+```
+
+## editDistance
+
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+editDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT editDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─editDistance('clickhouse', 'mouse')─┐
+│                                   6 │
+└─────────────────────────────────────┘
+```
+
+Alias: levenshteinDistance

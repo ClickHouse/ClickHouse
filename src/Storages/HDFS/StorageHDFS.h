@@ -76,7 +76,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context_) const;
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -162,6 +162,9 @@ public:
     Chunk generate() override;
 
 private:
+    void addNumRowsToCache(const String & path, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const StorageHDFS::PathWithInfo & path_with_info);
+
     StorageHDFSPtr storage;
     Block block_for_format;
     NamesAndTypesList requested_columns;
@@ -170,6 +173,7 @@ private:
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
     bool need_only_count;
+    size_t total_rows_in_file = 0;
     SelectQueryInfo query_info;
 
     std::unique_ptr<ReadBuffer> read_buf;

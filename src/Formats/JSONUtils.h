@@ -108,6 +108,8 @@ namespace JSONUtils
         bool write_statistics,
         WriteBuffer & out);
 
+    void writeException(const String & exception_message, WriteBuffer & out, const FormatSettings & settings, size_t indent = 0);
+
     void skipColon(ReadBuffer & in);
     void skipComma(ReadBuffer & in);
 
@@ -124,6 +126,7 @@ namespace JSONUtils
 
     NamesAndTypesList readMetadata(ReadBuffer & in);
     NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header);
+    void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header);
 
     bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name);
     void skipTheRestOfObject(ReadBuffer & in);

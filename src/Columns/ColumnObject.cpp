@@ -559,6 +559,7 @@ FieldInfo ColumnObject::Subcolumn::getFieldInfo() const
         .have_nulls = base_type->isNullable(),
         .need_convert = false,
         .num_dimensions = least_common_type.getNumberOfDimensions(),
+        .need_fold_dimension = false,
     };
 }
 

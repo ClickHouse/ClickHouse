@@ -54,6 +54,7 @@ enum class DataPartRemovalState
     NON_UNIQUE_OWNERSHIP,
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
+    EMPTY_PART_COVERS_OTHER_PARTS,
     REMOVED,
 };
 
@@ -131,7 +132,7 @@ public:
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
-    virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
+    virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
     virtual ~IMergeTreeDataPart();
 
@@ -264,6 +265,8 @@ public:
     /// Some old parts don't have metadata version, so we set it to the current table's version when loading the part
     bool old_part_with_no_metadata_version_on_disk = false;
 
+    bool new_part_was_committed_to_zookeeper_after_rename_on_disk = false;
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
@@ -375,7 +378,7 @@ public:
                                                    const DiskTransactionPtr & disk_transaction) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
@@ -475,16 +478,6 @@ public:
     /// Moar hardening: this method is supposed to be used for debug assertions
     bool assertHasValidVersionMetadata() const;
 
-    /// Return hardlink count for part.
-    /// Required for keep data on remote FS when part has shadow copies.
-    UInt32 getNumberOfRefereneces() const;
-
-    /// Get checksums of metadata file in part directory
-    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_name) const;
-
-    /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
-    std::unordered_map<String, uint128> checkMetadata() const;
-
     /// True if the part supports lightweight delete mutate.
     bool supportLightweightDeleteMutate() const;
 
@@ -492,6 +485,12 @@ public:
     bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
+
+    /// Checks the consistency of this data part.
+    virtual void checkConsistency(bool require_part_metadata) const;
+
+    /// Checks the consistency of this data part, and check the consistency of its projections (if any) as well.
+    void checkConsistencyWithProjections(bool require_part_metadata) const;
 
     /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
     /// TODO: remove this method after some time.
@@ -502,6 +501,37 @@ public:
     void removeVersionMetadata();
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
+
+    static std::optional<String> getStreamNameOrHash(
+        const String & name,
+        const IMergeTreeDataPart::Checksums & checksums);
+
+    static std::optional<String> getStreamNameOrHash(
+        const String & name,
+        const String & extension,
+        const IDataPartStorage & storage_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const String & column_name,
+        const ISerialization::SubstreamPath & substream_path,
+        const Checksums & checksums_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const NameAndTypePair & column,
+        const ISerialization::SubstreamPath & substream_path,
+        const Checksums & checksums_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const String & column_name,
+        const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
+        const IDataPartStorage & storage_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const NameAndTypePair & column,
+        const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
+        const IDataPartStorage & storage_);
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
@@ -534,14 +564,10 @@ protected:
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    /// Disabled when USE_ROCKSDB is OFF or use_metadata_cache is set to false in merge tree settings
-    bool use_metadata_cache = false;
-
     mutable PartMetadataManagerPtr metadata_manager;
 
     void removeIfNeeded();
 
-    virtual void checkConsistency(bool require_part_metadata) const;
     void checkConsistencyBase() const;
 
     /// Fill each_columns_size and total_size with sizes from columns files on

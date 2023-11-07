@@ -388,7 +388,7 @@ UInt32 CompressionCodecGorilla::doCompressData(const char * source, UInt32 sourc
     UInt32 result_size = 0;
 
     const UInt32 compressed_size = getMaxCompressedDataSize(source_size);
-    switch (data_bytes_size)
+    switch (data_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         result_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
@@ -424,7 +424,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
-    switch (bytes_size)
+    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);

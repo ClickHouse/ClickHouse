@@ -17,6 +17,13 @@ User=clickhouse
 Group=clickhouse
 Restart=always
 RestartSec=30
+# The following ClickHouse directives should be used instead of forcing SIGKILL by systemd:
+# - shutdown_wait_unfinished_queries
+# - shutdown_wait_unfinished
+TimeoutStopSec=infinity
+# Disable forwarding signals by watchdog, since with default systemd's
+# kill-mode control-group, systemd will send signal to all process in cgroup.
+Environment=CLICKHOUSE_WATCHDOG_NO_FORWARD=1
 # Since ClickHouse is systemd aware default 1m30sec may not be enough
 TimeoutStartSec=0
 # %p is resolved to the systemd unit name

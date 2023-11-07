@@ -10,7 +10,7 @@ create table shard_0.tbl (number UInt64) engine = MergeTree order by number;
 create table shard_1.tbl (number UInt64) engine = MergeTree order by number;
 create table distr (number UInt64) engine = Distributed(test_cluster_two_shards_different_databases, '', tbl);
 
-set insert_distributed_sync = 1;
+set distributed_foreground_insert = 1;
 set insert_distributed_one_random_shard = 1;
 set max_block_size = 1;
 set max_insert_block_size = 1;

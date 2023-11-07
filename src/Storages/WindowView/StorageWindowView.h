@@ -119,7 +119,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     void dropInnerTableIfAny(bool sync, ContextPtr context) override;
 

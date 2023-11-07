@@ -78,6 +78,7 @@
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 
 namespace ProfileEvents
 {
@@ -95,11 +96,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
-    extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -174,7 +177,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
     {
         elem.stack_trace = getExceptionStackTraceString(e);
     }
-    catch (...) {}
+    catch (...) {} // NOLINT(bugprone-empty-catch)
 }
 
 
@@ -242,6 +245,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
     element.thread_ids = info.thread_ids;
+    element.peak_threads_usage = info.peak_threads_usage;
     element.profile_counters = info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
@@ -707,7 +711,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
 
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
@@ -924,12 +928,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
                 reason = "insert query has select";
-            else if (!insert_query->hasInlinedData())
-                reason = "insert query doesn't have inlined data";
-            else
+            else if (insert_query->hasInlinedData())
                 async_insert = true;
 
-            if (!async_insert)
+            if (!reason.empty())
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 
@@ -952,7 +954,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
-            auto result = queue->push(ast, context);
+            auto result = queue->pushQueryWithInlinedData(ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
@@ -986,12 +988,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         QueryCachePtr query_cache = context->getQueryCache();
-        const bool can_use_query_cache = query_cache != nullptr && settings.use_query_cache && !internal && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
+        const bool can_use_query_cache = query_cache != nullptr
+            && settings.use_query_cache
+            && !internal
+            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+            && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
         if (!async_insert)
         {
-            /// If it is a non-internal SELECT, and passive/read use of the query cache is enabled, and the cache knows the query, then set
+            /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
             /// a pipeline with a source populated by the query cache.
             auto get_result_from_query_cache = [&]()
             {
@@ -1074,7 +1080,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// Save insertion table (not table function). TODO: support remote() table function.
                     auto table_id = insert_interpreter->getDatabaseTable();
                     if (!table_id.empty())
-                        context->setInsertionTable(std::move(table_id));
+                        context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
 
                     if (insert_data_buffer_holder)
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
@@ -1091,11 +1097,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     res = interpreter->execute();
 
-                    /// If it is a non-internal SELECT query, and active/write use of the query cache is enabled, then add a processor on
+                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (can_use_query_cache && settings.enable_writes_to_query_cache
-                        && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
+                    if (can_use_query_cache && settings.enable_writes_to_query_cache)
                     {
+                        if (astContainsNonDeterministicFunctions(ast, context) && !settings.query_cache_store_results_of_queries_with_nondeterministic_functions)
+                            throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
+                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting `query_cache_store_results_of_queries_with_nondeterministic_functions = 1` to cache the query result regardless");
+
                         QueryCache::Key key(
                             ast, res.pipeline.getHeader(),
                             context->getUserName(), settings.query_cache_share_between_users,
@@ -1103,7 +1112,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             settings.query_cache_compress_entries);
 
                         const size_t num_query_runs = query_cache->recordQueryRun(key);
-                        if (num_query_runs > settings.query_cache_min_query_runs)
+                        if (num_query_runs <= settings.query_cache_min_query_runs)
+                        {
+                            LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}", num_query_runs, settings.query_cache_min_query_runs);
+                        }
+                        else
                         {
                             auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
                                              key,
@@ -1119,6 +1132,29 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 }
             }
+        }
+        // Here we check if our our projections contain force_optimize_projection_name
+        if (!settings.force_optimize_projection_name.value.empty())
+        {
+            bool found = false;
+            std::set<std::string> projections = context->getQueryAccessInfo().projections;
+
+            for (const auto &projection : projections)
+            {
+                // projection value has structure like: <db_name>.<table_name>.<projection_name>
+                // We need to get only the projection name
+                size_t last_dot_pos = projection.find_last_of('.');
+                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
+                if (settings.force_optimize_projection_name.value == projection_name)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
+                                settings.force_optimize_projection_name.value);
         }
 
         if (process_list_entry)
@@ -1221,19 +1257,20 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    return std::make_tuple(ast, std::move(res));
+    return std::make_tuple(std::move(ast), std::move(res));
 }
 
 
-BlockIO executeQuery(
+std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
     bool internal,
     QueryProcessingStage::Enum stage)
 {
     ASTPtr ast;
-    BlockIO streams;
-    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
+    BlockIO res;
+
+    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -1242,25 +1279,11 @@ BlockIO executeQuery(
                 : context->getDefaultFormat();
 
         if (format_name == "Null")
-            streams.null_format = true;
+            res.null_format = true;
     }
 
-    return streams;
+    return std::make_pair(std::move(ast), std::move(res));
 }
-
-BlockIO executeQuery(
-    bool allow_processors,
-    const String & query,
-    ContextMutablePtr context,
-    bool internal,
-    QueryProcessingStage::Enum stage)
-{
-    if (!allow_processors)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Flag allow_processors is deprecated for executeQuery");
-
-    return executeQuery(query, context, internal, stage);
-}
-
 
 void executeQuery(
     ReadBuffer & istr,
@@ -1268,7 +1291,8 @@ void executeQuery(
     bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
-    const std::optional<FormatSettings> & output_format_settings)
+    const std::optional<FormatSettings> & output_format_settings,
+    HandleExceptionInOutputFormatFunc handle_exception_in_output_format)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1326,8 +1350,48 @@ void executeQuery(
 
     ASTPtr ast;
     BlockIO streams;
+    OutputFormatPtr output_format;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    auto update_format_for_exception_if_needed = [&]()
+    {
+        if (!output_format)
+        {
+            try
+            {
+                String format_name = context->getDefaultFormat();
+                output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
+                if (output_format && output_format->supportsWritingException())
+                {
+                    /// Force an update of the headers before we start writing
+                    result_details.content_type = output_format->getContentType();
+                    result_details.format = format_name;
+                    set_result_details(result_details);
+                    set_result_details = nullptr;
+                }
+            }
+            catch (const DB::Exception & e)
+            {
+                /// Ignore this exception and report the original one
+                LOG_WARNING(&Poco::Logger::get("executeQuery"), getExceptionMessageAndPattern(e, true));
+            }
+        }
+    };
+
+    try
+    {
+        std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    }
+    catch (...)
+    {
+        if (handle_exception_in_output_format)
+        {
+            update_format_for_exception_if_needed();
+            if (output_format)
+                handle_exception_in_output_format(*output_format);
+        }
+        throw;
+    }
+
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
@@ -1368,30 +1432,30 @@ void executeQuery(
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
-            auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(
+            output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,
                 compressed_buffer ? *compressed_buffer : *out_buf,
                 materializeBlock(pipeline.getHeader()),
                 context,
                 output_format_settings);
 
-            out->setAutoFlush();
+            output_format->setAutoFlush();
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
 
             /// NOTE Progress callback takes shared ownership of 'out'.
-            pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+            pipeline.setProgressCallback([output_format, previous_progress_callback] (const Progress & progress)
             {
                 if (previous_progress_callback)
                     previous_progress_callback(progress);
-                out->onProgress(progress);
+                output_format->onProgress(progress);
             });
 
-            result_details.content_type = out->getContentType();
+            result_details.content_type = output_format->getContentType();
             result_details.format = format_name;
 
-            pipeline.complete(std::move(out));
+            pipeline.complete(output_format);
         }
         else
         {
@@ -1421,6 +1485,12 @@ void executeQuery(
     }
     catch (...)
     {
+        if (handle_exception_in_output_format)
+        {
+            update_format_for_exception_if_needed();
+            if (output_format)
+                handle_exception_in_output_format(*output_format);
+        }
         streams.onException();
         throw;
     }

@@ -313,8 +313,8 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_, std::optional<ConnectedCallback> && connected_callback_)
-    : args(args_), connected_callback(std::move(connected_callback_))
+    std::shared_ptr<ZooKeeperLog> zk_log_)
+    : args(args_)
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -445,9 +445,7 @@ void ZooKeeper::connect(
                     throw;
                 }
                 connected = true;
-
-                if (connected_callback.has_value())
-                    (*connected_callback)(i, node);
+                original_index = static_cast<Int8>(node.original_index);
 
                 if (i != 0)
                 {
@@ -701,7 +699,7 @@ void ZooKeeper::receiveThread()
 
             if (in->poll(max_wait_us))
             {
-                if (requests_queue.isFinished())
+                if (finalization_started.test())
                     break;
 
                 receiveEvent();
@@ -911,6 +909,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
+
+    /// Reset the original index.
+    original_index = -1;
 
     auto expire_session_if_not_expired = [&]
     {
@@ -1516,7 +1517,7 @@ bool ZooKeeper::hasReachedDeadline() const
 void ZooKeeper::maybeInjectSendFault()
 {
     if (unlikely(inject_setup.test() && send_inject_fault && send_inject_fault.value()(thread_local_rng)))
-        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
+        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (fault injected on send)");
 }
 
 void ZooKeeper::maybeInjectRecvFault()

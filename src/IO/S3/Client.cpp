@@ -20,10 +20,15 @@
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
 #include <IO/S3/Credentials.h>
+#include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+
+#include <base/sleep.h>
+
 
 namespace ProfileEvents
 {
@@ -46,11 +51,12 @@ namespace ErrorCodes
 namespace S3
 {
 
-Client::RetryStrategy::RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_)
-    : wrapped_strategy(std::move(wrapped_strategy_))
+Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, uint32_t scaleFactor_, uint32_t maxDelayMs_)
+    : maxRetries(maxRetries_)
+    , scaleFactor(scaleFactor_)
+    , maxDelayMs(maxDelayMs_)
 {
-    if (!wrapped_strategy)
-        wrapped_strategy = Aws::Client::InitRetryStrategy();
+    chassert(maxDelayMs <= uint64_t(scaleFactor) * (1ul << 31l));
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
@@ -59,39 +65,31 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 
-    return wrapped_strategy->ShouldRetry(error, attemptedRetries);
+    if (attemptedRetries >= maxRetries)
+        return false;
+
+    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            return false;
+
+    return error.ShouldRetry();
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
-long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
+long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
 {
-    return wrapped_strategy->CalculateDelayBeforeNextRetry(error, attemptedRetries);
+    if (attemptedRetries == 0)
+    {
+        return 0;
+    }
+
+    uint64_t backoffLimitedPow = 1ul << std::min(attemptedRetries, 31l);
+    return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::GetMaxAttempts() const
 {
-    return wrapped_strategy->GetMaxAttempts();
-}
-
-void Client::RetryStrategy::GetSendToken()
-{
-    return wrapped_strategy->GetSendToken();
-}
-
-bool Client::RetryStrategy::HasSendToken()
-{
-    return wrapped_strategy->HasSendToken();
-}
-
-void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome)
-{
-    return wrapped_strategy->RequestBookkeeping(httpResponseOutcome);
-}
-
-void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError)
-{
-    return wrapped_strategy->RequestBookkeeping(httpResponseOutcome, lastError);
+    return maxRetries + 1;
 }
 
 namespace
@@ -566,6 +564,7 @@ Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn r
     {
         chassert(client_configuration.retryStrategy);
         const Int64 max_attempts = client_configuration.retryStrategy->GetMaxAttempts();
+        chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
@@ -605,7 +604,15 @@ Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn r
                 last_exception = std::current_exception();
 
                 auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
-                client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+
+                /// Check if query is canceled
+                if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
+                    break;
+
+                auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+                LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
+                sleepForMilliseconds(sleep_ms);
+
                 continue;
             }
         }
@@ -843,7 +850,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             std::move(credentials),
             credentials_configuration);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
+
     return Client::create(
         client_configuration.s3_max_redirects,
         std::move(sse_kms_config),
@@ -858,19 +866,35 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const String & force_region,
     const RemoteHostFilter & remote_host_filter,
     unsigned int s3_max_redirects,
+    unsigned int s3_retry_attempts,
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     const ThrottlerPtr & get_request_throttler,
-    const ThrottlerPtr & put_request_throttler)
+    const ThrottlerPtr & put_request_throttler,
+    const String & protocol)
 {
-    return PocoHTTPClientConfiguration(
+    auto context = Context::getGlobalContextInstance();
+    chassert(context);
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+
+    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+
+    auto config = PocoHTTPClientConfiguration(
+        per_request_configuration,
         force_region,
         remote_host_filter,
         s3_max_redirects,
+        s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
         get_request_throttler,
-        put_request_throttler);
+        put_request_throttler,
+        error_report);
+
+    config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
+
+    return config;
 }
 
 }

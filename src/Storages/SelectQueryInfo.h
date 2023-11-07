@@ -10,7 +10,6 @@
 #include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <memory>
 
@@ -211,8 +210,6 @@ struct SelectQueryInfo
     /// should we use custom key with the cluster
     bool use_custom_key = false;
 
-    mutable ParallelReplicasReadingCoordinatorPtr coordinator;
-
     TreeRewriterResultPtr syntax_analyzer_result;
 
     /// This is an additional filer applied to current table.
@@ -254,8 +251,6 @@ struct SelectQueryInfo
     bool is_internal = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
-
-    bool parallel_replicas_disabled = false;
 
     bool is_parameterized_view = false;
 

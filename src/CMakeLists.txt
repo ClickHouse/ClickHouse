@@ -85,6 +85,7 @@ set(dbms_headers)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
+add_headers_and_sources(clickhouse_common_io Common/SSH)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Resource)
@@ -106,7 +107,7 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/DataLakes)
-add_headers_and_sources(dbms Storages/MeiliSearch)
+add_headers_and_sources(dbms Storages/DataLakes/Iceberg)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -170,6 +171,10 @@ if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
     target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
+endif()
+
+if (TARGET ch_contrib::azure_sdk)
+    target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
@@ -326,7 +331,6 @@ target_link_libraries(clickhouse_common_io
             boost::context
             ch_contrib::cityhash
             ch_contrib::re2
-            ch_contrib::re2_st
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
@@ -340,13 +344,13 @@ if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
 
-if (TARGET ch_contrib::crc32_s390x)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
-endif()
-
 if (TARGET ch_contrib::crc32-vpmsum)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
  endif()
+
+if (TARGET ch_contrib::ssh)
+ target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
+endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
@@ -598,8 +602,8 @@ if (ENABLE_TESTS)
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE
-        ch_contrib::gtest_all
         ch_contrib::gmock_all
+        ch_contrib::gtest
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers

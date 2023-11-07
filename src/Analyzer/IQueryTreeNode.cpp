@@ -10,6 +10,8 @@
 
 #include <Parsers/ASTWithAlias.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace DB
 {
 

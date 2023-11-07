@@ -1302,18 +1302,14 @@ try
 
     if (structure.empty())
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+        auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
 
-            /// stdin must be seekable
-            auto res = lseek(file->getFD(), 0, SEEK_SET);
-            if (-1 == res)
-                throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        /// stdin must be seekable
+        auto res = lseek(file->getFD(), 0, SEEK_SET);
+        if (-1 == res)
+            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-            return file;
-        };
-
+        SingleReadBufferIterator read_buffer_iterator(std::move(file));
         schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
     }
     else

@@ -58,10 +58,9 @@ def get_ccache_if_not_exists(
         download_build_with_progress(url, compressed_cache)
 
         path_to_decompress = path_to_ccache_dir.parent
-        if not path_to_decompress.exists():
-            os.makedirs(path_to_decompress)
+        path_to_decompress.mkdir(parents=True, exist_ok=True)
 
-        if os.path.exists(path_to_ccache_dir):
+        if path_to_ccache_dir.exists():
             shutil.rmtree(path_to_ccache_dir)
             logging.info("Ccache already exists, removing it")
 
@@ -74,7 +73,7 @@ def get_ccache_if_not_exists(
 
     if not cache_found:
         logging.info("ccache not found anywhere, cannot download anything :(")
-        if os.path.exists(path_to_ccache_dir):
+        if path_to_ccache_dir.exists():
             logging.info("But at least we have some local cache")
     else:
         logging.info("ccache downloaded")

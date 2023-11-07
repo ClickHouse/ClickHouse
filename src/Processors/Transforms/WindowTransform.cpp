@@ -1066,7 +1066,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         auto columns = chunk.detachColumns();
         block.original_input_columns = columns;
         for (auto & column : columns)
-            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst());
+            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
         block.input_columns = std::move(columns);
 
         // Initialize output columns.

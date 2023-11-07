@@ -98,7 +98,7 @@ struct ColumnDescription
 
 
 /// Description of multiple table columns (in CREATE TABLE for example).
-class ColumnsDescription : public IHints<1, ColumnsDescription>
+class ColumnsDescription : public IHints<>
 {
 public:
     ColumnsDescription() = default;
@@ -183,6 +183,8 @@ public:
     bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
+
+    bool hasOnlyOrdinary() const;
 
     NameAndTypePair getPhysical(const String & column_name) const;
     NameAndTypePair getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;

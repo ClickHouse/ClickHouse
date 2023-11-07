@@ -304,6 +304,12 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 }
 
+void StorageEmbeddedRocksDB::drop()
+{
+    rocksdb_ptr->Close();
+    rocksdb_ptr = nullptr;
+}
+
 void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
@@ -316,6 +322,7 @@ void StorageEmbeddedRocksDB::initDB()
     base.info_log_level = rocksdb::ERROR_LEVEL;
 
     rocksdb::Options merged = base;
+    rocksdb::BlockBasedTableOptions table_options;
 
     const auto & config = getContext()->getConfigRef();
     if (config.has("rocksdb.options"))
@@ -334,7 +341,17 @@ void StorageEmbeddedRocksDB::initDB()
         status = rocksdb::GetColumnFamilyOptionsFromMap(merged, column_family_options, &merged);
         if (!status.ok())
         {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' at: {}: {}",
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.column_family_options' at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+    }
+    if (config.has("rocksdb.block_based_table_options"))
+    {
+        auto block_based_table_options = getOptionsFromConfig(config, "rocksdb.block_based_table_options");
+        status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.block_based_table_options' at: {}: {}",
                 rocksdb_dir, status.ToString());
         }
     }
@@ -375,8 +392,22 @@ void StorageEmbeddedRocksDB::initDB()
                         config_key, rocksdb_dir, status.ToString());
                 }
             }
+
+            config_key = key_prefix + ".block_based_table_options";
+            if (config.has(config_key))
+            {
+                auto block_based_table_options = getOptionsFromConfig(config, config_key);
+                status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+                if (!status.ok())
+                {
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
+                        config_key, rocksdb_dir, status.ToString());
+                }
+            }
         }
     }
+
+    merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
 
     if (ttl > 0)
     {
@@ -603,5 +634,19 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
     factory.registerStorage("EmbeddedRocksDB", create, features);
 }
 
+std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & settings) const
+{
+    if (settings.optimize_trivial_approximate_count_query)
+    {
+        std::shared_lock lock(rocksdb_ptr_mx);
+        if (!rocksdb_ptr)
+            return {};
+        UInt64 estimated_rows;
+        if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
+            return {};
+        return estimated_rows;
+    }
+    return {};
+}
 
 }

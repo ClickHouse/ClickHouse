@@ -1,5 +1,9 @@
 <test>
 
+<settings>
+        <use_cache_for_count_from_files>0</use_cache_for_count_from_files>
+</settings>
+
 <substitutions>
     <substitution>
         <name>format</name>

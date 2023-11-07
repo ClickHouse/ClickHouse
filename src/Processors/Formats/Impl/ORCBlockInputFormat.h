@@ -69,8 +69,13 @@ public:
     ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+    std::optional<size_t> readNumberOrRows() override;
 
 private:
+    void initializeIfNeeded();
+
+    std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
+    std::shared_ptr<arrow::Schema> schema;
     const FormatSettings format_settings;
 };
 

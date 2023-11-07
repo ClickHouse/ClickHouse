@@ -6,7 +6,6 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageSnapshot.h>
 
 namespace DB
@@ -78,7 +77,8 @@ public:
         ContextPtr context,
         std::vector<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
-        UInt32 shard_count);
+        UInt32 shard_count,
+        bool parallel_replicas_enabled);
 
     struct ShardPlans
     {

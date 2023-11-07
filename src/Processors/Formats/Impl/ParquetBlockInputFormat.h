@@ -56,8 +56,6 @@ public:
 
     ~ParquetBlockInputFormat() override;
 
-    void setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context) override;
-
     void resetParser() override;
 
     String getName() const override { return "ParquetBlockInputFormat"; }
@@ -255,9 +253,6 @@ private:
     std::shared_ptr<parquet::FileMetaData> metadata;
     /// Indices of columns to read from Parquet file.
     std::vector<int> column_indices;
-    /// Pushed-down filter that we'll use to skip row groups.
-    std::optional<KeyCondition> key_condition;
-
 
     // Window of active row groups:
     //
@@ -295,9 +290,14 @@ public:
     ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+    std::optional<size_t> readNumberOrRows() override;
 
 private:
+    void initializeIfNeeded();
+
     const FormatSettings format_settings;
+    std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
+    std::shared_ptr<parquet::FileMetaData> metadata;
 };
 
 }

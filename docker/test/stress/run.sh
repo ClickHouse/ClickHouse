@@ -5,6 +5,8 @@
 
 # Avoid overlaps with previous runs
 dmesg --clear
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
 
 set -x
 
@@ -14,8 +16,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-source /usr/share/clickhouse-test/ci/attach_gdb.lib
-source /usr/share/clickhouse-test/ci/stress_tests.lib
+source /attach_gdb.lib
+source /stress_tests.lib
 
 install_packages package_folder
 
@@ -51,38 +53,11 @@ configure
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
 
-# Setup a cluster for logs export to ClickHouse Cloud
-# Note: these variables are provided to the Docker run command by the Python script in tests/ci
-if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
-then
-    echo "
-remote_servers:
-    system_logs_export:
-        shard:
-            replica:
-                secure: 1
-                user: ci
-                host: '${CLICKHOUSE_CI_LOGS_HOST}'
-                password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
-" > /etc/clickhouse-server/config.d/system_logs_export.yaml
-fi
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 start
 
-# Initialize export of system logs to ClickHouse Cloud
-if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
-then
-    export EXTRA_COLUMNS_EXPRESSION="$PULL_REQUEST_NUMBER AS pull_request_number, '$COMMIT_SHA' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
-    # TODO: Check if the password will appear in the logs.
-    export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
-
-    ./setup_export_logs.sh
-
-    # Unset variables after use
-    export CONNECTION_PARAMETERS=''
-    export CLICKHOUSE_CI_LOGS_HOST=''
-    export CLICKHOUSE_CI_LOGS_PASSWORD=''
-fi
+setup_logs_replication
 
 # shellcheck disable=SC2086 # No quotes because I want to split it into words.
 /s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS

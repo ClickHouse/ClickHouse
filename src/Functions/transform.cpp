@@ -163,7 +163,16 @@ namespace
 
             ColumnPtr default_non_const;
             if (!cache.default_column && arguments.size() == 4)
+            {
                 default_non_const = castColumn(arguments[3], result_type);
+                if (in->size() > default_non_const->size())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Fourth argument of function {} must be a constant or a column at least as big as the second and third arguments",
+                        getName());
+                }
+            }
 
             ColumnPtr in_casted = arguments[0].column;
             if (arguments.size() == 3)
@@ -490,7 +499,7 @@ namespace
                     else if (cache.default_column)
                         column_result.insertFrom(*cache.default_column, 0);
                     else if (default_non_const)
-                        column_result.insertFrom(*default_non_const, 0);
+                        column_result.insertFrom(*default_non_const, i);
                     else
                         column_result.insertFrom(in_casted, i);
                 }

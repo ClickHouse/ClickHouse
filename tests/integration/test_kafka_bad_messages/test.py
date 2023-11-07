@@ -320,29 +320,73 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
         )
 
     expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
-Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': while parsing Kafka message (topic: JSONEachRow_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_JSONEachRow
+Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': while parsing Kafka message (topic: JSONEachRow_err, partition: 0, offset: 0|1|1|1|default|kafka_JSONEachRow
 """
-    retries = 0
-    result_system_kafka_consumers = ""
-    while True:
-        result_system_kafka_consumers = instance.query(
-            """
-            SELECT exceptions.text[1], length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers ORDER BY table, assignments.partition_id[1]
-            """
-        )
-        result_system_kafka_consumers = result_system_kafka_consumers.replace("\t", "|")
-        if result_system_kafka_consumers == expected_result or retries > max_retries:
-            break
-        retries += 1
-        time.sleep(1)
+    # filter out stacktrace in exceptions.text[1] because it is hardly stable enough
+    result_system_kafka_consumers = instance.query_with_retry(
+        """
+        SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
+        """,
+        retry_count=max_retries,
+        sleep_time=1,
+        check_callback=lambda res: res.replace("\t", "|") == expected_result,
+    )
 
-    assert result_system_kafka_consumers == expected_result
+    assert result_system_kafka_consumers.replace("\t", "|") == expected_result
 
     for format_name in [
         "Avro",
         "JSONEachRow",
     ]:
         kafka_delete_topic(admin_client, f"{format_name}_err")
+
+
+def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    kafka_create_topic(admin_client, "tomv")
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS kafka_materialized;
+        DROP TABLE IF EXISTS kafka_consumer;
+        DROP TABLE IF EXISTS kafka1;
+
+        CREATE TABLE kafka1 (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'tomv',
+                     kafka_group_name = 'tomv',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 1;
+
+        CREATE TABLE kafka_materialized(`key` UInt64, `value` UInt64) ENGINE = Log;
+
+        CREATE MATERIALIZED VIEW kafka_consumer TO kafka_materialized
+        (`key` UInt64, `value` UInt64) AS
+        SELECT key, CAST(value, 'UInt64') AS value
+        FROM kafka1;
+    """
+    )
+
+    kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
+
+    expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka1
+"""
+    result_system_kafka_consumers = instance.query_with_retry(
+        """
+        SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers  WHERE table='kafka1' ORDER BY table, assignments.partition_id[1]
+        """,
+        retry_count=max_retries,
+        sleep_time=1,
+        check_callback=lambda res: res.replace("\t", "|") == expected_result,
+    )
+
+    assert result_system_kafka_consumers.replace("\t", "|") == expected_result
+
+    kafka_delete_topic(admin_client, "tomv")
 
 
 if __name__ == "__main__":

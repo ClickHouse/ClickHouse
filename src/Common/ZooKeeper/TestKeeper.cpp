@@ -863,7 +863,9 @@ void TestKeeper::reconfig(
         .callback = [callback](const Response & response)
         {
             callback(dynamic_cast<const ReconfigResponse &>(response));
-        }
+        },
+        .watch = nullptr,
+        .time = {}
     });
 }
 

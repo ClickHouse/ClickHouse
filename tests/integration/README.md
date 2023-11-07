@@ -46,7 +46,6 @@ sudo -H pip install \
     hypothesis \
     pyhdfs \
     pika \
-    meilisearch \
     nats-py
 ```
 

@@ -56,10 +56,7 @@ ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr conte
 {
     if (structure == "auto")
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            return std::make_unique<ReadBufferFromString>(data);
-        };
+        SingleReadBufferIterator read_buffer_iterator(std::make_unique<ReadBufferFromString>(data));
         return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
     }
     return parseColumnsListFromString(structure, context);

@@ -48,7 +48,7 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
 
     if (!settings.allow_suspicious_fixed_string_types)
     {
-        auto basic_type = removeLowCardinality(removeNullable(type));
+        auto basic_type = removeLowCardinalityAndNullable(type);
         if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
         {
             if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)

@@ -464,11 +464,6 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             continue;
         }
 
-        ++number_of_rows;
-        if ((number_of_rows >= min_rows)
-            && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
-            need_more_data = false;
-
         if (*pos == '\n')
         {
             ++pos;
@@ -480,7 +475,14 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             ++pos;
             if (loadAtPosition(in, memory, pos) && *pos == '\n')
                 ++pos;
+            else
+                continue;
         }
+
+        ++number_of_rows;
+        if ((number_of_rows >= min_rows)
+            && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+            need_more_data = false;
     }
 
     saveUpToPosition(in, memory, pos);
