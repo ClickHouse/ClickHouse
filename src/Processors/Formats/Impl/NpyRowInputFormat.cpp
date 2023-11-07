@@ -30,13 +30,15 @@ namespace ErrorCodes
 namespace
 {
 
-float convertFloat16ToFloat32(uint16_t float16_value) {
+float convertFloat16ToFloat32(uint16_t float16_value)
+{
     uint16_t sign = (float16_value >> 15) & 0x1;
     uint16_t exponent = (float16_value >> 10) & 0x1F;
     uint16_t fraction = float16_value & 0x3FF;
 
     // Handling special cases for exponent
-    if (exponent == 0x1F) {
+    if (exponent == 0x1F)
+    {
         // NaN or Infinity in float16
         return (fraction == 0) ? std::numeric_limits<float>::infinity() : std::numeric_limits<float>::quiet_NaN();
     }
