@@ -1,21 +1,23 @@
 ---
 slug: /en/sql-reference/functions/time-series-functions
-sidebar_position: 140
+sidebar_position: 172
 sidebar_label: Time Series
 ---
 
 # Time Series Functions
 
-Below functions are used for time series anlaysis.
+Below functions are used for time series analysis.
 
-## seriesPeriodDetect
+## seriesPeriodDetectFFT
 
-Finds the period of the given time series data
+Finds the period of the given time series data using FFT
+Detect Period in time series data using FFT.
+FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transform)
 
 **Syntax**
 
 ``` sql
-seriesPeriodDetect(series);
+seriesPeriodDetectFFT(series);
 ```
 
 **Arguments**
@@ -33,7 +35,7 @@ Type: [Float64](../../sql-reference/data-types/float.md).
 Query:
 
 ``` sql
-SELECT seriesPeriodDetect([1,4,6,1,4,6,1,4,6,1,4,6]) AS print_0;
+SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0;
 ```
 
 Result:

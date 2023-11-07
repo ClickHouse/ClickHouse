@@ -356,4 +356,4 @@
 	url = https://github.com/aklomp/base64.git
 [submodule "contrib/pocketfft"]
 	path = contrib/pocketfft
-	url = https://gitlab.mpcdf.mpg.de/mtr/pocketfft.git
+	url = https://github.com/mreineck/pocketfft.git

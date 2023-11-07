@@ -1,9 +1,15 @@
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 #pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+
 #include "pocketfft_hdronly.h"
+
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 #include <cmath>
 #include <Columns/ColumnArray.h>
@@ -28,18 +34,16 @@ extern const int ILLEGAL_COLUMN;
  * 4. Inverse of the dominant frequency component is the period.
 */
 
-class FunctionSeriesPeriodDetect : public IFunction
+class FunctionSeriesPeriodDetectFFT : public IFunction
 {
 public:
-    static constexpr auto name = "seriesPeriodDetect";
+    static constexpr auto name = "seriesPeriodDetectFFT";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesPeriodDetect>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesPeriodDetectFFT>(); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
-
-    bool isVariadic() const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -86,14 +90,15 @@ public:
 
         size_t len = src_vec.size();
         if (len < 4)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Atleast four data points are needed for function {}", getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least four data points are needed for function {}", getName());
 
         std::vector<Float64> src(src_vec.begin(), src_vec.end());
         std::vector<std::complex<double>> out((len / 2) + 1);
 
-        pocketfft::shape_t shape{static_cast<size_t>(len)};
+        pocketfft::shape_t shape{len};
 
         pocketfft::shape_t axes;
+        axes.reserve(shape.size());
         for (size_t i = 0; i < shape.size(); ++i)
             axes.push_back(i);
 
@@ -128,8 +133,8 @@ public:
     }
 };
 
-REGISTER_FUNCTION(SeriesPeriodDetect)
+REGISTER_FUNCTION(SeriesPeriodDetectFFT)
 {
-    factory.registerFunction<FunctionSeriesPeriodDetect>();
+    factory.registerFunction<FunctionSeriesPeriodDetectFFT>();
 }
 }
