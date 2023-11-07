@@ -6,13 +6,14 @@
 namespace DB
 {
 
-class PredicateNodeVisitor : public ActionNodeVisitor<ActionNodeStatistics, std::unordered_map<const ActionsDAG::Node *, ActionNodeStatistics>>
+class PredicateNodeVisitor
+    : public ActionNodeVisitor<ActionNodeStatistics, std::unordered_map<const ActionsDAG::Node *, ActionNodeStatistics>>
 {
 public:
     using Base = ActionNodeVisitor<ActionNodeStatistics, std::unordered_map<const ActionsDAG::Node *, ActionNodeStatistics>>;
     using VisitContext = std::unordered_map<const ActionsDAG::Node *, ActionNodeStatistics>;
 
-    PredicateNodeVisitor() : log(&Poco::Logger::get("PredicateNodeVisitor")) {}
+    PredicateNodeVisitor() : log(&Poco::Logger::get("PredicateNodeVisitor")) { }
 
     ActionNodeStatistics visit(const ActionsDAG::Node * node, ContextType & context) override;
     ActionNodeStatistics visitChildren(const ActionsDAG::Node * node, ContextType & context) override;
@@ -39,7 +40,7 @@ public:
 
     ActionNodeStatistics
     calculateBinaryPredicateFunction(const ActionsDAG::Node * node, ColumnStatistics::OP_TYPE op_type, ContextType & context);
-    [[ maybe_unused ]] ActionNodeStatistics calculateUnaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context);
+    [[maybe_unused]] ActionNodeStatistics calculateUnaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context);
 
 private:
     Poco::Logger * log;
@@ -49,8 +50,7 @@ private:
 class PredicateStatsCalculator
 {
 public:
-    static Statistics calculateStatistics(
-        const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input);
+    static Statistics calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input);
 };
 
 }

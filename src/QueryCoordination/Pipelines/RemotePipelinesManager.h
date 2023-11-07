@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/ThreadPool.h>
+#include <memory>
 #include <Client/ConnectionPool.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <memory>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -19,8 +19,7 @@ using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
 class RemotePipelinesManager
 {
 public:
-    RemotePipelinesManager(const StorageLimitsList & storage_limits_)
-        : log(&Poco::Logger::get("RemotePipelinesManager"))
+    RemotePipelinesManager(const StorageLimitsList & storage_limits_) : log(&Poco::Logger::get("RemotePipelinesManager"))
     {
         /// Remove leaf limits for remote pipelines manager.
         for (const auto & value : storage_limits_)
@@ -32,19 +31,14 @@ public:
     void setManagedNode(const std::unordered_map<String, IConnectionPool::Entry> & host_connection)
     {
         for (auto & [host, connection] : host_connection)
-        {
             managed_nodes.emplace_back(ManagedNode{.host_port = host, .connection = connection});
-        }
     }
 
     void asyncReceiveReporter();
 
     void cancel();
 
-    void setExceptionCallback(setExceptionCallback exception_callback_)
-    {
-        exception_callback = exception_callback_;
-    }
+    void setExceptionCallback(setExceptionCallback exception_callback_) { exception_callback = exception_callback_; }
 
     /// Set callback for progress. It will be called on Progress packet.
     void setProgressCallback(ProgressCallback callback, QueryStatusPtr process_list_element)

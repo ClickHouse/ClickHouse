@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 Float64 Cost::get() const
@@ -38,7 +38,7 @@ void Cost::multiplyBy(size_t n)
     net_cost *= n;
 }
 
-Cost& Cost::operator=(const Cost & other)
+Cost & Cost::operator=(const Cost & other)
 {
     this->cpu_cost = other.cpu_cost;
     this->mem_cost = other.mem_cost;
@@ -70,7 +70,7 @@ Cost Cost::operator-(const Cost & other)
     return result;
 }
 
-Cost& Cost::operator+=(const Cost & other)
+Cost & Cost::operator+=(const Cost & other)
 {
     this->cpu_cost += other.cpu_cost;
     this->mem_cost += other.mem_cost;
@@ -78,7 +78,7 @@ Cost& Cost::operator+=(const Cost & other)
     return *this;
 }
 
-Cost& Cost::operator-=(const Cost & other)
+Cost & Cost::operator-=(const Cost & other)
 {
     this->cpu_cost -= other.cpu_cost;
     this->mem_cost -= other.mem_cost;

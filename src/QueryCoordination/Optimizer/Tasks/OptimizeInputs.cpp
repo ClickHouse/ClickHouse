@@ -15,7 +15,8 @@ OptimizeInputs::OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_con
     : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_))
 {
     auto & group = task_context->getCurrentGroup();
-    log = &Poco::Logger::get("OptimizeInputs group(" + std::to_string(group.getId()) + ") group node(" + group_node->getStep()->getName() + ")");
+    log = &Poco::Logger::get(
+        "OptimizeInputs group(" + std::to_string(group.getId()) + ") group node(" + group_node->getStep()->getName() + ")");
 }
 
 void OptimizeInputs::execute()
@@ -119,17 +120,17 @@ void OptimizeInputs::execute()
 
             /// Currently, it only deals with distributed cases
             if (!output_prop.satisfySort(required_prop))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort property not satisfied, output sort prop {}, required sort prop {}", output_prop.sort_prop.toString(), required_prop.sort_prop.toString());
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Sort property not satisfied, output sort prop {}, required sort prop {}",
+                    output_prop.sort_prop.toString(),
+                    required_prop.sort_prop.toString());
 
             if (!output_prop.satisfyDistribute(required_prop))
-            {
                 frame->total_cost = enforceGroupNode(required_prop, output_prop);
-            }
 
             if (frame->total_cost < task_context->getUpperBoundCost())
-            {
                 task_context->setUpperBoundCost(frame->total_cost);
-            }
         }
 
         frame->resetAlternativeState();
@@ -137,15 +138,14 @@ void OptimizeInputs::execute()
 }
 
 
-Cost OptimizeInputs::enforceGroupNode(
-    const PhysicalProperties & required_prop,
-    const PhysicalProperties & output_prop)
+Cost OptimizeInputs::enforceGroupNode(const PhysicalProperties & required_prop, const PhysicalProperties & output_prop)
 {
     std::shared_ptr<ExchangeDataStep> exchange_step;
 
     size_t max_block_size = task_context->getQueryContext()->getSettings().max_block_size;
     /// Because the ordering of data may be changed after adding Exchange in a distributed manner, we need to retain the order of data during exchange if there is a requirement for data sorting.
-    if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Stream && output_prop.sort_prop.sort_scope >= DataStream::SortScope::Stream)
+    if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Stream
+        && output_prop.sort_prop.sort_scope >= DataStream::SortScope::Stream)
     {
         exchange_step = std::make_shared<ExchangeDataStep>(
             required_prop.distribution,
@@ -168,7 +168,8 @@ Cost OptimizeInputs::enforceGroupNode(
     }
     else
     {
-        exchange_step = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream(), max_block_size);
+        exchange_step
+            = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream(), max_block_size);
     }
 
     auto & group = task_context->getCurrentGroup();

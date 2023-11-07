@@ -3,7 +3,9 @@
 namespace DB
 {
 
-OptimizeTask::OptimizeTask(TaskContextPtr task_context_) : task_context(task_context_) {}
+OptimizeTask::OptimizeTask(TaskContextPtr task_context_) : task_context(task_context_)
+{
+}
 
 OptimizeTask::~OptimizeTask() = default;
 

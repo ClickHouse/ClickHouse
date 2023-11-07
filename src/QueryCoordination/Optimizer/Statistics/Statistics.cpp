@@ -5,7 +5,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 Statistics Statistics::unknown(const Names & column_names)
@@ -14,9 +14,7 @@ Statistics Statistics::unknown(const Names & column_names)
     statistics.setOutputRowSize(1.0);
 
     for (const auto & column_name : column_names)
-    {
         statistics.addColumnStatistics(column_name, ColumnStatistics::unknown());
-    }
     return statistics;
 }
 
@@ -26,9 +24,7 @@ Statistics Statistics::clone() const
     statistics.setOutputRowSize(output_row_size);
 
     for (const auto & column_stats : columns_stats_map)
-    {
         statistics.addColumnStatistics(column_stats.first, column_stats.second->clone());
-    }
 
     return statistics;
 }
@@ -39,9 +35,7 @@ StatisticsPtr Statistics::clonePtr() const
     statistics->setOutputRowSize(output_row_size);
 
     for (const auto & column_stats : columns_stats_map)
-    {
         statistics->addColumnStatistics(column_stats.first, column_stats.second->clone());
-    }
 
     return statistics;
 }
@@ -99,20 +93,16 @@ Names Statistics::getColumnNames() const
 bool Statistics::hasUnknownColumn() const
 {
     for (auto column_stats : columns_stats_map)
-    {
         if (column_stats.second->isUnKnown())
             return true;
-    }
     return false;
 }
 
 bool Statistics::hasUnknownColumn(const Names & columns) const
 {
     for (auto column : columns)
-    {
         if (getColumnStatistics(column)->isUnKnown())
             return true;
-    }
     return false;
 }
 
@@ -155,9 +145,7 @@ Float64 Statistics::getDataSize() const
 {
     Float64 total_row_size{};
     for (auto & [_, column_stats] : columns_stats_map)
-    {
         total_row_size += column_stats->isUnKnown() ? 8 : column_stats->getAvgRowSize();
-    }
 
     if (total_row_size <= 0)
         total_row_size = 8;

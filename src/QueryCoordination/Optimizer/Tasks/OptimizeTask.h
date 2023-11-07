@@ -2,8 +2,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
-#include <QueryCoordination/Optimizer/Tasks/TaskContext.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeContext.h>
+#include <QueryCoordination/Optimizer/Tasks/TaskContext.h>
 
 namespace DB
 {

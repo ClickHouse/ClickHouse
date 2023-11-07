@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Interpreters/StorageID.h>
 #include <Interpreters/Cluster.h>
-#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
+#include <Interpreters/StorageID.h>
 #include <QueryCoordination/Optimizer/Statistics/ColumnStatistics.h>
+#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 
 namespace DB
 {
@@ -60,7 +60,6 @@ struct StatsForColumnDesc : public StatsTableDefinitionDesc
 class IStatisticsStorage : public std::enable_shared_from_this<IStatisticsStorage>
 {
 public:
-
     using StatisticsMap = std::unordered_map<StorageID, StatisticsPtr, StorageID::DatabaseAndTableNameHash>;
     using TableAndClusters = std::unordered_map<StorageID, String, StorageID::DatabaseAndTableNameHash>;
 
@@ -84,7 +83,7 @@ public:
     virtual void collect(const StorageID & storage_id, const Names & columns, ContextMutablePtr context);
 
     virtual void loadAll();
-//    virtual void collectAll();
+    //    virtual void collectAll();
 
     virtual void shutdown();
     virtual ~IStatisticsStorage() { shutdown(); }

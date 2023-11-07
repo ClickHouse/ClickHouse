@@ -14,25 +14,20 @@ void setSortProp(QueryPlanStepPtr step, SortProp & required_sort_prop, size_t ch
     /// CreatingSetsStep header is id_0, name_1 but it's sort desc is id
     const auto & header = step->getInputStreams()[child_index].header;
     for (const auto & sort_column : step->getInputStreams()[child_index].sort_description)
-    {
         if (!header.has(sort_column.column_name))
             return;
-    }
 
     if (!step->getInputStreams()[child_index].sort_description.empty())
     {
         required_sort_prop.sort_description = step->getInputStreams()[child_index].sort_description;
         required_sort_prop.sort_scope = step->getInputStreams()[child_index].sort_scope;
     }
-
 }
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(QueryPlanStepPtr step)
 {
     if (group_node->hasRequiredChildrenProp())
-    {
         return group_node->getRequiredChildrenProp();
-    }
 
     return Base::visit(step);
 }
@@ -52,7 +47,8 @@ AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & s
         if (transforming_step && transforming_step->getDataStreamTraits().preserves_sorting)
             setSortProp(group_node->getStep(), required_child_sort_prop, i);
 
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_child_sort_prop});
+        required_child_prop.push_back(
+            {.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_child_sort_prop});
     }
     return {required_child_prop};
 }
@@ -145,17 +141,14 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(TopNStep & step)
     else if (step.sortType() == SortingStep::Type::MergingSorted)
     {
         required_child_prop.sort_prop.sort_scope = DataStream::SortScope::Stream;
-        required_child_prop.sort_prop.sort_description = step.getInputStreams().front().sort_description; /// step.getSortDescription(); column name may alias
+        required_child_prop.sort_prop.sort_description
+            = step.getInputStreams().front().sort_description; /// step.getSortDescription(); column name may alias
     }
 
     if (step.getPhase() == TopNStep::Phase::Preliminary)
-    {
         required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
-    }
     else
-    {
         required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
-    }
     return {{required_child_prop}};
 }
 
@@ -173,13 +166,9 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(SortingStep & step)
         required_child_prop.sort_prop.sort_description = step.getInputStreams().front().sort_description;
     }
     if (step.getPhase() == SortingStep::Phase::Preliminary)
-    {
         required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
-    }
     else
-    {
         required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
-    }
     return {{required_child_prop}};
 }
 
@@ -198,14 +187,14 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(DistinctStep & step)
 
     required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
 
-//    if (step.isPreliminary())
-//    {
-//        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
-//    }
-//    else
-//    {
-//        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
-//    }
+    //    if (step.isPreliminary())
+    //    {
+    //        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
+    //    }
+    //    else
+    //    {
+    //        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
+    //    }
     return {{required_child_prop}};
 }
 
@@ -219,11 +208,13 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(LimitStep & step)
 
     if (step.getPhase() == LimitStep::Phase::Preliminary)
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}, .sort_prop = required_sort_prop});
+        required_child_prop.push_back(
+            {.distribution = {.type = PhysicalProperties::DistributionType::Any}, .sort_prop = required_sort_prop});
     }
     else
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_sort_prop});
+        required_child_prop.push_back(
+            {.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_sort_prop});
     }
 
     res.emplace_back(required_child_prop);
@@ -244,15 +235,20 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(JoinStep & step)
     JoinPtr join = step.getJoin();
 
     if (join->pipelineType() != JoinPipelineType::FillRightFirst)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support join pipeline type, please specify the join algorithm as hash or parallel_hash or grace_hash");
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Not support join pipeline type, please specify the join algorithm as hash or parallel_hash or grace_hash");
 
     const TableJoin & table_join = join->getTableJoin();
-    if (table_join.getClauses().size() == 1 && table_join.strictness() != JoinStrictness::Asof) /// broadcast join. Asof support != condition
+    if (table_join.getClauses().size() == 1
+        && table_join.strictness() != JoinStrictness::Asof) /// broadcast join. Asof support != condition
     {
         auto join_clause = table_join.getOnlyClause(); /// must be equals condition
         std::vector<PhysicalProperties> shaffle_join_prop;
-        shaffle_join_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed, .keys = join_clause.key_names_left}});
-        shaffle_join_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed, .keys = join_clause.key_names_right}});
+        shaffle_join_prop.push_back(
+            {.distribution = {.type = PhysicalProperties::DistributionType::Hashed, .keys = join_clause.key_names_left}});
+        shaffle_join_prop.push_back(
+            {.distribution = {.type = PhysicalProperties::DistributionType::Hashed, .keys = join_clause.key_names_right}});
         res.emplace_back(shaffle_join_prop);
     }
 
@@ -298,9 +294,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(CreatingSetsStep & step)
     /// Ensure that CreatingSetsStep and the left table scan are assigned to the same fragment.
     required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}, .sort_prop = required_sort_prop});
     for (size_t i = 1; i < group_node->childSize(); ++i)
-    {
         required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
-    }
     return {required_child_prop};
 }
 
@@ -312,7 +306,8 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(UnionStep & /*step*/)
         SortProp required_child_sort_prop;
         setSortProp(group_node->getStep(), required_child_sort_prop, i);
 
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_child_sort_prop});
+        required_child_prop.push_back(
+            {.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_child_sort_prop});
     }
     return {required_child_prop};
 }

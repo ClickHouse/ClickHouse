@@ -11,25 +11,28 @@ IProcessor::Status ExchangeDataSource::prepare()
 /// Stop reading from stream if output port is finished.
 void ExchangeDataSource::onUpdatePorts()
 {
-
 }
 
 void ExchangeDataSource::setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits_*/)
 {
-
 }
 
 std::optional<Chunk> ExchangeDataSource::tryGenerate()
 {
     std::unique_lock lk(mutex);
-    cv.wait(lk, [this] {return !block_list.empty() || finished || isCancelled(); });
+    cv.wait(lk, [this] { return !block_list.empty() || finished || isCancelled(); });
 
     Block block = std::move(block_list.front());
     block_list.pop_front();
 
     if (!block)
     {
-        LOG_DEBUG(&Poco::Logger::get("ExchangeDataSource"), "Fragment {} exchange id {} receive empty block from {}", fragment_id, plan_id, source);
+        LOG_DEBUG(
+            &Poco::Logger::get("ExchangeDataSource"),
+            "Fragment {} exchange id {} receive empty block from {}",
+            fragment_id,
+            plan_id,
+            source);
         return {};
     }
 
@@ -44,7 +47,8 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
     else
         rows = block.rows();
 
-    LOG_DEBUG(&Poco::Logger::get("ExchangeDataSource"), "Fragment {} exchange id {} receive {} rows from {}", fragment_id, plan_id, rows, source);
+    LOG_DEBUG(
+        &Poco::Logger::get("ExchangeDataSource"), "Fragment {} exchange id {} receive {} rows from {}", fragment_id, plan_id, rows, source);
     num_rows += rows;
 
     Chunk chunk(block.getColumns(), rows);

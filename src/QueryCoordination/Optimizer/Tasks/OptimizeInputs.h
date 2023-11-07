@@ -1,7 +1,7 @@
 #pragma once
 
-#include <QueryCoordination/Optimizer/Tasks/OptimizeTask.h>
 #include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
+#include <QueryCoordination/Optimizer/Tasks/OptimizeTask.h>
 
 namespace DB
 {
@@ -22,10 +22,7 @@ public:
         }
 
         /// Whether it is turn to visit new alternative sub problem.
-        bool newAlternativeCalc() const
-        {
-            return pre_child_idx == -1 && child_idx == 0;
-        }
+        bool newAlternativeCalc() const { return pre_child_idx == -1 && child_idx == 0; }
 
         void resetAlternativeState()
         {
@@ -62,9 +59,7 @@ private:
 
     bool isInitialTask() const;
 
-    Cost enforceGroupNode(
-        const PhysicalProperties & required_prop,
-        const PhysicalProperties & output_prop);
+    Cost enforceGroupNode(const PhysicalProperties & required_prop, const PhysicalProperties & output_prop);
 
     GroupNodePtr group_node;
     std::unique_ptr<Frame> frame;

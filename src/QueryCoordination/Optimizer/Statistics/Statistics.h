@@ -1,7 +1,7 @@
 #pragma once
 
-#include <base/types.h>
 #include <QueryCoordination/Optimizer/Statistics/ColumnStatistics.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -17,7 +17,7 @@ public:
     static Statistics unknown(const Names & column_names);
 
     Statistics() = default;
-    Statistics(Float64 row_count, ColumnStatisticsMap column_stats) : output_row_size(row_count), columns_stats_map(column_stats) {}
+    Statistics(Float64 row_count, ColumnStatisticsMap column_stats) : output_row_size(row_count), columns_stats_map(column_stats) { }
 
     Statistics clone() const;
     StatisticsPtr clonePtr() const;

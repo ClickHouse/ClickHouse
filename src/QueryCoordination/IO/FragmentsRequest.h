@@ -1,11 +1,11 @@
 #pragma once
 
-#include <QueryCoordination/IO/FragmentRequest.h>
-#include <IO/VarInt.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <base/types.h>
 #include <vector>
+#include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
+#include <QueryCoordination/IO/FragmentRequest.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -21,9 +21,7 @@ public:
         writeVarUInt(size, out);
 
         for (const FragmentRequest & fragment_request : fragments_request)
-        {
             fragment_request.write(out);
-        }
     }
 
     void read(ReadBuffer & in)
@@ -32,7 +30,7 @@ public:
 
         size_t fragment_size = 0;
         readVarUInt(fragment_size, in);
-//        fragments_request.reserve(fragment_size);
+        //        fragments_request.reserve(fragment_size);
 
         for (size_t i = 0; i < fragment_size; ++i)
         {

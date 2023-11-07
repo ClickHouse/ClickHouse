@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/StorageID.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -12,7 +12,6 @@ class QueryCoordinationMetaInfo
 {
 public:
     void write(WriteBuffer & out) const;
-
     void read(ReadBuffer & in);
 
     String toString() const;

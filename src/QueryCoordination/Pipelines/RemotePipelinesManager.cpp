@@ -1,18 +1,18 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryPipeline/ProfileInfo.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <QueryPipeline/ReadProgressCallback.h>
-#include <QueryPipeline/ProfileInfo.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int SYSTEM_ERROR;
+extern const int SYSTEM_ERROR;
 }
 
 void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
@@ -79,10 +79,7 @@ void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
 
 void RemotePipelinesManager::receiveReporter(ThreadGroupPtr thread_group)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
+    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
     setThreadName("receReporter");
 
     try
@@ -119,10 +116,8 @@ bool RemotePipelinesManager::allFinished()
 {
     std::lock_guard lock(finish_mutex);
     for (auto & node : managed_nodes)
-    {
         if (!node.is_finished)
             return false;
-    }
     return true;
 }
 
@@ -177,9 +172,7 @@ void RemotePipelinesManager::cancel()
         }
 
         for (auto & node : managed_nodes)
-        {
             node.connection->disconnect();
-        }
     }
 
     finish_event.set();

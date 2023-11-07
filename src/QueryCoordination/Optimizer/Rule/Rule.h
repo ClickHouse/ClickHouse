@@ -1,7 +1,7 @@
 #pragma once
 
-#include <QueryCoordination/Optimizer/StepTree.h>
 #include <QueryCoordination/Optimizer/Rule/Pattern.h>
+#include <QueryCoordination/Optimizer/StepTree.h>
 
 namespace DB
 {

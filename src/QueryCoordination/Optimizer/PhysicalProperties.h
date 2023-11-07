@@ -2,8 +2,8 @@
 
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
-#include <Common/SipHash.h>
 #include <QueryCoordination/Optimizer/SortProp.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -51,28 +51,21 @@ public:
             SipHash hash;
             hash.update(int8_t(properties.distribution.type));
             for (const auto & key : properties.distribution.keys)
-            {
                 hash.update(key);
-            }
 
             for (const auto & sort : properties.sort_prop.sort_description)
-            {
                 hash.update(sort.dump());
-            }
             return hash.get64();
         }
     };
 
     bool satisfy(const PhysicalProperties & required) const;
-
     bool satisfySort(const PhysicalProperties & required) const;
-
     bool satisfyDistribute(const PhysicalProperties & required) const;
 
     String toString() const;
 
     Distribution distribution;
-
     SortProp sort_prop;
 };
 

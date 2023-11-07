@@ -1,9 +1,9 @@
-#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
-#include <QueryCoordination/Exchange/ExchangeDataSink.h>
-#include <QueryCoordination/Exchange/ExchangeDataStep.h>
-#include <QueryCoordination/Exchange/ExchangeDataSource.h>
-#include <QueryCoordination/Exchange/ExchangeManager.h>
 #include <Interpreters/Cluster.h>
+#include <QueryCoordination/Exchange/ExchangeDataSink.h>
+#include <QueryCoordination/Exchange/ExchangeDataSource.h>
+#include <QueryCoordination/Exchange/ExchangeDataStep.h>
+#include <QueryCoordination/Exchange/ExchangeManager.h>
+#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
 
 
 namespace DB
@@ -17,9 +17,7 @@ Pipelines PipelinesBuilder::build()
         auto fragment = distributed_fragment.getFragment();
         const auto & data_to = distributed_fragment.getDataTo();
         for (const auto & to : data_to)
-        {
             LOG_DEBUG(log, "Fragment {} will send data to {}", fragment->getFragmentID(), to);
-        }
 
         /// for data sink
         std::vector<ExchangeDataSink::Channel> channels;
@@ -39,10 +37,7 @@ Pipelines PipelinesBuilder::build()
                     local_host = address.toString();
 
                 if (std::count(data_to.begin(), data_to.end(), address.toString()))
-                {
                     target_host_port = address.toString();
-                    break;
-                }
             }
 
             if (target_host_port.empty())
@@ -63,9 +58,7 @@ Pipelines PipelinesBuilder::build()
             if (it != data_from.end())
             {
                 if (auto * exchange_step = dynamic_cast<ExchangeDataStep *>(node.step.get()))
-                {
                     exchange_step->setSources(it->second);
-                }
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Destination step {} is not ExchangeDataStep", node.plan_id);
             }
@@ -93,13 +86,9 @@ Pipelines PipelinesBuilder::build()
         }
 
         if (!fragment->hasDestFragment())
-        {
             pipelines.addRootPipeline(fragment->getFragmentID(), std::move(pipeline));
-        }
         else
-        {
             pipelines.addSourcesPipeline(fragment->getFragmentID(), std::move(pipeline));
-        }
     }
 
     pipelines.assignThreadNum(settings.max_threads);

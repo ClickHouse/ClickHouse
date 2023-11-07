@@ -10,7 +10,7 @@ DistributedFragments DistributedFragmentBuilder::build()
     std::unordered_map<UInt32, FragmentRequest> id_fragments;
     for (const auto & request : plan_fragment_requests)
     {
-//        LOG_DEBUG(log, "Receive fragment to distributed, need execute {}", request.toString());
+        //        LOG_DEBUG(log, "Receive fragment to distributed, need execute {}", request.toString());
         id_fragments.emplace(request.fragment_id, request);
     }
 

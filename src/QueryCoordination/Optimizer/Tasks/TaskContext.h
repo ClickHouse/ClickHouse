@@ -1,8 +1,8 @@
 #pragma once
 
+#include <QueryCoordination/Optimizer/Cost/Cost.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeContext.h>
-#include <QueryCoordination/Optimizer/Cost/Cost.h>
 
 namespace DB
 {

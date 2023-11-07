@@ -4,8 +4,8 @@
 
 #include <Interpreters/Cluster.h>
 #include <QueryCoordination/Optimizer/GroupNode.h>
-#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 #include <QueryCoordination/Optimizer/PlanStepVisitor.h>
+#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 
 namespace DB
 {
@@ -40,17 +40,17 @@ public:
     Cost visit(MergingAggregatedStep & step) override;
 
     Cost visit(ExpressionStep & step) override;
-    
+
     Cost visit(FilterStep & step) override;
 
     Cost visit(SortingStep & step) override;
-    
+
     Cost visit(LimitStep & step) override;
 
     Cost visit(JoinStep & step) override;
 
     Cost visit(UnionStep & step) override;
-    
+
     Cost visit(ExchangeDataStep & step) override;
 
     Cost visit(CreatingSetStep & step) override;
@@ -72,7 +72,7 @@ private:
     const std::vector<Statistics> & input_statistics;
 
     /// Child steps physical properties(distribution)
-    [[ maybe_unused ]] const ChildrenProp & child_props;
+    [[maybe_unused]] const ChildrenProp & child_props;
 
     /// Query context
     ContextPtr context;

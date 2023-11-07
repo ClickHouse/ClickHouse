@@ -15,9 +15,7 @@ struct SortProp
     {
         String res;
         for (const auto & sort_column : sort_description)
-        {
             res += sort_column.column_name + ", ";
-        }
 
         switch (sort_scope)
         {

@@ -14,7 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+extern const int NOT_IMPLEMENTED;
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Node * node, ContextType & context)
@@ -32,8 +32,8 @@ ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Nod
     return node_stats;
 }
 
-Statistics PredicateStatsCalculator::calculateStatistics(
-    const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input)
+Statistics
+PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input)
 {
     Statistics statistics;
 
@@ -60,10 +60,8 @@ Statistics PredicateStatsCalculator::calculateStatistics(
 
     /// 3. calculate other output nodes
     for (const auto & output_node : output_nodes)
-    {
         if (output_node != filter_node)
             ExpressionStatsCalculator::calculateStatistics(output_node, context);
-    }
 
     statistics.setOutputRowSize(filter_node_stats.selectivity * input.getOutputRowSize());
 
@@ -104,7 +102,7 @@ ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAG::Node * node, 
 {
     if (context.contains(node))
         return context[node];
-    
+
     auto node_stats = Base::visit(node, context);
     context.insert({node, node_stats});
 
@@ -317,13 +315,10 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
                     if (i == set_data_column->size() - 1)
                         max_value = value;
                 }
-                else
+                else if (find_min_value && !find_max_value)
                 {
-                    if (find_min_value && !find_max_value)
-                    {
-                        max_value = set_data_column->getFloat64(i - 1);
-                        find_max_value = true;
-                    }
+                    max_value = set_data_column->getFloat64(i - 1);
+                    find_max_value = true;
                 }
             }
         }
@@ -349,8 +344,8 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
     return node_stats;
 }
 
-ActionNodeStatistics
-PredicateNodeVisitor::calculateBinaryPredicateFunction(const ActionsDAG::Node * node, ColumnStatistics::OP_TYPE op_type, ContextType & context)
+ActionNodeStatistics PredicateNodeVisitor::calculateBinaryPredicateFunction(
+    const ActionsDAG::Node * node, ColumnStatistics::OP_TYPE op_type, ContextType & context)
 {
     chassert(node->children.size() == 2);
 
@@ -363,10 +358,10 @@ PredicateNodeVisitor::calculateBinaryPredicateFunction(const ActionsDAG::Node * 
     auto right_stats = ExpressionStatsCalculator::calculateStatistics(right, context);
 
     auto handle_variable_and_const = [&node_stats, &op_type](
-         ActionNodeStatistics & var_stats,
-         const ActionsDAG::Node * const & var_node,
-         ActionNodeStatistics & const_stats,
-         const ActionsDAG::Node * const & /*const_node*/)
+                                         ActionNodeStatistics & var_stats,
+                                         const ActionsDAG::Node * const & var_node,
+                                         ActionNodeStatistics & const_stats,
+                                         const ActionsDAG::Node * const & /*const_node*/)
     {
         /// get unique variable input node stats
         auto input_nodes = getInputNodes(var_node);
@@ -413,8 +408,7 @@ PredicateNodeVisitor::calculateBinaryPredicateFunction(const ActionsDAG::Node * 
     return node_stats;
 }
 
-ActionNodeStatistics
-PredicateNodeVisitor::calculateUnaryPredicateFunction(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
+ActionNodeStatistics PredicateNodeVisitor::calculateUnaryPredicateFunction(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
 {
     /// TODO implement
     ActionNodeStatistics node_stats;

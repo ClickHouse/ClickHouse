@@ -1,8 +1,8 @@
 #pragma once
 
 #include <memory>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryCoordination/Exchange/ExchangeDataSink.h>
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -40,7 +40,6 @@ public:
     Fragment(UInt32 fragment_id_, ContextMutablePtr context_);
 
     void addStep(QueryPlanStepPtr step);
-
     void uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments);
 
     void setDestination(Node * dest_exchange, FragmentPtr dest_fragment);
@@ -48,21 +47,16 @@ public:
     const DataStream & getCurrentDataStream() const;
 
     Node * getRoot() const;
-
     const Nodes & getNodes() const;
 
     void dump(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & settings);
-
     const FragmentPtrs & getChildren() const;
 
     UInt32 getFragmentID() const;
-
     UInt32 getDestFragmentID() const;
-
     bool hasDestFragment() const;
 
     UInt32 getDestExchangeID() const;
-
     const Node * getDestExchangeNode() const;
 
     QueryPipeline buildQueryPipeline(std::vector<ExchangeDataSink::Channel> & channels, const String & local_host);
@@ -71,12 +65,10 @@ private:
     bool isInitialized() const;
 
     Node makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_ = {});
-
     void explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & settings);
 
     QueryPipelineBuilderPtr buildQueryPipeline(
-        const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
+        const QueryPlanOptimizationSettings & optimization_settings, const BuildQueryPipelineSettings & build_pipeline_settings);
 
 private:
     UInt32 fragment_id;

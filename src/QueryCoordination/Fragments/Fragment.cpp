@@ -1,16 +1,16 @@
+#include <iostream>
+#include <stack>
+#include <Core/SortCursor.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <QueryCoordination/Fragments/Fragment.h>
 #include <QueryCoordination/PlanNode.h>
-#include <QueryCoordination/Exchange/ExchangeDataStep.h>
-#include <Common/JSONBuilder.h>
-#include <Core/SortCursor.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <IO/Operators.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <stack>
-#include <iostream>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -22,7 +22,6 @@ Fragment::Fragment(UInt32 fragment_id_, ContextMutablePtr context_)
 
 void Fragment::addStep(QueryPlanStepPtr step)
 {
-
     size_t num_input_streams = step->getInputStreams().size();
 
     if (num_input_streams == 0)
@@ -71,7 +70,10 @@ void Fragment::addStep(QueryPlanStepPtr step)
         isInitialized() ? 1 : 0);
 }
 
-bool Fragment::isInitialized() const { return root != nullptr; } /// Tree is not empty
+bool Fragment::isInitialized() const
+{
+    return root != nullptr;
+} /// Tree is not empty
 
 
 Fragment::Node Fragment::makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_)
@@ -125,9 +127,7 @@ void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
         {
             node.plan_id = ++plan_id_counter;
             if (auto * exchange_step = typeid_cast<ExchangeDataStep *>(node.step.get()))
-            {
                 exchange_step->setPlanID(node.plan_id);
-            }
         }
 
         nodes.splice(nodes.end(), std::move(fragment->nodes));
@@ -199,8 +199,7 @@ const Fragment::Node * Fragment::getDestExchangeNode() const
 }
 
 QueryPipelineBuilderPtr Fragment::buildQueryPipeline(
-    const QueryPlanOptimizationSettings & /*optimization_settings*/,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
+    const QueryPlanOptimizationSettings & /*optimization_settings*/, const BuildQueryPipelineSettings & build_pipeline_settings)
 {
     struct Frame
     {
@@ -245,20 +244,16 @@ QueryPipelineBuilderPtr Fragment::buildQueryPipeline(
 
 QueryPipeline Fragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel> & channels, const String & local_host)
 {
-    auto builder = buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    auto builder
+        = buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 
     if (hasDestFragment())
     {
         String query_id;
         if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        {
             query_id = context->getCurrentQueryId();
-        }
         else if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        {
             query_id = context->getInitialQueryId();
-        }
 
         auto * exchange_data_step = typeid_cast<ExchangeDataStep *>(dest_exchange_node->step.get());
 
@@ -280,7 +275,13 @@ QueryPipeline Fragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel
         QueryPipeline pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
         auto sink = std::make_shared<ExchangeDataSink>(
-            pipeline.getHeader(), channels, exchange_data_step->getDistribution(), local_host, query_id, getDestFragmentID(), dest_exchange_node->plan_id);
+            pipeline.getHeader(),
+            channels,
+            exchange_data_step->getDistribution(),
+            local_host,
+            query_id,
+            getDestFragmentID(),
+            dest_exchange_node->plan_id);
 
         pipeline.complete(sink);
 
@@ -290,10 +291,8 @@ QueryPipeline Fragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel
     return QueryPipelineBuilder::getPipeline(std::move(*builder));
 }
 
-static void explainStep(
-    const IQueryPlanStep & step,
-    IQueryPlanStep::FormatSettings & settings,
-    const Fragment::ExplainFragmentOptions & options)
+static void
+explainStep(const IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings, const Fragment::ExplainFragmentOptions & options)
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
@@ -301,7 +300,7 @@ static void explainStep(
 
     const auto & description = step.getStepDescription();
     if (options.description && !description.empty())
-        settings.out <<" (" << description << ')';
+        settings.out << " (" << description << ')';
 
     settings.out.write('\n');
 
@@ -328,7 +327,6 @@ static void explainStep(
             }
         }
         settings.out.write('\n');
-
     }
 
     if (options.sorting)
@@ -368,9 +366,7 @@ void Fragment::dump(WriteBufferFromOwnString & buffer, const ExplainFragmentOpti
     explainPlan(buffer, settings);
 
     for (const auto & child_fragment : children)
-    {
         child_fragment->dump(buffer, settings);
-    }
 }
 
 void Fragment::explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & options)
@@ -389,9 +385,7 @@ void Fragment::explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & 
 
     std::unordered_set<Node *> all_nodes;
     for (auto & node : nodes)
-    {
         all_nodes.insert(&node);
-    }
 
     while (!stack.empty())
     {

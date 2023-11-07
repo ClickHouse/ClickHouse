@@ -1,8 +1,8 @@
-#include <QueryCoordination/Pipelines/Pipelines.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
-#include <QueryCoordination/QueryCoordinationExecutor.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/Pipelines.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
 
 #include <algorithm>
 
@@ -40,15 +40,17 @@ void Pipelines::assignThreadNum(size_t max_threads_)
         else
         {
             size_t num_threads = std::max(size_t(1), static_cast<size_t>((threads_weight[i] / total_weight) * max_threads));
-            LOG_DEBUG(&Poco::Logger::get("Pipelines"), "Fragment {} pipeline num_threads {}", sources_pipelines[i].fragment_id, num_threads);
+            LOG_DEBUG(
+                &Poco::Logger::get("Pipelines"), "Fragment {} pipeline num_threads {}", sources_pipelines[i].fragment_id, num_threads);
             sources_pipelines[i].pipeline.setNumThreads(num_threads);
         }
     }
 }
 
-std::shared_ptr<QueryCoordinationExecutor> Pipelines::createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_)
+std::shared_ptr<QueryCoordinationExecutor>
+Pipelines::createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_)
 {
-//    LOG_DEBUG(log, "Create pipelines executor for query {}", query_id);
+    //    LOG_DEBUG(log, "Create pipelines executor for query {}", query_id);
 
     std::shared_ptr<CompletedPipelinesExecutor> completed_pipelines_executor;
     if (!sources_pipelines.empty())

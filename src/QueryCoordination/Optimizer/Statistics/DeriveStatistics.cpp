@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 Statistics DeriveStatistics::visit(QueryPlanStepPtr step)
@@ -27,9 +27,7 @@ Statistics DeriveStatistics::visitDefault(IQueryPlanStep & step)
 
     /// Return unknown statistics for non merge tree family storage engine.
     if (typeid_cast<ISourceStep *>(&step))
-    {
         return Statistics::unknown(output_columns);
-    }
 
     Statistics statistics;
     chassert(input_statistics.size() == step.getInputStreams().size());
@@ -56,9 +54,7 @@ Statistics DeriveStatistics::visitDefault(IQueryPlanStep & step)
     /// Calculate output row count
     Float64 row_count = 0.0;
     for (size_t i = 0; i < input_statistics.size(); i++)
-    {
         row_count += input_statistics[i].getOutputRowSize(); /// TODO handle different cases.
-    }
 
     statistics.setOutputRowSize(std::max(1.0, row_count));
     return statistics;
@@ -74,9 +70,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     /// 1. init by statistics storage
     auto input = context->getStatisticsStorage()->get(storage_id, cluster_name);
     if (!input)
-    {
         input = std::make_shared<Statistics>();
-    }
 
     /// Final statistics output column names.
     const auto & output_columns = step.getOutputStream().header.getNames();
@@ -85,10 +79,8 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     auto add_column_if_not_exist = [&input](const Names & columns)
     {
         for (const auto & column : columns)
-        {
             if (!input->containsColumnStatistics(column))
                 input->addColumnStatistics(column, ColumnStatistics::unknown());
-        }
     };
 
     add_column_if_not_exist(step.getRealColumnNames());
@@ -105,10 +97,8 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     auto append_column_stats = [&input, &statistics]()
     {
         for (const auto & column : input->getColumnNames())
-        {
             if (!statistics.containsColumnStatistics(column))
                 statistics.addColumnStatistics(column, input->getColumnStatistics(column)->clone());
-        }
     };
 
     /// 3. calculate for prewhere filters
@@ -307,9 +297,7 @@ Statistics DeriveStatistics::visit(CreatingSetsStep & step)
     /// Calculate output row count
     Float64 row_count = 0.0;
     for (size_t i = 0; i < input_statistics.size(); i++)
-    {
         row_count += input_statistics[i].getOutputRowSize(); /// TODO handle different cases.
-    }
 
     statistics.setOutputRowSize(std::max(1.0, row_count));
     return statistics;
@@ -408,9 +396,7 @@ Statistics DeriveStatistics::visit(UnionStep & step)
     /// calculate output row size;
     Float64 output_row_size = 0;
     for (const auto & input_statistic : input_statistics)
-    {
         output_row_size += input_statistic.getOutputRowSize();
-    }
     statistics.setOutputRowSize(output_row_size);
 
     return statistics;

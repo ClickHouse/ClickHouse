@@ -1,6 +1,6 @@
-#include <QueryCoordination/Optimizer/Rule/SplitSort.h>
-#include <QueryCoordination/Optimizer/GroupStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <QueryCoordination/Optimizer/GroupStep.h>
+#include <QueryCoordination/Optimizer/Rule/SplitSort.h>
 
 
 namespace DB

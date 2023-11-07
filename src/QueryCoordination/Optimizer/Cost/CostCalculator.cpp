@@ -13,9 +13,7 @@ Cost CostCalculator::visit(QueryPlanStepPtr step)
 Cost CostCalculator::visitDefault(IQueryPlanStep & step)
 {
     if (typeid_cast<ISourceStep *>(&step))
-    {
         return Cost(statistics.getDataSize());
-    }
 
     Float64 total_input_data_size{};
     for (auto & input : input_statistics)
@@ -154,15 +152,11 @@ Cost CostCalculator::visit(JoinStep & step)
         {
             Names right_table_join_on_keys;
             for (auto & on_clause : join.getClauses())
-            {
                 for (auto & right_key : on_clause.key_names_right)
                     right_table_join_on_keys.push_back(right_key);
-            }
             right_table_ndv = 1 * right_input.getColumnStatistics(right_table_join_on_keys[0])->getNdv();
             for (size_t i = 1; i < right_table_join_on_keys.size(); i++)
-            {
                 right_table_ndv = right_table_ndv * 0.8 * right_input.getColumnStatistics(right_table_join_on_keys[i])->getNdv();
-            }
         }
         build_mem_cost = (right_table_ndv / right_input.getOutputRowSize()) * right_input.getDataSize();
     }

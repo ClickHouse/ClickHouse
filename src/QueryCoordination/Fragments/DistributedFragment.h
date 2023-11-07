@@ -1,10 +1,10 @@
 #pragma once
 
-#include <QueryCoordination/Fragments/Fragment.h>
-#include <QueryCoordination/IO/FragmentRequest.h>
-#include <QueryCoordination/IO/ExchangeDataRequest.h>
 #include <Core/Block.h>
 #include <QueryCoordination/Exchange/ExchangeDataSource.h>
+#include <QueryCoordination/Fragments/Fragment.h>
+#include <QueryCoordination/IO/ExchangeDataRequest.h>
+#include <QueryCoordination/IO/FragmentRequest.h>
 #include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 
 namespace DB
@@ -18,33 +18,20 @@ public:
     {
     }
 
-    static String receiverKey(UInt32 exchange_id, const String & source)
-    {
-        return source + "_" + toString(exchange_id);
-    }
+    static String receiverKey(UInt32 exchange_id, const String & source) { return source + "_" + toString(exchange_id); }
 
-    FragmentPtr getFragment() const
-    {
-        return fragment;
-    }
+    FragmentPtr getFragment() const { return fragment; }
 
-    const Destinations & getDataTo() const
-    {
-        return data_to;
-    }
+    const Destinations & getDataTo() const { return data_to; }
 
-    const Sources & getDataFrom() const
-    {
-        return data_from;
-    }
+    const Sources & getDataFrom() const { return data_from; }
 
 private:
     FragmentPtr fragment;
     Destinations data_to;
     Sources data_from;
 
-//    ExchangeDataSources receivers;
-
+    //    ExchangeDataSources receivers;
 };
 
 using DistributedFragments = std::vector<DistributedFragment>;

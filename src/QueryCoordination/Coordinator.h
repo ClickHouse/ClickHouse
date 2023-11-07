@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Interpreters/Cluster.h>
-#include <QueryCoordination/IO/FragmentsRequest.h>
 #include <QueryCoordination/Fragments/Fragment.h>
+#include <QueryCoordination/IO/FragmentsRequest.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -12,7 +12,7 @@ using Hosts = std::vector<String>;
 using FragmentID = Int32;
 
 using HostToFragments = std::unordered_map<String, FragmentPtrs>;
-using FragmentToHosts = std::unordered_map<FragmentID , Hosts>;
+using FragmentToHosts = std::unordered_map<FragmentID, Hosts>;
 
 
 class Coordinator
@@ -32,13 +32,11 @@ private:
     std::unordered_map<UInt32, std::vector<String>> assignSourceFragment();
 
     PoolBase<DB::Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name);
-
     PoolBase<DB::Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info);
 
     bool isUpToDate(const QualifiedTableName & table_name);
 
     void sendFragmentsToPreparePipelines();
-
     void sendBeginExecutePipelines();
 
     std::unordered_map<UInt32, FragmentRequest> buildFragmentRequest();
@@ -49,7 +47,7 @@ private:
 
     HostToFragments host_fragments;
     FragmentToHosts fragment_hosts;
-    std::unordered_map<UInt32 , FragmentPtr> id_fragment;
+    std::unordered_map<UInt32, FragmentPtr> id_fragment;
 
     // all dest
     std::unordered_map<String, IConnectionPool::Entry> host_connection;

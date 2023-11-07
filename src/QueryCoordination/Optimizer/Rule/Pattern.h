@@ -20,10 +20,7 @@ public:
 
     const std::vector<Pattern> & getChildren() const;
 
-    static Pattern create(StepType step_type_)
-    {
-        return Pattern(step_type_);
-    }
+    static Pattern create(StepType step_type_) { return Pattern(step_type_); }
 
 private:
     StepType step_type;

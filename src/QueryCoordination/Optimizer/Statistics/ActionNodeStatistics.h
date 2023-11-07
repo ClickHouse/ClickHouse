@@ -46,21 +46,15 @@ struct ActionNodeStatistics
         return {};
     }
 
-    void set(const ActionsDAG::Node * node, ColumnStatisticsPtr stats)
-    {
-        input_node_stats.insert({node, stats});
-    }
+    void set(const ActionsDAG::Node * node, ColumnStatisticsPtr stats) { input_node_stats.insert({node, stats}); }
 
     std::set<const ActionsDAG::Node *> getInputNodes()
     {
         std::set<const ActionsDAG::Node *> input_nodes;
         for (auto & [input_node, _] : input_node_stats)
-        {
             input_nodes.insert(input_node);
-        }
         return input_nodes;
     }
-
 };
 
 }

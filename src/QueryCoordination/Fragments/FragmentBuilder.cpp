@@ -1,10 +1,12 @@
-#include <QueryCoordination/Fragments/FragmentBuilder.h>
 #include <QueryCoordination/Exchange/ExchangeDataStep.h>
+#include <QueryCoordination/Fragments/FragmentBuilder.h>
 
 namespace DB
 {
 
-FragmentBuilder::FragmentBuilder(StepTree & plan_, ContextMutablePtr context_) : plan(plan_), context(context_) {}
+FragmentBuilder::FragmentBuilder(StepTree & plan_, ContextMutablePtr context_) : plan(plan_), context(context_)
+{
+}
 
 FragmentPtr FragmentBuilder::build()
 {
@@ -43,23 +45,20 @@ FragmentPtr FragmentBuilder::build()
                 exchange_step->setPlanID(last_fragment->getRoot()->plan_id);
                 frame.child_fragments[next_child - 1]->setDestination(last_fragment->getRoot(), last_fragment);
             }
+            else if (next_child == 0)
+            {
+                last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
+                last_fragment->addStep(frame.node->step);
+            }
+            else if (next_child == 1)
+            {
+                frame.child_fragments[0]->addStep(frame.node->step);
+                last_fragment = frame.child_fragments[0];
+            }
             else
             {
-                if (next_child == 0)
-                {
-                    last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
-                    last_fragment->addStep(frame.node->step);
-                }
-                else if (next_child == 1)
-                {
-                    frame.child_fragments[0]->addStep(frame.node->step);
-                    last_fragment = frame.child_fragments[0];
-                }
-                else
-                {
-                    last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
-                    last_fragment->uniteFragments(frame.node->step, frame.child_fragments);
-                }
+                last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
+                last_fragment->uniteFragments(frame.node->step, frame.child_fragments);
             }
 
             stack.pop();

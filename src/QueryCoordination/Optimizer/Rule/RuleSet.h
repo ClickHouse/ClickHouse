@@ -1,12 +1,12 @@
 #pragma once
 
+#include <QueryCoordination/Optimizer/Rule/ConvertToTopN.h>
+#include <QueryCoordination/Optimizer/Rule/Pattern.h>
 #include <QueryCoordination/Optimizer/Rule/Rule.h>
 #include <QueryCoordination/Optimizer/Rule/SplitAggregation.h>
 #include <QueryCoordination/Optimizer/Rule/SplitLimit.h>
 #include <QueryCoordination/Optimizer/Rule/SplitSort.h>
 #include <QueryCoordination/Optimizer/Rule/SplitTopN.h>
-#include <QueryCoordination/Optimizer/Rule/ConvertToTopN.h>
-#include <QueryCoordination/Optimizer/Rule/Pattern.h>
 
 
 namespace DB

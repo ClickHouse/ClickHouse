@@ -3,7 +3,9 @@
 namespace DB
 {
 
-Pattern::Pattern(StepType step_type_) : step_type(step_type_) {}
+Pattern::Pattern(StepType step_type_) : step_type(step_type_)
+{
+}
 
 Pattern & Pattern::addChildren(const std::vector<Pattern> & children_)
 {

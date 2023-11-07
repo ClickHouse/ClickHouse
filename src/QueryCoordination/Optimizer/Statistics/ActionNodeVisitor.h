@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Poco/String.h>
-#include <Functions/IFunction.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Poco/String.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+extern const int NOT_IMPLEMENTED;
 }
 
 enum class ActionFuncType
@@ -64,7 +64,6 @@ template <class R, class C>
 class ActionNodeVisitor
 {
 public:
-
     using ResultType = R;
     using ContextType = C;
 

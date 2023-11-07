@@ -25,7 +25,6 @@ public:
 
 private:
     Memo & memo;
-
     Scheduler & scheduler;
 
     ContextPtr query_context;

@@ -19,9 +19,7 @@ Memo::Memo(QueryPlan && plan, ContextPtr context_) : context(context_)
     {
         std::vector<PhysicalProperties> required_child_prop;
         for (size_t j = 0; j < group_node->getChildren().size(); ++j)
-        {
             required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
-        }
         group_node->addRequiredChildrenProp(required_child_prop);
     }
 }
@@ -85,9 +83,7 @@ GroupNodePtr Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group * targ
 void Memo::dump()
 {
     for (auto & group : groups)
-    {
         LOG_DEBUG(log, "Group: {}", group.toString());
-    }
 }
 
 Group & Memo::rootGroup()
@@ -97,7 +93,8 @@ Group & Memo::rootGroup()
 
 StepTree Memo::extractPlan()
 {
-    StepTree sub_plan = extractPlan(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+    StepTree sub_plan
+        = extractPlan(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
 
     WriteBufferFromOwnString buffer;
     StepTree::ExplainPlanOptions settings;
@@ -114,7 +111,8 @@ StepTree Memo::extractPlan(Group & group, const PhysicalProperties & required_pr
     chassert(prop_group_node.has_value());
 
     auto & group_node = *prop_group_node->second.group_node;
-    LOG_DEBUG(log, "Best node: group id {}, {}, required_prop {}", group.getId(), group_node.getStep()->getName(), required_prop.toString());
+    LOG_DEBUG(
+        log, "Best node: group id {}, {}, required_prop {}", group.getId(), group_node.getStep()->getName(), required_prop.toString());
 
     auto child_prop = group_node.getChildrenProp(prop_group_node->first);
 

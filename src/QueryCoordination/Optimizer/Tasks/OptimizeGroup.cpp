@@ -1,6 +1,6 @@
 #include <QueryCoordination/Optimizer/Group.h>
-#include <QueryCoordination/Optimizer/Tasks/OptimizeInputs.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeGroup.h>
+#include <QueryCoordination/Optimizer/Tasks/OptimizeInputs.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeNode.h>
 
 namespace DB
@@ -18,14 +18,10 @@ void OptimizeGroup::execute()
         return;
 
     for (auto & group_node : group.getGroupNodes())
-    {
         pushTask(std::make_unique<OptimizeInputs>(group_node, task_context));
-    }
 
-    for(auto & group_node : group.getGroupNodes())
-    {
+    for (auto & group_node : group.getGroupNodes())
         pushTask(std::make_unique<OptimizeNode>(group_node, task_context));
-    }
 }
 
 String OptimizeGroup::getDescription()

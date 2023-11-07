@@ -58,15 +58,9 @@ public:
     /// Get query profile info.
     ProfileInfo & getProfileInfo();
 
-    std::shared_ptr<CompletedPipelinesExecutor> getCompletedPipelinesExecutor()
-    {
-        return completed_pipelines_executor;
-    }
+    std::shared_ptr<CompletedPipelinesExecutor> getCompletedPipelinesExecutor() { return completed_pipelines_executor; }
 
-    std::shared_ptr<RemotePipelinesManager> getRemotePipelinesManager()
-    {
-        return remote_pipelines_manager;
-    }
+    std::shared_ptr<RemotePipelinesManager> getRemotePipelinesManager() { return remote_pipelines_manager; }
 
     /// Internal executor data.
     struct Data;
@@ -101,4 +95,3 @@ private:
 };
 
 }
-

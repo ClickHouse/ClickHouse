@@ -1,10 +1,10 @@
 #pragma once
 
-#include <math.h>
 #include <memory>
-#include <base/types.h>
+#include <math.h>
 #include <DataTypes/IDataType.h>
 #include <QueryCoordination/Optimizer/Statistics/Histogram.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -47,10 +47,7 @@ public:
 
     ColumnStatistics() : ColumnStatistics(0.0, 0.0, 1.0, 1.0, {}, false, {}) { }
 
-    ColumnStatistics(Float64 value)
-        : ColumnStatistics(value, value, 1.0, 1.0, {}, false, {})
-    {
-    }
+    ColumnStatistics(Float64 value) : ColumnStatistics(value, value, 1.0, 1.0, {}, false, {}) { }
 
     ColumnStatistics(Float64 min_value_, Float64 max_value_, Float64 ndv_, Float64 avg_row_size_)
         : ColumnStatistics(min_value_, max_value_, ndv_, avg_row_size_, {}, false, {})

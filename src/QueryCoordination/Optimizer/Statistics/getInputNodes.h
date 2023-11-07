@@ -27,7 +27,6 @@ public:
     ActionsDAG::NodeRawConstPtrs visitAlias(const ActionsDAG::Node * node, ContextType & context) override;
     ActionsDAG::NodeRawConstPtrs visitArrayJoin(const ActionsDAG::Node * node, ContextType & context) override;
     ActionsDAG::NodeRawConstPtrs visitFunction(const ActionsDAG::Node * node, ContextType & context);
-
 };
 
 ActionsDAG::NodeRawConstPtrs getInputNodes(const ActionsDAG::Node * node);

@@ -1,8 +1,8 @@
-#include <QueryCoordination/Optimizer/Rule/SplitAggregation.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <QueryCoordination/Optimizer/GroupStep.h>
+#include <QueryCoordination/Optimizer/Rule/SplitAggregation.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -32,7 +32,8 @@ std::vector<StepTree> SplitAggregation::transform(StepTree & step_tree, ContextP
     auto partial_agg_step = aggregate_step->makePreliminaryAgg();
 
     const Settings & settings = context->getSettingsRef();
-    std::shared_ptr<MergingAggregatedStep> merge_agg_step = aggregate_step->makeMergingAggregatedStep(partial_agg_step->getOutputStream(), settings);
+    std::shared_ptr<MergingAggregatedStep> merge_agg_step
+        = aggregate_step->makeMergingAggregatedStep(partial_agg_step->getOutputStream(), settings);
 
     StepTree res_step_tree;
     res_step_tree.addStep(child_step);

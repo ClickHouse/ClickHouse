@@ -1,7 +1,7 @@
-#include <QueryCoordination/Optimizer/Rule/ConvertToTopN.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TopNStep.h>
 #include <QueryCoordination/Optimizer/GroupStep.h>
+#include <QueryCoordination/Optimizer/Rule/ConvertToTopN.h>
 
 namespace DB
 {

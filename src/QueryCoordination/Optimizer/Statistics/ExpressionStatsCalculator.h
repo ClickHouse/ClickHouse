@@ -1,20 +1,21 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
-#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 #include <QueryCoordination/Optimizer/Statistics/ActionNodeStatistics.h>
 #include <QueryCoordination/Optimizer/Statistics/ActionNodeVisitor.h>
+#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 
 namespace DB
 {
 
-class ExpressionNodeVisitor : public ActionNodeVisitor<ActionNodeStatistics, std::unordered_map<const ActionsDAG::Node *, ActionNodeStatistics>>
+class ExpressionNodeVisitor
+    : public ActionNodeVisitor<ActionNodeStatistics, std::unordered_map<const ActionsDAG::Node *, ActionNodeStatistics>>
 {
 public:
     using Base = ActionNodeVisitor<ActionNodeStatistics, std::unordered_map<const ActionsDAG::Node *, ActionNodeStatistics>>;
     using VisitContext = std::unordered_map<const ActionsDAG::Node *, ActionNodeStatistics>;
 
-    ExpressionNodeVisitor() : log(&Poco::Logger::get("ExpressionNodeVisitor")) {}
+    ExpressionNodeVisitor() : log(&Poco::Logger::get("ExpressionNodeVisitor")) { }
 
     ActionNodeStatistics visit(const ActionsDAG::Node * node, ContextType & context) override;
 
@@ -30,7 +31,6 @@ public:
     ActionNodeStatistics visitFunction(const ActionsDAG::Node * node, ContextType & context);
 
 private:
-
     ActionNodeStatistics visitUnaryFunction(const ActionsDAG::Node * node, ContextType & context);
     ActionNodeStatistics visitBinaryFunction(const ActionsDAG::Node * node, ContextType & context);
 

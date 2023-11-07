@@ -1,20 +1,20 @@
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 struct CompletedPipelinesExecutor::Data
@@ -55,52 +55,38 @@ struct CompletedPipelinesExecutor::Datas
     bool isFinished()
     {
         for (auto & data : datas)
-        {
             if (!data->is_finished)
                 return false;
-        }
         return true;
     }
 
     void cancel()
     {
         for (auto & data : datas)
-        {
             if (!data->is_finished && data->executor)
                 data->executor->cancel(); /// TODO if finished call cancel() will hang?
-        }
     }
 
     void join()
     {
         for (auto & data : datas)
-        {
             if (!data->is_finished && data->thread.joinable())
                 data->thread.join();
-        }
     }
 
-    size_t size() const
-    {
-        return datas.size();
-    }
+    size_t size() const { return datas.size(); }
 
     void rethrowFirstExceptionIfHas()
     {
         for (auto & data : datas)
-        {
             if (data->has_exception)
                 std::rethrow_exception(data->exception);
-        }
     }
 };
 
 static void threadFunction(CompletedPipelinesExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, Poco::Logger * log)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
+    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
     setThreadName("QCompPipesEx"); /// TODO bytes > 15 can be used test query cancel
 
     try
@@ -128,10 +114,8 @@ CompletedPipelinesExecutor::CompletedPipelinesExecutor(std::vector<QueryPipeline
     : log(&Poco::Logger::get("CompletedPipelinesExecutor")), pipelines(std::move(pipelines_)), fragment_ids(std::move(fragment_ids_))
 {
     for (auto & pipeline : pipelines)
-    {
         if (!pipeline.completed())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CompletedPipelinesExecutor must be completed");
-    }
 }
 
 void CompletedPipelinesExecutor::setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_)
@@ -144,10 +128,7 @@ void CompletedPipelinesExecutor::asyncExecute()
 {
     auto func = [this, thread_group = CurrentThread::getGroup()]
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
+        SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
 
         setThreadName("ComPipAsyncExec");
 
@@ -158,7 +139,7 @@ void CompletedPipelinesExecutor::asyncExecute()
         {
             execute();
         }
-        catch(...)
+        catch (...)
         {
             exception_callback(std::current_exception());
         }
@@ -177,7 +158,7 @@ void CompletedPipelinesExecutor::execute()
     {
         std::lock_guard lock(datas->mutex);
         auto data = std::make_shared<Data>();
-        data->finish_callback = [&] () { datas->finishCallBack(); };
+        data->finish_callback = [&]() { datas->finishCallBack(); };
         data->fragment_id = fragment_ids[i];
         datas->datas.emplace_back(data);
     }
@@ -190,10 +171,9 @@ void CompletedPipelinesExecutor::execute()
 
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
-        auto func = [data_ptr = data.get(), num_threads = pipelines[i].getNumThreads(), thread_group = CurrentThread::getGroup(), log_ = log]
-        {
-            threadFunction(*data_ptr, thread_group, num_threads, log_);
-        };
+        auto func
+            = [data_ptr = data.get(), num_threads = pipelines[i].getNumThreads(), thread_group = CurrentThread::getGroup(), log_ = log]
+        { threadFunction(*data_ptr, thread_group, num_threads, log_); };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
     }

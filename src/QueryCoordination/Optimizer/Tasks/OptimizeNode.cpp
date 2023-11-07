@@ -1,7 +1,7 @@
+#include <QueryCoordination/Optimizer/Rule/RuleSet.h>
 #include <QueryCoordination/Optimizer/Tasks/ApplyRule.h>
 #include <QueryCoordination/Optimizer/Tasks/DeriveStats.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeNode.h>
-#include <QueryCoordination/Optimizer/Rule/RuleSet.h>
 
 namespace DB
 {
@@ -21,9 +21,7 @@ void OptimizeNode::execute()
     const auto & rules = Optimizer::getRules();
 
     for (const auto & rule : rules)
-    {
         pushTask(std::make_unique<ApplyRule>(group_node, rule, task_context));
-    }
 }
 
 String OptimizeNode::getDescription()

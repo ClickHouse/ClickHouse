@@ -1,9 +1,9 @@
 #pragma once
 
+#include <QueryCoordination/Optimizer/Cost/Cost.h>
 #include <QueryCoordination/Optimizer/GroupNode.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
-#include <QueryCoordination/Optimizer/Cost/Cost.h>
 
 namespace DB
 {
@@ -51,14 +51,12 @@ public:
 
 private:
     UInt32 id = 0;
-
     std::list<GroupNodePtr> group_nodes;
 
     /// optimize temp result
     std::unordered_map<PhysicalProperties, GroupNodeCost, PhysicalProperties::HashFunction> prop_to_best_node;
 
     Statistics statistics;
-
     bool stats_derived = false;
 };
 

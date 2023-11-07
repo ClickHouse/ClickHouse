@@ -1,6 +1,6 @@
+#include <DataTypes/DataTypesNumber.h>
 #include <QueryCoordination/Exchange/ExchangeDataSink.h>
 #include <QueryCoordination/Exchange/ExchangeManager.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -101,9 +101,7 @@ void ExchangeDataSink::consume(Chunk chunk)
             {
                 const auto column = block.getColumns()[keys_position];
                 for (size_t i = 0; i < rows; ++i)
-                {
                     column->updateHashWithValue(i, siphashs[i]);
-                }
             }
 
             for (size_t i = 0; i < rows; ++i)
@@ -113,9 +111,7 @@ void ExchangeDataSink::consume(Chunk chunk)
                 auto & columns = mutable_columns[which_channel];
                 auto src_columns = block.getColumns();
                 for (size_t j = 0; j < block.columns(); ++j)
-                {
                     columns[j]->insertFrom(*src_columns[j], i);
-                }
             }
 
             for (size_t i = 0; i < channels.size(); ++i)
@@ -136,9 +132,7 @@ void ExchangeDataSink::onFinish()
     LOG_DEBUG(log, "ExchangeDataSink finish for request {}", request.toString());
 
     for (auto & channel : channels)
-    {
         channel.sendData(Block());
-    }
 }
 
 }

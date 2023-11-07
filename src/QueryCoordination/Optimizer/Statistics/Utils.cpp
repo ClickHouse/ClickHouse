@@ -68,16 +68,12 @@ void adjustStatisticsByColumns(Statistics & statistics, const Names & final_colu
 {
     /// remove additional
     for (const auto & column : statistics.getColumnNames())
-    {
         if (std::find(final_columns.begin(), final_columns.end(), column) == final_columns.end())
             statistics.removeColumnStatistics(column);
-    }
     /// add missing
     for (const auto & column : final_columns)
-    {
         if (!statistics.containsColumnStatistics(column))
             statistics.addColumnStatistics(column, ColumnStatistics::unknown());
-    }
 }
 
 }

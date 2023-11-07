@@ -1,15 +1,15 @@
 #include <Interpreters/Context.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryCoordination/Coordinator.h>
+#include <QueryCoordination/Exchange/ExchangeDataStep.h>
+#include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
+#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
+#include <QueryCoordination/QueryCoordinationMetaInfo.h>
+#include <QueryCoordination/fragmentsToPipelines.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
-#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
-#include <QueryCoordination/fragmentsToPipelines.h>
-#include <QueryCoordination/QueryCoordinationMetaInfo.h>
-#include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -17,14 +17,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SYSTEM_ERROR;
+extern const int SYSTEM_ERROR;
 }
 
 Coordinator::Coordinator(const FragmentPtrs & fragments_, ContextMutablePtr context_, String query_)
-    : log(&Poco::Logger::get("Coordinator"))
-    , fragments(fragments_)
-    , context(context_)
-    , query(query_)
+    : log(&Poco::Logger::get("Coordinator")), fragments(fragments_), context(context_), query(query_)
 {
     for (const auto & fragment : fragments)
     {
@@ -35,24 +32,16 @@ Coordinator::Coordinator(const FragmentPtrs & fragments_, ContextMutablePtr cont
 
 void Coordinator::schedulePrepareDistributedPipelines()
 {
-    // If the fragment has a scanstep, it is scheduled according to the cluster copy fragment
+    // If the fragment has an scan step, it is scheduled according to the cluster copy fragment
     assignFragmentToHost();
 
     for (auto & [host, fragment_ids] : host_fragments)
-    {
         for (auto & fragment : fragment_ids)
-        {
             LOG_INFO(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentID());
-        }
-    }
 
     for (auto & [fragment_id, hosts] : fragment_hosts)
-    {
         for (auto & host : hosts)
-        {
             LOG_INFO(log, "fragment_id_hosts: host {}, fragment {}", host, fragment_id);
-        }
-    }
 
     sendFragmentsToPreparePipelines();
 
@@ -62,9 +51,7 @@ void Coordinator::schedulePrepareDistributedPipelines()
 PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name)
 {
     auto current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-                        current_settings).getSaturated(
-                            current_settings.max_execution_time);
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
     auto try_results = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_ONE, table_name);
     return try_results[0].entry;
 }
@@ -72,9 +59,7 @@ PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardI
 PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info)
 {
     auto current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-                        current_settings).getSaturated(
-                            current_settings.max_execution_time);
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
     auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_ONE);
     return try_results[0];
 }
@@ -105,14 +90,14 @@ std::unordered_map<UInt32, std::vector<String>> Coordinator::assignSourceFragmen
                         const auto & table_name = read_step->getStorageSnapshot()->storage.getStorageID().getQualifiedName();
                         if (!isUpToDate(table_name))
                         {
-                            connection =  getConnection(shard_info, table_name);
+                            connection = getConnection(shard_info, table_name);
                             host_port = connection->getDescription();
                         }
                     }
                 }
                 else
                 {
-                    connection =  getConnection(shard_info);
+                    connection = getConnection(shard_info);
                     host_port = connection->getDescription();
                 }
 
@@ -135,8 +120,7 @@ void Coordinator::assignFragmentToHost()
     // For a fragment with a scanstep, process its dest fragment.
 
     auto process_other_fragment
-        = [this](
-              std::unordered_map<UInt32, std::vector<String>> & fragment_hosts_) -> std::unordered_map<UInt32, std::vector<String>>
+        = [this](std::unordered_map<UInt32, std::vector<String>> & fragment_hosts_) -> std::unordered_map<UInt32, std::vector<String>>
     {
         std::unordered_map<UInt32, std::vector<String>> this_fragment_hosts;
         for (const auto & [fragment_id, hosts] : fragment_hosts_)
@@ -229,9 +213,7 @@ bool Coordinator::isUpToDate(const QualifiedTableName & table_name)
     if (delay < max_allowed_delay)
         is_up_to_date = true;
     else
-    {
         is_up_to_date = false;
-    }
     return is_up_to_date;
 }
 
@@ -279,14 +261,10 @@ void Coordinator::sendFragmentsToPreparePipelines()
     const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
 
     for (const auto & [f_id, request] : fragment_requests)
-    {
         LOG_INFO(log, "Send fragment to distributed request {}", request.toString());
-    }
 
     auto current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-                        current_settings).getSaturated(
-                            current_settings.max_execution_time);
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
 
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -305,7 +283,8 @@ void Coordinator::sendFragmentsToPreparePipelines()
         {
             /// local direct to pipelines
             auto cluster = context->getClusters().find(context->getQueryCoordinationMetaInfo().cluster_name)->second;
-            pipelines = fragmentsToPipelines(fragments, fragments_request.fragmentsRequest(), context->getCurrentQueryId(), context->getSettingsRef(), cluster);
+            pipelines = fragmentsToPipelines(
+                fragments, fragments_request.fragmentsRequest(), context->getCurrentQueryId(), context->getSettingsRef(), cluster);
         }
         else
         {
@@ -341,24 +320,16 @@ void Coordinator::sendFragmentsToPreparePipelines()
 void Coordinator::sendBeginExecutePipelines()
 {
     for (auto [host, _] : host_fragments)
-    {
         if (host != local_host)
-        {
             host_connection[host]->sendBeginExecutePipelines(context->getCurrentQueryId());
-        }
-    }
 }
 
 std::unordered_map<String, IConnectionPool::Entry> Coordinator::getRemoteHostConnection()
 {
     std::unordered_map<String, IConnectionPool::Entry> res;
     for (auto [host, _] : host_fragments)
-    {
         if (host != local_host)
-        {
             res.emplace(host, host_connection[host]);
-        }
-    }
     return res;
 }
 

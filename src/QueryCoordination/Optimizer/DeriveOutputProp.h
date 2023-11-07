@@ -11,7 +11,11 @@ class DeriveOutputProp : public PlanStepVisitor<PhysicalProperties>
 public:
     using Base = PlanStepVisitor<PhysicalProperties>;
 
-    DeriveOutputProp(GroupNodePtr group_node_, const PhysicalProperties & required_prop_, const std::vector<PhysicalProperties> & children_prop_, ContextPtr context_);
+    DeriveOutputProp(
+        GroupNodePtr group_node_,
+        const PhysicalProperties & required_prop_,
+        const std::vector<PhysicalProperties> & children_prop_,
+        ContextPtr context_);
 
     PhysicalProperties visit(QueryPlanStepPtr step) override;
 
@@ -31,8 +35,10 @@ public:
 
 private:
     GroupNodePtr group_node;
+
     PhysicalProperties required_prop;
     std::vector<PhysicalProperties> children_prop;
+
     ContextPtr context;
 };
 

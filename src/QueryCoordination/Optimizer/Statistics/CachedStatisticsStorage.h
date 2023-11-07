@@ -1,9 +1,9 @@
 #pragma once
 
 #include <QueryCoordination/Optimizer/Statistics/AsyncLoadingCache.h>
-#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 #include <QueryCoordination/Optimizer/Statistics/ColumnStatistics.h>
 #include <QueryCoordination/Optimizer/Statistics/IStatisticsStorage.h>
+#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 
 
 namespace DB
@@ -23,6 +23,7 @@ public:
     void shutdown() override;
 
     ~CachedStatisticsStorage() override;
+
 private:
     void loadTask();
 

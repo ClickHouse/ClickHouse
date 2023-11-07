@@ -1,18 +1,18 @@
 #include "IStatisticsStorage.h"
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 
@@ -21,21 +21,21 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
-    ContextMutablePtr createQueryContext();
+ContextMutablePtr createQueryContext();
 
-    /// load
-    std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, const String & cluster_name);
-    std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_id, const String & cluster_name);
+/// load
+std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, const String & cluster_name);
+std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_id, const String & cluster_name);
 
-    /// collect
-    void collectTableStats(const StorageID & storage_id, ContextMutablePtr context);
-    void collectColumnStats(const StorageID & storage_id, const Names & columns, ContextMutablePtr context);
+/// collect
+void collectTableStats(const StorageID & storage_id, ContextMutablePtr context);
+void collectColumnStats(const StorageID & storage_id, const Names & columns, ContextMutablePtr context);
 }
 
 void IStatisticsStorage::prepareTables(ContextPtr global_context)
@@ -259,7 +259,7 @@ std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, cons
 
         return block.getByPosition(0).column->getUInt(0);
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(&Poco::Logger::get("IStatisticsStorage"), "Got exception when execute load table statistics query.");
         return std::nullopt;
@@ -288,7 +288,7 @@ std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_i
 
     while (!block && executor->pull(block))
     {
-        for (size_t i=0;i<block.rows();i++)
+        for (size_t i = 0; i < block.rows(); i++)
         {
             auto column = block.getByPosition(0).column->getDataAt(i).toString();
             auto column_stats = std::make_shared<ColumnStatistics>();

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <base/types.h>
-#include <IO/VarInt.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -33,7 +33,8 @@ struct ExchangeDataRequest
 
     String toString() const
     {
-        return query_id + ", from " + from_host + ", destination fragment " + std::to_string(fragment_id) + ", destination exchange " + std::to_string(exchange_id);
+        return query_id + ", from " + from_host + ", destination fragment " + std::to_string(fragment_id) + ", destination exchange "
+            + std::to_string(exchange_id);
     }
 };
 

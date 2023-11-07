@@ -4,9 +4,8 @@
 namespace DB
 {
 
-GroupNode::GroupNode(
-    QueryPlanStepPtr step_, const std::vector<Group *> & children_, bool is_enforce_node_)
-    : step(step_), id(0), group(nullptr), children(children_), is_enforce_node(is_enforce_node_), stats_derived(false)
+GroupNode::GroupNode(QueryPlanStepPtr step_, const std::vector<Group *> & children_, bool is_enforce_node_)
+    : id(0), step(step_), group(nullptr), children(children_), is_enforce_node(is_enforce_node_), stats_derived(false)
 {
 }
 
@@ -43,7 +42,8 @@ void GroupNode::setGroup(Group * group_)
     group = group_;
 }
 
-bool GroupNode::updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost)
+bool GroupNode::updateBestChild(
+    const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost)
 {
     if (!prop_to_best_child.contains(physical_properties) || child_cost < prop_to_best_child[physical_properties].cost)
     {
@@ -115,9 +115,7 @@ String GroupNode::toString() const
 
     String child_ids;
     for (auto * child : children)
-    {
         child_ids += std::to_string(child->getId()) + ", ";
-    }
     res += "children: " + child_ids;
 
     String prop_map;
@@ -126,9 +124,7 @@ String GroupNode::toString() const
         prop_map += output_prop.toString() + "-";
 
         for (const auto & c_prop : child_prop_cost.child_prop)
-        {
             prop_map += c_prop.toString() + "|";
-        }
     }
 
     res += "best child prop map: " + prop_map;

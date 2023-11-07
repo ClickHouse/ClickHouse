@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+extern const int NOT_IMPLEMENTED;
 }
 
 Statistics JoinStatsCalculator::calculateStatistics(JoinStep & step, const Statistics & left_input, const Statistics & right_input)
@@ -250,9 +250,7 @@ Float64 JoinStatsCalculator::Impl::leftDataSetNDV()
     {
         left_data_set_ndv = 1 * left_input.getColumnStatistics(left_join_on_keys[0])->getNdv();
         for (size_t i = 1; i < left_join_on_keys.size(); i++)
-        {
             left_data_set_ndv = left_data_set_ndv * 0.8 * left_input.getColumnStatistics(left_join_on_keys[i])->getNdv();
-        }
     }
     return left_data_set_ndv;
 }
@@ -268,9 +266,7 @@ Float64 JoinStatsCalculator::Impl::rightDataSetNDV()
     {
         right_data_set_ndv = 1 * right_input.getColumnStatistics(right_join_on_keys[0])->getNdv();
         for (size_t i = 1; i < right_join_on_keys.size(); i++)
-        {
             right_data_set_ndv = right_data_set_ndv * 0.8 * right_input.getColumnStatistics(right_join_on_keys[i])->getNdv();
-        }
     }
     return right_data_set_ndv;
 }
@@ -354,7 +350,11 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForIntersecting(Statistics &
     /// left table
     auto all_left_columns = left_input.getColumnNames();
     std::set_difference(
-        all_left_columns.begin(), all_left_columns.end(), left_join_on_keys.begin(), left_join_on_keys.end(), std::inserter(non_join_on_columns, non_join_on_columns.begin()));
+        all_left_columns.begin(),
+        all_left_columns.end(),
+        left_join_on_keys.begin(),
+        left_join_on_keys.end(),
+        std::inserter(non_join_on_columns, non_join_on_columns.begin()));
     set_ndv_for_non_join_on_columns();
 
     non_join_on_columns.clear();
@@ -406,7 +406,11 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForAnti(Statistics & statist
     /// left table
     auto all_left_columns = left_input.getColumnNames();
     std::set_difference(
-        all_left_columns.begin(), all_left_columns.end(), left_join_on_keys.begin(), left_join_on_keys.end(), std::inserter(non_join_on_columns, non_join_on_columns.begin()));
+        all_left_columns.begin(),
+        all_left_columns.end(),
+        left_join_on_keys.begin(),
+        left_join_on_keys.end(),
+        std::inserter(non_join_on_columns, non_join_on_columns.begin()));
     set_ndv_for_non_join_on_columns();
 
     non_join_on_columns.clear();
@@ -518,12 +522,14 @@ void JoinStatsCalculator::Impl::removeNonOutputColumn(Statistics & input)
 
         Names non_output_columns;
         std::set_difference(
-            stats_columns.begin(), stats_columns.end(), output_columns.begin(), output_columns.end(), std::inserter(non_output_columns, non_output_columns.begin()));
+            stats_columns.begin(),
+            stats_columns.end(),
+            output_columns.begin(),
+            output_columns.end(),
+            std::inserter(non_output_columns, non_output_columns.begin()));
 
         for (const auto & non_output_column : non_output_columns)
-        {
             input.removeColumnStatistics(non_output_column);
-        }
     }
 }
 

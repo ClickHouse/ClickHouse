@@ -1,8 +1,8 @@
+#include <QueryCoordination/Optimizer/Group.h>
+#include <QueryCoordination/Optimizer/GroupNode.h>
+#include <QueryCoordination/Optimizer/GroupStep.h>
 #include <QueryCoordination/Optimizer/Rule/Binder.h>
 #include <QueryCoordination/Optimizer/Rule/Pattern.h>
-#include <QueryCoordination/Optimizer/GroupNode.h>
-#include <QueryCoordination/Optimizer/Group.h>
-#include <QueryCoordination/Optimizer/GroupStep.h>
 
 
 namespace DB
@@ -17,7 +17,12 @@ std::vector<StepTreePtr> Binder::bind()
     return extractGroupNode(pattern, group_node);
 }
 
-void generateAllCases(GroupNodePtr group_node_, size_t children_index, std::vector<std::vector<StepTreePtr>> & children_candidate_lists, std::vector<StepTreePtr> & children_select_list, std::vector<StepTreePtr> & results)
+void generateAllCases(
+    GroupNodePtr group_node_,
+    size_t children_index,
+    std::vector<std::vector<StepTreePtr>> & children_candidate_lists,
+    std::vector<StepTreePtr> & children_select_list,
+    std::vector<StepTreePtr> & results)
 {
     if (children_index >= children_candidate_lists.size())
     {
@@ -34,7 +39,8 @@ void generateAllCases(GroupNodePtr group_node_, size_t children_index, std::vect
     }
 }
 
-std::vector<StepTreePtr> generateStepTreeWithChildren(GroupNodePtr group_node_, std::vector<std::vector<StepTreePtr>> & children_candidate_lists)
+std::vector<StepTreePtr>
+generateStepTreeWithChildren(GroupNodePtr group_node_, std::vector<std::vector<StepTreePtr>> & children_candidate_lists)
 {
     std::vector<StepTreePtr> results;
     for (auto & candidate_list : children_candidate_lists)
@@ -54,9 +60,7 @@ std::vector<StepTreePtr> generateStepTreeWithChildren(GroupNodePtr group_node_, 
 std::vector<StepTreePtr> Binder::extractGroupNode(const Pattern & pattern_, GroupNodePtr group_node_)
 {
     if (pattern_.getStepType() != group_node_->getStep()->stepType())
-    {
         return {};
-    }
 
     if (pattern_.getStepType() == StepType::PatternAny)
     {
@@ -90,9 +94,7 @@ std::vector<StepTreePtr> Binder::extractGroup(const Pattern & pattern_, Group & 
     {
         auto result = extractGroupNode(pattern_, *it);
         for (auto & r : result)
-        {
             results.emplace_back(std::move(r));
-        }
     }
     return results;
 }

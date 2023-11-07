@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Processors/ISink.h>
 #include <Client/Connection.h>
+#include <Client/ConnectionPool.h>
+#include <Processors/ISink.h>
 #include <QueryCoordination/DataPartition.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
-#include <Client/ConnectionPool.h>
 
 namespace DB
 {
@@ -38,7 +38,8 @@ public:
         , log(&Poco::Logger::get("ExchangeDataSink"))
         , channels(channels_)
         , output_partition(partition)
-        , request(ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
+        , request(
+              ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
     {
         if (partition.keys_size)
             calculateKeysPositions();
@@ -57,34 +58,31 @@ public:
         , log(&Poco::Logger::get("ExchangeDataSink"))
         , channels(channels_)
         , output_distribution(distribution)
-        , request(ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
+        , request(
+              ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
     {
         if (!distribution.keys.empty())
             calculateKeysPositions();
     }
 
     String getName() const override { return "ExchangeDataSink"; }
-
     size_t getNumReadRows() const { return num_rows; }
 
 private:
     void consume(Chunk chunk) override;
 
     void onFinish() override;
-
     void onStart() override;
 
     void calculateKeysPositions();
-
     void calcKeysPositions();
 
-private:
     Poco::Logger * log;
 
     std::vector<Channel> channels;
     size_t num_rows = 0;
-    DataPartition output_partition;
 
+    DataPartition output_partition;
     PhysicalProperties::Distribution output_distribution;
 
     ExchangeDataRequest request;

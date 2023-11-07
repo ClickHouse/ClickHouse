@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Common/typeid_cast.h>
-#include <IO/VarInt.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <vector>
+#include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -23,9 +23,7 @@ public:
         writeVarUInt(to_size, out);
 
         for (const String & to : data_to)
-        {
             writeStringBinary(to, out);
-        }
 
         size_t from_size = data_from.size();
         writeVarUInt(from_size, out);
@@ -38,9 +36,7 @@ public:
             writeVarUInt(e_source_size, out);
 
             for (const auto & source : sources)
-            {
                 writeStringBinary(source, out);
-            }
         }
     }
 
@@ -86,9 +82,7 @@ public:
         String fragment = "Fragment id " + std::to_string(fragment_id) + ".";
         String data_to_str = " Data to: ";
         for (const auto & to : data_to)
-        {
             data_to_str += (to + ", ");
-        }
 
         String data_from_str = "Data from: ";
 
@@ -97,9 +91,7 @@ public:
             data_from_str += ("exchange_id " + std::to_string(exchange_id)) + " from: ";
 
             for (const auto & source : sources)
-            {
                 data_from_str += (source + ", ");
-            }
         }
 
         return fragment + data_to_str + data_from_str;

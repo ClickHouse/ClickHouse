@@ -7,7 +7,11 @@
 namespace DB
 {
 
-DeriveOutputProp::DeriveOutputProp(GroupNodePtr group_node_, const PhysicalProperties & required_prop_, const std::vector<PhysicalProperties> & children_prop_, ContextPtr context_)
+DeriveOutputProp::DeriveOutputProp(
+    GroupNodePtr group_node_,
+    const PhysicalProperties & required_prop_,
+    const std::vector<PhysicalProperties> & children_prop_,
+    ContextPtr context_)
     : group_node(group_node_), required_prop(required_prop_), children_prop(children_prop_), context(context_)
 {
 }
@@ -43,7 +47,8 @@ PhysicalProperties DeriveOutputProp::visit(UnionStep & step)
     return res;
 }
 
-ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, ContextPtr context, const NamesAndTypesList & columns, bool project)
+ExpressionActionsPtr
+buildShardingKeyExpression(const ASTPtr & sharding_key, ContextPtr context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
     auto syntax_result = TreeRewriter(context).analyze(query, columns);
@@ -67,7 +72,8 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 
     auto table_it = std::find(meta_info.storages.begin(), meta_info.storages.end(), storage_id);
     if (table_it == meta_info.storages.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found {}.{} in {}", storage_id.database_name, storage_id.table_name, meta_info.toString());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Not found {}.{} in {}", storage_id.database_name, storage_id.table_name, meta_info.toString());
 
     /// distribute by any integer type value. TODO need to distinguish which functions have a clear distribution of data. e.g rand() is not clear, hash is clear and single column is clear
     /// TODO Enabling optimize_query_coordination_sharding_key may cause incorrect results, such as sharding key is cityHash64(xid + zid), which is not sharding with xid and zid.
@@ -85,7 +91,8 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 
     ParserExpression expression_parser;
     ASTPtr expression = parseQuery(expression_parser, begin, end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    ExpressionActionsPtr sharding_key_expr = buildShardingKeyExpression(expression, context, step.getStorageMetadata()->columns.getAllPhysical(), false);
+    ExpressionActionsPtr sharding_key_expr
+        = buildShardingKeyExpression(expression, context, step.getStorageMetadata()->columns.getAllPhysical(), false);
 
     if (sharding_key_expr->getRequiredColumns().empty())
     {
@@ -168,8 +175,8 @@ PhysicalProperties DeriveOutputProp::visit(ExpressionStep & step)
         res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
     }
 
-//    CalculateSortProp sort_prop_calculator(step.getExpression(), children_prop[0].sort_prop);
-//    res.sort_prop = sort_prop_calculator.calcSortProp();
+    //    CalculateSortProp sort_prop_calculator(step.getExpression(), children_prop[0].sort_prop);
+    //    res.sort_prop = sort_prop_calculator.calcSortProp();
     return res;
 }
 

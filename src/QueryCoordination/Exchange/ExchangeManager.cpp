@@ -13,9 +13,7 @@ ExchangeDataSourcePtr ExchangeManager::findExchangeDataSource(const ExchangeData
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found exchange data receiver {}", exchange_data_request.toString());
 
     const auto & receiver_key = ExchangeManager::receiverKey(
-        exchange_data_request.fragment_id,
-        exchange_data_request.exchange_id,
-        exchange_data_request.from_host);
+        exchange_data_request.fragment_id, exchange_data_request.exchange_id, exchange_data_request.from_host);
 
     const auto & exchanges = it->second;
     auto exchange_it = exchanges.find(receiver_key);
@@ -32,9 +30,7 @@ void ExchangeManager::registerExchangeDataSource(const ExchangeDataRequest & exc
     auto & exchanges = query_exchange_data_sources[exchange_data_request.query_id];
 
     const auto & receiver_key = ExchangeManager::receiverKey(
-        exchange_data_request.fragment_id,
-        exchange_data_request.exchange_id,
-        exchange_data_request.from_host);
+        exchange_data_request.fragment_id, exchange_data_request.exchange_id, exchange_data_request.from_host);
 
     exchanges.emplace(receiver_key, receiver);
 }

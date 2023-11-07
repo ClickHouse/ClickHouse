@@ -68,7 +68,6 @@ void CachedStatisticsStorage::loadAll()
         cache.clear();
         cache = loaded_stats;
     }
-
 }
 
 void CachedStatisticsStorage::loadTask()

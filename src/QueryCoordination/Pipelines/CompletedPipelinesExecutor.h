@@ -19,10 +19,7 @@ public:
     /// If returns true, query would be cancelled.
     void setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_);
 
-    void setExceptionCallback(setExceptionCallback exception_callback_)
-    {
-        exception_callback = exception_callback_;
-    }
+    void setExceptionCallback(setExceptionCallback exception_callback_) { exception_callback = exception_callback_; }
 
     void execute();
     void asyncExecute();

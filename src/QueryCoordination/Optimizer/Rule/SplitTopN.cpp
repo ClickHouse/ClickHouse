@@ -1,6 +1,6 @@
-#include <QueryCoordination/Optimizer/Rule/SplitTopN.h>
-#include <QueryCoordination/Optimizer/GroupStep.h>
 #include <Processors/QueryPlan/TopNStep.h>
+#include <QueryCoordination/Optimizer/GroupStep.h>
+#include <QueryCoordination/Optimizer/Rule/SplitTopN.h>
 
 namespace DB
 {

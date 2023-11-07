@@ -19,16 +19,14 @@ std::optional<StorageID> ReplaceDistributedTableNameVisitor::Scope::getLocalTabl
 
 std::optional<String> ReplaceDistributedTableNameVisitor::Scope::getDBName(const String & table_name)
 {
-    auto match_table_name = [&table_name](const StorageID & table)
-    {
-        return table_name == table.table_name;
-    };
+    auto match_table_name = [&table_name](const StorageID & table) { return table_name == table.table_name; };
 
     auto find_in_current_scope = [&](const Tables & tables_)
     {
         size_t count = std::count_if(tables_.begin(), tables_.end(), match_table_name);
         if (count > 1)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "duplicated table name {}, maybe you should use 'db.table' style identifier.", table_name);
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "duplicated table name {}, maybe you should use 'db.table' style identifier.", table_name);
 
         return std::find_if(tables_.begin(), tables_.end(), match_table_name);
     };
@@ -69,21 +67,15 @@ void ReplaceDistributedTableNameVisitor::visitImpl(ASTPtr & ast, ScopePtr & scop
 void ReplaceDistributedTableNameVisitor::enter(ASTPtr & ast, ScopePtr & scope)
 {
     if (auto select_query = ast->as<ASTSelectQuery>())
-    {
         enter(*select_query, scope);
-    }
     else if (auto ident = ast->as<ASTIdentifier>())
-    {
         enter(*ident, scope);
-    }
 }
 
 void ReplaceDistributedTableNameVisitor::leave(ASTPtr & ast, ScopePtr & scope)
 {
     if (auto select_query = ast->as<ASTSelectQuery>())
-    {
         leave(*select_query, scope);
-    }
 }
 
 void ReplaceDistributedTableNameVisitor::enter(ASTSelectQuery & select_query, ScopePtr & scope)
@@ -126,7 +118,8 @@ void ReplaceDistributedTableNameVisitor::leave(ASTSelectQuery &, ScopePtr & scop
     scope = scope->parent_scope;
 }
 
-std::shared_ptr<ASTTableIdentifier> ReplaceDistributedTableNameVisitor::enter(ASTFunction & table_function, ASTPtr & table_function_ast, ScopePtr & /*scope*/)
+std::shared_ptr<ASTTableIdentifier>
+ReplaceDistributedTableNameVisitor::enter(ASTFunction & table_function, ASTPtr & table_function_ast, ScopePtr & /*scope*/)
 {
     has_table_function = true;
 
@@ -230,9 +223,9 @@ void ReplaceDistributedTableNameVisitor::enter(ASTIdentifier & ident, ScopePtr &
         String & distributed_table_name = ident.name_parts[part_num - 2];
         std::optional<String> distributed_db_name;
 
-        if (part_num == 3)             /// ident: db.tbl.col
+        if (part_num == 3) /// ident: db.tbl.col
             distributed_db_name = ident.name_parts[part_num - 3];
-        else  if (part_num == 2)       /// ident: tbl.col
+        else if (part_num == 2) /// ident: tbl.col
             distributed_db_name = scope->getDBName(distributed_table_name);
 
         if (distributed_db_name)

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <QueryCoordination/Optimizer/Cost/Cost.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryCoordination/Optimizer/PlanStepVisitor.h>
-#include <QueryCoordination/Optimizer/Cost/Cost.h>
 
 namespace DB
 {
@@ -39,7 +39,8 @@ public:
     Group & getGroup();
     void setGroup(Group * group_);
 
-    bool updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost);
+    bool updateBestChild(
+        const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost);
 
     const std::vector<PhysicalProperties> & getChildrenProp(const PhysicalProperties & physical_properties);
 
@@ -66,19 +67,16 @@ public:
     }
 
 private:
+    UInt32 id;
     QueryPlanStepPtr step;
 
-    UInt32 id;
-
     Group * group;
-
     std::vector<Group *> children;
 
     bool is_enforce_node;
 
     /// output properties and input properties
     PropAndChildrenProp prop_to_best_child;
-
     AlternativeChildrenProp required_children_prop;
 
     bool stats_derived;
@@ -94,19 +92,21 @@ struct GroupNodeHash
             return 0;
 
         size_t hash = 0;
-//        size_t hash = s->getStep()->hash();
-//        hash = MurmurHash3Impl64::combineHashes(hash, IntHash64Impl::apply(child_groups.size()));
-//        for (auto child_group : child_groups)
-//        {
-//            hash = MurmurHash3Impl64::combineHashes(hash, child_group);
-//        }
+        /// TODO implement
+        //        size_t hash = s->getStep()->hash();
+        //        hash = MurmurHash3Impl64::combineHashes(hash, IntHash64Impl::apply(child_groups.size()));
+        //        for (auto child_group : child_groups)
+        //        {
+        //            hash = MurmurHash3Impl64::combineHashes(hash, child_group);
+        //        }
         return hash;
     }
 };
 
 struct GroupNodeEquals
 {
-    bool operator()(const GroupNodePtr & /*t1*/, const GroupNodePtr & /*t2*/) const { return false; }
+    /// TODO implement
+    bool operator()(const GroupNodePtr & /*lhs*/, const GroupNodePtr & /*rhs*/) const { return false; }
 };
 
 }

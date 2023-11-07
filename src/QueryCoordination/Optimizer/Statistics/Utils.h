@@ -1,11 +1,11 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
-#include <Parsers/ASTLiteral.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
-#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
+#include <Parsers/ASTLiteral.h>
 #include <QueryCoordination/Optimizer/Statistics/ColumnStatistics.h>
+#include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 
 namespace DB
 {

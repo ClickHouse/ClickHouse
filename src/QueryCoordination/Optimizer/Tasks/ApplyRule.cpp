@@ -1,8 +1,8 @@
 #include <QueryCoordination/Optimizer/Memo.h>
+#include <QueryCoordination/Optimizer/Rule/Binder.h>
 #include <QueryCoordination/Optimizer/Tasks/ApplyRule.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeInputs.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeNode.h>
-#include <QueryCoordination/Optimizer/Rule/Binder.h>
 
 
 namespace DB

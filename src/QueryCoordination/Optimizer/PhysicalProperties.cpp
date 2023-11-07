@@ -21,10 +21,8 @@ bool PhysicalProperties::operator==(const PhysicalProperties & other) const
         return false;
 
     for (const auto & key : distribution.keys)
-    {
         if (std::count(other.distribution.keys.begin(), other.distribution.keys.end(), key) != 1)
             return false;
-    }
 
     return distribution.type == other.distribution.type;
 }
@@ -62,10 +60,8 @@ bool PhysicalProperties::satisfyDistribute(const PhysicalProperties & required) 
         return false;
 
     for (const auto & key : distribution.keys)
-    {
         if (std::count(required.distribution.keys.begin(), required.distribution.keys.end(), key) != 1)
             return false;
-    }
 
     return distribution.type == required.distribution.type;
 }

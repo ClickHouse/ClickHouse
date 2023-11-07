@@ -1,8 +1,9 @@
+#include <Formats/FormatFactory.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/ApplyWithAliasVisitor.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryCoordination/Coordinator.h>
@@ -13,7 +14,6 @@
 #include <QueryCoordination/Optimizer/Optimizer.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
-#include <Formats/FormatFactory.h>
 
 
 namespace DB
@@ -21,9 +21,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
+extern const int INCORRECT_QUERY;
 }
 
 InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
@@ -63,16 +63,10 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
             cluster_name = visitor.clusters[0]->getName();
             /// remote() cluster_name is empty
             if (cluster_name.empty())
-            {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support remote function query");
-            }
             for (size_t i = 1; i < visitor.clusters.size(); ++i)
-            {
                 if (cluster_name != visitor.clusters[i]->getName())
-                {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query");
-                }
-            }
 
             if (context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys))
                 context->setDistributedForQueryCoord(true);
@@ -151,9 +145,7 @@ void InterpreterSelectQueryCoordination::buildFragments()
             queue.pop();
             fragments.emplace_back(fragment);
             for (const auto & child : fragment->getChildren())
-            {
                 queue.push(child);
-            }
         }
     }
 }
@@ -246,8 +238,7 @@ BlockIO InterpreterSelectQueryCoordination::execute()
         LOG_INFO(&Poco::Logger::get("InterpreterSelectQueryCoordination"), "disable query_coordination");
 
         auto builder = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(context),
-            BuildQueryPipelineSettings::fromContext(context));
+            QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         if (!options.ignore_quota)

@@ -1,7 +1,6 @@
-#include <QueryCoordination/Optimizer/Statistics/Utils.h>
 #include <QueryCoordination/Optimizer/Statistics/ExpressionStatsCalculator.h>
-#include <QueryCoordination/Optimizer/Statistics/getInputNodes.h>
 #include <QueryCoordination/Optimizer/Statistics/Utils.h>
+#include <QueryCoordination/Optimizer/Statistics/getInputNodes.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -9,8 +8,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
 }
 
 ActionNodeStatistics ExpressionNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
@@ -71,9 +70,7 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
 
     /// 2. calculate output nodes statistics
     for (auto output_node : output_nodes)
-    {
         ExpressionStatsCalculator::calculateStatistics(output_node, context);
-    }
 
     Statistics statistics;
     statistics.setOutputRowSize(input.getOutputRowSize());

@@ -45,7 +45,7 @@ public:
     /// Contains only distributed tables with db.table format.
     using Tables = std::vector<StorageID>;
     /// Distributed table to local table mapping.
-    using TablesMap= std::unordered_map<StorageID, StorageID, TableHash>;
+    using TablesMap = std::unordered_map<StorageID, StorageID, TableHash>;
 
     struct TableHash
     {
@@ -87,24 +87,18 @@ public:
     void visit(ASTPtr & ast);
 
 private:
-
     void visitImpl(ASTPtr & ast, ScopePtr & scope);
 
     void enter(ASTPtr & ast, ScopePtr & scope);
     void leave(ASTPtr & ast, ScopePtr & scope);
 
-    bool needChildVisit(ASTPtr &, ASTPtr &)
-    {
-        return true;
-    }
+    bool needChildVisit(ASTPtr &, ASTPtr &) { return true; }
 
     void visitChildren(ASTPtr & ast, ScopePtr & scope)
     {
         for (auto & child : ast->children)
-        {
             if (needChildVisit(ast, child))
                 visitImpl(child, scope);
-        }
     }
 
     void enter(ASTSelectQuery & select_query, ScopePtr & scope);

@@ -34,9 +34,7 @@ Cost Group::getSatisfyBestCost(const PhysicalProperties & required_properties) c
 {
     auto best_node = getSatisfyBestGroupNode(required_properties);
     if (best_node)
-    {
         return best_node->second.cost;
-    }
     return Cost::infinite();
 }
 
@@ -123,12 +121,10 @@ String Group::toString() const
 
     res += "group_nodes: ";
     for (const auto & node : group_nodes)
-    {
         res += "{ " + node->toString() + "}, ";
-    }
 
     String prop_map;
-    for(const auto & [prop, cost_group_node] : prop_to_best_node)
+    for (const auto & [prop, cost_group_node] : prop_to_best_node)
     {
         prop_map += "{ " + prop.toString() + "- (" + std::to_string(cost_group_node.cost.get()) + ", "
             + std::to_string(cost_group_node.group_node->getId()) + ")}, ";

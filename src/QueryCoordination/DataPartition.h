@@ -11,7 +11,7 @@ enum PartitionType : uint8_t
     RANDOM,
     HASH_PARTITIONED,
     RANGE_PARTITIONED,
-    BUCKET_SHFFULE_HASH_PARTITIONED,
+    BUCKET_SHUFFLE_HASH_PARTITIONED,
 };
 
 struct DataPartition
@@ -39,8 +39,8 @@ struct DataPartition
             case RANGE_PARTITIONED:
                 res += "RANGE_PARTITIONED";
                 break;
-            case BUCKET_SHFFULE_HASH_PARTITIONED:
-                res += "BUCKET_SHFFULE_HASH_PARTITIONED";
+            case BUCKET_SHUFFLE_HASH_PARTITIONED:
+                res += "BUCKET_SHUFFLE_HASH_PARTITIONED";
         }
 
         if (keys_size)
@@ -48,9 +48,7 @@ struct DataPartition
             res += ", partition keys:";
 
             for (const auto & key : keys)
-            {
                 res += (key + ", ");
-            }
 
             res = res.substr(0, res.length() - 2);
         }

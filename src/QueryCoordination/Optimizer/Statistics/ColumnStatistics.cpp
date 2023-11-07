@@ -1,5 +1,5 @@
-#include <QueryCoordination/Optimizer/Statistics/Utils.h>
 #include <QueryCoordination/Optimizer/Statistics/ColumnStatistics.h>
+#include <QueryCoordination/Optimizer/Statistics/Utils.h>
 
 namespace DB
 {
@@ -84,7 +84,7 @@ Float64 ColumnStatistics::calculateForNumber(OP_TYPE op_type, Float64 value)
             if (value_in_range)
             {
                 selectivity = (ndv - 1) / ndv;
-                setNdv(ndv -1);
+                setNdv(ndv - 1);
             }
             else
             {
@@ -174,13 +174,11 @@ void ColumnStatistics::revertColumnValue()
 
     if (isNumber(data_type))
     {
-
     }
     else
     {
         /// do nothing
     }
-
 }
 
 bool ColumnStatistics::isUnKnown() const
