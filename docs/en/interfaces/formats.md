@@ -2469,6 +2469,7 @@ This function is designed to load a NumPy array from a .npy file into ClickHouse
 | u2       |    UInt16       |
 | u4       |    UInt32       |
 | u8       |    UInt64       |
+| f2       |    Float32      |
 | f4       |    Float32      |
 | f8       |    Float64      |
 | S        |    String       |
