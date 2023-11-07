@@ -239,11 +239,16 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         configuration_snapshot.url.uri.getHost() + std::to_string(configuration_snapshot.url.uri.getPort()),
         file_iterator, local_context->getSettingsRef().max_download_threads, false, /* query_info */ std::nullopt);
 
-    auto file_deleter = [this, bucket = configuration_snapshot.url.bucket, client = configuration_snapshot.client](const std::string & path)
+    auto file_deleter = [this, bucket = configuration_snapshot.url.bucket, client = configuration_snapshot.client, blob_storage_log = BlobStorageLogWriter::create()](const std::string & path) mutable
     {
         S3::DeleteObjectRequest request;
         request.WithKey(path).WithBucket(bucket);
         auto outcome = client->DeleteObject(request);
+        if (blob_storage_log)
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Delete,
+                bucket, path, {}, 0, outcome.IsSuccess() ? nullptr : &outcome.GetError());
+
         if (!outcome.IsSuccess())
         {
             const auto & err = outcome.GetError();

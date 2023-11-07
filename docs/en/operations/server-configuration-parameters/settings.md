@@ -2740,7 +2740,7 @@ ClickHouse will use it to form the proxy URI using the following template: `{pro
             <proxy_cache_time>10</proxy_cache_time>
         </resolver>
     </http>
-    
+
     <https>
         <resolver>
             <endpoint>http://resolver:8080/hostname</endpoint>

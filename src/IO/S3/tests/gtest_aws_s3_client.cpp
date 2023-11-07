@@ -95,7 +95,8 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
         uri.bucket,
         uri.key,
         DBMS_DEFAULT_BUFFER_SIZE,
-        request_settings
+        request_settings,
+        {}
     );
 
     write_buffer.write('\0'); // doesn't matter what we write here, just needs to be something
