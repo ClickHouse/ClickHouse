@@ -513,6 +513,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         /// get the same exception again. So we return false only for several special exception codes,
         /// and consider query as executed with status "failed" and return true in other cases.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
+                                 e.code() != ErrorCodes::UNFINISHED &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
                                  e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
@@ -793,11 +794,15 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         // Has to get with zk fields to get active replicas field
         replicated_storage->getStatus(status, true);
 
-        // Should return as soon as possible if the table is dropped.
+        // Should return as soon as possible if the table is dropped or detached, so we will release StoragePtr
         bool replica_dropped = storage->is_dropped;
         bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(storage->getStorageID(), context);
         if (replica_dropped || all_replicas_likely_detached)
         {
+            /// We have to exit (and release StoragePtr) if the replica is being restarted,
+            /// but we can retry in this case, so don't write execution status
+            if (storage->is_being_restarted)
+                throw Exception(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is dropped or detached permanently");
             LOG_WARNING(log, ", task {} will not be executed.", task.entry_name);
             task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is dropped or detached permanently");
             return false;
