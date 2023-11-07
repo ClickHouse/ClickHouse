@@ -17,12 +17,12 @@ inner_table=".inner_id.${uuid}"
 ${CLICKHOUSE_CLIENT} -nm --query "drop table \`$inner_table\` sync"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
-backup table ${CLICKHOUSE_DATABASE}.\`mv\` on cluster test_shard_localhost to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
+backup table ${CLICKHOUSE_DATABASE}.\`mv\` to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
 " | grep -o "BACKUP_CREATED"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
 drop table mv;
-restore table ${CLICKHOUSE_DATABASE}.\`mv\` on cluster test_shard_localhost from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
+restore table ${CLICKHOUSE_DATABASE}.\`mv\` from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
 " | grep -o "RESTORED"
 
 ${CLICKHOUSE_CLIENT} --query "select count() from mv;"
