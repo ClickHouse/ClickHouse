@@ -231,8 +231,8 @@ enum class BackupsWorker::ThreadPoolId
     BACKUP_ASYNC,
 
     /// Making a list of files to copy and copying of those files is always sequential, so those operations can share one thread pool.
-    BACKUP_MAKE_LIST_FILES_TO_COPY,
-    BACKUP_COPY_FILES = BACKUP_MAKE_LIST_FILES_TO_COPY,
+    BACKUP_MAKE_FILES_LIST,
+    BACKUP_COPY_FILES = BACKUP_MAKE_FILES_LIST,
 
     /// "RESTORE ON CLUSTER ASYNC" waits in background while "BACKUP ASYNC" is finished on the nodes of the cluster, then finalizes the backup.
     RESTORE_ASYNC_ON_CLUSTER,
@@ -242,8 +242,6 @@ enum class BackupsWorker::ThreadPoolId
 
     /// Restores the data of tables.
     RESTORE_TABLES_DATA,
-
-    MAX,
 };
 
 
@@ -260,53 +258,53 @@ public:
     ThreadPool & getThreadPool(ThreadPoolId thread_pool_id)
     {
         std::lock_guard lock{mutex};
-        auto & thread_pool = thread_pools[static_cast<size_t>(thread_pool_id)];
-        if (!thread_pool)
+        auto it = thread_pools.find(thread_pool_id);
+        if (it != thread_pools.end())
+            return *it->second;
+
+        CurrentMetrics::Metric metric_threads;
+        CurrentMetrics::Metric metric_active_threads;
+        size_t max_threads = 0;
+
+        /// What to do with a new job if a corresponding thread pool is already running `max_threads` jobs:
+        /// `use_queue == true` - put into the thread pool's queue,
+        /// `use_queue == false` - schedule() should wait until some of the jobs finish.
+        bool use_queue = false;
+
+        switch (thread_pool_id)
         {
-            CurrentMetrics::Metric metric_threads;
-            CurrentMetrics::Metric metric_active_threads;
-            size_t max_threads = 0;
-
-            /// What to do with a new job if a corresponding thread pool is already running `max_threads` jobs:
-            /// `use_queue == true` - put into the thread pool's queue,
-            /// `use_queue == false` - schedule() should wait until some of the jobs finish.
-            bool use_queue = false;
-
-            switch (thread_pool_id)
+            case ThreadPoolId::BACKUP_ASYNC:
+            case ThreadPoolId::BACKUP_ASYNC_ON_CLUSTER:
+            case ThreadPoolId::BACKUP_COPY_FILES:
             {
-                case ThreadPoolId::BACKUP_ASYNC:
-                case ThreadPoolId::BACKUP_ASYNC_ON_CLUSTER:
-                case ThreadPoolId::BACKUP_COPY_FILES:
-                {
-                    metric_threads = CurrentMetrics::BackupsThreads;
-                    metric_active_threads = CurrentMetrics::BackupsThreadsActive;
-                    max_threads = num_backup_threads;
-                    /// We don't use the thread pool's queue for copying files because otherwise that queue could be memory-wasting.
-                    use_queue = (thread_pool_id != ThreadPoolId::BACKUP_COPY_FILES);
-                    break;
-                }
-
-                case ThreadPoolId::RESTORE_ASYNC:
-                case ThreadPoolId::RESTORE_ASYNC_ON_CLUSTER:
-                case ThreadPoolId::RESTORE_TABLES_DATA:
-                {
-                    metric_threads = CurrentMetrics::RestoreThreads;
-                    metric_active_threads = CurrentMetrics::RestoreThreadsActive;
-                    max_threads = num_restore_threads;
-                    use_queue = (thread_pool_id != ThreadPoolId::RESTORE_TABLES_DATA);
-                    break;
-                }
-
-                default:
-                    UNREACHABLE();
+                metric_threads = CurrentMetrics::BackupsThreads;
+                metric_active_threads = CurrentMetrics::BackupsThreadsActive;
+                max_threads = num_backup_threads;
+                /// We don't use thread pool queues for thread pools with a lot of tasks otherwise that queue could be memory-wasting.
+                use_queue = (thread_pool_id != ThreadPoolId::BACKUP_COPY_FILES);
+                break;
             }
 
-            /// We set max_free_threads = 0 because we don't want to keep any threads if there is no RESTORE query running right now.
-            size_t max_free_threads = 0;
-            size_t queue_size = use_queue ? 0 : max_threads;
-            thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, max_threads, max_free_threads, queue_size);
+            case ThreadPoolId::RESTORE_ASYNC:
+            case ThreadPoolId::RESTORE_ASYNC_ON_CLUSTER:
+            case ThreadPoolId::RESTORE_TABLES_DATA:
+            {
+                metric_threads = CurrentMetrics::RestoreThreads;
+                metric_active_threads = CurrentMetrics::RestoreThreadsActive;
+                max_threads = num_restore_threads;
+                use_queue = (thread_pool_id != ThreadPoolId::RESTORE_TABLES_DATA);
+                break;
+            }
         }
-        return *thread_pool;
+
+        /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
+        chassert(max_threads != 0);
+        size_t max_free_threads = 0;
+        size_t queue_size = use_queue ? 0 : max_threads;
+        auto thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, max_threads, max_free_threads, queue_size);
+        auto * thread_pool_ptr = thread_pool.get();
+        thread_pools.emplace(thread_pool_id, std::move(thread_pool));
+        return *thread_pool_ptr;
     }
 
     /// Waits for all threads to finish.
@@ -323,10 +321,12 @@ public:
 
         for (auto thread_pool_id : wait_sequence)
         {
-            ThreadPool * thread_pool;
+            ThreadPool * thread_pool = nullptr;
             {
                 std::lock_guard lock{mutex};
-                thread_pool = thread_pools[static_cast<size_t>(thread_pool_id)].get();
+                auto it = thread_pools.find(thread_pool_id);
+                if (it != thread_pools.end())
+                    thread_pool = it->second.get();
             }
             if (thread_pool)
                 thread_pool->wait();
@@ -336,7 +336,7 @@ public:
 private:
     const size_t num_backup_threads;
     const size_t num_restore_threads;
-    std::unique_ptr<ThreadPool> thread_pools[static_cast<size_t>(ThreadPoolId::MAX)] TSA_GUARDED_BY(mutex);
+    std::map<ThreadPoolId, std::unique_ptr<ThreadPool>> thread_pools TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
@@ -611,7 +611,7 @@ void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, con
     LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_MAKE_LIST_FILES_TO_COPY)));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST)));
 }
 
 
