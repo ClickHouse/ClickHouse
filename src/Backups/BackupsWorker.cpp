@@ -236,6 +236,12 @@ BackupsWorker::BackupsWorker(
           num_restore_threads,
           /* max_free_threads = */ 0,
           num_restore_threads))
+    , entries_collector_thread_pool(std::make_unique<ThreadPool>(
+          CurrentMetrics::BackupsThreads,
+          CurrentMetrics::BackupsThreadsActive,
+          num_backup_threads,
+          num_backup_threads,
+          num_backup_threads))
     , backup_async_executor_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::BackupsThreads,
           CurrentMetrics::BackupsThreadsActive,
@@ -456,7 +462,7 @@ void BackupsWorker::doBackup(
             {
                 BackupEntriesCollector backup_entries_collector(
                     backup_query->elements, backup_settings, backup_coordination,
-                    backup_create_params.read_settings, context, *backups_thread_pool);
+                    backup_create_params.read_settings, context, *entries_collector_thread_pool);
                 backup_entries = backup_entries_collector.run();
             }
 
