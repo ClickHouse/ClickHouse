@@ -20,6 +20,12 @@
 
 namespace fs = std::filesystem;
 
+namespace ProfileEvents
+{
+    extern const Event BackupEntriesCollectorMicroseconds;
+    extern const Event BackupEntriesCollectorForTablesDataMicroseconds;
+    extern const Event BackupEntriesCollectorRunPostTasksMicroseconds;
+}
 
 namespace DB
 {
@@ -113,6 +119,8 @@ BackupEntriesCollector::~BackupEntriesCollector()
 
 BackupEntries BackupEntriesCollector::run()
 {
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorMicroseconds);
+
     /// run() can be called onle once.
     if (!current_stage.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
@@ -138,11 +146,19 @@ BackupEntries BackupEntriesCollector::run()
 
     /// Make backup entries for the data of the found tables.
     setStage(Stage::EXTRACTING_DATA_FROM_TABLES);
-    makeBackupEntriesForTablesData();
+
+    {
+        auto timer2 = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorForTablesDataMicroseconds);
+        makeBackupEntriesForTablesData();
+    }
 
     /// Run all the tasks added with addPostCollectingTask().
     setStage(Stage::RUNNING_POST_TASKS);
-    runPostTasks();
+
+    {
+        auto timer2 = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorRunPostTasksMicroseconds);
+        runPostTasks();
+    }
 
     /// No more backup entries or tasks are allowed after this point.
 
