@@ -67,54 +67,51 @@ public:
         auto value = assert_cast<const ColumnVector<ValueType> &>(*columns[0]).getData()[row_num];
         auto ts = assert_cast<const ColumnVector<TimestampType> &>(*columns[1]).getData()[row_num];
 
-        if ((this->data(place).last < value) && this->data(place).seen)
+        auto & data = this->data(place);
+
+        if ((data.last < value) && data.seen)
         {
-            this->data(place).sum += (value - this->data(place).last);
+            data.sum += (value - data.last);
         }
 
-        this->data(place).last = value;
-        this->data(place).last_ts = ts;
+        data.last = value;
+        data.last_ts = ts;
 
-        if (!this->data(place).seen)
+        if (!data.seen)
         {
-            this->data(place).first = value;
-            this->data(place).seen = true;
-            this->data(place).first_ts = ts;
+            data.first = value;
+            data.seen = true;
+            data.first_ts = ts;
         }
     }
 
     // before returns true if lhs is before rhs or false if it is not or can't be determined
-    bool ALWAYS_INLINE before (
-        const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> * lhs,
-        const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> * rhs
-    ) const
+    bool ALWAYS_INLINE before(
+        const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> & lhs,
+        const AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType> & rhs) const
     {
-        if (lhs->last_ts < rhs->first_ts)
-        {
+        if (lhs.last_ts < rhs.first_ts)
             return true;
-        }
-        if (lhs->last_ts == rhs->first_ts && (lhs->last_ts < rhs->last_ts || lhs->first_ts < rhs->first_ts))
-        {
+        if (lhs.last_ts == rhs.first_ts && (lhs.last_ts < rhs.last_ts || lhs.first_ts < rhs.first_ts))
             return true;
-        }
         return false;
     }
 
     void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        auto place_data = &this->data(place);
-        auto rhs_data = &this->data(rhs);
+        auto & place_data = this->data(place);
+        auto & rhs_data = this->data(rhs);
 
-        if (!place_data->seen && rhs_data->seen)
+        if (!place_data.seen && rhs_data.seen)
         {
-            place_data->sum = rhs_data->sum;
-            place_data->seen = true;
-            place_data->first = rhs_data->first;
-            place_data->first_ts = rhs_data->first_ts;
-            place_data->last = rhs_data->last;
-            place_data->last_ts = rhs_data->last_ts;
+            place_data.sum = rhs_data.sum;
+            place_data.seen = true;
+            place_data.first = rhs_data.first;
+            place_data.first_ts = rhs_data.first_ts;
+            place_data.last = rhs_data.last;
+            place_data.last_ts = rhs_data.last_ts;
         }
-        else if (place_data->seen && !rhs_data->seen)
+        else if (place_data.seen && !rhs_data.seen)
         {
             return;
         }
@@ -122,21 +119,21 @@ public:
         {
             // This state came before the rhs state
 
-            if (rhs_data->first > place_data->last)
-                place_data->sum += (rhs_data->first - place_data->last);
-            place_data->sum += rhs_data->sum;
-            place_data->last = rhs_data->last;
-            place_data->last_ts = rhs_data->last_ts;
+            if (rhs_data.first > place_data.last)
+                place_data.sum += (rhs_data.first - place_data.last);
+            place_data.sum += rhs_data.sum;
+            place_data.last = rhs_data.last;
+            place_data.last_ts = rhs_data.last_ts;
         }
         else if (before(rhs_data, place_data))
         {
             // This state came after the rhs state
 
-            if (place_data->first > rhs_data->last)
-                place_data->sum += (place_data->first - rhs_data->last);
-            place_data->sum += rhs_data->sum;
-            place_data->first = rhs_data->first;
-            place_data->first_ts = rhs_data->first_ts;
+            if (place_data.first > rhs_data.last)
+                place_data.sum += (place_data.first - rhs_data.last);
+            place_data.sum += rhs_data.sum;
+            place_data.first = rhs_data.first;
+            place_data.first_ts = rhs_data.first_ts;
         }
         else
         {
@@ -144,32 +141,34 @@ public:
             // same timestamps. We have to pick either the smaller or larger value so that the
             // result is deterministic.
 
-            if (place_data->first < rhs_data->first)
+            if (place_data.first < rhs_data.first)
             {
-                place_data->first = rhs_data->first;
-                place_data->last = rhs_data->last;
+                place_data.first = rhs_data.first;
+                place_data.last = rhs_data.last;
             }
         }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        writeBinaryLittleEndian(this->data(place).sum, buf);
-        writeBinaryLittleEndian(this->data(place).first, buf);
-        writeBinaryLittleEndian(this->data(place).first_ts, buf);
-        writeBinaryLittleEndian(this->data(place).last, buf);
-        writeBinaryLittleEndian(this->data(place).last_ts, buf);
-        writeBinaryLittleEndian(this->data(place).seen, buf);
+        const auto & data = this->data(place);
+        writeBinaryLittleEndian(data.sum, buf);
+        writeBinaryLittleEndian(data.first, buf);
+        writeBinaryLittleEndian(data.first_ts, buf);
+        writeBinaryLittleEndian(data.last, buf);
+        writeBinaryLittleEndian(data.last_ts, buf);
+        writeBinaryLittleEndian(data.seen, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        readBinaryLittleEndian(this->data(place).sum, buf);
-        readBinaryLittleEndian(this->data(place).first, buf);
-        readBinaryLittleEndian(this->data(place).first_ts, buf);
-        readBinaryLittleEndian(this->data(place).last, buf);
-        readBinaryLittleEndian(this->data(place).last_ts, buf);
-        readBinaryLittleEndian(this->data(place).seen, buf);
+        auto & data = this->data(place);
+        readBinaryLittleEndian(data.sum, buf);
+        readBinaryLittleEndian(data.first, buf);
+        readBinaryLittleEndian(data.first_ts, buf);
+        readBinaryLittleEndian(data.last, buf);
+        readBinaryLittleEndian(data.last_ts, buf);
+        readBinaryLittleEndian(data.seen, buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
