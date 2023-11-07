@@ -121,7 +121,7 @@
         {
             void abortOnFailedAssertion(const String & description);
         }
-        #define chassert(x) static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x)
+        #define chassert(x) do { static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x); } while (0)
         #define UNREACHABLE() abort()
         // clang-format off
     #else
