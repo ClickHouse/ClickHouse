@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543
+personal_ws-1.1 en 2633 
 AArch
 ACLs
 ALTERs
@@ -356,6 +356,7 @@ IOUringPendingEvents
 IOWriterThreads
 IOWriterThreadsActive
 IPTrie
+IProcessor
 IPv
 Identifiant
 Incrementing
@@ -1075,7 +1076,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -2285,6 +2285,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringJaccardIndex
+stringJaccardIndexUTF
 stringToH
 stripelog
 strtod
