@@ -381,7 +381,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     return aggregator_params;
 }
 
-static SortDescription getSortDescriptionFromNames(const Names & names)
+SortDescription getSortDescriptionFromNames(const Names & names)
 {
     SortDescription order_descr;
     order_descr.reserve(names.size());
