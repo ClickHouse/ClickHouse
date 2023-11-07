@@ -1,11 +1,13 @@
-#include <random>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/randomSeed.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Poco/Logger.h>
+#include <numeric>
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -60,8 +62,7 @@ public:
 
         const UInt64 samples = col_samples->getUInt(0);
 
-        std::random_device rd;
-        std::mt19937 gen(rd());
+        pcg64_fast rng(randomSeed());
 
         auto col_res_data = col_array->getDataPtr()->cloneEmpty();
         auto col_res_offsets = ColumnUInt64::create(input_rows_count);
@@ -72,22 +73,24 @@ public:
 
         std::vector<size_t> indices;
         size_t prev_array_offset = 0;
+        size_t prev_res_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; row++)
         {
             const size_t num_elements = array_offsets[row] - prev_array_offset;
+            const size_t cur_samples = std::min(num_elements, samples);
 
             indices.resize(num_elements);
-            std::iota(indices.begin(), indices.end(), 0);
-            std::shuffle(indices.begin(), indices.end(), gen);
-
-            const size_t cur_samples = std::min(num_elements, samples);
+            std::iota(indices.begin(), indices.end(), prev_array_offset);
+            std::shuffle(indices.begin(), indices.end(), rng);
 
             for (UInt64 i = 0; i < cur_samples; i++)
                 col_res->getData().insertFrom(col_array->getData(), indices[i]);
 
-            res_offsets[row] = prev_array_offset + cur_samples;
-            prev_array_offset += cur_samples;
+            res_offsets[row] = prev_res_offset + cur_samples;
+
+            prev_array_offset += num_elements;
+            prev_res_offset += cur_samples;
             indices.clear();
         }
 
