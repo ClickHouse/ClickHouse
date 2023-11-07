@@ -1,10 +1,10 @@
 #pragma once
 
-#include "config.h"
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <IO/AsynchronousReader.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -50,7 +50,7 @@ public:
 
     bool isSeekCheap() override;
 
-    bool isContentCached(size_t offset) override;
+    bool isContentCached(size_t offset, size_t size) override;
 
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);

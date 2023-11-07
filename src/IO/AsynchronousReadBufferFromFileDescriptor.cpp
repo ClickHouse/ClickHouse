@@ -228,7 +228,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     file_offset_of_buffer_end = seek_pos;
     bytes_to_ignore = new_pos - seek_pos;
 
-    if (!use_external_buffer && bytes_to_ignore >= internal_buffer.size())
+    if (bytes_to_ignore >= internal_buffer.size() && !(use_external_buffer && internal_buffer.empty()))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}"
                         ") >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());

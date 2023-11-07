@@ -74,7 +74,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     reader.set(request.buf, request.size);
     reader.seek(request.offset, SEEK_SET);
 
-    if (reader.isContentCached(request.offset))
+    if (reader.isContentCached(request.offset, request.size))
     {
         std::promise<Result> promise;
         std::future<Result> future = promise.get_future();

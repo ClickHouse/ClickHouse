@@ -137,6 +137,8 @@ public:
 
         bool contains(size_t point) const { return left <= point && point <= right; }
 
+        bool contains(const Range & other) const { return contains(other.left) && contains(other.right); }
+
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
     };
 

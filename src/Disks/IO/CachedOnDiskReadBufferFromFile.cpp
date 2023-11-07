@@ -1,4 +1,5 @@
 #include "CachedOnDiskReadBufferFromFile.h"
+#include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -1241,19 +1242,41 @@ bool CachedOnDiskReadBufferFromFile::isSeekCheap()
     return !initialized || read_type == ReadType::CACHED;
 }
 
-bool CachedOnDiskReadBufferFromFile::isContentCached(size_t offset)
+static bool isRangeContainedInSegments(size_t left, size_t right, const FileSegmentsHolderPtr & file_segments)
+{
+    if (!FileSegment::Range{file_segments->front().range().left, file_segments->back().range().right}.contains({left, right}))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Requested range is not contained in the segments: left={}, right={}, file_segments={}",
+            left,
+            right,
+            file_segments->toString());
+
+    if (!file_segments->front().range().contains(left))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are redundant segments at the beginning of file_segments");
+
+    const auto end_of_intersection
+        = std::ranges::find_if(*file_segments, [right](const auto & segment) { return segment->range().left > right; });
+
+    return std::all_of(
+        file_segments->begin(),
+        end_of_intersection,
+        [right](const auto & segment)
+        {
+            if (right <= segment->range().right)
+            {
+                /// We need only a prefix of the last segment (I assume the case when file_segments size is 1 is common enough)
+                return right < segment->getCurrentWriteOffset();
+            }
+            return segment->state() == FileSegment::State::DOWNLOADED;
+        });
+}
+
+bool CachedOnDiskReadBufferFromFile::isContentCached(size_t offset, size_t size)
 {
     if (!initialized)
         initialize(file_offset_of_buffer_end, getTotalSizeToRead());
 
-    if (!file_segments->front().range().contains(offset) || offset != file_offset_of_buffer_end)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Assumption is wrong: offset={}, file_offset_of_buffer_end={}, file_segments->front()={}",
-            offset,
-            file_offset_of_buffer_end,
-            file_segments->front().range().toString());
-
-    return canStartFromCache(file_offset_of_buffer_end, file_segments->front());
+    return isRangeContainedInSegments(offset, std::min(offset + size, read_until_position) - 1, file_segments);
 }
 }

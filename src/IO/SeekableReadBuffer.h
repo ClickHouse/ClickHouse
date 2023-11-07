@@ -94,7 +94,7 @@ public:
 
     /// For tables that have an external storage (like S3) as their main storage we'd like to distinguish whether we're reading from this storage or from a local cache.
     /// It allows to reuse all the optimisations done for reading from local tables when reading from cache.
-    virtual bool isContentCached([[maybe_unused]] size_t offset) { return false; }
+    virtual bool isContentCached([[maybe_unused]] size_t offset, [[maybe_unused]] size_t size) { return false; }
 };
 
 

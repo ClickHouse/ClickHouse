@@ -270,11 +270,11 @@ bool ReadBufferFromRemoteFSGather::isSeekCheap()
     return !current_buf || current_buf->isSeekCheap();
 }
 
-bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset)
+bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
 {
     if (!current_buf)
         initialize();
 
-    return current_buf && current_buf->isContentCached(offset);
+    return current_buf && current_buf->isContentCached(offset, size);
 }
 }
