@@ -75,7 +75,7 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, ContextMutable
         if (!database.empty())
             query_context->setCurrentDatabase(database);
 
-        return executeQuery("/*" + comment + "*/ " + query_to_execute, query_context, true).second;
+        return executeQuery("/*" + comment + "*/ " + query_to_execute, query_context, QueryFlags(true, false)).second;
     }
     catch (...)
     {

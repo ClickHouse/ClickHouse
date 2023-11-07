@@ -1076,7 +1076,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
             create.setDatabase(database_name);
             guard->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags(internal, is_restore_from_backup));
         }
 
         if (!create.cluster.empty())
@@ -1232,7 +1232,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
         assertOrSetUUID(create, database);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags(internal, is_restore_from_backup));
     }
 
     if (!create.cluster.empty())
