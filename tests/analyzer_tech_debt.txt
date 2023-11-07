@@ -66,4 +66,3 @@
 01940_custom_tld_sharding_key
 02815_range_dict_no_direct_join
 02845_threads_count_in_distributed_queries
-02861_join_on_nullsafe_compare
