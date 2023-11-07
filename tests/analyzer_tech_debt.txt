@@ -34,7 +34,6 @@
 02139_MV_with_scalar_subquery
 02174_cte_scalar_cache_mv
 02302_s3_file_pruning
-02341_global_join_cte
 02345_implicit_transaction
 02352_grouby_shadows_arg
 02354_annoy
@@ -49,7 +48,6 @@
 02521_aggregation_by_partitions
 02554_fix_grouping_sets_predicate_push_down
 02575_merge_prewhere_different_default_kind
-02713_array_low_cardinality_string
 02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET
 01009_global_array_join_names
 00917_multiple_joins_denny_crane
