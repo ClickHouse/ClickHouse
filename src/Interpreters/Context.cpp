@@ -1200,7 +1200,7 @@ std::optional<UUID> Context::getUserID() const
 
 bool Context::addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_)
 {
-    auto lock = getLock();
+    std::lock_guard lock(mutex);
     if (query_coordination_meta.cluster_name.empty())
     {
         query_coordination_meta.cluster_name = cluster_name_;
@@ -1216,6 +1216,12 @@ bool Context::addQueryCoordinationMetaInfo(String cluster_name_, const std::vect
         query_coordination_meta.sharding_keys.insert(query_coordination_meta.sharding_keys.end(), sharding_keys_.begin(), sharding_keys_.end());
     }
     return true;
+}
+
+const QueryCoordinationMetaInfo & Context::getQueryCoordinationMetaInfo() const
+{
+    std::lock_guard lock(mutex);
+    return query_coordination_meta;
 }
 
 void Context::setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> &)

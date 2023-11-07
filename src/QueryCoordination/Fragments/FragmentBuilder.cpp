@@ -1,9 +1,5 @@
 #include <QueryCoordination/Fragments/FragmentBuilder.h>
 #include <QueryCoordination/Exchange/ExchangeDataStep.h>
-#include <QueryCoordination/DataPartition.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Interpreters/Context.h>
-#include <stack>
 
 namespace DB
 {

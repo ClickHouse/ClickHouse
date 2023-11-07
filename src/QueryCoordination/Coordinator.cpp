@@ -65,9 +65,8 @@ PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardI
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
                         current_settings).getSaturated(
                             current_settings.max_execution_time);
-    std::vector<ConnectionPoolWithFailover::TryResult> try_results
-        = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, table_name);
-    return try_results[0].entry; /// TODO random ?
+    auto try_results = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_ONE, table_name);
+    return try_results[0].entry;
 }
 
 PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info)
@@ -76,9 +75,8 @@ PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardI
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
                         current_settings).getSaturated(
                             current_settings.max_execution_time);
-    std::vector<IConnectionPool::Entry> try_results
-        = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
-    return try_results[0]; /// TODO random ?
+    auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_ONE);
+    return try_results[0];
 }
 
 std::unordered_map<UInt32, std::vector<String>> Coordinator::assignSourceFragment()

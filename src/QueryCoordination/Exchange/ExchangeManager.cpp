@@ -4,7 +4,7 @@
 namespace DB
 {
 
-std::shared_ptr<ExchangeDataSource> ExchangeManager::findExchangeDataSource(const ExchangeDataRequest & exchange_data_request)
+ExchangeDataSourcePtr ExchangeManager::findExchangeDataSource(const ExchangeDataRequest & exchange_data_request)
 {
     std::lock_guard lock(mutex);
     auto it = query_exchange_data_sources.find(exchange_data_request.query_id);
@@ -26,7 +26,7 @@ std::shared_ptr<ExchangeDataSource> ExchangeManager::findExchangeDataSource(cons
     return exchange_it->second;
 }
 
-void ExchangeManager::registerExchangeDataSource(const ExchangeDataRequest & exchange_data_request, std::shared_ptr<ExchangeDataSource> receiver)
+void ExchangeManager::registerExchangeDataSource(const ExchangeDataRequest & exchange_data_request, ExchangeDataSourcePtr receiver)
 {
     std::lock_guard lock(mutex);
     auto & exchanges = query_exchange_data_sources[exchange_data_request.query_id];

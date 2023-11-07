@@ -110,7 +110,7 @@ static void threadFunction(CompletedPipelinesExecutor::Data & data, ThreadGroupP
 
         LOG_DEBUG(log, "Fragment {} begin execute", data.fragment_id);
 
-        data.executor->execute(num_threads);
+        data.executor->execute(num_threads, true);
     }
     catch (...)
     {
@@ -190,9 +190,9 @@ void CompletedPipelinesExecutor::execute()
 
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
-        auto func = [data_ptr = data.get(), num_threads = pipelines[i].getNumThreads(), thread_group = CurrentThread::getGroup(), log = log]
+        auto func = [data_ptr = data.get(), num_threads = pipelines[i].getNumThreads(), thread_group = CurrentThread::getGroup(), log_ = log]
         {
-            threadFunction(*data_ptr, thread_group, num_threads, log);
+            threadFunction(*data_ptr, thread_group, num_threads, log_);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
@@ -232,7 +232,7 @@ void CompletedPipelinesExecutor::cancel()
     if (cancelled)
         return;
 
-    LOG_DEBUG(log, "cancel");
+    LOG_DEBUG(log, "canceling");
 
     cancelled = true;
 
@@ -246,11 +246,7 @@ void CompletedPipelinesExecutor::cancel()
 
     datas_init.set();
     if (thread.joinable())
-    {
-        LOG_DEBUG(log, "thread joinable");
         thread.join();
-        LOG_DEBUG(log, "thread joined");
-    }
 
     LOG_DEBUG(log, "cancelled");
 }
@@ -259,7 +255,6 @@ CompletedPipelinesExecutor::~CompletedPipelinesExecutor()
 {
     try
     {
-        LOG_DEBUG(log, "~CompletedPipelinesExecutor try cancel");
         cancel();
     }
     catch (...)

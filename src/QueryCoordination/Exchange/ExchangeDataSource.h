@@ -13,6 +13,9 @@
 namespace DB
 {
 
+class ExchangeDataSource;
+using ExchangeDataSourcePtr = std::shared_ptr<ExchangeDataSource>;
+
 class ExchangeDataSource final : public ISource, public std::enable_shared_from_this<ExchangeDataSource>
 {
 public:
@@ -77,13 +80,11 @@ private:
     BlocksList block_list;
 
     UInt32 fragment_id;
-
     UInt32 plan_id;
 
     String source;
 
     bool add_aggregation_info = false;
-
     size_t num_rows = 0;
 };
 

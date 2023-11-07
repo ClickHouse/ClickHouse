@@ -28,7 +28,6 @@ public:
     void asyncExecute();
 
     void waitFinish();
-
     void cancel();
 
     struct Data;

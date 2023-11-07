@@ -24,17 +24,20 @@ Pipelines PipelinesBuilder::build()
         /// for data sink
         std::vector<ExchangeDataSink::Channel> channels;
         String local_host; /// for DataSink, we need tell peer who am i.
-        for (const auto & shard_info : cluster->getShardsInfo())
-        {
-            if (shard_info.isLocal())
-            {
-                local_host = shard_info.local_addresses[0].toString();
-            }
 
+        auto all_addresses = cluster->getShardsAddresses();
+        auto & shards_info = cluster->getShardsInfo();
+
+        for (size_t i = 0; i < all_addresses.size(); i++)
+        {
+            const auto & shard_nodes = all_addresses[i];
             /// find target host_port for this shard
             String target_host_port;
-            for (const auto & address : shard_info.all_addresses)
+            for (const auto & address : shard_nodes)
             {
+                if (address.is_local)
+                    local_host = address.toString();
+
                 if (std::count(data_to.begin(), data_to.end(), address.toString()))
                 {
                     target_host_port = address.toString();
@@ -45,11 +48,8 @@ Pipelines PipelinesBuilder::build()
             if (target_host_port.empty())
                 continue;
 
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-                                settings).getSaturated(
-                                    settings.max_execution_time);
-
-            auto connection = shard_info.pool->getOne(timeouts, &settings, target_host_port);
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings.max_execution_time);
+            auto connection = shards_info[i].pool->getOne(timeouts, &settings, target_host_port);
 
             LOG_DEBUG(log, "Fragment {} will actually send data to {}", fragment->getFragmentID(), connection->getDescription());
             channels.emplace_back(ExchangeDataSink::Channel{.connection = connection, .is_local = (local_host == target_host_port)});

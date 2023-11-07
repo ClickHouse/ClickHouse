@@ -595,11 +595,7 @@ public:
     }
 
     bool addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
-
-    QueryCoordinationMetaInfo getQueryCoordinationMetaInfo() const
-    {
-        return query_coordination_meta;
-    }
+    const QueryCoordinationMetaInfo & getQueryCoordinationMetaInfo() const;
 
     void setQuotaKey(String quota_key_);
 

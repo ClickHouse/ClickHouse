@@ -248,8 +248,7 @@ std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, cons
 
     try
     {
-        auto block_io = executeQuery(sql, load_query_context, true);
-
+        auto block_io = executeQuery(sql, load_query_context, true).second;
         auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
 
         Block block;
@@ -279,7 +278,7 @@ std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_i
         storage_id.getTableName());
 
     auto load_query_context = createQueryContext();
-    auto block_io = executeQuery(sql, load_query_context, true);
+    auto block_io = executeQuery(sql, load_query_context, true).second;
 
     auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
     auto table_columns = DatabaseCatalog::instance().getTable(storage_id, load_query_context)->getInMemoryMetadata().columns;
@@ -330,7 +329,7 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
         storage_id.getTableName(),
         storage_id.getFullNameNotQuoted());
 
-    auto block_io = executeQuery(insert_sql, context, true);
+    auto block_io = executeQuery(insert_sql, context, true).second;
     auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
     executor->execute();
 }
@@ -369,7 +368,7 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
             avg_row_size,
             storage_id.getFullNameNotQuoted());
 
-        auto block_io = executeQuery(insert_sql, context, true);
+        auto block_io = executeQuery(insert_sql, context, true).second;
         auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
         executor->execute();
     }

@@ -21,8 +21,6 @@ public:
 
     bool canUpdateInputStream() const override { return true; }
 
-    void updateInputStream(DataStreams input_streams_);
-
 private:
     void updateOutputStream() override;
 
