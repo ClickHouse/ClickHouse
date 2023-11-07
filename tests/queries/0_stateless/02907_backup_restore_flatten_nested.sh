@@ -4,7 +4,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CLICKHOUSE_TEST_UNIQUE_NAME="kek1"
 ${CLICKHOUSE_CLIENT} -nm --query "
 drop table if exists test;
 set flatten_nested = 0;
