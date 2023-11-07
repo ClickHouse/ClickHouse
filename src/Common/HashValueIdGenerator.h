@@ -81,18 +81,14 @@ inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start
 inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, size_t start, size_t n, UInt64 * lens)
 {
     for (size_t i = 0; i < n; ++i)
-    {
         lens[i] = offsets[start + i] - offsets[start + i - 1];
-    }
 }
 
 inline bool isAllShortString(const UInt64 * __restrict lens, size_t n)
 {
     bool res = true;
     for (size_t i = 0; i < n; ++i)
-    {
         res &= lens[i] <= 9;
-    }
     return res;
 }
 )
@@ -101,16 +97,18 @@ DECLARE_AVX512BW_SPECIFIC_CODE(
 inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * __restrict value_ids, size_t multiplier, size_t n)
 {
     size_t i = 0;
+    auto tmp_value_ids = value_ids;
+    auto tmp_local_value_ids = local_value_ids;
     for (; i + 8 < n; i += 8)
     {
         auto multiplier_v = _mm512_set1_epi64(multiplier);
-        auto value_ids_v = _mm512_loadu_epi64(value_ids);
+        auto value_ids_v = _mm512_loadu_epi64(tmp_value_ids);
         auto multipy_result = _mm512_mullox_epi64(value_ids_v, multiplier_v);
-        auto local_value_ids_v = _mm512_loadu_epi64(local_value_ids);
+        auto local_value_ids_v = _mm512_loadu_epi64(tmp_local_value_ids);
         auto add_result = _mm512_add_epi64(multipy_result, local_value_ids_v);
-        _mm512_storeu_epi64(value_ids, add_result);
-        value_ids += 8;
-        local_value_ids += 8;
+        _mm512_storeu_epi64(tmp_value_ids, add_result);
+        tmp_value_ids += 8;
+        tmp_local_value_ids += 8;
     }
 
     for (; i < n; ++i)
@@ -120,13 +118,14 @@ inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * 
 inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start, size_t n)
 {
     size_t i = 0;
+    auto tmp_value_ids = value_ids;
     for (; i + 8 < n; i += 8)
     {
-        auto value_ids_v = _mm512_loadu_epi64(value_ids);
+        auto value_ids_v = _mm512_loadu_epi64(tmp_value_ids);
         auto range_start_v = _mm512_set1_epi64(range_start);
         auto new_value_ids_v = _mm512_sub_epi64(value_ids_v, range_start_v);
-        _mm512_storeu_epi64(value_ids, new_value_ids_v);
-        value_ids += 8;
+        _mm512_storeu_epi64(tmp_value_ids, new_value_ids_v);
+        tmp_value_ids += 8;
     }
     for (; i < n; ++i)
         value_ids[i] -= range_start;
@@ -135,18 +134,19 @@ inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start
 inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, size_t start, size_t n, UInt64 * lens)
 {
     size_t i = 0;
+    auto tmp_lens = lens;
     for (; i + 8 < n; i += 8)
     {
         const auto * ptr = &offsets[start + i];
         auto off = _mm512_loadu_epi64(ptr);
         auto prev_off = _mm512_loadu_epi64(ptr - 1);
         auto res = _mm512_sub_epi64(off, prev_off);
-        _mm512_store_epi64(lens, res);
-        lens += 8;
+        _mm512_store_epi64(tmp_lens, res);
+        tmp_lens += 8;
     }
     for (; i < n; ++i)
     {
-        lens[i] = offsets[start + i] - offsets[start + i - 1];
+        lens[i] = offsets[start + i] - offsets[start + i];
     }
 }
 
@@ -154,12 +154,14 @@ inline bool isAllShortString(const UInt64 * __restrict lens, size_t n)
 {
     bool res = true;
     size_t i = 0;
+    auto tmp_lens = lens;
     for (; i + 8 < n; i += 8)
     {
-        auto lens_v = _mm512_loadu_epi64(lens);
+        auto lens_v = _mm512_loadu_epi64(tmp_lens);
         auto max_str_len = _mm512_set1_epi64(9);
         if (_mm512_cmpgt_epi64_mask(lens_v, max_str_len) != 0)
             return false;
+        tmp_lens += 8;
     }
     for (; i < n; ++i)
     {
@@ -234,8 +236,6 @@ protected:
     bool is_nullable = false;
 
     const size_t max_sample_rows = 10000;
-
-
 
     /// In general, we use a hash map to assign value ids.
     using MAP= StringHashMap<UInt64>;
@@ -347,7 +347,9 @@ protected:
         for (size_t i = 0; i < n; ++i)
         {
             getValueId(StringRef(data_pos, element_bytes), value_ids[i]);
+            data_pos += element_bytes;
         }
+
         applyNullMap(value_ids, null_map, n);
     }
 
@@ -440,15 +442,7 @@ private:
         size_t i = 0;
         size_t n = str_col->size();
 
-        str_lens[0] = offsets[0];
         const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() : nullptr;
-        computeValueIdForString(char_pos, str_lens, 1, tmp_value_ids, null_map_pos);
-        TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, 1);
-        value_ids_pos += 1;
-        char_pos += str_lens[0];
-        prev_offset = offsets[0];
-        i += 1;
-
         for (; i + batch_size < n; i += batch_size)
         {
 #if USE_MULTITARGET_CODE
@@ -462,13 +456,13 @@ private:
             computeValueIdForString(char_pos, str_lens, batch_size, tmp_value_ids, null_map_pos);
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
-                TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, 8);
+                TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_size);
             else
 #endif
             {
-                TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, 8);
+                TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_size);
             }
-            value_ids += batch_size;
+            value_ids_pos += batch_size;
             char_pos += offsets[i + batch_size - 1] - prev_offset;
             prev_offset = offsets[i + batch_size - 1];
         }
@@ -628,7 +622,6 @@ private:
             const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
 
             if (str_len <= 8 && enable_range_mode)
-
                 computeValueIdsInRangeMode<UInt8, false, true>(tmp_value_ids, batch_step, char_pos, str_len, null_map_pos);
             else
                 computeValueIdsInNormalMode(tmp_value_ids, batch_step, char_pos, str_len, null_map_pos);
@@ -684,6 +677,7 @@ private:
         const UInt8 * data_pos = reinterpret_cast<const UInt8 *>(num_col->getData().data());
         size_t i = 0;
         size_t n = std::min(max_sample_rows, num_col->size());
+        enable_range_mode = n > 0;
         for (i = 0; i < n; ++i)
         {
             if (element_bytes > 8)
