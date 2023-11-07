@@ -59,7 +59,7 @@ public:
                     "The second argument of function {} is empty or null, type = {}",
                     getName(), arguments[1].type->getName());
 
-        const UInt64 samples = col_samples->getUInt(0);
+        const size_t samples = col_samples->getUInt(0);
 
         pcg64_fast rng(randomSeed());
 
