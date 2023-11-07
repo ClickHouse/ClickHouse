@@ -22,6 +22,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/NullSource.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -520,7 +521,10 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     else
     {
         if (keys->empty())
+        {
+            pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
             return;
+        }
 
         ::sort(keys->begin(), keys->end());
         keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
