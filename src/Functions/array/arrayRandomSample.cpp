@@ -58,17 +58,7 @@ public:
                     "The second argument of function {} is empty or null, type = {}",
                     getName(), arguments[1].type->getName());
 
-        UInt64 samples;
-        try
-        {
-            samples = col_samples->getUInt(0);
-        }
-        catch (...)
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Failed to fetch UInt64 from the second argument column, type = {}",
-                arguments[1].type->getName());
-        }
+        const UInt64 samples = col_samples->getUInt(0);
 
         std::random_device rd;
         std::mt19937 gen(rd());
