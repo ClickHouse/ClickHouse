@@ -10,7 +10,7 @@ class SplitLimit final : public Rule
 public:
     SplitLimit();
 
-    std::vector<StepTree> transform(StepTree & step_tree, ContextPtr context) override;
+    std::vector<SubQueryPlan> transform(SubQueryPlan & sub_plan, ContextPtr context) override;
 };
 
 }

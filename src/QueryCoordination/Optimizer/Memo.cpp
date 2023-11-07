@@ -91,21 +91,21 @@ Group & Memo::rootGroup()
     return *root_group;
 }
 
-StepTree Memo::extractPlan()
+QueryPlan Memo::extractPlan()
 {
-    StepTree sub_plan
+    SubQueryPlan plan
         = extractPlan(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
 
     WriteBufferFromOwnString buffer;
-    StepTree::ExplainPlanOptions settings;
-    sub_plan.explainPlan(buffer, settings);
+    SubQueryPlan::ExplainPlanOptions settings;
+    plan.explainPlan(buffer, settings);
 
     LOG_TRACE(log, "CBO optimizer find best plan: {}", buffer.str());
 
-    return sub_plan;
+    return plan;
 }
 
-StepTree Memo::extractPlan(Group & group, const PhysicalProperties & required_prop)
+SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperties & required_prop)
 {
     const auto & prop_group_node = group.getSatisfyBestGroupNode(required_prop);
     chassert(prop_group_node.has_value());
@@ -116,20 +116,20 @@ StepTree Memo::extractPlan(Group & group, const PhysicalProperties & required_pr
 
     auto child_prop = group_node.getChildrenProp(prop_group_node->first);
 
-    std::vector<StepTreePtr> child_plans;
+    std::vector<SubQueryPlanPtr> child_plans;
     const auto & children_group = group_node.getChildren();
 
     for (size_t i = 0; i < child_prop.size(); ++i)
     {
-        StepTreePtr plan_ptr;
+        SubQueryPlanPtr plan_ptr;
         if (group_node.isEnforceNode())
-            plan_ptr = std::make_unique<StepTree>(extractPlan(group, child_prop[i]));
+            plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(group, child_prop[i]));
         else
-            plan_ptr = std::make_unique<StepTree>(extractPlan(*children_group[i], child_prop[i]));
+            plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(*children_group[i], child_prop[i]));
         child_plans.emplace_back(std::move(plan_ptr));
     }
 
-    StepTree plan;
+    SubQueryPlan plan;
     if (child_plans.size() > 1)
     {
         plan.unitePlans(group_node.getStep(), child_plans);

@@ -10,7 +10,7 @@ class SplitAggregation final : public Rule
 public:
     SplitAggregation();
 
-    std::vector<StepTree> transform(StepTree & step_tree, ContextPtr context) override;
+    std::vector<SubQueryPlan> transform(SubQueryPlan & sub_plan, ContextPtr context) override;
 };
 
 }

@@ -12,7 +12,7 @@
 namespace DB
 {
 
-namespace Optimizer
+namespace CostBasedOptimizer
 {
 
 inline const auto & getRules()

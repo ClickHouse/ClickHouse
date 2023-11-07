@@ -1,6 +1,6 @@
 #pragma once
 
-#include <QueryCoordination/Optimizer/StepTree.h>
+#include <QueryCoordination/Optimizer/SubQueryPlan.h>
 
 namespace DB
 {
@@ -15,12 +15,12 @@ class Binder
 public:
     Binder(const Pattern & pattern_, GroupNodePtr group_node_);
 
-    std::vector<StepTreePtr> bind();
+    std::vector<SubQueryPlanPtr> bind();
 
 private:
-    std::vector<StepTreePtr> extractGroupNode(const Pattern & pattern_, GroupNodePtr group_node_);
+    std::vector<SubQueryPlanPtr> extractGroupNode(const Pattern & pattern_, GroupNodePtr group_node_);
 
-    std::vector<StepTreePtr> extractGroup(const Pattern & pattern_, Group & group);
+    std::vector<SubQueryPlanPtr> extractGroup(const Pattern & pattern_, Group & group);
 
     const Pattern & pattern;
 

@@ -14,9 +14,9 @@ SplitAggregation::SplitAggregation()
     pattern.addChildren({Pattern(PatternAny)});
 }
 
-std::vector<StepTree> SplitAggregation::transform(StepTree & step_tree, ContextPtr context)
+std::vector<SubQueryPlan> SplitAggregation::transform(SubQueryPlan & sub_plan, ContextPtr context)
 {
-    auto * aggregate_step = typeid_cast<AggregatingStep *>(step_tree.getRootNode()->step.get());
+    auto * aggregate_step = typeid_cast<AggregatingStep *>(sub_plan.getRootNode()->step.get());
 
     if (!aggregate_step)
         return {};
@@ -24,7 +24,7 @@ std::vector<StepTree> SplitAggregation::transform(StepTree & step_tree, ContextP
     if (aggregate_step->isPreliminaryAgg())
         return {};
 
-    auto child_step = step_tree.getRootNode()->children[0]->step;
+    auto child_step = sub_plan.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};
@@ -35,13 +35,13 @@ std::vector<StepTree> SplitAggregation::transform(StepTree & step_tree, ContextP
     std::shared_ptr<MergingAggregatedStep> merge_agg_step
         = aggregate_step->makeMergingAggregatedStep(partial_agg_step->getOutputStream(), settings);
 
-    StepTree res_step_tree;
-    res_step_tree.addStep(child_step);
-    res_step_tree.addStep(partial_agg_step);
-    res_step_tree.addStep(merge_agg_step);
+    SubQueryPlan res_sub_plan;
+    res_sub_plan.addStep(child_step);
+    res_sub_plan.addStep(partial_agg_step);
+    res_sub_plan.addStep(merge_agg_step);
 
-    std::vector<StepTree> res;
-    res.emplace_back(std::move(res_step_tree));
+    std::vector<SubQueryPlan> res;
+    res.emplace_back(std::move(res_sub_plan));
     return res;
 }
 

@@ -3,6 +3,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
 
 GroupStep::GroupStep(DataStream output_stream_, Group & group_) : group(group_)
 {
@@ -14,9 +18,9 @@ String GroupStep::getName() const
     return "Group (" + std::to_string(group.getId()) + ")";
 }
 
-QueryPipelineBuilderPtr GroupStep::updatePipeline(QueryPipelineBuilders /*pipelines*/, const BuildQueryPipelineSettings & /*settings*/)
+QueryPipelineBuilderPtr GroupStep::updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &)
 {
-    throw;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "'updatePipeline' is not implemented for group step.");
 }
 
 Group & GroupStep::getGroup()

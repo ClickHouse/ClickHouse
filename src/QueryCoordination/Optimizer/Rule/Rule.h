@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QueryCoordination/Optimizer/Rule/Pattern.h>
-#include <QueryCoordination/Optimizer/StepTree.h>
+#include <QueryCoordination/Optimizer/SubQueryPlan.h>
 
 namespace DB
 {
@@ -12,7 +12,7 @@ public:
     Rule() = default;
     virtual ~Rule() = default;
 
-    virtual std::vector<StepTree> transform(StepTree & step_tree, ContextPtr context) = 0;
+    virtual std::vector<SubQueryPlan> transform(SubQueryPlan & sub_plan, ContextPtr context) = 0;
 
     const Pattern & getPattern() const;
 

@@ -11,9 +11,9 @@
 #include <QueryCoordination/Fragments/FragmentBuilder.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
 #include <QueryCoordination/Interpreters/ReplaceDistributedTableNameVisitor.h>
-#include <QueryCoordination/Optimizer/Optimizer.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include "QueryCoordination/Optimizer/CostBasedOptimizer.h"
 
 
 namespace DB
@@ -117,15 +117,17 @@ void InterpreterSelectQueryCoordination::buildQueryPlanIfNeeded()
 
 void InterpreterSelectQueryCoordination::optimize()
 {
-    if (step_tree.isInitialized())
+    if (plan.isInitialized())
         return;
 
+    /// Optimized by RBO rules
     plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
+    /// Optimized by CBO optimizer
     if (query_coordination_enabled)
     {
-        Optimizer optimizer;
-        step_tree = optimizer.optimize(std::move(plan), context);
+        CostBasedOptimizer optimizer;
+        plan = optimizer.optimize(std::move(plan), context);
     }
 }
 
@@ -133,7 +135,7 @@ void InterpreterSelectQueryCoordination::buildFragments()
 {
     if (query_coordination_enabled)
     {
-        FragmentBuilder builder(step_tree, context);
+        FragmentBuilder builder(plan, context);
         FragmentPtr root_fragment = builder.build();
 
         std::queue<FragmentPtr> queue;
@@ -178,10 +180,7 @@ void InterpreterSelectQueryCoordination::explain(
         /// Add extra layers to make plan look more like from postgres.
         auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
 
-        if (query_coordination_enabled)
-            plan_map->add("Plan", step_tree.explainPlan(options_));
-        else
-            plan_map->add("Plan", plan.explainPlan(options_));
+        plan_map->add("Plan", plan.explainPlan(options_));
         auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
         plan_array->add(std::move(plan_map));
 
@@ -195,10 +194,7 @@ void InterpreterSelectQueryCoordination::explain(
     }
     else
     {
-        if (query_coordination_enabled)
-            step_tree.explainPlan(buf, options_);
-        else
-            plan.explainPlan(buf, options_);
+        plan.explainPlan(buf, options_);
     }
 }
 

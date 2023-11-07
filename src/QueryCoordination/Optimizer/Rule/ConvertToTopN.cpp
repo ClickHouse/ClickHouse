@@ -14,9 +14,9 @@ ConvertToTopN::ConvertToTopN()
     pattern.addChildren({child_pattern});
 }
 
-std::vector<StepTree> ConvertToTopN::transform(StepTree & step_tree, ContextPtr /*context*/)
+std::vector<SubQueryPlan> ConvertToTopN::transform(SubQueryPlan & sub_plan, ContextPtr /*context*/)
 {
-    auto * limit_step = typeid_cast<LimitStep *>(step_tree.getRootNode()->step.get());
+    auto * limit_step = typeid_cast<LimitStep *>(sub_plan.getRootNode()->step.get());
 
     if (!limit_step)
         return {};
@@ -24,19 +24,19 @@ std::vector<StepTree> ConvertToTopN::transform(StepTree & step_tree, ContextPtr 
     if (limit_step->getPhase() != LimitStep::Phase::Unknown)
         return {};
 
-    auto group_step = step_tree.getRootNode()->children[0]->children[0]->step;
+    auto group_step = sub_plan.getRootNode()->children[0]->children[0]->step;
     if (!typeid_cast<GroupStep *>(group_step.get()))
         return {};
 
-    auto sorting_step = step_tree.getRootNode()->children[0]->step;
-    auto topn = std::make_shared<TopNStep>(sorting_step, step_tree.getRootNode()->step);
+    auto sorting_step = sub_plan.getRootNode()->children[0]->step;
+    auto topn = std::make_shared<TopNStep>(sorting_step, sub_plan.getRootNode()->step);
 
-    StepTree res_step_tree;
-    res_step_tree.addStep(group_step);
-    res_step_tree.addStep(topn);
+    SubQueryPlan res_sub_plan;
+    res_sub_plan.addStep(group_step);
+    res_sub_plan.addStep(topn);
 
-    std::vector<StepTree> res;
-    res.emplace_back(std::move(res_step_tree));
+    std::vector<SubQueryPlan> res;
+    res.emplace_back(std::move(res_sub_plan));
     return res;
 }
 

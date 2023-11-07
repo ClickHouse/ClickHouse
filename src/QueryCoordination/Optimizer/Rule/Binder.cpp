@@ -12,7 +12,7 @@ Binder::Binder(const Pattern & pattern_, GroupNodePtr group_node_) : pattern(pat
 {
 }
 
-std::vector<StepTreePtr> Binder::bind()
+std::vector<SubQueryPlanPtr> Binder::bind()
 {
     return extractGroupNode(pattern, group_node);
 }
@@ -20,13 +20,13 @@ std::vector<StepTreePtr> Binder::bind()
 void generateAllCases(
     GroupNodePtr group_node_,
     size_t children_index,
-    std::vector<std::vector<StepTreePtr>> & children_candidate_lists,
-    std::vector<StepTreePtr> & children_select_list,
-    std::vector<StepTreePtr> & results)
+    std::vector<std::vector<SubQueryPlanPtr>> & children_candidate_lists,
+    std::vector<SubQueryPlanPtr> & children_select_list,
+    std::vector<SubQueryPlanPtr> & results)
 {
     if (children_index >= children_candidate_lists.size())
     {
-        StepTreePtr result = std::make_shared<StepTree>();
+        SubQueryPlanPtr result = std::make_shared<SubQueryPlan>();
         result->unitePlans(group_node_->getStep(), children_select_list);
         children_select_list.resize(children_select_list.size() - 1);
         results.emplace_back(result);
@@ -39,10 +39,10 @@ void generateAllCases(
     }
 }
 
-std::vector<StepTreePtr>
-generateStepTreeWithChildren(GroupNodePtr group_node_, std::vector<std::vector<StepTreePtr>> & children_candidate_lists)
+std::vector<SubQueryPlanPtr>
+generateSubQueryPlanWithChildren(GroupNodePtr group_node_, std::vector<std::vector<SubQueryPlanPtr>> & children_candidate_lists)
 {
-    std::vector<StepTreePtr> results;
+    std::vector<SubQueryPlanPtr> results;
     for (auto & candidate_list : children_candidate_lists)
     {
         if (candidate_list.empty())
@@ -52,22 +52,22 @@ generateStepTreeWithChildren(GroupNodePtr group_node_, std::vector<std::vector<S
         }
     }
 
-    std::vector<StepTreePtr> children_select_list;
+    std::vector<SubQueryPlanPtr> children_select_list;
     generateAllCases(group_node_, 0, children_candidate_lists, children_select_list, results);
     return results;
 }
 
-std::vector<StepTreePtr> Binder::extractGroupNode(const Pattern & pattern_, GroupNodePtr group_node_)
+std::vector<SubQueryPlanPtr> Binder::extractGroupNode(const Pattern & pattern_, GroupNodePtr group_node_)
 {
     if (pattern_.getStepType() != group_node_->getStep()->stepType())
         return {};
 
     if (pattern_.getStepType() == StepType::PatternAny)
     {
-        StepTreePtr step_tree = std::make_shared<StepTree>();
+        SubQueryPlanPtr sub_plan = std::make_shared<SubQueryPlan>();
         auto child_step = std::make_shared<GroupStep>(group_node_->getStep()->getOutputStream(), group_node_->getGroup());
-        step_tree->addStep(child_step);
-        return {step_tree};
+        sub_plan->addStep(child_step);
+        return {sub_plan};
     }
 
     const auto & child_pattern = pattern_.getChildren();
@@ -76,19 +76,19 @@ std::vector<StepTreePtr> Binder::extractGroupNode(const Pattern & pattern_, Grou
     if (child_pattern.size() != child_group.size())
         return {};
 
-    std::vector<std::vector<StepTreePtr>> children_candidate_lists;
+    std::vector<std::vector<SubQueryPlanPtr>> children_candidate_lists;
     for (size_t i = 0; i < child_pattern.size(); ++i)
     {
         auto candidate_list = extractGroup(child_pattern[i], *child_group[i]);
         children_candidate_lists.emplace_back(std::move(candidate_list));
     }
 
-    return generateStepTreeWithChildren(group_node_, children_candidate_lists);
+    return generateSubQueryPlanWithChildren(group_node_, children_candidate_lists);
 }
 
-std::vector<StepTreePtr> Binder::extractGroup(const Pattern & pattern_, Group & group)
+std::vector<SubQueryPlanPtr> Binder::extractGroup(const Pattern & pattern_, Group & group)
 {
-    std::vector<StepTreePtr> results;
+    std::vector<SubQueryPlanPtr> results;
     auto & group_nodes = group.getGroupNodes();
     for (auto it = group_nodes.begin(); it != group_nodes.end(); ++it)
     {
@@ -113,13 +113,13 @@ std::vector<StepTreePtr> Binder::extractGroup(const Pattern & pattern_, Group & 
 //
 //    while(true)
 //    {
-//        std::vector<StepTreePtr> children;
+//        std::vector<SubQueryPlanPtr> children;
 //        for (size_t i = 0; i < children_results.size(); ++i)
 //        {
 //            children.emplace_back(std::move(children_results[i][cursors[i]]));
 //        }
 //
-//        StepTreePtr candidate = std::make_shared<StepTree>();
+//        SubQueryPlanPtr candidate = std::make_shared<SubQueryPlan>();
 //        candidate->unitePlans(group_node_.getStep(), children);
 //        results.emplace_back(std::move(candidate));
 //

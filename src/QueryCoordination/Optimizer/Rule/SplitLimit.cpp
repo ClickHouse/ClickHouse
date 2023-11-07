@@ -12,9 +12,9 @@ SplitLimit::SplitLimit()
     pattern.addChildren({Pattern(PatternAny)});
 }
 
-std::vector<StepTree> SplitLimit::transform(StepTree & step_tree, ContextPtr context)
+std::vector<SubQueryPlan> SplitLimit::transform(SubQueryPlan & sub_plan, ContextPtr context)
 {
-    auto * limit_step = typeid_cast<LimitStep *>(step_tree.getRootNode()->step.get());
+    auto * limit_step = typeid_cast<LimitStep *>(sub_plan.getRootNode()->step.get());
 
     if (!limit_step)
         return {};
@@ -22,7 +22,7 @@ std::vector<StepTree> SplitLimit::transform(StepTree & step_tree, ContextPtr con
     if (limit_step->getPhase() != LimitStep::Phase::Unknown)
         return {};
 
-    auto child_step = step_tree.getRootNode()->children[0]->step;
+    auto child_step = sub_plan.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};
@@ -38,13 +38,13 @@ std::vector<StepTree> SplitLimit::transform(StepTree & step_tree, ContextPtr con
         context->getSettings().exact_rows_before_limit);
     final_limit->setPhase(LimitStep::Phase::Final);
 
-    StepTree res_step_tree;
-    res_step_tree.addStep(child_step);
-    res_step_tree.addStep(pre_limit);
-    res_step_tree.addStep(final_limit);
+    SubQueryPlan res_sub_plan;
+    res_sub_plan.addStep(child_step);
+    res_sub_plan.addStep(pre_limit);
+    res_sub_plan.addStep(final_limit);
 
-    std::vector<StepTree> res;
-    res.emplace_back(std::move(res_step_tree));
+    std::vector<SubQueryPlan> res;
+    res.emplace_back(std::move(res_sub_plan));
     return res;
 }
 

@@ -4,7 +4,7 @@
 namespace DB
 {
 
-FragmentBuilder::FragmentBuilder(StepTree & plan_, ContextMutablePtr context_) : plan(plan_), context(context_)
+FragmentBuilder::FragmentBuilder(QueryPlan & plan_, ContextMutablePtr context_) : plan(plan_), context(context_)
 {
 }
 

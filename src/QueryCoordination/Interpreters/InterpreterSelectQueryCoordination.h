@@ -3,7 +3,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 #include <QueryCoordination/Fragments/Fragment.h>
-#include <QueryCoordination/Optimizer/StepTree.h>
+#include <QueryCoordination/Optimizer/SubQueryPlan.h>
 
 namespace DB
 {
@@ -37,7 +37,7 @@ public:
 private:
     void buildQueryPlanIfNeeded();
 
-    /// Optimize query plan, if query_coordination_enabled is true build step_tree.
+    /// Optimize query plan, if query_coordination_enabled is true build sub_plan.
     void optimize();
 
     /// Build distributed query plan.
@@ -53,11 +53,8 @@ private:
     ///     3. allow_experimental_query_coordination = 1
     bool query_coordination_enabled;
 
-    /// Old query plan, enabled only if query_coordination_enabled is false.
+    /// Query plan
     QueryPlan plan;
-
-    /// New query plan, enabled only if query_coordination_enabled is true.
-    StepTree step_tree;
 
     /// Distributed query plan, enabled only if query_coordination_enabled is true.
     FragmentPtrs fragments;

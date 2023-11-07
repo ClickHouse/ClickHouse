@@ -2,7 +2,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryCoordination/Optimizer/Group.h>
-#include <QueryCoordination/Optimizer/StepTree.h>
+#include <QueryCoordination/Optimizer/SubQueryPlan.h>
 
 namespace DB
 {
@@ -20,8 +20,8 @@ public:
 
     Group & rootGroup();
 
-    StepTree extractPlan();
-    StepTree extractPlan(Group & group, const PhysicalProperties & required_properties);
+    QueryPlan extractPlan();
+    SubQueryPlan extractPlan(Group & group, const PhysicalProperties & required_properties);
 
     UInt32 fetchAddGroupNodeId() { return ++group_node_id_counter; }
 

@@ -1,13 +1,13 @@
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
-#include <QueryCoordination/Optimizer/StepTree.h>
+#include <QueryCoordination/Optimizer/SubQueryPlan.h>
 #include <Common/JSONBuilder.h>
 
 
 namespace DB
 {
 
-void StepTree::addStep(QueryPlanStepPtr step)
+void SubQueryPlan::addStep(QueryPlanStepPtr step)
 {
     checkNotCompleted();
     if (root)
@@ -20,7 +20,7 @@ void StepTree::addStep(QueryPlanStepPtr step)
             if (!blocksHaveEqualStructure(root_header, step_header))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Cannot add step {} to StepTree because it has incompatible header with root step {} root header: {} step header: {}",
+                    "Cannot add step {} to SubQueryPlan because it has incompatible header with root step {} root header: {} step header: {}",
                     step->getName(),
                     root->step->getName(),
                     root_header.dumpStructure(),
@@ -39,7 +39,7 @@ void StepTree::addStep(QueryPlanStepPtr step)
     }
 }
 
-void StepTree::unitePlans(QueryPlanStepPtr step, std::vector<StepTreePtr> plans)
+void SubQueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<SubQueryPlanPtr> plans)
 {
     if (isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");

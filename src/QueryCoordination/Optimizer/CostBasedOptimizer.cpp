@@ -1,5 +1,5 @@
+#include "CostBasedOptimizer.h"
 #include <QueryCoordination/Optimizer/Memo.h>
-#include <QueryCoordination/Optimizer/Optimizer.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeContext.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeGroup.h>
 #include <QueryCoordination/Optimizer/Tasks/Scheduler.h>
@@ -7,7 +7,7 @@
 namespace DB
 {
 
-StepTree Optimizer::optimize(QueryPlan && plan, ContextPtr query_context)
+QueryPlan CostBasedOptimizer::optimize(QueryPlan && plan, ContextPtr query_context)
 {
     /// init Memo by plan
     Memo memo(std::move(plan), query_context);

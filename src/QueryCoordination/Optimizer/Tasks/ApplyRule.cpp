@@ -16,16 +16,16 @@ ApplyRule::ApplyRule(GroupNodePtr group_node_, RulePtr rule_, TaskContextPtr tas
 void ApplyRule::execute()
 {
     Binder binder(rule->getPattern(), group_node);
-    const auto & bind_step_trees = binder.bind();
+    const auto & bind_sub_plans = binder.bind();
 
-    for (const auto & step_tree : bind_step_trees)
+    for (const auto & sub_plan : bind_sub_plans)
     {
-        auto transformed_step_trees = rule->transform(*step_tree, getQueryContext());
+        auto transformed_sub_plans = rule->transform(*sub_plan, getQueryContext());
 
-        for (auto & transformed_step_tree : transformed_step_trees)
+        for (auto & transformed_sub_plan : transformed_sub_plans)
         {
             auto & group = task_context->getCurrentGroup();
-            auto added_node = task_context->getMemo().addPlanNodeToGroup(*transformed_step_tree.getRootNode(), &group);
+            auto added_node = task_context->getMemo().addPlanNodeToGroup(*transformed_sub_plan.getRootNode(), &group);
 
             pushTask(std::make_unique<OptimizeInputs>(added_node, task_context));
             pushTask(std::make_unique<OptimizeNode>(added_node, task_context));

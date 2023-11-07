@@ -12,9 +12,9 @@ SplitSort::SplitSort()
     pattern.addChildren({Pattern(PatternAny)});
 }
 
-std::vector<StepTree> SplitSort::transform(StepTree & step_tree, ContextPtr context)
+std::vector<SubQueryPlan> SplitSort::transform(SubQueryPlan & sub_plan, ContextPtr context)
 {
-    auto * sorting_step = typeid_cast<SortingStep *>(step_tree.getRootNode()->step.get());
+    auto * sorting_step = typeid_cast<SortingStep *>(sub_plan.getRootNode()->step.get());
 
     if (!sorting_step)
         return {};
@@ -22,7 +22,7 @@ std::vector<StepTree> SplitSort::transform(StepTree & step_tree, ContextPtr cont
     if (sorting_step->getPhase() != SortingStep::Phase::Unknown)
         return {};
 
-    auto child_step = step_tree.getRootNode()->children[0]->step;
+    auto child_step = sub_plan.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};
@@ -36,13 +36,13 @@ std::vector<StepTree> SplitSort::transform(StepTree & step_tree, ContextPtr cont
         pre_sort->getOutputStream(), sorting_step->getSortDescription(), max_block_size, sorting_step->getLimit(), exact_rows_before_limit);
     merging_sorted->setPhase(SortingStep::Phase::Final);
 
-    StepTree res_step_tree;
-    res_step_tree.addStep(child_step);
-    res_step_tree.addStep(pre_sort);
-    res_step_tree.addStep(std::move(merging_sorted));
+    SubQueryPlan res_sub_plan;
+    res_sub_plan.addStep(child_step);
+    res_sub_plan.addStep(pre_sort);
+    res_sub_plan.addStep(std::move(merging_sorted));
 
-    std::vector<StepTree> res;
-    res.emplace_back(std::move(res_step_tree));
+    std::vector<SubQueryPlan> res;
+    res.emplace_back(std::move(res_sub_plan));
     return res;
 }
 
