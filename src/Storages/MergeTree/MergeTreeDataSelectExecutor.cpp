@@ -1,6 +1,7 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <optional>
 #include <unordered_set>
+#include <chrono>
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
@@ -1071,14 +1072,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
         else
         {
-            /// Parallel loading of data parts.
+            /// Parallel processing of data parts.
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
                 num_threads);
 
+            SCOPE_EXIT({ pool.wait(); });
+
+            /// Thread pool above allocates threads from a GlobalThreadPool and they can end there.
+            /// Which may result in a deadlock - we wait for some threads to get free while occupying a slot in the same ThreadPool.
+            /// To prohibit this behaviour we shouldn't wait infinitely when trying to schedule a task from inside the pool,
+            /// but rather throw an exception after some time.
+            const std::chrono::microseconds lock_acquire_timeout_microseconds = std::chrono::seconds{context->getSettingsRef().lock_acquire_timeout};
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
-                pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrow([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
                     SCOPE_EXIT_SAFE(
                         if (thread_group)
@@ -1088,9 +1096,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         CurrentThread::attachToGroupIfDetached(thread_group);
 
                     process_part(part_index);
-                });
-
-            pool.wait();
+                }, Priority{}, lock_acquire_timeout_microseconds.count());
         }
 
         /// Skip empty ranges.
