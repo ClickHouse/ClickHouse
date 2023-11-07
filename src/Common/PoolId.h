@@ -11,7 +11,7 @@ namespace DB
 ///  * Pools that have different priorities do NOT run jobs simultaneously (with small exception due to dynamic prioritization).
 ///  * Pools with lower priority wait for all jobs in higher priority pools to be done.
 
-/// Note that pools also have different configurable sizes not listed here.
+/// Note that pools also have different configurable sizes not listed here. See `Context::getAsyncLoader()` for details.
 
 /// WARNING: `*PoolId` values must be unique and sequential w/o gaps.
 
