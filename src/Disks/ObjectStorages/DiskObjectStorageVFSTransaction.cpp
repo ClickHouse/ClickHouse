@@ -209,7 +209,7 @@ void DiskObjectStorageVFSTransaction::copyFile( //NOLINT
 
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(VFSTransactionLogItem::Type type, const StoredObjects & objects)
 {
-    LOG_TRACE(log, "Adding item {} with payload {}", type, fmt::join(objects, ", "));
+    LOG_TRACE(log, "{} {}", type, fmt::join(objects, ", "));
     operations_to_execute.emplace_back(std::make_unique<KeeperOperation>(
         object_storage,
         metadata_storage,

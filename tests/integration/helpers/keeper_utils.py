@@ -114,7 +114,11 @@ class KeeperClient(object):
                         output.write(chunk)
 
                 elif file == self.proc.stderr:
+<<<<<<< HEAD
                     self.proc.stdout.readline()
+=======
+                    # assert self.proc.stdout.readline() == self.SEPARATOR
+>>>>>>> 6a91ae8eef1 (testing log insertion (writeFile broken with autocommit))
                     raise KeeperException(self.proc.stderr.readline().strip().decode())
 
             else:

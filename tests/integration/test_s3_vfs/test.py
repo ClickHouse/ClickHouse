@@ -135,12 +135,13 @@ def test_s3_vfs(started_cluster, policy):
     # Based on version 21.x - two parts
     wait_for_large_objects_count(cluster, 2)
 
-    zk = ku.get_fake_zk(cluster, node1)
-
-    print(zk.get_children("/vfs_log"));
-
+    zk = cluster.get_kazoo_client("zoo1")
+    # should be around 27 * 2
+    for ch in zk.get_children("/vfs_log"):
+        logging.error(zk.get(f"/vfs_log/{ch}"))
     zk.stop()
-    zk.close()
+
+    assert False
     return
 
     node1.query("OPTIMIZE TABLE s3_test FINAL")
