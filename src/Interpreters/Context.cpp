@@ -3775,24 +3775,21 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 
         if (shared->merge_tree_storage_policy_selector)
         {
-            if (shared->merge_tree_storage_policy_selector)
+            try
             {
-                try
-                {
-                    shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
-                        config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
-                }
-                catch (Exception & e)
-                {
-                    LOG_ERROR(
-                        shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
-                }
+                shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
+                    config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
+            }
+            catch (Exception & e)
+            {
+                LOG_ERROR(
+                    shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
             }
         }
 
         if (!disks_to_reinit.empty())
         {
-            LOG_DEBUG(shared->log, "Reloading disks: {}", fmt::join(disks_to_reinit, ", "));
+            LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
             DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
         }
     }

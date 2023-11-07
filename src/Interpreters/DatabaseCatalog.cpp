@@ -1601,7 +1601,14 @@ void DatabaseCatalog::reloadDisksTask()
 
     std::lock_guard lock{reload_disks_mutex};
     if (!disks_to_reload.empty()) /// during reload, another disks configuration change
-        (*reload_disks_task)->scheduleAfter(default_reload_period_sec * 1000);
+        (*reload_disks_task)->scheduleAfter(DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC * 1000);
+}
+
+void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
+{
+    std::lock_guard lock{reload_disks_mutex};
+    disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
+    (*reload_disks_task)->schedule();
 }
 
 static void maybeUnlockUUID(UUID uuid)
@@ -1687,10 +1694,4 @@ DDLGuard::~DDLGuard()
     releaseTableLock();
 }
 
-void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
-{
-    std::lock_guard lock{reload_disks_mutex};
-    disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
-    (*reload_disks_task)->schedule();
-}
 }

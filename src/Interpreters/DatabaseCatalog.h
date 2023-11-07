@@ -389,9 +389,8 @@ private:
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;
     std::set<String> disks_to_reload;
-    static constexpr time_t default_reload_period_sec = 5;
+    static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
 };
-
 
 
 /// This class is useful when creating a table or database.
