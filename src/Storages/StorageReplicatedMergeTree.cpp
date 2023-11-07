@@ -10120,7 +10120,6 @@ void StorageReplicatedMergeTree::backupData(
         bool exists = false;
         Strings mutation_ids;
         {
-            zkutil::ZooKeeperPtr zookeeper;
             auto holder = final_with_retries.createRetriesControlHolder("getMutations");
             holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
             {
@@ -10139,7 +10138,6 @@ void StorageReplicatedMergeTree::backupData(
                 bool mutation_id_exists = false;
                 String mutation;
 
-                zkutil::ZooKeeperPtr zookeeper;
                 auto holder = final_with_retries.createRetriesControlHolder("getMutation");
                 holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
                 {
