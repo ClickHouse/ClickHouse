@@ -54,6 +54,7 @@ struct ShuffleHost
     UInt8 original_index = 0;
     Priority priority;
     UInt64 random = 0;
+    bool optimal_for_load_balancing;
 
     void randomize()
     {

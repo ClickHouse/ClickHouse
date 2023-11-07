@@ -501,12 +501,7 @@ void ZooKeeper::connect(
 
                 original_index = static_cast<Int8>(node.original_index);
 
-                // i != 0 means suboptimal.
-                // NOTE(incfly): decision on where it's need adjustment.
-                // maybe we can extend optimal or not logic and use method to encap.
-                // One way, connect fucntion go through them all and then get the priority information.
-                // Alterantive, extract out the send/receive on a single socket, but lots of refactoring, not great.
-                if (i != 0)
+                if (!node.optimal_for_load_balancing)
                 {
                     // argument where the max age of the connection could be.
                     std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
