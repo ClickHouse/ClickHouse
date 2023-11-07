@@ -6,9 +6,9 @@
 namespace DB
 {
 
-bool isNumeric(DataTypePtr type)
+bool isNumeric(const DataTypePtr & type)
 {
-//    isColumnedAsNumber
+    /// isColumnedAsNumber
     switch (type->getTypeId())
     {
         /// number
@@ -16,14 +16,14 @@ bool isNumeric(DataTypePtr type)
         case TypeIndex::UInt16:
         case TypeIndex::UInt32:
         case TypeIndex::UInt64:
-//        case TypeIndex::UInt128: /// TODO check
-//        case TypeIndex::UInt256:
+        case TypeIndex::UInt128: /// TODO check
+        case TypeIndex::UInt256:
         case TypeIndex::Int8:
         case TypeIndex::Int16:
         case TypeIndex::Int32:
         case TypeIndex::Int64:
-//        case TypeIndex::Int128:
-//        case TypeIndex::Int256:
+        case TypeIndex::Int128:
+        case TypeIndex::Int256:
         case TypeIndex::Float32:
         case TypeIndex::Float64:
         /// datetime
@@ -47,9 +47,9 @@ bool isNumeric(DataTypePtr type)
     }
 }
 
-bool isConstColumn(const ActionsDAG::Node * node_)
+bool isConstColumn(const ActionsDAG::Node * node)
 {
-    return node_->column && isColumnConst(*node_->column);
+    return node->column && isColumnConst(*node->column);
 }
 
 bool isAlwaysFalse(const ASTPtr & ast)
@@ -64,17 +64,16 @@ bool isAlwaysFalse(const ASTPtr & ast)
     return false;
 }
 
-
-void adjustStatisticsByColumns(Statistics & statistics, const Names & output_columns)
+void adjustStatisticsByColumns(Statistics & statistics, const Names & final_columns)
 {
     /// remove additional
     for (const auto & column : statistics.getColumnNames())
     {
-        if (std::find(output_columns.begin(), output_columns.end(), column) == output_columns.end())
+        if (std::find(final_columns.begin(), final_columns.end(), column) == final_columns.end())
             statistics.removeColumnStatistics(column);
     }
     /// add missing
-    for (const auto & column : output_columns)
+    for (const auto & column : final_columns)
     {
         if (!statistics.containsColumnStatistics(column))
             statistics.addColumnStatistics(column, ColumnStatistics::unknown());

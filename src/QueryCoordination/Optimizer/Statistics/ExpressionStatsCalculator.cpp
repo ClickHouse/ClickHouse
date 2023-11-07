@@ -1,6 +1,7 @@
 #include <QueryCoordination/Optimizer/Statistics/Utils.h>
 #include <QueryCoordination/Optimizer/Statistics/ExpressionStatsCalculator.h>
 #include <QueryCoordination/Optimizer/Statistics/getInputNodes.h>
+#include <QueryCoordination/Optimizer/Statistics/Utils.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -40,104 +41,18 @@ ActionNodeStatistics ExpressionNodeVisitor::visit(const ActionsDAG::Node * node,
     return node_stats;
 }
 
-ActionNodeStatistics ExpressionNodeVisitor::visitChildren(const ActionsDAG::Node * node, ContextType & context)
+ActionNodeStatistics
+ExpressionStatsCalculator::calculateStatistics(const ActionsDAG::Node * node, ExpressionNodeVisitor::ContextType & context)
 {
-    chassert(node->children.size() == 1);
-    return visit(node->children.front(), context);
+    ExpressionNodeVisitor visitor;
+    return visitor.visit(node, context);
 }
-
-ActionNodeStatistics ExpressionNodeVisitor::visitDefault(const ActionsDAG::Node * node, ContextType & context)
-{
-    ActionNodeStatistics node_stats;
-    node_stats.selectivity = 1.0;
-
-    auto input_nodes = getInputNodes(node);
-    if (input_nodes.empty())
-    {
-        /// for example: ran(), now(), materialize('str')
-        node_stats.value = 0.0; /// TODO real value
-        return node_stats;
-    }
-
-    for (auto input_node : input_nodes)
-    {
-        chassert(context.contains(input_node));
-        auto input_stats = context[input_node].get(input_node)->clone();
-        node_stats.set(input_node, input_stats);
-        input_stats->setDataType(input_node->result_type);
-    }
-    return node_stats;
-}
-
-ActionNodeStatistics ExpressionNodeVisitor::visitInput(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Should never reach here, for we can get input node stats from context.");
-}
-
-ActionNodeStatistics ExpressionNodeVisitor::visitColumn(const ActionsDAG::Node * node, ContextType & /*context*/)
-{
-    chassert(node->column);
-    chassert(node->children.empty());
-
-    if (!isColumnConst(*node->column))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not a constant column", node->column->getName());
-
-    ActionNodeStatistics node_stats;
-    try
-    {
-        node_stats.value = node->column->getFloat64(0); /// TODO throw exception?
-    }
-    catch (...)
-    {
-        LOG_TRACE(log, "Node {} can not be parsed to Float64", node->result_name);
-    }
-
-    return node_stats;
-}
-
-
-ActionNodeStatistics ExpressionNodeVisitor::visitAlias(const ActionsDAG::Node * node, ContextType & context)
-{
-    ActionNodeStatistics stats = visitChildren(node, context);
-    return stats;
-}
-
-ActionNodeStatistics ExpressionNodeVisitor::visitArrayJoin(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method not implemented.");
-}
-
-ActionNodeStatistics ExpressionNodeVisitor::visitFunction(const ActionsDAG::Node * node, ContextType & context)
-{
-    switch (node->children.size())
-    {
-        /// TODO open
-//        case 1:
-//            return visitUnaryFunction(node, context);
-//        case 2:
-//            return visitBinaryFunction(node, context);
-        default:
-            return visitDefault(node, context);
-    }
-}
-
-ActionNodeStatistics ExpressionNodeVisitor::visitUnaryFunction(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
-{
-    ActionNodeStatistics node_stats;
-    return node_stats;
-}
-
-ActionNodeStatistics ExpressionNodeVisitor::visitBinaryFunction(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
-{
-    ActionNodeStatistics node_stats;
-    return node_stats;
-}
-
 
 Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expressions, const Statistics & input)
 {
-    if (expressions->getNodes().empty()) /// Expression (Before GROUP BY) maybe empty
-        return input;
+    /// Expression (Before GROUP BY) maybe empty
+    if (expressions->getNodes().empty())
+        return input.clone();
 
     auto & input_nodes = expressions->getInputs();
     ExpressionNodeVisitor::VisitContext context;
@@ -184,17 +99,99 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
         {
             statistics.addColumnStatistics(output_node->result_name, ColumnStatistics::create(*context[output_node].value));
         }
-
     }
 
     return statistics;
 }
 
-ActionNodeStatistics
-ExpressionStatsCalculator::calculateStatistics(const ActionsDAG::Node * node, ExpressionNodeVisitor::ContextType & context)
+ActionNodeStatistics ExpressionNodeVisitor::visitChildren(const ActionsDAG::Node * node, ContextType & context)
 {
-    ExpressionNodeVisitor visitor;
-    return visitor.visit(node, context);
+    chassert(node->children.size() == 1);
+    return visit(node->children.front(), context);
+}
+
+ActionNodeStatistics ExpressionNodeVisitor::visitDefault(const ActionsDAG::Node * node, ContextType & context)
+{
+    ActionNodeStatistics node_stats;
+    node_stats.selectivity = 1.0;
+
+    auto input_nodes = getInputNodes(node);
+    if (input_nodes.empty())
+    {
+        /// For example: rand(), now(), materialize('str')
+        node_stats.value = 0.0; /// TODO real value
+        return node_stats;
+    }
+
+    for (auto input_node : input_nodes)
+    {
+        chassert(context.contains(input_node));
+        auto input_stats = context[input_node].get(input_node)->clone();
+        node_stats.set(input_node, input_stats);
+        input_stats->setDataType(input_node->result_type);
+    }
+    return node_stats;
+}
+
+ActionNodeStatistics ExpressionNodeVisitor::visitInput(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Should never reach here, for we can get input node stats from context.");
+}
+
+ActionNodeStatistics ExpressionNodeVisitor::visitColumn(const ActionsDAG::Node * node, ContextType & /*context*/)
+{
+    chassert(node->column);
+    chassert(node->children.empty());
+
+    if (!isColumnConst(*node->column))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not a constant column", node->column->getName());
+
+    ActionNodeStatistics node_stats;
+
+    if (isNumeric(node->result_type))
+        node_stats.value = node->column->getFloat64(0);
+    else
+        node_stats.value = 0.0;
+
+    LOG_TRACE(log, "visit column {} got {}", node->result_name, *node_stats.value);
+    return node_stats;
+}
+
+ActionNodeStatistics ExpressionNodeVisitor::visitAlias(const ActionsDAG::Node * node, ContextType & context)
+{
+    ActionNodeStatistics stats = visitChildren(node, context);
+    return stats;
+}
+
+ActionNodeStatistics ExpressionNodeVisitor::visitArrayJoin(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
+{
+    /// TODO implement
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method not implemented.");
+}
+
+ActionNodeStatistics ExpressionNodeVisitor::visitFunction(const ActionsDAG::Node * node, ContextType & context)
+{
+    switch (node->children.size())
+    {
+        case 1:
+            return visitUnaryFunction(node, context);
+        case 2:
+            return visitBinaryFunction(node, context);
+        default:
+            return visitDefault(node, context);
+    }
+}
+
+ActionNodeStatistics ExpressionNodeVisitor::visitUnaryFunction(const ActionsDAG::Node * node, ContextType & context)
+{
+    /// TODO implement
+    return visitDefault(node, context);
+}
+
+ActionNodeStatistics ExpressionNodeVisitor::visitBinaryFunction(const ActionsDAG::Node * node, ContextType & context)
+{
+    /// TODO implement
+    return visitDefault(node, context);
 }
 
 }

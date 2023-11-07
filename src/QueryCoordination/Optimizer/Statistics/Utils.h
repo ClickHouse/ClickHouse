@@ -10,11 +10,21 @@
 namespace DB
 {
 
-bool isNumeric(DataTypePtr data_type);
-bool isConstColumn(const ActionsDAG::Node * node_);
+/// Whether type is numeric compatible type. Used to distinguish data types
+/// who can be cast to Float64. The casted value will be used as min or max
+/// value of a column statistics.
+///
+/// For these who (such as string) can not be cast, use 0 which means that we
+/// can not calculate statistics by range for these data types.
+bool isNumeric(const DataTypePtr & type);
+
+/// Whether a node is a const column.
+bool isConstColumn(const ActionsDAG::Node * node);
+
+/// Whether a ast represent false.
 bool isAlwaysFalse(const ASTPtr & ast);
 
-/// Adjust 'statistics' to match output_columns.
-void adjustStatisticsByColumns(Statistics & statistics, const Names & output_columns);
+/// Adjust 'statistics' to match output_columns by adding the missing and removing the additional.
+void adjustStatisticsByColumns(Statistics & statistics, const Names & final_columns);
 
 }

@@ -27,7 +27,7 @@ Float64 ColumnStatistics::calculateByValue(OP_TYPE op_type, Float64 value)
         return 0.1; /// TODO add to settings
 
     /// whether the column is a number.
-    bool nan = isColumnedAsNumber(data_type);
+    bool nan = isNumber(data_type);
     return nan ? calculateForNaN(op_type) : calculateForNumber(op_type, value);
 }
 
@@ -172,7 +172,7 @@ void ColumnStatistics::revertColumnValue()
     if (this->isUnKnown())
         return;
 
-    if (isColumnedAsNumber(data_type))
+    if (isNumber(data_type))
     {
 
     }
