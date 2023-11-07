@@ -1,3 +1,5 @@
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -27,8 +29,6 @@ StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
     setInMemoryMetadata(storage_metadata);
 }
 
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 namespace
 {
@@ -87,8 +87,6 @@ protected:
 
 }
 
-#endif
-
 
 Pipe StorageSystemSymbols::read(
     const Names & column_names,
@@ -105,14 +103,12 @@ Pipe StorageSystemSymbols::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
     const auto & symbols = SymbolIndex::instance().symbols();
 
     return Pipe(std::make_shared<SymbolsBlockSource>(
         symbols.cbegin(), symbols.cend(), std::move(columns_mask), std::move(res_block), max_block_size));
-#else
-    return Pipe(std::make_shared<NullSource>(std::move(res_block)));
-#endif
 }
 
 }
+
+#endif
