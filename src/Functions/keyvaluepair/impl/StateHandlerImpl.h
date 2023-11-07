@@ -108,7 +108,6 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                // +1 to skip quoting character
                 return {next_pos, State::READING_QUOTED_KEY};
             }
 
