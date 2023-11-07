@@ -3,6 +3,7 @@
 #include <base/types.h>
 
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <fmt/core.h>
 
 #include <functional>
 #include <string>
@@ -34,3 +35,13 @@ using StoredObjects = std::vector<StoredObject>;
 size_t getTotalSize(const StoredObjects & objects);
 
 }
+
+template<>
+struct fmt::formatter<DB::StoredObject>
+{
+    constexpr auto parse(auto& ctx) { return ctx.begin(); }
+    constexpr auto format(const DB::StoredObject& obj, auto& ctx)
+    {
+        return fmt::format_to(ctx.out(), "StoredObject(local={},remote={})", obj.local_path, obj.remote_path);
+    }
+};

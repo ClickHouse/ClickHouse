@@ -775,7 +775,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         {
             downloadPartToDisk(
                 part_name, replica_path, to_detached, tmp_prefix, disk, false, *in,
-                output_buffer_getter, projections, throttler, sync),
+                output_buffer_getter, projections, throttler, sync,
+                /*object_storage_vfs=*/true),
             std::move(temporary_directory_lock)
         };
     }
@@ -956,7 +957,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     OutputBufferGetter output_buffer_getter,
     size_t projections,
     ThrottlerPtr throttler,
-    bool sync)
+    bool sync,
+    bool is_object_storage_vfs)
 {
     String part_id;
     const auto data_settings = data.getSettings();
@@ -1082,13 +1084,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         throw;
     }
 
-    if (zero_copy)
+    if (zero_copy || is_object_storage_vfs)
     {
         LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.", part_name, part_id, disk->getName());
     }
     else
     {
-        // TODO myrrc we shouldn't verify checksums for vfs parts metadata
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
             new_data_part->checksums.checkEqual(data_checksums, false);
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());

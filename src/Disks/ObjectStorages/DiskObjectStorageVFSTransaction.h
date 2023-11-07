@@ -49,6 +49,7 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
 
 private:
     zkutil::ZooKeeperPtr zookeeper;
+    Poco::Logger const * const log;
     void addStoredObjectsOp(VFSTransactionLogItem::Type type, const StoredObjects & objects);
 };
 }

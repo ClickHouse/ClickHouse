@@ -112,7 +112,8 @@ private:
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,
-        bool sync);
+        bool sync,
+        bool object_storage_vfs = false);
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
        MutableDataPartStoragePtr data_part_storage,

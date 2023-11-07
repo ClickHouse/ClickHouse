@@ -28,6 +28,7 @@ DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction( //NOLINT
     IMetadataStorage & metadata_storage_,
     zkutil::ZooKeeperPtr zookeeper_)
     : DiskObjectStorageTransaction(object_storage_, metadata_storage_, nullptr), zookeeper(zookeeper_)
+    , log(&Poco::Logger::get("DiskObjectStorageVFS"))
 {
 }
 
@@ -208,6 +209,7 @@ void DiskObjectStorageVFSTransaction::copyFile( //NOLINT
 
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(VFSTransactionLogItem::Type type, const StoredObjects & objects)
 {
+    LOG_TRACE(log, "Adding item {} with payload {}", type, fmt::join(objects, ", "));
     operations_to_execute.emplace_back(std::make_unique<KeeperOperation>(
         object_storage,
         metadata_storage,
