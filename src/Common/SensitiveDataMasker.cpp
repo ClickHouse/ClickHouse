@@ -104,6 +104,10 @@ void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensi
     {
         sensitive_data_masker = std::move(sensitive_data_masker_);
     }
+    else
+    {
+        sensitive_data_masker.reset();
+    }
 }
 
 SensitiveDataMasker * SensitiveDataMasker::getInstance()
