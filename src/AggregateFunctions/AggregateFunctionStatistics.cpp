@@ -55,14 +55,11 @@ bool areComparable(UInt64 a, UInt64 b)
   * Source: "Updating formulae and a pairwise algorithm for computing sample variances"
   * (Chan et al., Stanford University, 12.1979)
   */
-template <typename T, typename Op>
-class AggregateFunctionVarianceData
+struct AggregateFunctionVarianceData
 {
-public:
     void update(const IColumn & column, size_t row_num)
     {
-        T received = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
-        Float64 val = static_cast<Float64>(received);
+        Float64 val = column.getFloat64(row_num);
         Float64 delta = val - mean;
 
         ++count;
@@ -102,29 +99,84 @@ public:
         readBinary(m2, buf);
     }
 
-    void publish(IColumn & to) const
-    {
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(m2, count));
-    }
-
-private:
     UInt64 count = 0;
     Float64 mean = 0.0;
     Float64 m2 = 0.0;
 };
 
+enum class VarKind
+{
+    varSampStable,
+    stddevSampStable,
+    varPopStable,
+    stddevPopStable,
+};
+
 /** The main code for the implementation of varSamp, stddevSamp, varPop, stddevPop.
   */
-template <typename T, typename Op>
 class AggregateFunctionVariance final
-    : public IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionVarianceData, AggregateFunctionVariance>
 {
-public:
-    explicit AggregateFunctionVariance(const DataTypePtr & arg)
-        : IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>({arg}, {}, std::make_shared<DataTypeFloat64>())
-    {}
+private:
+    VarKind kind;
 
-    String getName() const override { return Op::name; }
+    static Float64 getVarSamp(Float64 m2, UInt64 count)
+    {
+        if (count < 2)
+            return std::numeric_limits<Float64>::infinity();
+        else
+            return m2 / (count - 1);
+    }
+
+    static Float64 getStddevSamp(Float64 m2, UInt64 count)
+    {
+        return sqrt(getVarSamp(m2, count));
+    }
+
+    static Float64 getVarPop(Float64 m2, UInt64 count)
+    {
+        if (count == 0)
+            return std::numeric_limits<Float64>::infinity();
+        else if (count == 1)
+            return 0.0;
+        else
+            return m2 / count;
+    }
+
+    static Float64 getStddevPop(Float64 m2, UInt64 count)
+    {
+        return sqrt(getVarPop(m2, count));
+    }
+
+    Float64 getResult(ConstAggregateDataPtr __restrict place) const
+    {
+        const auto & data = this->data(place);
+        switch (kind)
+        {
+            case VarKind::varSampStable: return getVarSamp(data.m2, data.count);
+            case VarKind::stddevSampStable: return getStddevSamp(data.m2, data.count);
+            case VarKind::varPopStable: return getVarPop(data.m2, data.count);
+            case VarKind::stddevPopStable: return getStddevPop(data.m2, data.count);
+        }
+    }
+
+public:
+    explicit AggregateFunctionVariance(VarKind kind_, const DataTypePtr & arg)
+        : IAggregateFunctionDataHelper<AggregateFunctionVarianceData, AggregateFunctionVariance>({arg}, {}, std::make_shared<DataTypeFloat64>()),
+        kind(kind_)
+    {
+    }
+
+    String getName() const override
+    {
+        switch (kind)
+        {
+            case VarKind::varSampStable: return "varSampStable";
+            case VarKind::stddevSampStable: return "stddevSampStable";
+            case VarKind::varPopStable: return "varPopStable";
+            case VarKind::stddevPopStable: return "stddevPopStable";
+        }
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -150,73 +202,17 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).publish(to);
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(getResult(place));
     }
 };
 
-/** Implementing the varSamp function.
-  */
-struct AggregateFunctionVarSampImpl
-{
-    static constexpr auto name = "varSampStable";
-
-    static inline Float64 apply(Float64 m2, UInt64 count)
-    {
-        if (count < 2)
-            return std::numeric_limits<Float64>::infinity();
-        else
-            return m2 / (count - 1);
-    }
-};
-
-/** Implementing the stddevSamp function.
-  */
-struct AggregateFunctionStdDevSampImpl
-{
-    static constexpr auto name = "stddevSampStable";
-
-    static inline Float64 apply(Float64 m2, UInt64 count)
-    {
-        return sqrt(AggregateFunctionVarSampImpl::apply(m2, count));
-    }
-};
-
-/** Implementing the varPop function.
-  */
-struct AggregateFunctionVarPopImpl
-{
-    static constexpr auto name = "varPopStable";
-
-    static inline Float64 apply(Float64 m2, UInt64 count)
-    {
-        if (count == 0)
-            return std::numeric_limits<Float64>::infinity();
-        else if (count == 1)
-            return 0.0;
-        else
-            return m2 / count;
-    }
-};
-
-/** Implementing the stddevPop function.
-  */
-struct AggregateFunctionStdDevPopImpl
-{
-    static constexpr auto name = "stddevPopStable";
-
-    static inline Float64 apply(Float64 m2, UInt64 count)
-    {
-        return sqrt(AggregateFunctionVarPopImpl::apply(m2, count));
-    }
-};
 
 /** If `compute_marginal_moments` flag is set this class provides the successor
   * CovarianceData support of marginal moments for calculating the correlation.
   */
 template <bool compute_marginal_moments>
-class BaseCovarianceData
+struct BaseCovarianceData
 {
-protected:
     void incrementMarginalMoments(Float64, Float64) {}
     void mergeWith(const BaseCovarianceData &) {}
     void serialize(WriteBuffer &) const {}
@@ -224,9 +220,8 @@ protected:
 };
 
 template <>
-class BaseCovarianceData<true>
+struct BaseCovarianceData<true>
 {
-protected:
     void incrementMarginalMoments(Float64 left_incr, Float64 right_incr)
     {
         left_m2 += left_incr;
@@ -260,21 +255,17 @@ protected:
   * (J. Bennett et al., Sandia National Laboratories,
   *  2009 IEEE International Conference on Cluster Computing)
   */
-template <typename T, typename U, typename Op, bool compute_marginal_moments>
-class CovarianceData : public BaseCovarianceData<compute_marginal_moments>
+template <bool compute_marginal_moments>
+struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 {
-private:
     using Base = BaseCovarianceData<compute_marginal_moments>;
 
-public:
     void update(const IColumn & column_left, const IColumn & column_right, size_t row_num)
     {
-        T left_received = assert_cast<const ColumnVector<T> &>(column_left).getData()[row_num];
-        Float64 left_val = static_cast<Float64>(left_received);
+        Float64 left_val = column_left.getFloat64(row_num);
         Float64 left_delta = left_val - left_mean;
 
-        U right_received = assert_cast<const ColumnVector<U> &>(column_right).getData()[row_num];
-        Float64 right_val = static_cast<Float64>(right_received);
+        Float64 right_val = column_right.getFloat64(row_num);
         Float64 right_delta = right_val - right_mean;
 
         Float64 old_right_mean = right_mean;
@@ -346,34 +337,87 @@ public:
         Base::deserialize(buf);
     }
 
-    void publish(IColumn & to) const
-    {
-        if constexpr (compute_marginal_moments)
-            assert_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
-        else
-            assert_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
-    }
-
-private:
     UInt64 count = 0;
     Float64 left_mean = 0.0;
     Float64 right_mean = 0.0;
     Float64 co_moment = 0.0;
 };
 
-template <typename T, typename U, typename Op, bool compute_marginal_moments = false>
+enum class CovarKind
+{
+    covarSampStable,
+    covarPopStable,
+    corrStable,
+};
+
+template <bool compute_marginal_moments>
 class AggregateFunctionCovariance final
     : public IAggregateFunctionDataHelper<
-        CovarianceData<T, U, Op, compute_marginal_moments>,
-        AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>
+        CovarianceData<compute_marginal_moments>,
+        AggregateFunctionCovariance<compute_marginal_moments>>
 {
-public:
-    explicit AggregateFunctionCovariance(const DataTypes & args) : IAggregateFunctionDataHelper<
-        CovarianceData<T, U, Op, compute_marginal_moments>,
-        AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>(args, {}, std::make_shared<DataTypeFloat64>())
-    {}
+private:
+    CovarKind kind;
 
-    String getName() const override { return Op::name; }
+    static Float64 getCovarSamp(Float64 co_moment, UInt64 count)
+    {
+        if (count < 2)
+            return std::numeric_limits<Float64>::infinity();
+        else
+            return co_moment / (count - 1);
+    }
+
+    static Float64 getCovarPop(Float64 co_moment, UInt64 count)
+    {
+        if (count == 0)
+            return std::numeric_limits<Float64>::infinity();
+        else if (count == 1)
+            return 0.0;
+        else
+            return co_moment / count;
+    }
+
+    static Float64 getCorr(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
+    {
+        if (count < 2)
+            return std::numeric_limits<Float64>::infinity();
+        else
+            return co_moment / sqrt(left_m2 * right_m2);
+    }
+
+    Float64 getResult(ConstAggregateDataPtr __restrict place) const
+    {
+        const auto & data = this->data(place);
+        switch (kind)
+        {
+            case CovarKind::covarSampStable: return getCovarSamp(data.co_moment, data.count);
+            case CovarKind::covarPopStable: return getCovarPop(data.co_moment, data.count);
+
+            case CovarKind::corrStable:
+                if constexpr (compute_marginal_moments)
+                    return getCorr(data.co_moment, data.left_m2, data.right_m2, data.count);
+                else
+                    return 0;
+        }
+    }
+
+public:
+    explicit AggregateFunctionCovariance(CovarKind kind_, const DataTypes & args) : IAggregateFunctionDataHelper<
+        CovarianceData<compute_marginal_moments>,
+        AggregateFunctionCovariance<compute_marginal_moments>>(args, {}, std::make_shared<DataTypeFloat64>()),
+        kind(kind_)
+    {
+    }
+
+    String getName() const override
+    {
+        switch (kind)
+        {
+            case CovarKind::covarSampStable: return "covarSampStable";
+            case CovarKind::covarPopStable: return "covarPopStable";
+            case CovarKind::corrStable: return "corrStable";
+        }
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -399,77 +443,9 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).publish(to);
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(getResult(place));
     }
 };
-
-/** Implementing the covarSamp function.
-  */
-struct AggregateFunctionCovarSampImpl
-{
-    static constexpr auto name = "covarSampStable";
-
-    static inline Float64 apply(Float64 co_moment, UInt64 count)
-    {
-        if (count < 2)
-            return std::numeric_limits<Float64>::infinity();
-        else
-            return co_moment / (count - 1);
-    }
-};
-
-/** Implementing the covarPop function.
-  */
-struct AggregateFunctionCovarPopImpl
-{
-    static constexpr auto name = "covarPopStable";
-
-    static inline Float64 apply(Float64 co_moment, UInt64 count)
-    {
-        if (count == 0)
-            return std::numeric_limits<Float64>::infinity();
-        else if (count == 1)
-            return 0.0;
-        else
-            return co_moment / count;
-    }
-};
-
-/** `corr` function implementation.
-  */
-struct AggregateFunctionCorrImpl
-{
-    static constexpr auto name = "corrStable";
-
-    static inline Float64 apply(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
-    {
-        if (count < 2)
-            return std::numeric_limits<Float64>::infinity();
-        else
-            return co_moment / sqrt(left_m2 * right_m2);
-    }
-};
-
-template <typename T>
-using AggregateFunctionVarSampStable = AggregateFunctionVariance<T, AggregateFunctionVarSampImpl>;
-
-template <typename T>
-using AggregateFunctionStddevSampStable = AggregateFunctionVariance<T, AggregateFunctionStdDevSampImpl>;
-
-template <typename T>
-using AggregateFunctionVarPopStable = AggregateFunctionVariance<T, AggregateFunctionVarPopImpl>;
-
-template <typename T>
-using AggregateFunctionStddevPopStable = AggregateFunctionVariance<T, AggregateFunctionStdDevPopImpl>;
-
-template <typename T, typename U>
-using AggregateFunctionCovarSampStable = AggregateFunctionCovariance<T, U, AggregateFunctionCovarSampImpl>;
-
-template <typename T, typename U>
-using AggregateFunctionCovarPopStable = AggregateFunctionCovariance<T, U, AggregateFunctionCovarPopImpl>;
-
-template <typename T, typename U>
-using AggregateFunctionCorrStable = AggregateFunctionCovariance<T, U, AggregateFunctionCorrImpl, true>;
 
 
 template <template <typename> typename FunctionTemplate>
@@ -507,13 +483,54 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
 
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("varSampStable", createAggregateFunctionStatisticsUnary<AggregateFunctionVarSampStable>);
-    factory.registerFunction("varPopStable", createAggregateFunctionStatisticsUnary<AggregateFunctionVarPopStable>);
-    factory.registerFunction("stddevSampStable", createAggregateFunctionStatisticsUnary<AggregateFunctionStddevSampStable>);
-    factory.registerFunction("stddevPopStable", createAggregateFunctionStatisticsUnary<AggregateFunctionStddevPopStable>);
-    factory.registerFunction("covarSampStable", createAggregateFunctionStatisticsBinary<AggregateFunctionCovarSampStable>);
-    factory.registerFunction("covarPopStable", createAggregateFunctionStatisticsBinary<AggregateFunctionCovarPopStable>);
-    factory.registerFunction("corrStable", createAggregateFunctionStatisticsBinary<AggregateFunctionCorrStable>);
+    factory.registerFunction("varSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    {
+        assertNoParameters(name, parameters);
+        assertUnary(name, argument_types);
+        return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
+    });
+
+    factory.registerFunction("varPopStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    {
+        assertNoParameters(name, parameters);
+        assertUnary(name, argument_types);
+        return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
+    });
+
+    factory.registerFunction("stddevSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    {
+        assertNoParameters(name, parameters);
+        assertUnary(name, argument_types);
+        return std::make_shared<AggregateFunctionVariance>(VarKind::stddevSampStable, argument_types[0]);
+    });
+
+    factory.registerFunction("stddevPopStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    {
+        assertNoParameters(name, parameters);
+        assertUnary(name, argument_types);
+        return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
+    });
+
+    factory.registerFunction("covarSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    {
+        assertNoParameters(name, parameters);
+        assertBinary(name, argument_types);
+        return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
+    });
+
+    factory.registerFunction("covarPopStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    {
+        assertNoParameters(name, parameters);
+        assertBinary(name, argument_types);
+        return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
+    });
+
+    factory.registerFunction("corrStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    {
+        assertNoParameters(name, parameters);
+        assertBinary(name, argument_types);
+        return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
+    });
 }
 
 }
