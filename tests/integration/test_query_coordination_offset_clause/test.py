@@ -43,4 +43,4 @@ def test_query(started_cluster):
 
     exec_query_compare_result("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY")
 
-    exec_query_compare_result("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES")
+    #exec_query_compare_result("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES")

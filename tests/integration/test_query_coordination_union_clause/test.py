@@ -58,4 +58,4 @@ def test_query(started_cluster):
 
     exec_query_compare_result("SELECT * FROM (SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2) ORDER BY id, val, name")
 
-    exec_query_compare_result("SELECT * FROM (SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2 UNION ALL SELECT 1,'2','3') ORDER BY id, val, name")
+    exec_query_compare_result("SELECT * FROM (SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2 UNION ALL SELECT id, 'test_union', toString(scores) FROM table_2) ORDER BY id, val, name")
