@@ -452,7 +452,7 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
         }
         hash_join->joinBlock(slice, extra_data);
         data = std::move(slice);
-        if(extra_slice.rows() > 0)
+        if (extra_slice.rows() > 0)
         {
             ExtraBlock extra;
             extra.block = std::move(extra_slice);
