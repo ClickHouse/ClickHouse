@@ -1,20 +1,16 @@
+#include <cmath>
 #include <string>
-#include <vector>
 #include <Processors/Formats/Impl/NpyRowInputFormat.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/assert_cast.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/NumpyDataTypes.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <boost/algorithm/string/split.hpp>
 #include <IO/ReadBufferFromString.h>
 
@@ -33,6 +29,38 @@ namespace ErrorCodes
 
 namespace
 {
+
+float convertFloat16ToFloat32(uint16_t float16_value) {
+    uint16_t sign = (float16_value >> 15) & 0x1;
+    uint16_t exponent = (float16_value >> 10) & 0x1F;
+    uint16_t fraction = float16_value & 0x3FF;
+
+    // Handling special cases for exponent
+    if (exponent == 0x1F) {
+        // NaN or Infinity in float16
+        return (fraction == 0) ? std::numeric_limits<float>::infinity() : std::numeric_limits<float>::quiet_NaN();
+    }
+
+    // Convert exponent from float16 to float32 format
+    int32_t new_exponent = static_cast<int32_t>(exponent) - 15 + 127;
+
+    // Constructing the float32 representation
+    uint32_t float32_value = (static_cast<uint32_t>(sign) << 31) |
+                             (static_cast<uint32_t>(new_exponent) << 23) |
+                             (static_cast<uint32_t>(fraction) << 13);
+
+    // Interpret the binary representation as a float
+    float result;
+    std::memcpy(&result, &float32_value, sizeof(float));
+
+    // Determine decimal places dynamically based on the magnitude of the number
+    int decimal_places = std::max(0, 6 - static_cast<int>(std::log10(std::abs(result))));
+    // Truncate the decimal part to the determined number of decimal places
+    float multiplier = static_cast<float>(std::pow(10.0f, decimal_places));
+    result = std::round(result * multiplier) / multiplier;
+
+    return result;
+}
 
 DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & numpy_type)
 {
@@ -54,6 +82,8 @@ DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & nump
             return std::make_shared<DataTypeUInt32>();
         case NumpyDataTypeIndex::UInt64:
             return std::make_shared<DataTypeUInt64>();
+        case NumpyDataTypeIndex::Float16:
+            return std::make_shared<DataTypeFloat32>();
         case NumpyDataTypeIndex::Float32:
             return std::make_shared<DataTypeFloat32>();
         case NumpyDataTypeIndex::Float64:
@@ -266,14 +296,26 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params par
 }
 
 template <typename ColumnValue, typename DataValue>
-void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness)
+void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness, bool isFloat16)
 {
-    DataValue value;
-    if (endianness == NumpyDataType::Endianness::BIG)
-        readBinaryBigEndian(value, *in);
+    if (!isFloat16)
+    {
+        DataValue value;
+        if (endianness == NumpyDataType::Endianness::BIG)
+            readBinaryBigEndian(value, *in);
+        else
+            readBinaryLittleEndian(value, *in);
+        assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue((static_cast<ColumnValue>(value)));
+    }
     else
-        readBinaryLittleEndian(value, *in);
-    assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue(static_cast<ColumnValue>(value));
+    {
+        uint16_t value;
+        if (endianness == NumpyDataType::Endianness::BIG)
+            readBinaryBigEndian(value, *in);
+        else
+            readBinaryLittleEndian(value, *in);
+        assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue(static_cast<ColumnValue>(convertFloat16ToFloat32(value)));
+    }
 }
 
 template <typename T>
@@ -300,6 +342,7 @@ void NpyRowInputFormat::readAndInsertFloat(IColumn * column, const DataTypePtr &
 {
     switch (npy_type.getTypeIndex())
     {
+        case NumpyDataTypeIndex::Float16: readBinaryValueAndInsert<T, Float32>(column->getPtr(), npy_type.getEndianness(), true); break;
         case NumpyDataTypeIndex::Float32: readBinaryValueAndInsert<T, Float32>(column->getPtr(), npy_type.getEndianness()); break;
         case NumpyDataTypeIndex::Float64: readBinaryValueAndInsert<T, Float64>(column->getPtr(), npy_type.getEndianness()); break;
         default:
