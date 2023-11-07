@@ -112,10 +112,7 @@ BackupEntriesCollector::BackupEntriesCollector(
 {
 }
 
-BackupEntriesCollector::~BackupEntriesCollector()
-{
-    threadpool.wait();
-}
+BackupEntriesCollector::~BackupEntriesCollector() = default;
 
 BackupEntries BackupEntriesCollector::run()
 {
