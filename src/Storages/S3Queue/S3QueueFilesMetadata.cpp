@@ -312,7 +312,7 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
 }
 
 std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
-          S3QueueFilesMetadata::ProcessingNodeHolderPtr> S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string & path, FileStatusPtr file_status)
+          S3QueueFilesMetadata::ProcessingNodeHolderPtr> S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string & path, const FileStatusPtr & file_status)
 {
     /// In one zookeeper transaction do the following:
     /// 1. check that corresponding persistent nodes do not exist in processed/ and failed/;
@@ -362,7 +362,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
 }
 
 std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
-          S3QueueFilesMetadata::ProcessingNodeHolderPtr> S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & path, FileStatusPtr file_status)
+          S3QueueFilesMetadata::ProcessingNodeHolderPtr> S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & path, const FileStatusPtr & file_status)
 {
     /// Same as for Unordered mode.
     /// The only difference is the check if the file is already processed.
