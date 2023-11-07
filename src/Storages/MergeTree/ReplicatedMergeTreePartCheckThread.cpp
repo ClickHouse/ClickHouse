@@ -33,7 +33,8 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
-    enqueueBackgroundPartCheck(std::chrono::milliseconds{0});
+    constexpr auto last_background_check_duration = std::chrono::milliseconds{0};
+    enqueueBackgroundPartCheck(last_background_check_duration);
 }
 
 ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
@@ -73,15 +74,22 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
 void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck(std::chrono::milliseconds last_check_duration)
 {
+    if (storage.getSettings()->background_part_check_time_to_total_time_ratio == .0f)
+        return;
+
+    auto background_part_check_time_to_total_time_ratio = storage.getSettings()->background_part_check_time_to_total_time_ratio;
+    /// safe guard
+    if (background_part_check_time_to_total_time_ratio > 1.0f)
+        background_part_check_time_to_total_time_ratio = 1.0f;
+    if (background_part_check_time_to_total_time_ratio < 1E-6f)
+        background_part_check_time_to_total_time_ratio = 1E-6f;
+
     std::lock_guard lock(parts_mutex);
 
     using namespace std::chrono;
     milliseconds next_check_after_ms{last_check_duration};
     if (last_check_duration.count())
-    {
-        const auto background_part_check_time_to_total_time_ratio = storage.getSettings()->background_part_check_time_to_total_time_ratio;
         next_check_after_ms *= static_cast<size_t>(1 / background_part_check_time_to_total_time_ratio);
-    }
 
     const auto background_part_check_delay_seconds = seconds{storage.getSettings()->background_part_check_delay_seconds};
     next_check_after_ms = std::max(next_check_after_ms, duration_cast<milliseconds>(background_part_check_delay_seconds));
@@ -90,7 +98,10 @@ void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck(std::chrono:
 
     parts_queue.emplace_back("", steady_clock::now() + next_check_after_ms);
     parts_set.insert("");
-    task->scheduleAfter(next_check_after_ms.count());
+    if (next_check_after_ms.count() > 0)
+        task->scheduleAfter(next_check_after_ms.count());
+    else
+        task->schedule();
 }
 
 std::unique_lock<std::mutex> ReplicatedMergeTreePartCheckThread::pausePartsCheck()
@@ -631,11 +642,16 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
 
 void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
 {
+    using namespace std::chrono;
     auto part_to_check = choosePartForBackgroundCheck();
     if (!part_to_check)
+    {
+        const auto background_part_check_delay_seconds = seconds{storage.getSettings()->background_part_check_delay_seconds};
+        enqueueBackgroundPartCheck(duration_cast<milliseconds>(background_part_check_delay_seconds));
         return;
+    }
 
-    std::chrono::milliseconds check_duration_ms{0};
+    milliseconds check_duration_ms{0};
     try
     {
         auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
@@ -643,15 +659,20 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
         LOG_DEBUG(log, "Background part check: going to check part {}", part_to_check->name);
 
         last_randomly_checked_part = part_to_check->info;
-        auto check_start = std::chrono::steady_clock::now();
+        auto check_start = steady_clock::now();
         auto result = checkActivePart(part_to_check);
-        check_duration_ms = duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - check_start);
+        check_duration_ms = duration_cast<milliseconds>(steady_clock::now() - check_start);
 
         LOG_DEBUG(log, "Background part check took {} ms", check_duration_ms.count());
 
         if (result.status.success)
         {
-            LOG_DEBUG(log, "Background part check succeeded: part={} path={}", part_to_check->name, result.status.fs_path);
+            LOG_DEBUG(
+                log,
+                "Background part check succeeded: part={} path={} took={}ms",
+                part_to_check->name,
+                result.status.fs_path,
+                check_duration_ms.count());
         }
         else
         {
