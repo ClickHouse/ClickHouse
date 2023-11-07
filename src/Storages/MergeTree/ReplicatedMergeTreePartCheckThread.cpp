@@ -74,10 +74,10 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
 void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck(std::chrono::milliseconds last_check_duration)
 {
-    if (storage.getSettings()->background_part_check_time_to_total_time_ratio == .0f)
+    auto background_part_check_time_to_total_time_ratio = storage.getSettings()->background_part_check_time_to_total_time_ratio;
+    if (background_part_check_time_to_total_time_ratio == .0f)
         return;
 
-    auto background_part_check_time_to_total_time_ratio = storage.getSettings()->background_part_check_time_to_total_time_ratio;
     /// safe guard
     if (background_part_check_time_to_total_time_ratio > 1.0f)
         background_part_check_time_to_total_time_ratio = 1.0f;
@@ -89,12 +89,17 @@ void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck(std::chrono:
     using namespace std::chrono;
     milliseconds next_check_after_ms{last_check_duration};
     if (last_check_duration.count())
-        next_check_after_ms *= static_cast<size_t>(1 / background_part_check_time_to_total_time_ratio);
+    {
+        const auto total_time_relative_to_last_check_duration = last_check_duration.count() / background_part_check_time_to_total_time_ratio;
+        if (total_time_relative_to_last_check_duration >= last_check_duration.count())
+            next_check_after_ms = milliseconds{static_cast<size_t>(total_time_relative_to_last_check_duration - last_check_duration.count())};
+    }
+    // LOG_TRACE(log, "Ratio background check after {}ms, last check duration {}ms", next_check_after_ms.count(), last_check_duration.count());
 
     const auto background_part_check_delay_seconds = seconds{storage.getSettings()->background_part_check_delay_seconds};
     next_check_after_ms = std::max(next_check_after_ms, duration_cast<milliseconds>(background_part_check_delay_seconds));
 
-    LOG_TRACE(log, "Enqueueing background check after {}s", duration_cast<seconds>(next_check_after_ms).count());
+    LOG_TRACE(log, "Enqueueing background check after {}ms", next_check_after_ms.count());
 
     parts_queue.emplace_back("", steady_clock::now() + next_check_after_ms);
     parts_set.insert("");
