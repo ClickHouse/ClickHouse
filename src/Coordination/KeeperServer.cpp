@@ -1087,7 +1087,7 @@ bool KeeperServer::requestLeader()
     return isLeader() || raft_instance->request_leadership();
 }
 
-bool KeeperServer::yieldLeadership()
+void KeeperServer::yieldLeadership()
 {
     if (isLeader())
         raft_instance->yield_leadership();

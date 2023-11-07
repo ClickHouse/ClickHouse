@@ -584,7 +584,8 @@ String FeatureFlagsCommand::run()
 
 String YieldLeadershipCommand::run()
 {
-    return keeper_dispatcher.yieldLeadership() ? "Sent yield leadership request to leader." : "Failed to send yield leadership request to leader.";
+    keeper_dispatcher.yieldLeadership();
+    return "Sent yield leadership request to leader.";
 }
 
 }

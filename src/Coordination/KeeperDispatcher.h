@@ -238,7 +238,7 @@ public:
     }
 
     /// Yield leadership and become follower.
-    bool yieldLeadership()
+    void yieldLeadership()
     {
         return server->yieldLeadership();
     }
