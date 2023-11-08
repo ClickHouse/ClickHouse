@@ -176,14 +176,12 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_debug
-      sparse_checkout: true
   BuilderBinDarwin:
     needs: [DockerHubPush]
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_darwin
       checkout_depth: 0
-      sparse_checkout: true
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush]
     uses: ./.github/workflows/reusable_build.yml

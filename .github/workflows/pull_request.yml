@@ -288,7 +288,6 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_debug
-      sparse_checkout: true
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
@@ -302,7 +301,6 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_darwin
-      sparse_checkout: true
   BuilderBinAarch64:
     needs: [FastTest, StyleCheck]
     uses: ./.github/workflows/reusable_build.yml

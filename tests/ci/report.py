@@ -736,7 +736,13 @@ def create_build_html_report(
                     )
             row.append(f"<td>{link_separator.join(links)}</td>")
 
-            row.append(f"<td>{build_result.comment}</td>")
+            comment = build_result.comment
+            if (
+                build_result.build_config is not None
+                and build_result.build_config.sparse_checkout
+            ):
+                comment += " (note: sparse checkout is used)"
+            row.append(f"<td>{comment}</td>")
 
             row.append("</tr>")
             rows.append("".join(row))

@@ -21,10 +21,6 @@ name: Build ClickHouse
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
-      sparse_checkout:
-        description: if the sparse checkout should be applied
-        type: boolean
-        default: false
 
 jobs:
   Build:
@@ -42,10 +38,20 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           IMAGES_PATH=${{runner.temp}}/images_path
-          BUILD_NAME=${{inputs.build_name}}
           GITHUB_JOB_OVERRIDDEN=Build-${{inputs.build_name}}
           ${{inputs.additional_envs}}
           EOF
+          python3 "$GITHUB_WORKSPACE"/tests/ci/ci_config.py --build-name "${{inputs.build_name}}" >> "$GITHUB_ENV"
+      - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
+        # This step is done in GITHUB_WORKSPACE,
+        # because it's broken in REPO_COPY for some reason
+        if: ${{ env.BUILD_SPARSE_CHECKOUT == 'true' }}
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
+          git -C "$GITHUB_WORKSPACE" checkout .  && echo 'restored'
+          "$GITHUB_WORKSPACE/contrib/update-submodules.sh" && echo 'OK'
+          du -hs "$GITHUB_WORKSPACE/contrib" ||:
+          find "$GITHUB_WORKSPACE/contrib" -type f | wc -l ||:
       - name: Common setup
         uses: ./.github/actions/common_setup
         with:
@@ -55,14 +61,6 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
-      - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
-        if: ${{ inputs.sparse_checkout }}
-        run: |
-          rm -rf "$REPO_COPY/contrib" && echo 'removed'
-          git -C "$REPO_COPY" checkout .  && echo 'restored'
-          "$REPO_COPY/contrib/update-submodules.sh" && echo 'OK'
-          du -hs "$REPO_COPY/contrib" ||:
-          find "$REPO_COPY/contrib" -type f | wc -l ||:
       - name: Build
         run: |
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"

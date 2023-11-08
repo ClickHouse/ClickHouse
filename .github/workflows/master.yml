@@ -226,7 +226,6 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_debug
-      sparse_checkout: true
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
@@ -241,7 +240,6 @@ jobs:
     with:
       build_name: binary_darwin
       checkout_depth: 0
-      sparse_checkout: true
   BuilderBinAarch64:
     needs: [DockerHubPush]
     uses: ./.github/workflows/reusable_build.yml
