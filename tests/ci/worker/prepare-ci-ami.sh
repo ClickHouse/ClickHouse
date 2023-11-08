@@ -96,10 +96,12 @@ systemctl restart docker
 
 # buildx builder is user-specific
 sudo -u ubuntu docker buildx version
+sudo -u ubuntu docker buildx rm default-builder || : # if it's the second attempt
 sudo -u ubuntu docker buildx create --use --name default-builder
 
 pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
 
+rm -rf $RUNNER_HOME  # if it's the second attempt
 mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
 
 RUNNER_ARCHIVE="actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz"
@@ -138,3 +140,44 @@ systemctl enable amazon-cloudwatch-agent.service
 
 # The following line is used in aws TOE check.
 touch /var/tmp/clickhouse-ci-ami.success
+# END OF THE SCRIPT
+
+# TOE description
+# name: CIInfrastructurePrepare
+# description: instals the infrastructure for ClickHouse CI runners
+# schemaVersion: 1.0
+#
+# phases:
+#   - name: build
+#     steps:
+#       - name: DownloadRemoteScript
+#         maxAttempts: 3
+#         action: WebDownload
+#         onFailure: Abort
+#         inputs:
+#           - source: https://github.com/ClickHouse/ClickHouse/raw/653da5f00219c088af66d97a8f1ea3e35e798268/tests/ci/worker/prepare-ci-ami.sh
+#             destination: /tmp/prepare-ci-ami.sh
+#       - name: RunScript
+#         maxAttempts: 3
+#         action: ExecuteBash
+#         onFailure: Abort
+#         inputs:
+#           commands:
+#             - bash -x '{{build.DownloadRemoteScript.inputs[0].destination}}'
+#
+#
+#   - name: validate
+#     steps:
+#       - name: RunScript
+#         maxAttempts: 3
+#         action: ExecuteBash
+#         onFailure: Abort
+#         inputs:
+#           commands:
+#             - ls /var/tmp/clickhouse-ci-ami.success
+#       - name: Cleanup
+#         action: DeleteFile
+#         onFailure: Abort
+#         maxAttempts: 3
+#         inputs:
+#           - path: /var/tmp/clickhouse-ci-ami.success
