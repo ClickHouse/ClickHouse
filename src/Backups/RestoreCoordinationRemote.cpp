@@ -89,6 +89,7 @@ void RestoreCoordinationRemote::createRootNodes()
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_tables_data_acquired", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_access_storages_acquired", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_sql_objects_acquired", "", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/keeper_map_tables", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/table_uuids", "", zkutil::CreateMode::Persistent));
             zk->tryMulti(ops, responses);
         });
@@ -234,9 +235,43 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
     return result;
 }
 
-bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & /*root_zk_path*/)
+bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & root_zk_path)
 {
-    return true;
+    bool result = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireInsertingDataForKeeperMap");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            fs::path base_path = fs::path(zookeeper_path) / "keeper_map_tables" / root_zk_path;
+            zk->createAncestors(base_path);
+            std::string restore_lock_path = base_path / "restore_lock";
+            result = zk->tryCreate(restore_lock_path, "restorelock", zkutil::CreateMode::Persistent) == Coordination::Error::ZOK;
+
+            if (result)
+                return;
+
+            /// there can be an edge case where a path contains `/restore_lock/ in the middle of it
+            /// to differentiate that case from lock we also set the data
+            for (size_t i = 0; i < 1000; ++i)
+            {
+                Coordination::Stat lock_stat;
+                auto data = zk->get(restore_lock_path, &lock_stat);
+                if (data == "restorelock")
+                    return;
+
+                if (auto set_result = zk->trySet(restore_lock_path, "restorelock", lock_stat.version);
+                    set_result == Coordination::Error::ZOK)
+                {
+                    result = true;
+                    return;
+                }
+                else if (set_result == Coordination::Error::ZNONODE)
+                    throw zkutil::KeeperException::fromPath(set_result, restore_lock_path);
+            }
+        });
+    return result;
 }
 
 void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_query)

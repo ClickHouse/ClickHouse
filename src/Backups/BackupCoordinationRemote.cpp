@@ -230,6 +230,7 @@ void BackupCoordinationRemote::createRootNodes()
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_data_paths", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_access", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_sql_objects", "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/keeper_map_tables", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/file_infos", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/writing_files", "", zkutil::CreateMode::Persistent));
         zk->tryMulti(ops, responses);
@@ -668,14 +669,72 @@ void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
 
 void BackupCoordinationRemote::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
 {
-    std::lock_guard lock(keeper_map_tables_mutex);
-    keeper_map_tables.addTable(table_zookeeper_root_path, table_id, data_path_in_backup);
+    {
+        std::lock_guard lock{keeper_map_tables_mutex};
+        if (keeper_map_tables)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addKeeperMapTable() must not be called after preparing");
+    }
+
+    auto holder = with_retries.createRetriesControlHolder("addKeeperMapTable");
+    holder.retries_ctl.retryLoop(
+    [&, &zk = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zk);
+        String path = zookeeper_path + "/keeper_map_tables/" + escapeForFileName(table_id);
+        zk->create(path, fmt::format("{}\n{}", table_zookeeper_root_path, data_path_in_backup), zkutil::CreateMode::Persistent);
+    });
+}
+
+void BackupCoordinationRemote::prepareKeeperMapTables() const
+{
+    if (keeper_map_tables)
+        return;
+
+    std::vector<std::pair<std::string, BackupCoordinationKeeperMapTables::KeeperMapTableInfo>> keeper_map_table_infos;
+    auto holder = with_retries.createRetriesControlHolder("prepareKeeperMapTables");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+    {
+        keeper_map_table_infos.clear();
+
+        with_retries.renewZooKeeper(zk);
+
+        fs::path tables_path = fs::path(zookeeper_path) / "keeper_map_tables";
+
+        auto tables = zk->getChildren(tables_path);
+        keeper_map_table_infos.reserve(tables.size());
+
+        for (auto & table : tables)
+            table = tables_path / table;
+
+        auto tables_info = zk->get(tables);
+        for (size_t i = 0; i < tables_info.size(); ++i)
+        {
+            const auto & table_info = tables_info[i];
+
+            if (table_info.error != Coordination::Error::ZOK)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path in Keeper {} is unexpectedly missing", tables[i]);
+
+            std::vector<std::string> data;
+            boost::split(data, table_info.data, [](char c) { return c == '\n'; });
+            keeper_map_table_infos.emplace_back(
+                std::move(data[0]),
+                BackupCoordinationKeeperMapTables::KeeperMapTableInfo{
+                    .table_id = fs::path(tables[i]).filename(), .data_path_in_backup = std::move(data[1])});
+        }
+    });
+
+    keeper_map_tables.emplace();
+    for (const auto & [zk_root_path, table_info] : keeper_map_table_infos)
+        keeper_map_tables->addTable(zk_root_path, table_info.table_id, table_info.data_path_in_backup);
+
 }
 
 String BackupCoordinationRemote::getKeeperMapDataPath(const String & table_zookeeper_root_path) const
 {
     std::lock_guard lock(keeper_map_tables_mutex);
-    return keeper_map_tables.getDataPath(table_zookeeper_root_path);
+    prepareKeeperMapTables();
+    return keeper_map_tables->getDataPath(table_zookeeper_root_path);
 }
 
 

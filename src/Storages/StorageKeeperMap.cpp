@@ -753,7 +753,6 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
 {
     auto table_id = toString(getStorageID().uuid);
 
-    std::cout << "Backing up for path " << zk_root_path << " table id " << table_id << std::endl;
     auto coordination = backup_entries_collector.getBackupCoordination();
     coordination->addKeeperMapTable(zk_root_path, table_id, data_path_in_backup);
 
@@ -764,8 +763,6 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data == my_data_path_in_backup)
         {
-            std::cout << "Will be backing up data for path " << zk_root_path << " table id " << my_table_id << std::endl;
-
             auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
             auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
 
@@ -783,7 +780,6 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
             return;
         }
 
-        std::cout << "Not backing up data for path " << zk_root_path << " table id " << my_table_id << " writing only path with data " << path_with_data << std::endl;
         auto file_path = fs::path(my_data_path_in_backup) / backup_data_location_filename;
         backup_entries_collector.addBackupEntries({{file_path, std::make_shared<BackupEntryFromMemory>(path_with_data)}});
     };
@@ -842,8 +838,6 @@ void StorageKeeperMap::restoreDataImpl(const BackupPtr & backup, const String & 
 {
     auto table_id = toString(getStorageID().uuid);
 
-    std::cout << "Restoring into " << zk_root_path << " table id " << table_id << std::endl;
-
     fs::path data_path_in_backup_fs = data_path_in_backup;
 
     String data_file = data_path_in_backup_fs /  backup_data_filename;
@@ -882,7 +876,7 @@ void StorageKeeperMap::restoreDataImpl(const BackupPtr & backup, const String & 
         });
     };
 
-    while (!in->eof())
+    while (!compressed_in.eof())
     {
         std::string key;
         std::string value;
