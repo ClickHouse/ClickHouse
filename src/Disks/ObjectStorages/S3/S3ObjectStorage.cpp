@@ -537,7 +537,11 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 }
 
 S3ObjectStorage::Clients::Clients(std::shared_ptr<S3::Client> client_, const S3ObjectStorageSettings & settings)
-    : client(std::move(client_)), client_with_long_timeout(client->clone(std::nullopt, settings.request_settings.long_request_timeout_ms)) {}
+    : client(std::move(client_))
+    , client_with_long_timeout(client->clone(
+          /*override_aggressive_timeouts*/ false,
+          settings.request_settings.long_request_timeout_ms))
+{}
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string &) const
 {

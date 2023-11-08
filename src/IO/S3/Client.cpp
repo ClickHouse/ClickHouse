@@ -119,14 +119,17 @@ std::unique_ptr<Client> Client::create(
 }
 
 std::unique_ptr<Client> Client::clone(
-    std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy,
+    std::optional<bool> override_aggressive_timeouts,
     std::optional<Int64> override_request_timeout_ms) const
 {
     PocoHTTPClientConfiguration new_configuration = client_configuration;
-    if (override_retry_strategy.has_value())
-        new_configuration.retryStrategy = *override_retry_strategy;
+
     if (override_request_timeout_ms.has_value())
         new_configuration.requestTimeoutMs = *override_request_timeout_ms;
+
+    if (override_aggressive_timeouts.has_value())
+        new_configuration.s3_aggressive_timeouts = *override_aggressive_timeouts;
+
     return std::unique_ptr<Client>(new Client(*this, new_configuration));
 }
 

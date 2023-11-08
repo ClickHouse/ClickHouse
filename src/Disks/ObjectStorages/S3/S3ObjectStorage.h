@@ -184,6 +184,7 @@ private:
     std::string bucket;
     String object_key_prefix;
 
+
     MultiVersion<Clients> clients;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
