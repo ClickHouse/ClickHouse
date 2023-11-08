@@ -192,16 +192,12 @@ private:
         ContextMutablePtr modified_context);
 
     QueryPipelineBuilderPtr createSources(
-        // const StorageSnapshotPtr & storage_snapshot,
-        // SelectQueryInfo & query_info,
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const Block & header,
-        // const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
         Names real_column_names,
         const Block & sample_block,
-        // std::unique_ptr<RowPolicyData> row_policy_data_ptr,
         ContextMutablePtr modified_context,
         size_t streams_num,
         bool concat_streams = false);

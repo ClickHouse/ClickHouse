@@ -376,7 +376,8 @@ void StorageMerge::read(
 
 /// A transient object of this helper class is created
 ///  when processing a Merge table data source (subordinary table)
-///  to guarantee that row policies are applied
+///  that has row policies
+///  to guarantee that these row policies are applied
 class ReadFromMerge::RowPolicyData
 {
 public:
@@ -404,7 +405,6 @@ private:
     StorageMetadataPtr storage_metadata_snapshot;
 };
 
-// using RowPolicyDataPtr = std::unique_ptr<ReadFromMerge::RowPolicyData>;
 
 ReadFromMerge::ReadFromMerge(
     Block common_header_,
@@ -472,8 +472,6 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
         query_info.input_order_info = input_sorting_info;
     }
-
-    // auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
 
     std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
     QueryPlanResourceHolder resources;
@@ -1135,8 +1133,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
         });
     }
 
-
-
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
     if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns)
@@ -1158,7 +1154,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
     });
-
 }
 
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
