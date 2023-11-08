@@ -4918,6 +4918,12 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition, Context
         partition_size += part->getBytesOnDisk();
 
     auto table_id = getStorageID();
+    auto max_partition_size_to_drop = getSettings()->max_partition_size_to_drop;
+    if (max_partition_size_to_drop >= 0)
+    {
+        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size, max_partition_size_to_drop);
+        return;
+    }
     getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
@@ -4931,6 +4937,12 @@ void MergeTreeData::checkPartCanBeDropped(const String & part_name)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
 
     auto table_id = getStorageID();
+    auto max_partition_size_to_drop = getSettings()->max_partition_size_to_drop;
+    if (max_partition_size_to_drop >= 0)
+    {
+        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk(), max_partition_size_to_drop);
+        return;
+    }
     getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
 }
 

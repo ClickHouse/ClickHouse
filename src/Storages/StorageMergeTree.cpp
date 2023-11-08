@@ -297,6 +297,13 @@ void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr quer
         return;
 
     auto table_id = getStorageID();
+    const auto & storage_settings = getSettings();
+    if (storage_settings->max_table_size_to_drop >= 0)
+    {
+        getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes(), storage_settings->max_table_size_to_drop);
+        return;
+    }
+    // use max_table_size_to_drop from server settings
     getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 

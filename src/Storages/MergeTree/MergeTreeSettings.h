@@ -88,6 +88,8 @@ struct Settings;
     \
     /* Part removal settings. */ \
     M(UInt64, simultaneous_parts_removal_limit, 0, "Maximum number of parts to remove during one CleanupThread iteration (0 means unlimited).", 0) \
+    M(Int64, max_table_size_to_drop, -1, "If size of a table is greater than this value (in bytes) than table could not be dropped with any DROP query. If -1 use Server settings", 0) \
+    M(Int64, max_partition_size_to_drop, -1, "Same as max_table_size_to_drop, but for the partitions. If -1 use Server settings.", 0) \
     \
     /** Replication settings. */ \
     M(UInt64, replicated_deduplication_window, 100, "How many last blocks of hashes should be kept in ZooKeeper (old blocks will be deleted).", 0) \
