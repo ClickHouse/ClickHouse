@@ -692,14 +692,13 @@ private:
                 data_children = zk->getChildren(data_zookeeper_path);
             });
         }
-        LOG_INFO(&Poco::Logger::get("BACKUPER"), "Got {} children", data_children.size());
 
         const auto write_rows = [&](std::span<std::string> keys)
         {
             std::vector<std::string> keys_full_path;
-            keys_full_path.reserve(data_children.size());
+            keys_full_path.reserve(keys.size());
 
-            for (const auto & key : data_children)
+            for (const auto & key : keys)
                 keys_full_path.push_back(data_zookeeper_path / key);
 
             zkutil::ZooKeeper::MultiGetResponse data;
