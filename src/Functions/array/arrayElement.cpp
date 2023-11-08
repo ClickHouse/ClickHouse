@@ -271,7 +271,6 @@ struct ArrayElementStringImpl
     {
         size_t size = offsets.size();
         result_offsets.resize(size);
-        result_data.reserve(data.size());
 
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
@@ -348,7 +347,6 @@ struct ArrayElementStringImpl
     {
         size_t size = offsets.size();
         result_offsets.resize(size);
-        result_data.reserve(data.size());
 
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
