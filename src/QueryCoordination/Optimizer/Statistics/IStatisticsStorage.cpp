@@ -85,8 +85,8 @@ void IStatisticsStorage::prepareTables(ContextPtr global_context)
     Poco::Logger * log = &Poco::Logger::get("IStatisticsStorage");
     auto create_table = [&execute_create_table, &get_create_table_query, &global_context, &log](StatsTableDefinitionDesc & table_def)
     {
-        auto table_stats = DatabaseCatalog::instance().tryGetTable({table_def.getDataBaseName(), table_def.getTableName()}, global_context);
-        if (!table_stats)
+        auto table = DatabaseCatalog::instance().tryGetTable({table_def.getDataBaseName(), table_def.getTableName()}, global_context);
+        if (!table)
         {
             LOG_DEBUG(log, "Creating new table {}", table_def.getDatabaseAndTable());
 
@@ -249,6 +249,11 @@ std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, cons
         storage_id.getTableName());
 
     auto load_query_context = createQueryContext();
+    StorageID table(IStatisticsStorage::STATISTICS_DATABASE_NAME, IStatisticsStorage::TABLE_STATS_TABLE_NAME);
+
+    auto table_meta = DatabaseCatalog::instance().tryGetTable(table, load_query_context)->getInMemoryMetadata();
+    if (!table_meta)
+        return std::nullopt;
 
     try
     {
@@ -282,6 +287,12 @@ std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_i
         storage_id.getTableName());
 
     auto load_query_context = createQueryContext();
+    StorageID stats_table(IStatisticsStorage::STATISTICS_DATABASE_NAME, IStatisticsStorage::COLUMN_STATS_TABLE_NAME);
+
+    auto stats_table_meta = DatabaseCatalog::instance().tryGetTable(stats_table, load_query_context)->getInMemoryMetadata();
+    if (!stats_table_meta)
+        return nullptr;
+
     auto block_io = executeQuery(sql, load_query_context, true).second;
 
     auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);

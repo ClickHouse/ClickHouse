@@ -86,11 +86,11 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     add_column_if_not_exist(step.getRealColumnNames());
     add_column_if_not_exist(step.getVirtualColumnNames());
 
+    /// Firstly we set table total row count as input row count,
+    /// and then when drive statistics for filter step the row count will reduce.
+    /// TODO Driving statistics for filter step should support data type String
+    /// whose value can be cast to Float64.
     Statistics statistics = *input;
-
-    /// 2. calculate row count
-    auto row_count = step.getAnalysisResult().selected_rows * context->getCluster(cluster_name)->getShardCount();
-    statistics.setOutputRowSize(row_count);
 
     /// For action_dags in prewhere do not contains all output nodes,
     /// we should append other nodes to statistics. For example: SELECT a, b from t where a > 1;
@@ -101,10 +101,10 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
                 statistics.addColumnStatistics(column, input->getColumnStatistics(column)->clone());
     };
 
-    /// 3. calculate for prewhere filters
+    /// 2. calculate for prewhere filters
     if (step.getPrewhereInfo())
     {
-        auto prewhere_info = step.getPrewhereInfo();
+        const auto & prewhere_info = step.getPrewhereInfo();
         if (prewhere_info->row_level_filter)
         {
             statistics = PredicateStatsCalculator::calculateStatistics(
@@ -125,11 +125,11 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         }
     }
 
-    /// 4. calculate for pushed down filters
+    /// 3. calculate for pushed down filters
     for (size_t i = 0; i < step.getFilters().size(); i++)
     {
-        auto & predicate = step.getFilters()[i];
-        auto & predicate_node_name = step.getFilterNodes().nodes[i]->result_name;
+        const auto & predicate = step.getFilters()[i];
+        const auto & predicate_node_name = step.getFilterNodes().nodes[i]->result_name;
         statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics);
         append_column_stats();
     }
