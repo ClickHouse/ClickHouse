@@ -154,10 +154,8 @@ bool QueryCache::Key::operator==(const Key & other) const
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    SipHash hash;
-    hash.update(key.ast->getTreeHash());
-    auto res = hash.get64();
-    return res;
+    IAST::Hash hash = key.ast->getTreeHash();
+    return hash.low64;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
