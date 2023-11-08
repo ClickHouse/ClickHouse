@@ -117,7 +117,7 @@ void InterpreterSelectQueryCoordination::buildQueryPlanIfNeeded()
 
 void InterpreterSelectQueryCoordination::optimize()
 {
-    if (plan.isInitialized())
+    if (!plan.isInitialized())
         return;
 
     /// Optimized by RBO rules
