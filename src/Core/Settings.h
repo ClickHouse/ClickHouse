@@ -351,6 +351,9 @@ class IColumn;
     M(Bool, opentelemetry_trace_processors, false, "Collect OpenTelemetry spans for processors.", 0) \
     M(Bool, prefer_column_name_to_alias, false, "Prefer using column names instead of aliases if possible.", 0) \
     M(Bool, allow_experimental_analyzer, false, "Allow experimental analyzer", 0) \
+    /** Settings `analyzer_compatibility_*` are used to support some legacy syntax in the analyzer. \
+      */ \
+    M(Bool, analyzer_compatibility_join_using_top_level_identifier, false, "Allow to specify identifier from projection in JOIN USING section.", 0) \
     M(Bool, prefer_global_in_and_join, false, "If enabled, all IN/JOIN operators will be rewritten as GLOBAL IN/JOIN. It's useful when the to-be-joined tables are only available on the initiator and we need to always scatter their data on-the-fly during distributed processing with the GLOBAL keyword. It's also useful to reduce the need to access the external sources joining external tables.", 0) \
     \
     \

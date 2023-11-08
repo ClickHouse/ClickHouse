@@ -6677,6 +6677,15 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 {
     auto & join_node_typed = join_node->as<JoinNode &>();
 
+    const auto & settings = scope.context->getSettingsRef();
+    std::unique_ptr<IdentifierResolveScope> scope_clone = nullptr;
+    if (settings.analyzer_compatibility_join_using_top_level_identifier && join_node_typed.isUsingJoinExpression())
+    {
+        /// copy only if it may be used
+        scope_clone = std::make_unique<IdentifierResolveScope>(scope);
+    }
+
+    auto left_table_expression_clone = join_node_typed.getLeftTableExpression()->clone();
     resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpression(), scope);
 
@@ -6695,7 +6704,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
         std::unordered_set<std::string> join_using_identifiers;
 
-        for (auto & join_using_node : join_using_list.getNodes())
+        QueryTreeNodes resolved_join_using_nodes;
+        for (const auto & join_using_node : join_using_list.getNodes())
         {
             auto * identifier_node = join_using_node->as<IdentifierNode>();
             if (!identifier_node)
@@ -6716,6 +6726,43 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
             auto result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
+            if (settings.analyzer_compatibility_join_using_top_level_identifier && !result_left_table_expression)
+            {
+                /** Settings to support legacy behaviour:
+                  * SELECT 1 as k, * FROM (SELECT 10 AS a) t1 JOIN (SELECT 1 AS k, 20 AS b) t2 USING k
+                  * Column `k` is not present in left table expression, but it is present in top level table expression.
+                  * Hacky way to support it modifying query tree.
+                  * We 'push down' this column to left table expression and resolve join again.
+                  */
+                auto result_top_level_table_expression = tryResolveIdentifier(identifier_lookup, scope);
+                if (result_top_level_table_expression.resolved_identifier)
+                {
+                    /// Use scope before left and right table expressions were resolved.
+                    scope = *scope_clone;
+                    {
+                        /** Rewtire query from:
+                          * SELECT 1 as k, * FROM t1 JOIN t2 USING k
+                          * to:
+                          * SELECT 1 as k, * FROM (SELECT 1 as k, * FROM t1) t1 JOIN t2 USING k
+                          */
+                        auto & left_table_expression = join_node_typed.getLeftTableExpression();
+                        auto new_query_node = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+                        new_query_node->getProjection().getNodes().push_back(std::make_shared<MatcherNode>());
+                        new_query_node->getProjection().getNodes().push_back(result_top_level_table_expression.resolved_identifier);
+                        new_query_node->getJoinTree() = left_table_expression;
+
+                        if (left_table_expression->hasAlias())
+                            new_query_node->setAlias(left_table_expression->getAlias());
+                        else if (const auto * left_table_node = left_table_expression->as<TableNode>())
+                            new_query_node->setAlias(left_table_node->getStorageID().getTableName());
+                        left_table_expression = new_query_node;
+                    }
+
+                    resolveJoin(join_node, scope, expressions_visitor);
+                    return;
+                }
+            }
+
             if (!result_left_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
@@ -6760,8 +6807,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             NameAndTypePair join_using_column(identifier_full_name, common_type);
             ListNodePtr join_using_expression = std::make_shared<ListNode>(QueryTreeNodes{result_left_table_expression, result_right_table_expression});
             auto join_using_column_node = std::make_shared<ColumnNode>(std::move(join_using_column), std::move(join_using_expression), join_node);
-            join_using_node = std::move(join_using_column_node);
+            resolved_join_using_nodes.emplace_back(std::move(join_using_column_node));
         }
+        join_using_list.getNodes() = std::move(resolved_join_using_nodes);
     }
 }
 
