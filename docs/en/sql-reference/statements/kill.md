@@ -73,7 +73,10 @@ A test query (`TEST`) only checks the user’s rights and displays a list of que
 
 ## KILL MUTATION
 
-One of the first things to check if a ClickHouse system or service is not running well is for long-running, incomplete mutations. The asynchronous (background) nature of mutations can cause a large queue of them that can then consume all available resources on the service. You may need to either pause all new mutations, INSERTs, and SELECTs and allow the queue of mutations to complete, or else manually kill some of these mutations.
+The presence of long-running or incomplete mutations often indicates that a ClickHouse service is running poorly. The asynchronous nature of mutations can cause them to consume all available resources on a system. You may need to either: 
+
+- Pause all new mutations, `INSERT`s , and `SELECT`s and allow the queue of mutations to complete.
+- Or manually kill some of these mutations by sending a `KILLSIG` command.
 
 ``` sql
 KILL MUTATION [ON CLUSTER cluster]
