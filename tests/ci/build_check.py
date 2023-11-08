@@ -165,7 +165,12 @@ def check_for_success_run(
         0,
         GITHUB_JOB,
     )
-    build_result.write_json(Path(TEMP_PATH))
+    result_json_path = build_result.write_json(Path(TEMP_PATH))
+    logging.info(
+        "Build result file %s is written, content:\n %s",
+        result_json_path,
+        result_json_path.read_text(encoding="utf-8"),
+    )
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
