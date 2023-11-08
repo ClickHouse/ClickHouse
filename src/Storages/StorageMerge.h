@@ -184,16 +184,24 @@ private:
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot);
 
+    void processAliases(
+        Names & real_column_names,
+        const StorageWithLockAndName & storage_with_lock,
+        Aliases & aliases,
+        const Block & sample_block,
+        ContextMutablePtr modified_context);
+
     QueryPipelineBuilderPtr createSources(
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
+        // const StorageSnapshotPtr & storage_snapshot,
+        // SelectQueryInfo & query_info,
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const Block & header,
-        const Aliases & aliases,
+        // const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
         Names real_column_names,
-        std::unique_ptr<RowPolicyData> row_policy_data_ptr,
+        const Block & sample_block,
+        // std::unique_ptr<RowPolicyData> row_policy_data_ptr,
         ContextMutablePtr modified_context,
         size_t streams_num,
         bool concat_streams = false);
