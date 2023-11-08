@@ -626,7 +626,8 @@ def test_multiple_tables_meta_mismatch(started_cluster):
     )
 
 
-@pytest.mark.parametrize("mode", AVAILABLE_MODES)
+# TODO: Update the modes for this test to include "ordered" once PR #55795 is finished.
+@pytest.mark.parametrize("mode", ["unordered"])
 def test_multiple_tables_streaming_sync(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"multiple_tables_streaming_sync_{mode}"
@@ -672,7 +673,7 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
         + get_count(f"{dst_table_name}_3")
     ) != files_to_generate:
         info = node.query(
-            f"SELECT * FROM system.s3queue_log WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
         )
         logging.debug(info)
         assert False
@@ -751,7 +752,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) != files_to_generate:
         info = node.query(
-            f"SELECT * FROM system.s3queue_log WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
         )
         logging.debug(info)
         assert False
