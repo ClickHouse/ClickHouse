@@ -40,7 +40,7 @@ CREATE DATABASE test_hdfs_2 ENGINE = HDFS('hdfs://localhost:12222');
 USE test_hdfs_2;
 SELECT * FROM \"test_02725_1.tsv\"
 """
-${CLICKHOUSE_CLIENT} -q "SHOW DATABASES;" | grep test2
+${CLICKHOUSE_CLIENT} -q "SHOW DATABASES;" | grep test_hdfs_2
 
 #################
 echo "Test 2: check exceptions"
