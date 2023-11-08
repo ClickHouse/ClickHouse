@@ -249,10 +249,10 @@ std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, cons
         storage_id.getTableName());
 
     auto load_query_context = createQueryContext();
-    StorageID table(IStatisticsStorage::STATISTICS_DATABASE_NAME, IStatisticsStorage::TABLE_STATS_TABLE_NAME);
+    StorageID stats_table(IStatisticsStorage::STATISTICS_DATABASE_NAME, IStatisticsStorage::TABLE_STATS_TABLE_NAME);
 
-    auto table_meta = DatabaseCatalog::instance().tryGetTable(table, load_query_context)->getInMemoryMetadata();
-    if (!table_meta)
+    auto stats_table_meta = DatabaseCatalog::instance().tryGetTable(stats_table, load_query_context);
+    if (!stats_table_meta)
         return std::nullopt;
 
     try
@@ -289,7 +289,7 @@ std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_i
     auto load_query_context = createQueryContext();
     StorageID stats_table(IStatisticsStorage::STATISTICS_DATABASE_NAME, IStatisticsStorage::COLUMN_STATS_TABLE_NAME);
 
-    auto stats_table_meta = DatabaseCatalog::instance().tryGetTable(stats_table, load_query_context)->getInMemoryMetadata();
+    auto stats_table_meta = DatabaseCatalog::instance().tryGetTable(stats_table, load_query_context);
     if (!stats_table_meta)
         return nullptr;
 
