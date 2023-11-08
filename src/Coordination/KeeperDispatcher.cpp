@@ -11,6 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <IO/S3/Credentials.h>
 
 #include <atomic>
 #include <future>
@@ -370,7 +371,16 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
 
     keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
-    keeper_context->initialize(config, this);
+    String availability_zone;
+    try
+    {
+        availability_zone = DB::S3::getRunningAvailabilityZone();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    keeper_context->initialize(config, this, availability_zone);
 
     requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_request_queue_size);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });

@@ -2172,6 +2172,72 @@ Result:
 └─────────────────────┘
 ```
 
+
+## arrayRandomSample
+
+Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array, i.e. all array elements are returned but their order is not guaranteed. The function can handle both flat arrays and nested arrays.
+
+**Syntax**
+
+```sql
+arrayRandomSample(arr, samples)
+```
+
+**Arguments**
+
+- `arr` — The input array from which to sample elements. ([Array(T)](../data-types/array.md))
+- `samples` — The number of elements to include in the random sample ([UInt*](../data-types/int-uint.md))
+
+**Returned Value**
+
+- An array containing a random sample of elements from the input array.
+
+Type: [Array](../data-types/array.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;
+```
+
+Result:
+
+```
+┌─res────────────────┐
+│ ['cherry','apple'] │
+└────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
+```
+
+Result:
+
+```
+┌─res───────────┐
+│ [[3,4],[5,6]] │
+└───────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayRandomSample([1, 2, 3], 5) as res;
+```
+
+Result:
+
+```
+┌─res─────┐
+│ [3,1,2] │
+└─────────┘
+```
+
 ## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
