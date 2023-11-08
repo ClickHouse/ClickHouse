@@ -259,7 +259,11 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
 
-    UInt16 default_port = getContext()->getTCPPort();
+    UInt16 default_port; 
+    if (cluster_auth_info.cluster_secure_connection)
+        default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
+    else
+        default_port = getContext()->getTCPPort();
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
