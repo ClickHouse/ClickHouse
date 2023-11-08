@@ -315,7 +315,7 @@ String transformQueryForExternalDatabaseImpl(
     {
         replaceConstantExpressions(original_where, context, available_columns);
 
-        /// Replace like WHERE 1 AND 1 to WHRE 1 = 1 AND 1 = 1
+        /// Replace like WHERE 1 AND 1 to WHERE 1 = 1 AND 1 = 1
         ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
