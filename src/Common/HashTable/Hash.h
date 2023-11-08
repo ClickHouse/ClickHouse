@@ -335,7 +335,7 @@ struct UInt128Hash
 {
     size_t operator()(UInt128 x) const
     {
-        return CityHash_v1_0_2::Hash128to64({x.items[0], x.items[1]});
+        return CityHash_v1_0_2::Hash128to64({x.items[UInt128::_impl::little(0)], x.items[UInt128::_impl::little(1)]});
     }
 };
 

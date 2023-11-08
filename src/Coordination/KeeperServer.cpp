@@ -1087,6 +1087,12 @@ bool KeeperServer::requestLeader()
     return isLeader() || raft_instance->request_leadership();
 }
 
+void KeeperServer::yieldLeadership()
+{
+    if (isLeader())
+        raft_instance->yield_leadership();
+}
+
 void KeeperServer::recalculateStorageStats()
 {
     state_machine->recalculateStorageStats();
