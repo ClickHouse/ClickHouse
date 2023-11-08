@@ -94,8 +94,22 @@ void HTTPSession::setTimeout(const Poco::Timespan& timeout)
 void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco::Timespan& sendTimeout, const Poco::Timespan& receiveTimeout)
 {
 	 _connectionTimeout = connectionTimeout;
-	 _sendTimeout = sendTimeout;
-	 _receiveTimeout = receiveTimeout;
+
+     if (_sendTimeout != sendTimeout)
+     {
+         _sendTimeout = sendTimeout;
+
+         if (connected())
+             _socket.setSendTimeout(_sendTimeout);
+     }
+
+     if (_receiveTimeout != receiveTimeout)
+     {
+         _receiveTimeout = receiveTimeout;
+
+         if (connected())
+             _socket.setReceiveTimeout(_receiveTimeout);
+     }
 }
 
 
