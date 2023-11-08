@@ -276,7 +276,7 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    MergeTreeDataPartState getState() const { return state; }
+    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
     static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
     constexpr std::string_view stateString() const { return stateString(state); }
