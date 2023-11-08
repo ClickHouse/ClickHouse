@@ -21,7 +21,7 @@ The queries to terminate are selected from the system.processes table using the 
 
 Examples:
 
-First, you'll need to get the list of incomplete queries. This SQL queries provides them according to those running the longest:
+First, you'll need to get the list of incomplete queries. This SQL query provides them according to those running the longest:
 
 List from a single ClickHouse node:
 ``` sql
