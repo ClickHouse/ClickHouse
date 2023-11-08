@@ -164,7 +164,6 @@ def generate_random_files(
         values_csv = (
             "\n".join((",".join(map(str, row)) for row in rand_values)) + "\n"
         ).encode()
-        print(f"File {filename}, content: {rand_values}")
         put_s3_file_content(started_cluster, filename, values_csv)
     return total_values
 
@@ -906,17 +905,15 @@ def test_drop_table(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_cleanup_interval_min_ms": 0,
-            "s3queue_cleanup_interval_max_ms": 0,
-            "s3queue_processing_threads_num": 1,
+            "s3queue_processing_threads_num": 5,
         },
     )
     total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
     )
     create_mv(node, table_name, dst_table_name)
     node.wait_for_log_line(
-        f"StorageS3Queue ({table_name}): Started streaming to 1 attached views"
+        f"Reading from file: test_drop_data/test_0.csv"
     )
     node.query(f"DROP TABLE {table_name} SYNC")
-    node.wait_for_log_line(f"StorageS3Queue ({table_name}): Table is being dropped")
+    assert node.contains_in_log(f"StorageS3Queue ({table_name}): Table is being dropped")

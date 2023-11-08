@@ -792,7 +792,18 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
     const bool check_nodes_ttl = max_set_age_sec > 0;
 
     const auto zk_client = getZooKeeper();
-    auto nodes = zk_client->getChildren(zookeeper_processed_path);
+    Strings nodes;
+    auto code = zk_client->tryGetChildren(zookeeper_processed_path, nodes);
+    if (code != Coordination::Error::ZOK)
+    {
+        if (code == Coordination::Error::ZNONODE)
+        {
+            LOG_TEST(log, "A `processed` not is not yet created");
+            return;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
+    }
+
     if (nodes.empty())
     {
         LOG_TEST(log, "A set of nodes is empty");
@@ -871,7 +882,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 
             local_file_statuses.remove(node.metadata.file_path, /* if_exists */true);
 
-            auto code = zk_client->tryRemove(path);
+            code = zk_client->tryRemove(path);
             if (code == Coordination::Error::ZOK)
                 --nodes_to_remove;
             else
@@ -888,7 +899,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 
                 local_file_statuses.remove(node.metadata.file_path, /* if_exists */true);
 
-                auto code = zk_client->tryRemove(path);
+                code = zk_client->tryRemove(path);
                 if (code != Coordination::Error::ZOK)
                     LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", path.string(), code);
             }

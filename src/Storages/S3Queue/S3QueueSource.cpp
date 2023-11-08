@@ -55,8 +55,14 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
     {
         KeyWithInfoPtr val = glob_iterator->next();
 
-        if (!val || shutdown_called)
+        if (!val)
             return {};
+
+        if (shutdown_called)
+        {
+            LOG_TEST(&Poco::Logger::get("StorageS3QueueSource"), "Shutdown was called, stopping file iterator");
+            return {};
+        }
 
         if (auto processing_holder = metadata->trySetFileAsProcessing(val->key);
             processing_holder && !shutdown_called)
