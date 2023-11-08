@@ -1,93 +1,91 @@
-#include <Parsers/ParserAnalyzeQuery.h>
 #include <Parsers/ASTAnalyzeQuery.h>
-#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserAnalyzeQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Common/assert_cast.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <boost/range/algorithm_ext/erase.hpp>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
 
 namespace
 {
-    bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
-    {
-        return IParserBase::wrapParseImpl(
-            pos,
-            [&]
-            {
-                if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
-                    return false;
-
-                SettingsChanges settings_changes;
-                ASTPtr res_base_backup_name;
-
-                auto parse_setting = [&]
-                {
-                    SettingChange setting;
-                    if (ParserSetQuery::parseNameValuePair(setting, pos, expected))
-                    {
-                        settings_changes.push_back(std::move(setting));
-                        return true;
-                    }
-                    return false;
-                };
-
-                if (!ParserList::parseUtil(pos, expected, parse_setting, false))
-                    return false;
-
-                ASTPtr res_settings;
-                if (!settings_changes.empty())
-                {
-                    auto settings_changes_ast = std::make_shared<ASTSetQuery>();
-                    settings_changes_ast->changes = std::move(settings_changes);
-                    settings_changes_ast->is_standalone = false;
-                    res_settings = settings_changes_ast;
-                }
-
-                settings = std::move(res_settings);
-                return true;
-            });
-    }
-
-    bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, bool & is_async)
-    {
-        if (ParserKeyword{"ASYNC"}.ignore(pos, expected))
-            is_async = true;
-        else if (ParserKeyword{"SYNC"}.ignore(pos, expected))
-            is_async = false;
-        else
-            return false;
-        return true;
-    }
-
-    void addSyncOrAsyncToSettings(ASTPtr & settings, bool is_async)
-    {
-        SettingsChanges changes;
-        if (settings)
+bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
+{
+    return IParserBase::wrapParseImpl(
+        pos,
+        [&]
         {
-            changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
-        }
+            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+                return false;
 
-        boost::remove_erase_if(changes, [](const SettingChange & change) { return change.name == "async"; });
-        changes.emplace_back("async", is_async);
+            SettingsChanges settings_changes;
+            ASTPtr res_base_backup_name;
 
-        auto new_settings = std::make_shared<ASTSetQuery>();
-        new_settings->changes = std::move(changes);
-        new_settings->is_standalone = false;
-        settings = new_settings;
-    }
+            auto parse_setting = [&]
+            {
+                SettingChange setting;
+                if (ParserSetQuery::parseNameValuePair(setting, pos, expected))
+                {
+                    settings_changes.push_back(std::move(setting));
+                    return true;
+                }
+                return false;
+            };
 
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
-    {
-        return IParserBase::wrapParseImpl(
-            pos, [&] { return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected); });
-    }
+            if (!ParserList::parseUtil(pos, expected, parse_setting, false))
+                return false;
+
+            ASTPtr res_settings;
+            if (!settings_changes.empty())
+            {
+                auto settings_changes_ast = std::make_shared<ASTSetQuery>();
+                settings_changes_ast->changes = std::move(settings_changes);
+                settings_changes_ast->is_standalone = false;
+                res_settings = settings_changes_ast;
+            }
+
+            settings = std::move(res_settings);
+            return true;
+        });
+}
+
+bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, bool & is_async)
+{
+    if (ParserKeyword{"ASYNC"}.ignore(pos, expected))
+        is_async = true;
+    else if (ParserKeyword{"SYNC"}.ignore(pos, expected))
+        is_async = false;
+    else
+        return false;
+    return true;
+}
+
+void addSyncOrAsyncToSettings(ASTPtr & settings, bool is_async)
+{
+    SettingsChanges changes;
+    if (settings)
+        changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
+
+    boost::remove_erase_if(changes, [](const SettingChange & change) { return change.name == "async"; });
+    changes.emplace_back("async", is_async);
+
+    auto new_settings = std::make_shared<ASTSetQuery>();
+    new_settings->changes = std::move(changes);
+    new_settings->is_standalone = false;
+    settings = new_settings;
+}
+
+bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+{
+    return IParserBase::wrapParseImpl(
+        pos, [&] { return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected); });
+}
 }
 
 bool ParserAnalyzeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -113,7 +111,7 @@ bool ParserAnalyzeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     if (query->table)
         query->children.push_back(query->table);
-    
+
     /// Parse columns
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);

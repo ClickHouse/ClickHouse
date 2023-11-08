@@ -1,10 +1,10 @@
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAnalyzeQuery.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryCoordination/Optimizer/Statistics/IStatisticsStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 
 namespace DB
@@ -12,9 +12,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_COLUMN;
-    extern const int UNSUPPORTED_METHOD;
+extern const int UNKNOWN_TABLE;
+extern const int UNKNOWN_COLUMN;
+extern const int UNSUPPORTED_METHOD;
 }
 
 BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
@@ -22,20 +22,22 @@ BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
     auto * query = query_ptr->as<ASTAnalyzeQuery>();
     auto statistics_storage = context->getStatisticsStorage();
 
-    auto * database = query->database->as<ASTIdentifier>();
-    auto * table = query->table->as<ASTIdentifier>();
+    auto database = query->database == nullptr ? context->getCurrentDatabase() : query->database->as<ASTIdentifier>()->name();
+    auto table = query->table->as<ASTIdentifier>()->name();
 
-    StorageID storage_id(database == nullptr ? context->getCurrentDatabase() : database->name(), table->name());
+    StorageID storage_id(database, table);
     auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
     if (!storage)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", storage_id.getFullNameNotQuoted());
 
     if (storage->isRemote())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Analyzing is unsupported for non local table {}", storage_id.getFullNameNotQuoted());
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "Analyzing is unsupported for non local table {}", storage_id.getFullNameNotQuoted());
 
     if (storage->as<MergeTreeData>())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Analyzing is unsupported for non merge tree table {}", storage_id.getFullNameNotQuoted());
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "Analyzing is unsupported for non merge tree table {}", storage_id.getFullNameNotQuoted());
 
     Names column_names;
     auto table_columns = storage->getInMemoryMetadata().getColumns();

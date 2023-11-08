@@ -71,7 +71,7 @@ public:
     /// Create tables if not exist.
     static void prepareTables(ContextPtr global_context);
 
-    void initialize(ContextPtr) { } /// TODO delete
+    void initialize(ContextPtr) { }
 
     /// Get statistics for a table.
     /// 'storage_id' is local table and 'cluster_name' is used to query statistics for all nodes.

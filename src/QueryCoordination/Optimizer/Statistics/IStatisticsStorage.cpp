@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -13,7 +14,10 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/Stopwatch.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -27,13 +31,13 @@ extern const int NOT_IMPLEMENTED;
 
 namespace
 {
-ContextMutablePtr createQueryContext();
+ContextMutablePtr createQueryContext(ContextMutablePtr context_ = nullptr);
 
-/// load
+/// Load statistics into memory
 std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, const String & cluster_name);
 std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_id, const String & cluster_name);
 
-/// collect
+/// Collect statistics for a table
 void collectTableStats(const StorageID & storage_id, ContextMutablePtr context);
 void collectColumnStats(const StorageID & storage_id, const Names & columns, ContextMutablePtr context);
 }
@@ -220,9 +224,9 @@ String StatsForColumnDesc::getStorage()
 
 namespace
 {
-ContextMutablePtr createQueryContext()
+ContextMutablePtr createQueryContext(ContextMutablePtr context_)
 {
-    auto query_context = Context::createCopy(Context::getGlobalContextInstance());
+    auto query_context = Context::createCopy(context_ == nullptr ? Context::getGlobalContextInstance() : context_);
 
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); /// Not use user query id
@@ -261,7 +265,7 @@ std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, cons
     }
     catch (...)
     {
-        tryLogCurrentException(&Poco::Logger::get("IStatisticsStorage"), "Got exception when execute load table statistics query.");
+        tryLogCurrentException(&Poco::Logger::get("IStatisticsStorage"), "Error when execute load table statistics query.");
         return std::nullopt;
     }
 }
@@ -318,7 +322,7 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
         storage_id.getDatabaseName(),
         storage_id.getTableName());
 
-    executeQuery(delete_sql, context, true);
+    executeQuery(delete_sql, createQueryContext(context), true);
 
     String insert_sql = fmt::format(
         "INSERT INTO {}.{} SELECT {}, '{}', '{}', count(*) FROM {}",
@@ -329,49 +333,118 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
         storage_id.getTableName(),
         storage_id.getFullNameNotQuoted());
 
-    auto block_io = executeQuery(insert_sql, context, true).second;
+    auto block_io = executeQuery(insert_sql, createQueryContext(context), true).second;
     auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
     executor->execute();
 }
 
 void collectColumnStats(const StorageID & storage_id, const Names & columns, ContextMutablePtr context)
 {
+    Stopwatch watch;
+
     const auto time_now = std::chrono::system_clock::now();
     auto event_time = timeInSeconds(time_now);
 
-    for (const auto & column : columns)
+    /// Collecting columns statistics in batch
+    size_t batch = 20; /// TODO add to settings
+    for (size_t i = 0; i < columns.size(); i += batch)
     {
+        auto batch_end = std::min(i + batch, columns.size());
+
         /// TODO calculate avg_row_size by datatype and real dataset
         Float64 avg_row_size = 8.0;
 
+        /// 1. deleting the old ones
+        WriteBufferFromOwnString joined_columns;
+        for (size_t j = i; j < batch_end; j++)
+        {
+            joined_columns << "'" << columns[i] << "'";
+            if (j != batch_end)
+                joined_columns << ", ";
+        }
         String delete_sql = fmt::format(
-            "DELETE FROM {}.{} WHERE db='{}' and table='{}' and column='{}'",
+            "DELETE FROM {}.{} WHERE db='{}' and table='{}' and column in ({})",
             IStatisticsStorage::STATISTICS_DATABASE_NAME,
             IStatisticsStorage::COLUMN_STATS_TABLE_NAME,
             storage_id.getDatabaseName(),
             storage_id.getTableName(),
-            column);
-        executeQuery(delete_sql, context, true);
+            joined_columns.str());
+        executeQuery(delete_sql, createQueryContext(context), true);
 
-        String insert_sql = fmt::format(
-            "INSERT INTO {}.{} SELECT {}, '{}', '{}', '{}', uniqState(cast('{}', 'String')), min(toFloat64OrDefault({})), "
-            "max(toFloat64OrDefault({})), {} FROM {}",
-            IStatisticsStorage::STATISTICS_DATABASE_NAME,
-            IStatisticsStorage::COLUMN_STATS_TABLE_NAME,
-            event_time,
-            storage_id.getDatabaseName(),
-            storage_id.getTableName(),
-            column,
-            column,
-            column,
-            column,
-            avg_row_size,
-            storage_id.getFullNameNotQuoted());
+        /// 2. build selecting query
+        WriteBufferFromOwnString select_sql;
+        select_sql << "SELECT ";
 
-        auto block_io = executeQuery(insert_sql, context, true).second;
-        auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
-        executor->execute();
+        for (size_t j = i; j < batch_end; j++)
+        {
+            const auto & column = columns[i];
+            select_sql << "toDateTime(" << toString(event_time) << "), ";
+            select_sql << "'" << storage_id.getDatabaseName() << "', ";
+            select_sql << "'" << storage_id.getTableName() << "', ";
+            select_sql << "'" << backQuoteIfNeed(column) << "', ";
+            select_sql << "uniqState(cast('" << column << "', 'String'))"
+                       << ", ";
+            select_sql << "min(toFloat64OrDefault(" << backQuoteIfNeed(column) << "))"
+                       << ", ";
+            select_sql << "max(toFloat64OrDefault(" << backQuoteIfNeed(column) << "))"
+                       << ", ";
+            select_sql << "toFloat64(" << toString(avg_row_size) << ")";
+
+            if (j != batch_end)
+                select_sql << ", ";
+            else
+                select_sql << " ";
+        }
+        select_sql << "FROM " << storage_id.getFullTableName();
+
+        /// 3. execute query
+        auto block_io = executeQuery(select_sql.str(), createQueryContext(context), true).second;
+        auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
+
+        /// 4. create inserting executor
+        std::unique_ptr<ASTInsertQuery> insert_query = std::make_unique<ASTInsertQuery>();
+        insert_query->table_id = StorageID(IStatisticsStorage::STATISTICS_DATABASE_NAME, IStatisticsStorage::COLUMN_STATS_TABLE_NAME);
+        ASTPtr insert_ast(insert_query.release());
+
+        auto insert_context = Context::createCopy(Context::getGlobalContextInstance());
+        insert_context->makeQueryContext();
+        InterpreterInsertQuery insert_interpreter(insert_ast, insert_context);
+        BlockIO io = insert_interpreter.execute();
+
+        PushingPipelineExecutor insert_executor(io.pipeline);
+        insert_executor.start();
+
+        /// 5. insert into storage
+        Block block;
+        while (!block && executor->pull(block))
+        {
+            /// How many columns to collect at this time.
+            size_t batch_size = batch_end - i;
+            /// column count for COLUMN_STATS_TABLE_NAME
+            size_t column_count = 8;
+            chassert(block.columns() == column_count * batch_size);
+
+            /// Split block columns by rows
+            auto block_columns = block.getColumns();
+            Columns one_row;
+
+            for (size_t j = 0; j < batch_size; j++)
+            {
+                size_t start = j * column_count;
+                for (size_t n = start; n < start + column_count; n++)
+                    one_row.emplace_back(std::move(block_columns[n]));
+                insert_executor.push({one_row, 1});
+                one_row.clear();
+            }
+        }
+        insert_executor.finish();
     }
+
+    LOG_DEBUG(
+        &Poco::Logger::get("IStatisticsStorage"),
+        "Collect column statistics for {}, cost {}s",
+        storage_id.getFullNameNotQuoted(),
+        watch.elapsedSeconds());
 }
 
 }
