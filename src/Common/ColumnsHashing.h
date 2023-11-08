@@ -726,6 +726,40 @@ struct HashMethodSerialized
     }
 };
 
+DECLARE_AVX512BW_SPECIFIC_CODE(
+inline std::optional<AdaptiveKeysHolder> quickLookupValueId(
+    AdaptiveKeysHolder::State::ValueCacheLine & cache,
+    size_t row,
+    UInt64 value_id,
+    const ColumnRawPtrs & key_columns,
+    AdaptiveKeysHolder::State & shared_state)
+{
+    if (cache.allocated_num > 8)
+        return {};
+    auto value_id_v = _mm512_set1_epi64(value_id);
+    auto value_id_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(cache.value_ids));
+    auto cmp_mask = _mm512_cmpeq_epi64_mask(value_id_line, value_id_v);
+    auto hit_pos = _tzcnt_u32(cmp_mask);
+    if (hit_pos >= 8) [[unlikely]]
+    {
+        if (cache.allocated_num >= 8)
+        {
+            cache.allocated_num++;
+            return {};
+        }
+        auto & cached_values = shared_state.cached_values;
+        auto current_index = cache.allocated_num++;
+        auto serialized_keys = serializeKeysToPoolContiguous(row, key_columns.size(), key_columns, *shared_state.pool);
+        auto hash = ::DefaultHash<StringRef>()(serialized_keys);
+        cached_values[value_id] = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &shared_state);
+        cache.value_ids[current_index] = value_id;
+        cache.cached_values[current_index] = &cached_values[value_id];
+        return {AdaptiveKeysHolder{serialized_keys, cache.cached_values[current_index], shared_state.pool.get()}};
+    }
+
+    return {AdaptiveKeysHolder{cache.cached_values[hit_pos]->serialized_keys, cache.cached_values[hit_pos], shared_state.pool.get()}};
+})
+
 /// Multiple aggregators share one AdaptiveHashMethodContext.
 class AdaptiveHashMethodContext : public HashMethodContext
 {
@@ -829,7 +863,18 @@ struct HashMethodKeysAdaptive
         {
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
-                return getKeyHolderByValueIdAVX512BW(row);
+            {
+                auto & value_id = value_ids[row];
+                auto & value_cache_lines = aggregator_context->shared_keys_holder_state.value_cache_lines;
+                auto key_holder = TargetSpecific::AVX512BW::quickLookupValueId(
+                    value_cache_lines[value_id & aggregator_context->shared_keys_holder_state.cache_line_num_mask],
+                    row,
+                    value_id,
+                    key_columns,
+                    aggregator_context->shared_keys_holder_state);
+                if (key_holder)
+                    return *key_holder;
+            }
 #endif
             return getKeyHolderFromCacheValues(row);
         }
@@ -860,57 +905,6 @@ struct HashMethodKeysAdaptive
             return AdaptiveKeysHolder{
                 cache_it->second.serialized_keys, &cache_it->second, aggregator_context->shared_keys_holder_state.pool.get()};
     }
-
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
-        MULTITARGET_FUNCTION_HEADER(AdaptiveKeysHolder NO_SANITIZE_UNDEFINED),
-        getKeyHolderByValueId,
-        MULTITARGET_FUNCTION_BODY((size_t row)
-        {
-            auto & value_id = value_ids[row];
-            auto & cached_values = aggregator_context->shared_keys_holder_state.cached_values;
-            auto & value_cache_lines = aggregator_context->shared_keys_holder_state.value_cache_lines;
-            auto & value_cache_line = value_cache_lines[value_id & aggregator_context->shared_keys_holder_state.cache_line_num_mask];
-            if (value_cache_line.allocated_num <= 8)
-            {
-                auto value_id_v = _mm512_set1_epi64(value_id);
-                auto value_id_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(value_cache_line.value_ids));
-                auto cmp_mask = _mm512_cmpeq_epi64_mask(value_id_line, value_id_v);
-                auto hit_pos = _tzcnt_u32(cmp_mask);
-                if (hit_pos >= 8) [[unlikely]]
-                {
-                    if (value_cache_line.allocated_num < 8)
-                    {
-                        auto current_index = value_cache_line.allocated_num++;
-                        auto serialized_keys = serializeKeysToPoolContiguous(
-                            row, keys_size, key_columns, *aggregator_context->shared_keys_holder_state.pool);
-                        auto hash = ::DefaultHash<StringRef>()(serialized_keys);
-
-                        cached_values[value_id]
-                            = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &aggregator_context->shared_keys_holder_state);
-
-                        value_cache_line.value_ids[current_index] = value_id;
-                        value_cache_line.cached_values[current_index] = &cached_values[value_id];
-
-                        return AdaptiveKeysHolder{
-                            serialized_keys,
-                            value_cache_line.cached_values[current_index],
-                            aggregator_context->shared_keys_holder_state.pool.get()};
-                    }
-                    else
-                    {
-                        value_cache_line.allocated_num += 1;
-                    }
-                }
-                else
-                {
-                    return AdaptiveKeysHolder{
-                        value_cache_line.cached_values[hit_pos]->serialized_keys,
-                        value_cache_line.cached_values[hit_pos],
-                        aggregator_context->shared_keys_holder_state.pool.get()};
-                }
-            }
-            return getKeyHolderFromCacheValues(row);
-        }))
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings & settings[[maybe_unused]])
     {

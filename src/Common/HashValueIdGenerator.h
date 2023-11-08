@@ -41,6 +41,14 @@ namespace ColumnsHashing
 {
 class HashMethodContext;
 }
+
+struct HashValueIdCacheLine
+{
+    size_t allocated_num = 0;
+    alignas(64) UInt64 values[8] = {0};
+    alignas(64) UInt64 value_ids[8] = {0};
+};
+
 DECLARE_DEFAULT_CODE(
 inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * __restrict value_ids, size_t multiplier, size_t n)
 {
@@ -171,6 +179,39 @@ inline bool isAllShortString(const UInt64 * __restrict lens, size_t n)
     }
     return res;
 }
+
+inline bool quickLookupValueId(HashValueIdCacheLine & cache,
+    const StringRef & raw_value,
+    UInt64 serialized_value,
+    UInt64 & value_id,
+    UInt64 & allocated_value_id,
+    std::function<void (const StringRef &, UInt64)> add_new_value_id)
+{
+    if (cache.allocated_num > 8)
+        return false;
+    auto value_v = _mm512_set1_epi64(serialized_value);
+    auto cached_values = _mm512_loadu_epi64(reinterpret_cast<const UInt8 *>(cache.values));
+    auto cmp_mask = _mm512_cmpeq_epi64_mask(cached_values, value_v);
+    auto hit_pos = _tzcnt_u32(cmp_mask);
+    if (hit_pos >= 8) [[unlikely]]
+    {
+        if (cache.allocated_num >= 8)
+        {
+            cache.allocated_num += 1;
+            return false;
+        }
+        value_id = allocated_value_id++;
+        cache.value_ids[cache.allocated_num] = value_id;
+        cache.values[cache.allocated_num++] = serialized_value;
+
+        add_new_value_id(raw_value, value_id);
+    }
+    else
+    {
+        value_id = cache.value_ids[hit_pos];
+    }
+    return true;
+}
 )
 
 class IHashValueIdGenerator
@@ -221,12 +262,6 @@ public:
     }
 
 protected:
-    struct HashValueIdCacheLine
-    {
-        size_t allocated_num = 0;
-        alignas(64) UInt64 values[8] = {0};
-        alignas(64) UInt64 value_ids[8] = {0};
-    };
     AdaptiveKeysHolder::State *state;
     size_t max_distinct_values;
 
@@ -291,54 +326,24 @@ protected:
         }
     }
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
-        MULTITARGET_FUNCTION_HEADER(void NO_SANITIZE_UNDEFINED NO_INLINE),
-        getValueIdImpl,
-        MULTITARGET_FUNCTION_BODY((const StringRef & raw_value, UInt64 serialized_value, UInt64 & value_id)
-        {
-            if (enable_value_id_cache_line)
-            {
-                // If the value id set is too large, give up to check in cache
-                do
-                {
-                    auto & cache_line = value_ids_cache_line[serialized_value & value_id_cache_line_num_mask];
-                    if (cache_line.allocated_num > 8)
-                        break;
-                    auto value_v = _mm512_set1_epi64(serialized_value);
-                    auto cached_values = _mm512_loadu_epi64(reinterpret_cast<const UInt8 *>(cache_line.values));
-                    auto cmp_mask = _mm512_cmpeq_epi64_mask(cached_values, value_v);
-                    auto hit_pos = _tzcnt_u32(cmp_mask);
-                    if (hit_pos >= 8) [[unlikely]]
-                    {
-                        if (cache_line.allocated_num >= 8)
-                        {
-                            cache_line.allocated_num += 1;
-                            break;
-                        }
-                        value_id = allocated_value_id++;
-                        cache_line.value_ids[cache_line.allocated_num] = value_id;
-                        cache_line.values[cache_line.allocated_num++] = serialized_value;
-
-                        emplaceValueId(raw_value, value_id);
-                        return;
-                    }
-                    else
-                    {
-                        value_id = cache_line.value_ids[hit_pos];
-                        return;
-                    }
-                } while (false);
-            }
-            getValueId(raw_value, value_id);
-        }))
-
     ALWAYS_INLINE void getValueId(const StringRef &raw_value, UInt64 serialized_value [[maybe_unused]], UInt64 & value_id)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX512BW))
         {
-            getValueIdImplAVX512BW(raw_value, serialized_value, value_id);
-            return;
+            if (enable_value_id_cache_line)
+            {
+                auto & cache = value_ids_cache_line[serialized_value & value_id_cache_line_num_mask];
+                auto ok = TargetSpecific::AVX512BW::quickLookupValueId(
+                    cache,
+                    raw_value,
+                    serialized_value,
+                    value_id,
+                    allocated_value_id,
+                    [&](const StringRef & raw_value_, UInt64 value_id_) { emplaceValueId(raw_value_, value_id_); });
+                if (ok)
+                    return;
+            }
         }
 #endif
         getValueId(raw_value, value_id);
@@ -449,7 +454,7 @@ private:
         {
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
-                TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
+                TargetSpecific::AVX512BW::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
 #endif
             {
                 TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
@@ -507,16 +512,20 @@ private:
             UInt64 range_delta = range_min - is_nullable;
             for (size_t i = 0; i < n; ++i)
             {
-                UInt64 val = 0;
                 StringRef raw_value(data_pos, str_lens[i] - 1);
-                shortStringToUInt64(data_pos, str_lens[i] - 1, val);
-                if (val > range_max || val < range_min)
+                if (str_lens[i] <= 1)
                 {
-                    getValueId(raw_value, val, value_ids[i]);
+                    // empty string.
+                    getValueId(raw_value, value_ids[i]);
                 }
                 else
                 {
-                    value_ids[i] = val - range_delta;
+                    UInt64 val = 0;
+                    shortStringToUInt64(data_pos, str_lens[i] - 1, val);
+                    if (val > range_max || val < range_min)
+                        getValueId(raw_value, val, value_ids[i]);
+                    else
+                        value_ids[i] = val - range_delta;
                 }
                 data_pos += str_lens[i];
             }
