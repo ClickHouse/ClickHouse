@@ -88,7 +88,7 @@ A test query (`TEST`) only checks the user’s rights and displays a list of mut
 
 Examples:
 
-Get a count() of the number of incomplete mutations:
+Get a `count()` of the number of incomplete mutations:
 
 Count of mutations from a single ClickHouse node:
 ``` sql
