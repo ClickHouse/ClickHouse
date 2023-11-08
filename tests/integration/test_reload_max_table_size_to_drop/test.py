@@ -33,10 +33,10 @@ def test_reload_max_table_size_to_drop(start_cluster):
 
     time.sleep(5)  # wait for data part commit
 
-    drop = node.get_query_request("DROP TABLE test")
+    drop = node.get_query_request("DROP TABLE test SYNC")
     out, err = drop.get_answer_and_error()
     assert out == ""
-    assert err != ""
+    assert "Table or Partition in default.test was not dropped." in err
 
     config = open(config_path, "r")
     config_lines = config.readlines()
