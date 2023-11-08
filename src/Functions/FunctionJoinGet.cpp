@@ -133,7 +133,7 @@ ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAnd
     return std::make_unique<ExecutableFunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, result_columns);
 }
 
-static std::pair<std::shared_ptr<StorageJoin>, String>
+std::pair<std::shared_ptr<StorageJoin>, String>
 getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
 {
     String join_name;
