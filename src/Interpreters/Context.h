@@ -434,7 +434,7 @@ protected:
     mutable std::shared_ptr<UInt32> remote_query_timeout_count_ptr = nullptr;
 
     /// Total number of child local/remote queries generated for a distributed query (may involve multiple distributed tables), and subquery does not count here. this is only for query context.
-    mutable std::shared_ptr<UInt32> total_child_query_count_ptr = nullptr;    
+    mutable std::shared_ptr<UInt32> total_child_query_count_ptr = nullptr;
 
 public:
     /// Some counters for current query execution.

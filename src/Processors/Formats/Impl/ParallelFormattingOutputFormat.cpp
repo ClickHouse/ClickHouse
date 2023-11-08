@@ -157,17 +157,15 @@ namespace DB
                 /// Use this copy to after notification to stop the execution.
                 auto copy_of_unit_type = unit.type;
 
-                /// TODO : Make other output formats who does not support parralel formatting return extra parameters for remote query timeout in the header of http response as well.
+                /// TODO : Make other output formats who does not support parallel formatting return extra parameters for remote query timeout in the header of http response as well.
                 if (auto * write_buffer_from_http_response = reinterpret_cast<WriteBufferFromHTTPServerResponse *>(&out))
                 {
                     auto & http_response = write_buffer_from_http_response->getHTTPResponse();
-                    auto remote_timeout_count = context->getRemoteQueryTimeoutCount();
-                    if (remote_timeout_count)
+                    auto remote_query_timeout_count = context->getRemoteQueryTimeoutCount();
+                    if (remote_query_timeout_count && !http_response.has("X-ClickHouse-Remote-Query-Timeout-Count"))
                     {
-                        if(!http_response.has("X-ClickHouse-Remote-Query-Timeout-Count"))
-                            http_response.add("X-ClickHouse-Remote-Query-Timeout-Count", std::to_string(remote_timeout_count));
-                        if (remote_timeout_count && !http_response.has("X-ClickHouse-Total-Child-Query-Count"))
-                            http_response.add("X-ClickHouse-Total-Child-Query-Count", std::to_string(context->getTotalChildQueryCount()));
+                        http_response.add("X-ClickHouse-Remote-Query-Timeout-Count", std::to_string(remote_query_timeout_count));
+                        http_response.add("X-ClickHouse-Total-Child-Query-Count", std::to_string(context->getTotalChildQueryCount()));
                     }
                 }
 
