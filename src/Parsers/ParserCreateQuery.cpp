@@ -1549,7 +1549,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         return false;
 
     SettingsChanges changes;
-    SettingsChanges overridability;
+    std::unordered_map<String, bool> overridability;
 
     while (true)
     {
@@ -1561,9 +1561,9 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
             return false;
         if (s_not_overridable.ignore(pos, expected))
-            overridability.emplace_back(changes.back().name, false);
+            overridability.emplace(changes.back().name, false);
         else if (s_overridable.ignore(pos, expected))
-            overridability.emplace_back(changes.back().name, true);
+            overridability.emplace(changes.back().name, true);
     }
 
     auto query = std::make_shared<ASTCreateNamedCollectionQuery>();

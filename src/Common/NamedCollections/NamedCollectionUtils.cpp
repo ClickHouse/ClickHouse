@@ -199,7 +199,7 @@ public:
         for (const auto & [name, value] : create_query.changes)
             result_changes_map.emplace(name, value);
 
-        std::unordered_map<std::string, Field> result_overridability_map;
+        std::unordered_map<std::string, bool> result_overridability_map;
         for (const auto & [name, value] : query.overridability)
             result_overridability_map.emplace(name, value);
         for (const auto & [name, value] : create_query.overridability)
@@ -227,9 +227,7 @@ public:
         create_query.changes.clear();
         for (const auto & [name, value] : result_changes_map)
             create_query.changes.emplace_back(name, value);
-        create_query.overridability.clear();
-        for (const auto & [name, value] : result_overridability_map)
-            create_query.overridability.emplace_back(name, value);
+        create_query.overridability = std::move(result_overridability_map);
 
         writeCreateQueryToMetadata(
             create_query,
@@ -459,10 +457,13 @@ void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr contex
     auto collection_lock = collection->lock();
 
     for (const auto & [name, value] : query.changes)
-        collection->setOrUpdate<String, true>(name, convertFieldToString(value));
-
-    for (const auto & [name, value] : query.overridability)
-        collection->setOverridable<true>(name, value.get<bool>());
+    {
+        auto it_override = query.overridability.find(name);
+        if (it_override != query.overridability.end())
+            collection->setOrUpdate<String, true>(name, convertFieldToString(value), it_override->second);
+        else
+            collection->setOrUpdate<String, true>(name, convertFieldToString(value), {});
+    }
 
     for (const auto & key : query.delete_keys)
         collection->remove<true>(key);

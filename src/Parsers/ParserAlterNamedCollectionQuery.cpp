@@ -48,7 +48,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     }
 
     SettingsChanges changes;
-    SettingsChanges overridability;
+    std::unordered_map<String, bool> overridability;
     if (s_set.ignore(pos, expected))
     {
         while (true)
@@ -61,9 +61,9 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
             if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
                 return false;
             if (s_not_overridable.ignore(pos, expected))
-                overridability.emplace_back(changes.back().name, false);
+                overridability.emplace(changes.back().name, false);
             else if (s_overridable.ignore(pos, expected))
-                overridability.emplace_back(changes.back().name, true);
+                overridability.emplace(changes.back().name, true);
         }
     }
 
@@ -88,7 +88,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     query->if_exists = if_exists;
     query->cluster = std::move(cluster_str);
     query->changes = changes;
-    query->overridability = overridability;
+    query->overridability = std::move(overridability);
     query->delete_keys = delete_keys;
 
     node = query;

@@ -18,6 +18,8 @@ namespace ErrorCodes
 namespace NamedCollectionConfiguration
 {
 
+void setOverridable(Poco::Util::AbstractConfiguration & config, const std::string & path, bool value);
+
 bool hasConfigValue(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & path)
@@ -72,11 +74,13 @@ template <typename T> T getConfigValueOrDefault(
     }
 }
 
-template<typename T> void setConfigValue(
+template <typename T>
+void setConfigValue(
     Poco::Util::AbstractConfiguration & config,
     const std::string & path,
     const T & value,
-    bool update)
+    bool update,
+    const std::optional<bool> is_overridable)
 {
     if (!update && config.has(path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key `{}` already exists", path);
@@ -96,6 +100,8 @@ template<typename T> void setConfigValue(
             ErrorCodes::NOT_IMPLEMENTED,
             "Unsupported type in setConfigValue(). "
             "Supported types are String, UInt64, Int64, Float64, bool");
+    if (is_overridable)
+        setOverridable(config, path, *is_overridable);
 }
 
 template <typename T> void copyConfigValue(
@@ -150,16 +156,19 @@ ConfigurationPtr createEmptyConfiguration(const std::string & root_name)
     return config;
 }
 
-ConfigurationPtr
-createConfiguration(const std::string & root_name, const SettingsChanges & settings, const SettingsChanges & overridability)
+ConfigurationPtr createConfiguration(
+    const std::string & root_name, const SettingsChanges & settings, const std::unordered_map<String, bool> & overridability)
 {
     namespace Configuration = NamedCollectionConfiguration;
 
     auto config = Configuration::createEmptyConfiguration(root_name);
     for (const auto & [name, value] : settings)
+    {
         Configuration::setConfigValue<String>(*config, name, convertFieldToString(value));
-    for (const auto & [name, value] : overridability)
-        Configuration::setOverridable(*config, name, value.get<bool>());
+        auto ovalue = overridability.find(name);
+        if (ovalue != overridability.end())
+            Configuration::setOverridable(*config, name, ovalue->second);
+    }
 
     return config;
 }
@@ -248,16 +257,36 @@ template Float64 getConfigValueOrDefault<Float64>(const Poco::Util::AbstractConf
 template bool getConfigValueOrDefault<bool>(const Poco::Util::AbstractConfiguration & config,
                                             const std::string & path, const bool * default_value);
 
-template void setConfigValue<String>(Poco::Util::AbstractConfiguration & config,
-                                     const std::string & path, const String & value, bool update);
-template void setConfigValue<UInt64>(Poco::Util::AbstractConfiguration & config,
-                                     const std::string & path, const UInt64 & value, bool update);
-template void setConfigValue<Int64>(Poco::Util::AbstractConfiguration & config,
-                                    const std::string & path, const Int64 & value, bool update);
-template void setConfigValue<Float64>(Poco::Util::AbstractConfiguration & config,
-                                      const std::string & path, const Float64 & value, bool update);
-template void setConfigValue<bool>(Poco::Util::AbstractConfiguration & config,
-                                   const std::string & path, const bool & value, bool update);
+template void setConfigValue<String>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const String & value,
+    bool update,
+    const std::optional<bool> is_overridable);
+template void setConfigValue<UInt64>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const UInt64 & value,
+    bool update,
+    const std::optional<bool> is_overridable);
+template void setConfigValue<Int64>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const Int64 & value,
+    bool update,
+    const std::optional<bool> is_overridable);
+template void setConfigValue<Float64>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const Float64 & value,
+    bool update,
+    const std::optional<bool> is_overridable);
+template void setConfigValue<bool>(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & path,
+    const bool & value,
+    bool update,
+    const std::optional<bool> is_overridable);
 
 template void copyConfigValue<String>(const Poco::Util::AbstractConfiguration & from_config, const std::string & from_path,
                                       Poco::Util::AbstractConfiguration & to_config, const std::string & to_path);

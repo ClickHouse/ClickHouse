@@ -117,7 +117,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)));
+        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)), {});
     }
 
     return collection_copy;
@@ -141,7 +141,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     for (const auto & key : keys)
     {
         if (collection_copy->isOverridable(key, allow_override_by_default))
-            collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key));
+            collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
     }

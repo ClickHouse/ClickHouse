@@ -1,7 +1,8 @@
 #pragma once
-#include <Poco/Util/AbstractConfiguration.h>
 #include <queue>
 #include <set>
+#include <Core/Field.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -27,11 +28,13 @@ template <typename T> T getConfigValueOrDefault(
     const std::string & path,
     const T * default_value = nullptr);
 
-template<typename T> void setConfigValue(
+template <typename T>
+void setConfigValue(
     Poco::Util::AbstractConfiguration & config,
     const std::string & path,
     const T & value,
-    bool update = false);
+    bool update = false,
+    std::optional<bool> is_overridable = {});
 
 template <typename T> void copyConfigValue(
     const Poco::Util::AbstractConfiguration & from_config,
@@ -43,8 +46,8 @@ void removeConfigValue(
     Poco::Util::AbstractConfiguration & config,
     const std::string & path);
 
-ConfigurationPtr
-createConfiguration(const std::string & root_name, const SettingsChanges & settings, const SettingsChanges & overridability);
+ConfigurationPtr createConfiguration(
+    const std::string & root_name, const SettingsChanges & settings, const std::unordered_map<std::string, bool> & overridability);
 
 /// Enumerate keys paths of the config recursively.
 /// E.g. if `enumerate_paths` = {"root.key1"} and config like
@@ -70,8 +73,6 @@ void listKeys(
     ssize_t depth);
 
 std::optional<bool> isOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path);
-
-void setOverridable(Poco::Util::AbstractConfiguration & config, const std::string & path, bool value);
 }
 
 }
