@@ -31,7 +31,7 @@ CREATE DATABASE test_hdfs_1 ENGINE = HDFS;
 USE test_hdfs_1;
 SELECT * FROM \"hdfs://localhost:12222/test_02725_1.tsv\"
 """
-${CLICKHOUSE_CLIENT} -q "SHOW DATABASES;" | grep test1
+${CLICKHOUSE_CLIENT} -q "SHOW DATABASES;" | grep test_hdfs_1
 
 # Database with host
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
