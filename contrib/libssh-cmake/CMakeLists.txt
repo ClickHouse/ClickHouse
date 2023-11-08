@@ -1,3 +1,10 @@
+option (ENABLE_SSH "Enable support for SSH keys and protocol" ON)
+
+if (NOT ENABLE_SSH)
+    message(STATUS "Not using SSH")
+    return()
+endif()
+
 set(LIB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libssh")
 set(LIB_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/libssh")
 # Specify search path for CMake modules to be loaded by include()

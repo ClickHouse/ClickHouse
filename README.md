@@ -22,8 +22,6 @@ curl https://clickhouse.com/ | sh
 
 ## Upcoming Events
 
-* [**v23.9 Community Call**]([https://clickhouse.com/company/events/v23-8-community-release-call](https://clickhouse.com/company/events/v23-9-community-release-call)?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-08) - Sep 28 - 23.9 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
-* [**ClickHouse Meetup in Amsterdam**](https://www.meetup.com/clickhouse-netherlands-user-group/events/296334590/) - Oct 31
 * [**ClickHouse Meetup in Beijing**](https://www.meetup.com/clickhouse-beijing-user-group/events/296334856/) - Nov 4
 * [**ClickHouse Meetup in San Francisco**](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/296334923/) - Nov 8
 * [**ClickHouse Meetup in Singapore**](https://www.meetup.com/clickhouse-singapore-meetup-group/events/296334976/) - Nov 15
