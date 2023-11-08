@@ -385,7 +385,7 @@ public:
     /// Add to data stream columns that are needed only for row policies
     ///  SELECT x from T  if  T has row policy  y=42
     ///  required y in data pipeline
-    void extendNames(Names &, bool alias_allowed = true);
+    void extendNames(Names &);
 
     /// Use storage facilities to filter data
     ///  optimization
@@ -495,100 +495,13 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         if (sampling_requested && !storage->supportsSampling())
             throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
 
-        // const auto & [database_name, _, _b, table_name] = table;
-
-        // std::unique_ptr<RowPolicyData> row_policy_data_ptr;
-
-        // auto row_policy_filter_ptr = context->getRowPolicyFilter(
-        //   database_name,
-        //   table_name,
-        //   RowPolicyFilterType::SELECT_FILTER);
-        // if (row_policy_filter_ptr)
-        // {
-        //     row_policy_data_ptr = std::make_unique<RowPolicyData>(row_policy_filter_ptr, storage, context);
-        //     row_policy_data_ptr->extendNames(column_names);
-        // }
-
-
-
-        // Aliases aliases;
-        // auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
-        // auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, context);
-
-        // auto modified_query_info = getModifiedQueryInfo(query_info, context, table, nested_storage_snaphsot);
-        // Names column_names_as_aliases;
-
-        // if (!context->getSettingsRef().allow_experimental_analyzer)
-        // {
-        //     auto storage_columns = storage_metadata_snapshot->getColumns();
-        //     auto syntax_result = TreeRewriter(context).analyzeSelect(
-        //         modified_query_info.query, TreeRewriterResult({}, storage, nested_storage_snaphsot));
-
-        //     bool with_aliases = common_processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty();
-        //     if (with_aliases)
-        //     {
-        //         ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
-        //         ASTPtr column_expr;
-
-        //         for (const auto & column : column_names)
-        //         {
-        //             const auto column_default = storage_columns.getDefault(column);
-        //             bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
-
-        //             if (is_alias)
-        //             {
-        //                 column_expr = column_default->expression->clone();
-        //                 replaceAliasColumnsInQuery(column_expr, storage_metadata_snapshot->getColumns(),
-        //                                         syntax_result->array_join_result_to_source, context);
-
-        //                 const auto & column_description = storage_columns.get(column);
-        //                 column_expr = addTypeConversionToAST(std::move(column_expr), column_description.type->getName(),
-        //                                                     storage_metadata_snapshot->getColumns().getAll(), context);
-        //                 column_expr = setAlias(column_expr, column);
-
-        //                 auto type = sample_block.getByName(column).type;
-        //                 aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
-
-        //                 LOG_TRACE(&Poco::Logger::get("ReadFromMerge::initializePipeline"),
-        //                     "adding new alias name {}, expression {}",
-        //                     column, column_expr->formatForLogging());
-
-        //             }
-        //             else
-        //                 column_expr = std::make_shared<ASTIdentifier>(column);
-
-        //             required_columns_expr_list->children.emplace_back(std::move(column_expr));
-        //         }
-
-        //         syntax_result = TreeRewriter(context).analyze(
-        //             required_columns_expr_list, storage_columns.getAllPhysical(), storage, storage->getStorageSnapshot(storage_metadata_snapshot, context));
-
-        //         auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, context).getActionsDAG(true);
-
-        //         column_names_as_aliases = alias_actions->getRequiredColumns().getNames();
-        //         LOG_TRACE(&Poco::Logger::get("ReadFromMerge::initializePipeline"),
-        //             "alias_actions->getRequiredColumns: {}", alias_actions->getRequiredColumns().toString());
-
-        //         // if (row_policy_data_ptr)
-        //         //     row_policy_data_ptr->extendNames(column_names_as_aliases, false /* alias_allowed */);
-
-        //         if (column_names_as_aliases.empty())
-        //             column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
-        //     }
-        // }
-
         auto source_pipeline = createSources(
-            // nested_storage_snaphsot,
-            // modified_query_info,
             common_processed_stage,
             required_max_block_size,
             common_header,
-            // aliases,
             table,
-            // column_names_as_aliases.empty() ? column_names : column_names_as_aliases,
             column_names,
             merge_storage_snapshot->getMetadataForQuery()->getSampleBlock(),
-            // std::move(row_policy_data_ptr),
             context,
             current_streams);
 
@@ -723,13 +636,9 @@ void ReadFromMerge::processAliases(
                         storage_metadata_snapshot->getColumns().getAll(), context);
                     column_expr = setAlias(column_expr, column);
 
-                    auto type = sample_block.getByName(column).type;
+                    auto type = sample_block.has(column) ? sample_block.getByName(column).type : column_description.type;
+
                     aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
-
-                    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::initializePipeline"),
-                        "adding new alias name {}, expression {}",
-                        column, column_expr->formatForLogging());
-
                 }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
@@ -743,11 +652,6 @@ void ReadFromMerge::processAliases(
             auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, context).getActionsDAG(true);
 
             column_names_as_aliases = alias_actions->getRequiredColumns().getNames();
-            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::processAliases"),
-                "alias_actions->getRequiredColumns: {}", alias_actions->getRequiredColumns().toString());
-
-            // if (row_policy_data_ptr)
-            //     row_policy_data_ptr->extendNames(column_names_as_aliases, false /* alias_allowed */);
 
             if (column_names_as_aliases.empty())
                 column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
@@ -755,23 +659,18 @@ void ReadFromMerge::processAliases(
     }
     if (!column_names_as_aliases.empty())
     {
-        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::processAliases"),
-            "substitute real_column_names by column_names_as_aliases");
         real_column_names = column_names_as_aliases;
     }
 }
 
 
 QueryPipelineBuilderPtr ReadFromMerge::createSources(
-    // const StorageSnapshotPtr & storage_snapshot,
-    // SelectQueryInfo & modified_query_info,
     QueryProcessingStage::Enum processed_stage,
     UInt64 max_block_size,
     const Block & header,
     const StorageWithLockAndName & storage_with_lock,
     Names real_column_names,
     const Block & sample_block,
-    // std::unique_ptr<RowPolicyData> row_policy_data_ptr,
     ContextMutablePtr modified_context,
     size_t streams_num,
     bool concat_streams)
@@ -795,13 +694,8 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         row_policy_data_ptr->extendNames(real_column_names);
     }
 
-
     Aliases aliases;
     processAliases(real_column_names, storage_with_lock, aliases, sample_block, modified_context);
-    // if (row_policy_data_ptr)
-    // {
-    //     row_policy_data_ptr->extendNames(real_column_names);
-    // }
 
     QueryPipelineBuilderPtr builder;
     if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names))
@@ -818,8 +712,6 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         storage_snapshot,
         modified_query_info);
 
-    // std::optional<RowPolicyData> row_policy_data;
-
     if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -831,16 +723,6 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         if (!view || allow_experimental_analyzer)
         {
-            // auto row_policy_filter_ptr = modified_context->getRowPolicyFilter(
-            //         database_name,
-            //         table_name,
-            //         RowPolicyFilterType::SELECT_FILTER);
-            // if (row_policy_data_ptr)
-            // {
-            //    row_policy_data.emplace(row_policy_filter_ptr, storage, modified_context);
-            //    row_policy_data_ptr->extendNames(real_column_names);
-            // }
-
             storage->read(plan,
                 real_column_names,
                 storage_snapshot,
@@ -972,15 +854,14 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             });
         }
 
-        // if (row_policy_data_ptr)
-        // {
-        //     row_policy_data_ptr->addFilterTransform(*builder);
-        // }
-
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, storage_snapshot->metadata, aliases, std::move(row_policy_data_ptr), modified_context, *builder, processed_stage);
-
+        convertAndFilterSourceStream(header,
+            storage_snapshot->metadata,
+            aliases, std::move(row_policy_data_ptr),
+            modified_context,
+            *builder,
+            processed_stage);
     }
 
     return builder;
@@ -991,9 +872,6 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     ContextPtr local_context)
     : row_policy_filter_ptr(row_policy_filter_ptr_)
 {
-    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData ctor"),
-        "storage {}", storage->getName());
-
     storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll/*Physical*/();
@@ -1017,70 +895,41 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     if (!deleted.empty() || added.size() != 1)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot determine row level filter");
+            "Cannot determine row level filter; {} columns deleted, {} columns added",
+            deleted.size(), added.size());
     }
 
     filter_column_name = added.getNames().front();
 }
 
-void ReadFromMerge::RowPolicyData::extendNames(Names & names, bool alias_allowed)
+void ReadFromMerge::RowPolicyData::extendNames(Names & names)
 {
-    std::sort(names.begin(), names.end());
+    boost::container::flat_set<std::string_view> names_set(names.begin(), names.end());
     NameSet added_names;
 
     for (const auto & req_column : filter_actions->getRequiredColumns())
     {
-        if (!std::binary_search(names.begin(), names.end(), req_column))
+        if (!names_set.contains(req_column))
         {
-            if (!alias_allowed)
-            {
-                auto storage_columns = storage_metadata_snapshot->getColumns();
-                const auto column_default = storage_columns.getDefault(req_column);
-                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
-                if (is_alias)
-                {
-                    continue;
-                }
-            }
-            added_names.insert(req_column);
+            added_names.emplace(req_column);
         }
     }
+
     if (!added_names.empty())
     {
         std::copy(added_names.begin(), added_names.end(), std::back_inserter(names));
-        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData::extendNames"),
-            "{} names added", added_names.size());
-        for (const auto & added_name : added_names)
-        {
-            LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData::extendNames"),
-                "  added name {}", added_name);
-        }
     }
 }
 
 void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step)
 {
-    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData::addStorageFilter"), "filter_actions_dag: {},<> {}, <> {}",
-        filter_actions->getActionsDAG().dumpNames(),
-        filter_actions->getActionsDAG().dumpDAG(),
-        filter_actions->getSampleBlock().dumpStructure());
-
     step->addFilter(actions_dag, filter_column_name);
 }
 
 void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & builder)
 {
-    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData::addFilterTransform"), "filter_actions_dag: {},<> {}, <> {}",
-        filter_actions->getActionsDAG().dumpNames(),
-        filter_actions->getActionsDAG().dumpDAG(),
-        filter_actions->getSampleBlock().dumpStructure());
-
     builder.addSimpleTransform([&](const Block & stream_header)
     {
-        LOG_TRACE(&Poco::Logger::get("ReadFromMerge::RowPolicyData::addFilterTransform"),
-            "stream_header.dumpNames {}", stream_header.dumpNames());
-
-
         return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_column_name, true /* remove filter column */);
     });
 }
@@ -1255,7 +1104,7 @@ void StorageMerge::alter(
     setInMemoryMetadata(storage_metadata);
 }
 
-void ReadFromMerge::convertingSourceStream(
+void ReadFromMerge::convertAndFilterSourceStream(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
     const Aliases & aliases,
@@ -1292,12 +1141,6 @@ void ReadFromMerge::convertingSourceStream(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns)
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
-
-    LOG_TRACE(&Poco::Logger::get("ReadFromMerge::convertingSourceStream"),
-        "builder.getHeader(): {}, header.getColumnsWithTypeAndName: {}",
-        builder.getHeader().dumpStructure(),
-        header.dumpStructure());
-
 
     if (row_policy_data_ptr)
     {

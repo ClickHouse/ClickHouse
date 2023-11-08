@@ -49,6 +49,10 @@ SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>2
 3	13
 4	14
 4	14
+SELECT * FROM engine_merge_12 WHERE x>2
+3	13
+4	14
+4	14
 SELECT * FROM merge(currentDatabase(), 02763_merge)
 1	11
 1	11
@@ -162,6 +166,31 @@ SELECT x, y from merge(currentDatabase(), 02763_merge
 4	14
 4	14
 4	14
+02763_merge_aliases
+x, y, z FROM 02763_a_merge
+3	13	16
+4	14	18
+* FROM 02763_a_merge
+3	13	16
+4	14	18
+x, y FROM 02763_a_merge
+3	13
+4	14
+SELECT x, y FROM merge(currentDatabase(), 02763_alias)
+3	13
+4	14
+SELECT x, y FROM merge(currentDatabase(), 02763_alias)
+2	12
+3	13
+4	14
+SELECT x FROM merge(currentDatabase(), 02763_alias)
+12
+13
+14
+SELECT y FROM merge(currentDatabase(), 02763_alias)
+2
+3
+4
 SETTINGS optimize_move_to_prewhere= 1
 SELECT * FROM 02763_merge_log_1
 3	13
@@ -191,6 +220,10 @@ SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>2
 3	13
 4	14
 4	14
+SELECT * FROM engine_merge_12 WHERE x>2
+3	13
+4	14
+4	14
 SELECT * FROM merge(currentDatabase(), 02763_merge)
 1	11
 1	11
@@ -304,3 +337,28 @@ SELECT x, y from merge(currentDatabase(), 02763_merge
 4	14
 4	14
 4	14
+02763_merge_aliases
+x, y, z FROM 02763_a_merge
+3	13	16
+4	14	18
+* FROM 02763_a_merge
+3	13	16
+4	14	18
+x, y FROM 02763_a_merge
+3	13
+4	14
+SELECT x, y FROM merge(currentDatabase(), 02763_alias)
+3	13
+4	14
+SELECT x, y FROM merge(currentDatabase(), 02763_alias)
+2	12
+3	13
+4	14
+SELECT x FROM merge(currentDatabase(), 02763_alias)
+12
+13
+14
+SELECT y FROM merge(currentDatabase(), 02763_alias)
+2
+3
+4

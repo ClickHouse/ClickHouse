@@ -206,7 +206,7 @@ private:
         size_t streams_num,
         bool concat_streams = false);
 
-    static void convertingSourceStream(
+    static void convertAndFilterSourceStream(
         const Block & header,
         const StorageMetadataPtr & metadata_snapshot,
         const Aliases & aliases,

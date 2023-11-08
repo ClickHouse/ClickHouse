@@ -116,19 +116,19 @@ INSERT INTO 02763_merge_fancycols  (x, y) SELECT x, y from merge(currentDatabase
 
 CREATE ROW POLICY 02763_filter_5 ON 02763_merge_fancycols USING cnst<>42 AS permissive TO ALL;
 SELECT 'SELECT *';
-SELECT * from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x;
+SELECT * from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 SELECT 'SELECT x, lc';
-SELECT x, lc from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x;
+SELECT x, lc from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 
 CREATE ROW POLICY 02763_filter_6 ON 02763_merge_fancycols USING lc='111' AS permissive TO ALL;
 SELECT 'SELECT *';
-SELECT * from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x;
+SELECT * from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 SELECT 'SELECT x, lc';
-SELECT x, lc from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x;
+SELECT x, lc from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 SELECT 'SELECT x, lc, cnst';
-SELECT x, lc, cnst from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x;
+SELECT x, lc, cnst from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 SELECT 'SELECT x, y from merge(currentDatabase(), 02763_merge';
-SELECT x, y from merge(currentDatabase(), '02763_merge') ORDER BY x;
+SELECT x, y from merge(currentDatabase(), '02763_merge') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 
 DROP TABLE 02763_merge_fancycols;
 
@@ -138,19 +138,26 @@ INSERT INTO 02763_alias VALUES (1, 11), (2, 12), (3, 13), (4, 14);
 
 CREATE ROW POLICY 02763_filter_7 ON 02763_alias USING z>15 AS permissive TO ALL;
 
--- SELECT 'SELECT * FROM 02763_alias ORDER BY x';
--- SELECT x, y, z FROM 02763_alias ORDER BY x;
-
 CREATE TABLE 02763_a_merge (x UInt8, y UInt64, z UInt64) ENGINE = Merge(currentDatabase(), '02763_alias');
 
 
--- SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_alias) ORDER BY x';
--- SELECT * FROM merge(currentDatabase(), '02763_merge_alias') ORDER BY x;
+SELECT 'x, y, z FROM 02763_a_merge';
+SELECT x, y, z FROM 02763_a_merge ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT '* FROM 02763_a_merge';
+SELECT * FROM 02763_a_merge ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'x, y FROM 02763_a_merge';
+SELECT x, y FROM 02763_a_merge ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT x, y FROM merge(currentDatabase(), 02763_alias)';
+SELECT x, y FROM merge(currentDatabase(), '02763_alias') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 
-SELECT 'x, y, z FROM 02763_a_merge ORDER BY x';
-SELECT x, y, z FROM 02763_a_merge ORDER BY x;
--- SELECT 'SELECT x, y, z FROM merge(currentDatabase(), 02763_merge_alias) ORDER BY x';
--- SELECT x, y, z FROM merge(currentDatabase(), '02763_merge_alias') ORDER BY x;
+CREATE ROW POLICY 02763_filter_8 ON 02763_alias USING y>11 AS permissive TO ALL;
+
+SELECT 'SELECT x, y FROM merge(currentDatabase(), 02763_alias)';
+SELECT x, y FROM merge(currentDatabase(), '02763_alias') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT x FROM merge(currentDatabase(), 02763_alias)';
+SELECT y FROM merge(currentDatabase(), '02763_alias') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT y FROM merge(currentDatabase(), 02763_alias)';
+SELECT x FROM merge(currentDatabase(), '02763_alias') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
 
 DROP TABLE 02763_alias;
 DROP TABLE 02763_a_merge;
@@ -165,5 +172,6 @@ DROP ROW POLICY 02763_filter_5 ON 02763_merge_fancycols;
 DROP ROW POLICY 02763_filter_6 ON 02763_merge_fancycols;
 
 DROP ROW POLICY 02763_filter_7 ON 02763_alias;
+DROP ROW POLICY 02763_filter_8 ON 02763_alias;
 
 {% endfor %}
