@@ -214,7 +214,7 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 1024
+Default: 10
 
 
 ## index_mark_cache_policy
