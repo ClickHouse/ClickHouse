@@ -72,13 +72,6 @@ function configure()
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
 
-    #Randomize merge tree setting allow_experimental_block_number_column
-    value=$(($RANDOM % 2))
-    sudo cat /etc/clickhouse-server/config.d/merge_tree_settings.xml \
-    | sed "s|<allow_experimental_block_number_column>[01]</allow_experimental_block_number_column>|<allow_experimental_block_number_column>$value</allow_experimental_block_number_column>|" \
-    > /etc/clickhouse-server/config.d/merge_tree_settings.xml.tmp
-    sudo mv /etc/clickhouse-server/config.d/merge_tree_settings.xml.tmp /etc/clickhouse-server/config.d/merge_tree_settings.xml
-
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
     # for clickhouse-client
