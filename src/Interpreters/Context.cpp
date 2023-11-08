@@ -3430,7 +3430,8 @@ void Context::initializeTraceCollector()
 /// Call after unexpected crash happen.
 void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    shared->system_logs->handleCrash();
+    if (shared->system_logs)
+        shared->system_logs->handleCrash();
 }
 
 bool Context::hasTraceCollector() const
