@@ -8,4 +8,4 @@ WORKDIR=$(readlink -f "${WORKDIR}")
 "$WORKDIR/sparse-checkout/setup-sparse-checkout.sh"
 git submodule init
 git submodule sync
-git submodule update --depth=1
+git submodule update --depth=1 --jobs 16
