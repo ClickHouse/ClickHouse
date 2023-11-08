@@ -281,7 +281,7 @@ ActionsDAGPtr analyzeAggregateProjection(
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
-    MatchedTrees::Matches matches = matchTrees(*info.before_aggregation, *query.dag, false /* check_monotonicity */);
+    MatchedTrees::Matches matches = matchTrees(info.before_aggregation->getOutputs(), *query.dag, false /* check_monotonicity */);
 
     // for (const auto & [node, match] : matches)
     // {
@@ -444,6 +444,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     const auto & projections = metadata->projections;
     std::vector<const ProjectionDescription *> agg_projections;
+
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
@@ -584,6 +585,9 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     auto ordinary_reading_select_result = reading->selectRangesToRead(parts, /* alter_conversions = */ {});
     size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
 
+    const auto & proj_name_from_settings = context->getSettings().preferred_optimize_projection_name.value;
+    bool found_best_candidate = false;
+
     /// Selecting best candidate.
     for (auto & candidate : candidates.real)
     {
@@ -602,8 +606,13 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         if (candidate.sum_marks > ordinary_reading_marks)
             continue;
 
-        if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
+        if ((best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks) && !found_best_candidate)
             best_candidate = &candidate;
+        if (!proj_name_from_settings.empty() && candidate.projection->name == proj_name_from_settings)
+        {
+            best_candidate = &candidate;
+            found_best_candidate = true;
+        }
     }
 
     if (!best_candidate)

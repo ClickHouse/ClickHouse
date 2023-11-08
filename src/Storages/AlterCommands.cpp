@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -845,6 +846,12 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
+bool AlterCommand::isDropSomething() const
+{
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
+        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
+}
+
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata))
@@ -1077,6 +1084,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
+            /// FIXME: Adding a new column of type Object(JSON) is broken.
+            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
+            /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
+            /// So we don't allow to do it for now.
+            if (command.data_type->hasDynamicSubcolumns())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
+
             if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
                                 "this column name is reserved for lightweight delete feature", backQuote(column_name));
@@ -1139,17 +1153,22 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
 
-            /// The change of data type to/from Object is broken, so disable it for now
+            /// FIXME: Modifying the column to/from Object(JSON) is broken.
+            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
+            /// But after ALTER TABLE MODIFY COLUMN we need to fill existing rows with something (exactly the default value) or calculate the common type for it.
+            /// So we don't allow to do it for now.
             if (command.data_type)
             {
                 const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                if (command.data_type->getName().contains("Object")
-                    || old_data_type->getName().contains("Object"))
+                bool new_type_has_object = command.data_type->hasDynamicSubcolumns();
+                bool old_type_has_object = old_data_type->hasDynamicSubcolumns();
+
+                if (new_type_has_object || old_type_has_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The change of data type {} of column {} to {} is not allowed",
+                        "The change of data type {} of column {} to {} is not allowed. It has known bugs",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 

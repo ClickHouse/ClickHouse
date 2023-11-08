@@ -182,6 +182,9 @@ public:
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
+    /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
+    void removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
+
     /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
@@ -264,6 +267,12 @@ public:
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
     Block updateHeader(Block header) const;
+
+    using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
+    static ColumnsWithTypeAndName evaluatePartialResult(
+        IntermediateExecutionResult & node_to_column,
+        const NodeRawConstPtrs & outputs,
+        bool throw_on_error);
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.

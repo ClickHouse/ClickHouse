@@ -248,6 +248,11 @@ def is_leader(cluster, node, port=9181):
     return "Mode: leader" in stat
 
 
+def is_follower(cluster, node, port=9181):
+    stat = send_4lw_cmd(cluster, node, "stat", port)
+    return "Mode: follower" in stat
+
+
 def get_leader(cluster, nodes):
     for node in nodes:
         if is_leader(cluster, node):
