@@ -56,12 +56,12 @@ apt-get install --yes --no-install-recommends \
     qemu-user-static \
     unzip
 
+# Install docker
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 
 echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 apt-get update
-
 apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
 
 usermod -aG docker ubuntu
@@ -80,6 +80,14 @@ cat <<EOT > /etc/docker/daemon.json
   "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
 }
 EOT
+
+# Install azure-cli
+curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg
+AZ_DIST=$(lsb_release -cs)
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $AZ_DIST main" | tee /etc/apt/sources.list.d/azure-cli.list
+
+apt-get update
+apt-get install --yes --no-install-recommends azure-cli
 
 # Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
 echo "vm.max_map_count = 2097152" > /etc/sysctl.d/01-increase-map-counts.conf
