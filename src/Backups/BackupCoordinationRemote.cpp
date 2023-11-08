@@ -666,6 +666,19 @@ void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
         replicated_sql_objects->addDirectory(std::move(directory));
 }
 
+void BackupCoordinationRemote::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
+{
+    std::lock_guard lock(keeper_map_tables_mutex);
+    keeper_map_tables.addTable(table_zookeeper_root_path, table_id, data_path_in_backup);
+}
+
+String BackupCoordinationRemote::getKeeperMapDataPath(const String & table_zookeeper_root_path) const
+{
+    std::lock_guard lock(keeper_map_tables_mutex);
+    return keeper_map_tables.getDataPath(table_zookeeper_root_path);
+}
+
+
 void BackupCoordinationRemote::addFileInfos(BackupFileInfos && file_infos_)
 {
     {

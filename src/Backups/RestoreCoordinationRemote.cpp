@@ -234,6 +234,11 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
     return result;
 }
 
+bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & /*root_zk_path*/)
+{
+    return true;
+}
+
 void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_query)
 {
     String query_str = serializeAST(create_query);
