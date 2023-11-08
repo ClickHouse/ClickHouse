@@ -26,7 +26,7 @@ echo "Test 1: select from hdfs database"
 
 # Database without specific host
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
-DROP DATABASE IF EXISTS test1;
+DROP DATABASE IF EXISTS test_hdfs_1;
 CREATE DATABASE test_hdfs_1 ENGINE = HDFS;
 USE test_hdfs_1;
 SELECT * FROM \"hdfs://localhost:12222/test_02725_1.tsv\"
@@ -35,7 +35,7 @@ ${CLICKHOUSE_CLIENT} -q "SHOW DATABASES;" | grep test1
 
 # Database with host
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
-DROP DATABASE IF EXISTS test2;
+DROP DATABASE IF EXISTS test_hdfs_2;
 CREATE DATABASE test_hdfs_2 ENGINE = HDFS('hdfs://localhost:12222');
 USE test_hdfs_2;
 SELECT * FROM \"test_02725_1.tsv\"
@@ -46,12 +46,12 @@ ${CLICKHOUSE_CLIENT} -q "SHOW DATABASES;" | grep test2
 echo "Test 2: check exceptions"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
-DROP DATABASE IF EXISTS test3;
+DROP DATABASE IF EXISTS test_hdfs_3;
 CREATE DATABASE test_hdfs_3 ENGINE = HDFS('abacaba');
 """ 2>&1 | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
-DROP DATABASE IF EXISTS test4;
+DROP DATABASE IF EXISTS test_hdfs_4;
 CREATE DATABASE test_hdfs_4 ENGINE = HDFS;
 USE test_hdfs_4;
 SELECT * FROM \"abacaba/file.tsv\"
