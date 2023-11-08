@@ -216,13 +216,17 @@ private:
     void loadMetadataImpl();
     void loadMetadataForKeys(const std::filesystem::path & keys_dir);
 
+    /// bool - if `file_segments_limit` reached or not.
     FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const;
+
+    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size);
 
     FileSegments splitRangeIntoFileSegments(
         LockedKey & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
+        size_t file_segments_limit,
         const CreateFileSegmentSettings & create_settings);
 
     void fillHolesWithEmptyFileSegments(

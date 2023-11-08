@@ -926,6 +926,7 @@ void FileSegment::use()
 
 FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
     : file_segments(std::move(file_segments_))
+{
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments, file_segments.size());
     ProfileEvents::increment(ProfileEvents::FilesystemCacheHoldFileSegments, file_segments.size());
 }
