@@ -537,6 +537,9 @@ public:
 
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
+    /// accessed only by part check task
+    mutable std::optional<std::chrono::steady_clock::time_point> last_check_time;
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
