@@ -31,9 +31,6 @@ using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & out
 
 struct QueryFlags
 {
-    QueryFlags() = default;
-    explicit QueryFlags(bool internal_, bool distribted_backup_restore_) : internal(internal_), distributed_backup_restore(distribted_backup_restore_) {}
-
     bool internal = false; /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
     bool distributed_backup_restore = false; /// If true, this query is a part of backup restore.
 };
