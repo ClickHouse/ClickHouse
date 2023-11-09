@@ -4821,7 +4821,7 @@ When set to `false` the metadata files are written with the previous format vers
 
 Default value: `false`.
 
-## s3_aggressive_timeouts {#s3_aggressive_timeouts}
+## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
 
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
