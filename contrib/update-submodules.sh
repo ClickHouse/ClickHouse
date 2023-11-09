@@ -2,8 +2,8 @@
 set -e
 
 SCRIPT_PATH=$(realpath "$0")
-GIT_DIR=$(dirname "${SCRIPT_PATH}") # <repo>/contrib/
-GIT_DIR=$(dirname "${GIT_DIR}")     # <repo>/
+SCRIPT_DIR=$(dirname "${SCRIPT_PATH}")
+GIT_DIR=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)
 cd $GIT_DIR
 
 contrib/sparse-checkout/setup-sparse-checkout.sh
