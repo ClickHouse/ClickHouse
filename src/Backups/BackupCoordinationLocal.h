@@ -52,8 +52,6 @@ public:
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
 private:
-    Poco::Logger * const log;
-
     BackupCoordinationReplicatedTables TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
     BackupCoordinationReplicatedAccess TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
     BackupCoordinationReplicatedSQLObjects TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;

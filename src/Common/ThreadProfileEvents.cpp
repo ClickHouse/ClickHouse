@@ -2,7 +2,7 @@
 
 #if defined(OS_LINUX)
 
-#include "NetlinkMetricsProvider.h"
+#include "TaskStatsInfoGetter.h"
 #include "ProcfsMetricsProvider.h"
 #include "hasLinuxCapability.h"
 
@@ -23,7 +23,6 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <base/errnoToString.h>
-#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -99,7 +98,7 @@ TasksStatsCounters::MetricsProvider TasksStatsCounters::findBestAvailableProvide
     static std::optional<MetricsProvider> provider =
         []() -> MetricsProvider
         {
-            if (NetlinkMetricsProvider::checkPermissions())
+            if (TaskStatsInfoGetter::checkPermissions())
             {
                 return MetricsProvider::Netlink;
             }
@@ -119,7 +118,7 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
     switch (provider)
     {
     case MetricsProvider::Netlink:
-        stats_getter = [metrics_provider = std::make_shared<NetlinkMetricsProvider>(), tid]()
+        stats_getter = [metrics_provider = std::make_shared<TaskStatsInfoGetter>(), tid]()
                 {
                     ::taskstats result{};
                     metrics_provider->getStat(result, static_cast<pid_t>(tid));

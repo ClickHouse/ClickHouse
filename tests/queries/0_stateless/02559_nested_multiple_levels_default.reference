@@ -1,4 +1,6 @@
 data_compact	Compact
 [[]]
+data_memory	InMemory
+[[]]
 data_wide	Wide
 [[]]

@@ -35,6 +35,18 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
         }
     }
 
+    if (!settings.allow_experimental_geo_types)
+    {
+        const auto & type_name = type->getName();
+        if (type_name == "MultiPolygon" || type_name == "Polygon" || type_name == "Ring" || type_name == "Point")
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create column with type '{}' because experimental geo types are not allowed. Set setting "
+                "allow_experimental_geo_types = 1 in order to allow it", type_name);
+        }
+    }
+
     if (!settings.allow_experimental_object_type)
     {
         if (type->hasDynamicSubcolumns())
@@ -48,7 +60,7 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
 
     if (!settings.allow_suspicious_fixed_string_types)
     {
-        auto basic_type = removeLowCardinalityAndNullable(type);
+        auto basic_type = removeLowCardinality(removeNullable(type));
         if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
         {
             if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)

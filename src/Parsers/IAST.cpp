@@ -118,7 +118,9 @@ IAST::Hash IAST::getTreeHash() const
 {
     SipHash hash_state;
     updateTreeHash(hash_state);
-    return getSipHash128AsPair(hash_state);
+    IAST::Hash res;
+    hash_state.get128(res);
+    return res;
 }
 
 
@@ -165,12 +167,14 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
+String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
 {
     WriteBufferFromOwnString buf;
-    FormatSettings settings(buf, one_line);
-    settings.show_secrets = show_secrets;
+
+    FormatSettings settings{buf, one_line};
+    settings.show_secrets = false;
     format(settings);
+
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
 

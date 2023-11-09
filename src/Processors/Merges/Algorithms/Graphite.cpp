@@ -163,8 +163,12 @@ static bool compareRetentions(const Retention & a, const Retention & b)
     {
         return false;
     }
-    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Age and precision should only grow up: {}:{} vs {}:{}",
-                    a.age, a.precision, b.age, b.precision);
+    String error_msg = "age and precision should only grow up: "
+        + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
+        + std::to_string(b.age) + ":" + std::to_string(b.precision);
+    throw Exception::createDeprecated(
+        error_msg,
+        DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 bool operator==(const Retention & a, const Retention & b)

@@ -3,8 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/SettingsChanges.h>
 #include <Common/FieldVisitorToString.h>
-#include <magic_enum.hpp>
-
 
 namespace DB
 {

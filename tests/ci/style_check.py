@@ -12,6 +12,7 @@ from typing import List, Tuple
 
 from clickhouse_helper import (
     ClickHouseHelper,
+    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -140,7 +141,7 @@ def main():
     stopwatch = Stopwatch()
 
     repo_path = Path(GITHUB_WORKSPACE)
-    temp_path = Path(TEMP_PATH)
+    temp_path = Path(TEMP_PATH) / "style_check"
     temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
@@ -181,6 +182,7 @@ def main():
 
     state, description, test_results, additional_files = process_result(temp_path)
     ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, NAME, test_results)
 
     report_url = upload_results(
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME

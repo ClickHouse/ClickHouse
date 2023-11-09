@@ -6,7 +6,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
+
+#include <AggregateFunctions/AggregateFunctionNull.h>
 
 namespace DB
 {

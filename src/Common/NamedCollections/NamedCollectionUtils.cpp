@@ -8,7 +8,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
-#include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -226,15 +225,24 @@ public:
 
     void remove(const std::string & collection_name)
     {
-        auto collection_path = getMetadataPath(collection_name);
-        if (!fs::exists(collection_path))
+        if (!removeIfExists(collection_name))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
                 "Cannot remove collection `{}`, because it doesn't exist",
                 collection_name);
         }
-        fs::remove(collection_path);
+    }
+
+    bool removeIfExists(const std::string & collection_name)
+    {
+        auto collection_path = getMetadataPath(collection_name);
+        if (fs::exists(collection_path))
+        {
+            fs::remove(collection_path);
+            return true;
+        }
+        return false;
     }
 
 private:
@@ -385,64 +393,36 @@ void loadIfNot()
     return loadIfNotUnlocked(lock);
 }
 
-void removeFromSQL(const ASTDropNamedCollectionQuery & query, ContextPtr context)
+void removeFromSQL(const std::string & collection_name, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
     loadIfNotUnlocked(lock);
-    auto & instance = NamedCollectionFactory::instance();
-    if (!instance.exists(query.collection_name))
-    {
-        if (!query.if_exists)
-        {
-            throw Exception(
-                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
-                "Cannot remove collection `{}`, because it doesn't exist",
-                query.collection_name);
-        }
-        return;
-    }
-    LoadFromSQL(context).remove(query.collection_name);
-    instance.remove(query.collection_name);
+    LoadFromSQL(context).remove(collection_name);
+    NamedCollectionFactory::instance().remove(collection_name);
+}
+
+void removeIfExistsFromSQL(const std::string & collection_name, ContextPtr context)
+{
+    auto lock = lockNamedCollectionsTransaction();
+    loadIfNotUnlocked(lock);
+    LoadFromSQL(context).removeIfExists(collection_name);
+    NamedCollectionFactory::instance().removeIfExists(collection_name);
 }
 
 void createFromSQL(const ASTCreateNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
     loadIfNotUnlocked(lock);
-    auto & instance = NamedCollectionFactory::instance();
-    if (instance.exists(query.collection_name))
-    {
-        if (!query.if_not_exists)
-        {
-            throw Exception(
-                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
-                "A named collection `{}` already exists",
-                query.collection_name);
-        }
-        return;
-    }
-    instance.add(query.collection_name, LoadFromSQL(context).create(query));
+    NamedCollectionFactory::instance().add(query.collection_name, LoadFromSQL(context).create(query));
 }
 
 void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
     loadIfNotUnlocked(lock);
-    auto & instance = NamedCollectionFactory::instance();
-    if (!instance.exists(query.collection_name))
-    {
-        if (!query.if_exists)
-        {
-            throw Exception(
-                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
-                "Cannot remove collection `{}`, because it doesn't exist",
-                query.collection_name);
-        }
-        return;
-    }
     LoadFromSQL(context).update(query);
 
-    auto collection = instance.getMutable(query.collection_name);
+    auto collection = NamedCollectionFactory::instance().getMutable(query.collection_name);
     auto collection_lock = collection->lock();
 
     for (const auto & [name, value] : query.changes)

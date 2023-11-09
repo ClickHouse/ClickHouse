@@ -27,7 +27,7 @@ AggregateFunctionPtr createAggregateFunctionBitwise(const std::string & name, co
                         "is illegal, because it cannot be used in bitwise operations",
                         argument_types[0]->getName(), name);
 
-    AggregateFunctionPtr res(createWithIntegerType<AggregateFunctionBitwise, Data>(*argument_types[0], argument_types[0]));
+    AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionBitwise, Data>(*argument_types[0], argument_types[0]));
 
     if (!res)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

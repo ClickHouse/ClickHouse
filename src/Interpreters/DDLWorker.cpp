@@ -31,11 +31,9 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
-#include <memory>
 #include <random>
 #include <pcg_random.hpp>
 #include <Common/scope_guard_safe.h>
-#include <Common/ThreadPool.h>
 
 #include <Interpreters/ZooKeeperLog.h>
 
@@ -123,8 +121,8 @@ void DDLWorker::startup()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
     chassert(prev_stop_flag);
-    main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
-    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
+    main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
+    cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
 
 void DDLWorker::shutdown()
@@ -134,10 +132,8 @@ void DDLWorker::shutdown()
     {
         queue_updated_event->set();
         cleanup_event->set();
-        if (main_thread)
-            main_thread->join();
-        if (cleanup_thread)
-            cleanup_thread->join();
+        main_thread.join();
+        cleanup_thread.join();
         worker_pool.reset();
     }
 }
@@ -167,9 +163,6 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 
 DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
 {
-    if (entries_to_skip.contains(entry_name))
-        return {};
-
     String node_data;
     String entry_path = fs::path(queue_dir) / entry_name;
 
@@ -189,12 +182,6 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         zookeeper->tryCreate(fs::path(entry_path) / "finished" / host_id, status.serializeText(), zkutil::CreateMode::Persistent);
     };
 
-    auto add_to_skip_set = [&]()
-    {
-        entries_to_skip.insert(entry_name);
-        return nullptr;
-    };
-
     try
     {
         /// Stage 1: parse entry
@@ -207,7 +194,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         /// Otherwise, that node will be ignored by DDLQueryStatusSource.
         out_reason = "Incorrect task format";
         write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException(), out_reason);
-        return add_to_skip_set();
+        return {};
     }
 
     /// Stage 2: resolve host_id and check if we should execute query or not
@@ -216,7 +203,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     if (!task->findCurrentHostID(context, log))
     {
         out_reason = "There is no a local address in host list";
-        return add_to_skip_set();
+        return {};
     }
 
     try
@@ -232,13 +219,13 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     {
         out_reason = "Cannot parse query or obtain cluster info";
         write_error_status(task->host_id_str, ExecutionStatus::fromCurrentException(), out_reason);
-        return add_to_skip_set();
+        return {};
     }
 
     if (zookeeper->exists(task->getFinishedNodePath()))
     {
         out_reason = TASK_PROCESSED_OUT_REASON;
-        return add_to_skip_set();
+        return {};
     }
 
     /// Now task is ready for execution
@@ -485,8 +472,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_context->setSetting("implicit_transaction", Field{0});
         }
 
-        query_context->setInitialQueryId(task.entry.initial_query_id);
-
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
         executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
@@ -513,7 +498,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         /// get the same exception again. So we return false only for several special exception codes,
         /// and consider query as executed with status "failed" and return true in other cases.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
-                                 e.code() != ErrorCodes::UNFINISHED &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
                                  e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
@@ -561,7 +545,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     chassert(!task.completely_processed);
 
     /// Setup tracing context on current thread for current DDL
-    OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__,
+    OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__ ,
         task.entry.tracing_context,
         this->context->getOpenTelemetrySpanLog());
     tracing_ctx_holder.root_span.kind = OpenTelemetry::CONSUMER;
@@ -584,7 +568,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         if (create_active_res != Coordination::Error::ZNONODE && create_active_res != Coordination::Error::ZNODEEXISTS)
         {
             chassert(Coordination::isHardwareError(create_active_res));
-            throw Coordination::Exception::fromPath(create_active_res, active_node_path);
+            throw Coordination::Exception(create_active_res, active_node_path);
         }
 
         /// Status dirs were not created in enqueueQuery(...) or someone is removing entry
@@ -794,15 +778,11 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         // Has to get with zk fields to get active replicas field
         replicated_storage->getStatus(status, true);
 
-        // Should return as soon as possible if the table is dropped or detached, so we will release StoragePtr
+        // Should return as soon as possible if the table is dropped.
         bool replica_dropped = storage->is_dropped;
         bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(storage->getStorageID(), context);
         if (replica_dropped || all_replicas_likely_detached)
         {
-            /// We have to exit (and release StoragePtr) if the replica is being restarted,
-            /// but we can retry in this case, so don't write execution status
-            if (storage->is_being_restarted)
-                throw Exception(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is dropped or detached permanently");
             LOG_WARNING(log, ", task {} will not be executed.", task.entry_name);
             task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is dropped or detached permanently");
             return false;
@@ -969,7 +949,6 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
                 continue;
             }
             zkutil::KeeperMultiException::check(rm_entry_res, ops, res);
-            entries_to_skip.remove(node_name);
         }
         catch (...)
         {

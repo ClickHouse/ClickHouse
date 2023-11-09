@@ -3,7 +3,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/Field.h>
 
 
 /// Call this function on crash.
@@ -45,11 +44,6 @@ public:
     {
         crash_log = crash_log_;
     }
-
-    static consteval size_t getDefaultMaxSize() { return 1024; }
-    static consteval size_t getDefaultReservedSize() { return 1024; }
-    static consteval size_t getDefaultFlushIntervalMilliseconds() { return 1000; }
-    static consteval size_t shouldNotifyFlushOnCrash() { return true; }
 };
 
 }

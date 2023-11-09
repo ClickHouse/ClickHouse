@@ -182,11 +182,6 @@ void StorageMaterializedView::read(
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
                                                                         ActionsDAG::MatchColumnsMode::Name);
-            /* Leave columns outside from materialized view structure as is.
-             * They may be added in case of distributed query with JOIN.
-             * In that case underlying table returns joined columns as well.
-             */
-            converting_actions->projectInput(false);
             auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
             converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
             query_plan.addStep(std::move(converting_step));
@@ -197,13 +192,13 @@ void StorageMaterializedView::read(
     }
 }
 
-SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert)
+SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto sink = storage->write(query, metadata_snapshot, local_context, async_insert);
+    auto sink = storage->write(query, metadata_snapshot, local_context);
 
     sink->addTableLock(lock);
     return sink;
@@ -217,29 +212,13 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
 
-    /// Sync flag and the setting make sense for Atomic databases only.
-    /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
-    /// Running synchronous DROP from that task leads to deadlock.
-    /// Usually dropInnerTableIfAny is no-op, because the inner table is dropped before enqueueing a drop task for the MV itself.
-    /// But there's a race condition with SYSTEM RESTART REPLICA: the inner table might be detached due to RESTART.
-    /// In this case, dropInnerTableIfAny will not find the inner table and will not drop it during executions of DROP query for the MV itself.
-    /// DDLGuard does not protect from that, because RESTART REPLICA acquires DDLGuard for the inner table name,
-    /// but DROP acquires DDLGuard for the name of MV. And we cannot acquire second DDLGuard for the inner name in DROP,
-    /// because it may lead to lock-order-inversion (DDLGuards must be acquired in lexicographical order).
-    dropInnerTableIfAny(/* sync */ false, getContext());
+    dropInnerTableIfAny(true, getContext());
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
-    /// We will use `sync` argument wneh this function is called from a DROP query
-    /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
-    /// See the comment in StorageMaterializedView::drop.
-    /// DDL queries with StorageMaterializedView are fundamentally broken.
-    /// Best-effort to make them work: the inner table name is almost always less than the MV name (so it's safe to lock DDLGuard)
-    bool may_lock_ddl_guard = getStorageID().getQualifiedName() < target_table_id.getQualifiedName();
     if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id,
-                                               sync, /* ignore_sync_setting */ true, may_lock_ddl_guard);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -288,6 +267,8 @@ void StorageMaterializedView::alter(
         const auto & old_select = old_metadata.getSelectQuery();
 
         DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+
+        new_metadata.setSelectQuery(new_select);
     }
     /// end modify query
 
@@ -333,11 +314,10 @@ Pipe StorageMaterializedView::alterPartition(
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot,
-    const Settings & settings, ContextPtr local_context) const
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, local_context);
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
@@ -435,13 +415,7 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 {
     /// We backup the target table's data only if it's inner.
     if (hasInnerTable())
-    {
-        if (auto table = tryGetTargetTable())
-            table->backupData(backup_entries_collector, data_path_in_backup, partitions);
-        else
-            LOG_WARNING(&Poco::Logger::get("StorageMaterializedView"),
-                        "Inner table does not exist, will not backup any data");
-    }
+        getTargetTable()->backupData(backup_entries_collector, data_path_in_backup, partitions);
 }
 
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
@@ -485,13 +459,6 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
             return target_table->getActionLock(type);
     }
     return ActionLock{};
-}
-
-bool StorageMaterializedView::isRemote() const
-{
-    if (auto table = tryGetTargetTable())
-        return table->isRemote();
-    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

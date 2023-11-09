@@ -14,6 +14,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 
+#include <Common/ArenaAllocator.h>
+
 namespace DB
 {
 struct Settings;

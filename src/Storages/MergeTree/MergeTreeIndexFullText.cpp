@@ -92,7 +92,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", *pos, block.rows());
+                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -337,22 +337,15 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
         if (node.tryGetConstant(const_value, const_type))
         {
             /// Check constant like in KeyCondition
-
-            if (const_value.getType() == Field::Types::UInt64)
+            if (const_value.getType() == Field::Types::UInt64
+                || const_value.getType() == Field::Types::Int64
+                || const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
-            }
+                /// Zero in all types is represented in memory the same way as in UInt64.
+                out.function = const_value.get<UInt64>()
+                            ? RPNElement::ALWAYS_TRUE
+                            : RPNElement::ALWAYS_FALSE;
 
-            if (const_value.getType() == Field::Types::Int64)
-            {
-                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
-            }
-
-            if (const_value.getType() == Field::Types::Float64)
-            {
-                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -631,11 +624,7 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    auto future_set = right_argument.tryGetPreparedSet(data_types);
-    if (!future_set)
-        return false;
-
-    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
+    auto prepared_set = right_argument.tryGetPreparedSet(data_types);
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
@@ -679,7 +668,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorFullText>(index.column_names, index.name, params, token_extractor.get());
 }

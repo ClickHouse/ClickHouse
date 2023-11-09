@@ -2,10 +2,11 @@
 
 #include <unordered_set>
 
-#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
+#include <AggregateFunctions/AggregateFunctionNull.h>
 
 #include <Columns/ColumnsNumber.h>
 
+#include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
 #include <base/sort.h>
@@ -116,7 +117,7 @@ struct AggregateFunctionIntervalLengthSumData
         readBinary(size, buf);
 
         if (unlikely(size > MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", MAX_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         segments.clear();
         segments.reserve(size);

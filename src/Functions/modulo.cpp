@@ -55,6 +55,9 @@ struct ModuloByConstantImpl
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
         /// Modulo with too small divisor.
         if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
@@ -71,6 +74,8 @@ struct ModuloByConstantImpl
                 dst[i] = static_cast<ResultType>(src[i]);
             return;
         }
+
+#pragma GCC diagnostic pop
 
         if (unlikely(static_cast<A>(b) == 0))
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
@@ -174,15 +179,15 @@ using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloIm
 
 REGISTER_FUNCTION(PositiveModulo)
 {
-    factory.registerFunction<FunctionPositiveModulo>(FunctionDocumentation
+    factory.registerFunction<FunctionPositiveModulo>(
         {
-            .description=R"(
+            R"(
 Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
 Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
 In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
         )",
-            .examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);", ""}},
-            .categories{"Arithmetic"}},
+            Documentation::Examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);"}},
+            Documentation::Categories{"Arithmetic"}},
         FunctionFactory::CaseInsensitive);
 
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::CaseInsensitive);

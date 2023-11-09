@@ -4,11 +4,11 @@ from pathlib import Path
 from typing import Tuple
 import subprocess
 import logging
+import os
 import sys
 import time
 
 from ci_config import CI_CONFIG, BuildConfig
-from ccache_utils import CargoCache
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_JOB_API_URL,
@@ -30,10 +30,8 @@ from version_helper import (
 )
 from clickhouse_helper import (
     ClickHouseHelper,
-    CiLogsCredentials,
     prepare_tests_results_for_clickhouse,
     get_instance_type,
-    get_instance_id,
 )
 from stopwatch import Stopwatch
 
@@ -55,7 +53,6 @@ def get_packager_cmd(
     build_config: BuildConfig,
     packager_path: Path,
     output_path: Path,
-    cargo_cache_dir: Path,
     build_version: str,
     image_version: str,
     official: bool,
@@ -69,7 +66,7 @@ def get_packager_cmd(
     )
 
     if build_config.debug_build:
-        cmd += " --debug-build"
+        cmd += " --build-type=debug"
     if build_config.sanitizer:
         cmd += f" --sanitizer={build_config.sanitizer}"
     if build_config.tidy:
@@ -78,7 +75,6 @@ def get_packager_cmd(
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
-    cmd += f" --cargo-cache-dir={cargo_cache_dir}"
 
     if build_config.additional_pkgs:
         cmd += " --additional-pkgs"
@@ -165,12 +161,7 @@ def check_for_success_run(
         0,
         GITHUB_JOB_API_URL(),
     )
-    result_json_path = build_result.write_json(Path(TEMP_PATH))
-    logging.info(
-        "Build result file %s is written, content:\n %s",
-        result_json_path,
-        result_json_path.read_text(encoding="utf-8"),
-    )
+    build_result.write_json(Path(TEMP_PATH))
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
@@ -269,16 +260,11 @@ def main():
 
     build_output_path = temp_path / build_name
     build_output_path.mkdir(parents=True, exist_ok=True)
-    cargo_cache = CargoCache(
-        temp_path / "cargo_cache" / "registry", temp_path, s3_helper
-    )
-    cargo_cache.download()
 
     packager_cmd = get_packager_cmd(
         build_config,
         repo_path / "docker" / "packager",
         build_output_path,
-        cargo_cache.directory,
         version.string,
         image_version,
         official_flag,
@@ -298,9 +284,8 @@ def main():
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
     logging.info("Build finished as %s, log path %s", build_status, log_path)
-    if build_status == SUCCESS:
-        cargo_cache.upload()
-    else:
+
+    if build_status != SUCCESS:
         # We check if docker works, because if it's down, it's infrastructure
         try:
             subprocess.check_call("docker info", shell=True)
@@ -367,10 +352,9 @@ def main():
     # Upload profile data
     ch_helper = ClickHouseHelper()
 
-    ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
-    if ci_logs_credentials.host:
+    clickhouse_ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "")
+    if clickhouse_ci_logs_host:
         instance_type = get_instance_type()
-        instance_id = get_instance_id()
         query = f"""INSERT INTO build_time_trace
 (
     pull_request_number,
@@ -378,7 +362,6 @@ def main():
     check_start_time,
     check_name,
     instance_type,
-    instance_id,
     file,
     library,
     time,
@@ -394,7 +377,7 @@ def main():
     avgMs,
     args_name
 )
-SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', *
+SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', *
 FROM input('
     file String,
     library String,
@@ -414,9 +397,9 @@ FORMAT JSONCompactEachRow"""
 
         auth = {
             "X-ClickHouse-User": "ci",
-            "X-ClickHouse-Key": ci_logs_credentials.password,
+            "X-ClickHouse-Key": os.getenv("CLICKHOUSE_CI_LOGS_PASSWORD", ""),
         }
-        url = f"https://{ci_logs_credentials.host}/"
+        url = f"https://{clickhouse_ci_logs_host}/"
         profiles_dir = temp_path / "profiles_source"
         profiles_dir.mkdir(parents=True, exist_ok=True)
         logging.info("Processing profile JSON files from {GIT_REPO_ROOT}/build_docker")

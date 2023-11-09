@@ -79,12 +79,11 @@ public:
             {
                 length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
                 if (length_to_resize > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                    "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
             }
         }
 
-        if (!isUInt(arguments[1]))
+        if (!isUnsignedInteger(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of aggregate function {} must be unsigned integer.", getName());
 
         if (default_value.isNull())
@@ -168,8 +167,7 @@ public:
         readVarUInt(size, buf);
 
         if (size > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         Array & arr = data(place).value;
 

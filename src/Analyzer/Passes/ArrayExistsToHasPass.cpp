@@ -22,7 +22,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteArrayExistsToHasVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_rewrite_array_exists_to_has)
             return;

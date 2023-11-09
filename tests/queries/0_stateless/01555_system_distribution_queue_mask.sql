@@ -1,3 +1,4 @@
+-- Tags: no-upgrade-check
 
 -- force data path with the user/pass in it
 set use_compact_format_in_distributed_parts_names=0;

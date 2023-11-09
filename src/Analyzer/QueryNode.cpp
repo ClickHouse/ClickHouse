@@ -2,7 +2,6 @@
 
 #include <fmt/core.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -202,16 +201,15 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
+        cte_name == rhs_typed.cte_name &&
+        projection_columns == rhs_typed.projection_columns &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
         is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
-        is_group_by_all == rhs_typed.is_group_by_all &&
-        cte_name == rhs_typed.cte_name &&
-        projection_columns == rhs_typed.projection_columns &&
-        settings_changes == rhs_typed.settings_changes;
+        is_group_by_all == rhs_typed.is_group_by_all;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -240,18 +238,6 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
-
-    state.update(settings_changes.size());
-
-    for (const auto & setting_change : settings_changes)
-    {
-        state.update(setting_change.name.size());
-        state.update(setting_change.name);
-
-        auto setting_change_value_dump = setting_change.value.dump();
-        state.update(setting_change_value_dump.size());
-        state.update(setting_change_value_dump);
-    }
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
@@ -269,7 +255,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
-    result_query_node->settings_changes = settings_changes;
 
     return result_query_node;
 }

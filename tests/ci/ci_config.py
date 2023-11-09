@@ -11,7 +11,7 @@ from typing import Callable, Dict, List, Literal, Union
 class BuildConfig:
     name: str
     compiler: str
-    package_type: Literal["deb", "binary", "fuzzers"]
+    package_type: Literal["deb", "binary"]
     additional_pkgs: bool = False
     debug_build: bool = False
     sanitizer: str = ""
@@ -101,57 +101,56 @@ CI_CONFIG = CiConfig(
     build_config={
         "package_release": BuildConfig(
             name="package_release",
-            compiler="clang-17",
+            compiler="clang-15",
             package_type="deb",
             static_binary_name="amd64",
             additional_pkgs=True,
         ),
         "package_aarch64": BuildConfig(
             name="package_aarch64",
-            compiler="clang-17-aarch64",
+            compiler="clang-15-aarch64",
             package_type="deb",
             static_binary_name="aarch64",
             additional_pkgs=True,
         ),
         "package_asan": BuildConfig(
             name="package_asan",
-            compiler="clang-17",
+            compiler="clang-15",
             sanitizer="address",
             package_type="deb",
         ),
         "package_ubsan": BuildConfig(
             name="package_ubsan",
-            compiler="clang-17",
+            compiler="clang-15",
             sanitizer="undefined",
             package_type="deb",
         ),
         "package_tsan": BuildConfig(
             name="package_tsan",
-            compiler="clang-17",
+            compiler="clang-15",
             sanitizer="thread",
             package_type="deb",
         ),
         "package_msan": BuildConfig(
             name="package_msan",
-            compiler="clang-17",
+            compiler="clang-15",
             sanitizer="memory",
             package_type="deb",
         ),
         "package_debug": BuildConfig(
             name="package_debug",
-            compiler="clang-17",
+            compiler="clang-15",
             debug_build=True,
             package_type="deb",
-            sparse_checkout=True,
         ),
         "binary_release": BuildConfig(
             name="binary_release",
-            compiler="clang-17",
+            compiler="clang-15",
             package_type="binary",
         ),
         "binary_tidy": BuildConfig(
             name="binary_tidy",
-            compiler="clang-17",
+            compiler="clang-15",
             debug_build=True,
             package_type="binary",
             static_binary_name="debug-amd64",
@@ -160,64 +159,46 @@ CI_CONFIG = CiConfig(
         ),
         "binary_darwin": BuildConfig(
             name="binary_darwin",
-            compiler="clang-17-darwin",
+            compiler="clang-15-darwin",
             package_type="binary",
             static_binary_name="macos",
-            sparse_checkout=True,
         ),
         "binary_aarch64": BuildConfig(
             name="binary_aarch64",
-            compiler="clang-17-aarch64",
+            compiler="clang-15-aarch64",
             package_type="binary",
         ),
         "binary_aarch64_v80compat": BuildConfig(
             name="binary_aarch64_v80compat",
-            compiler="clang-17-aarch64-v80compat",
+            compiler="clang-15-aarch64-v80compat",
             package_type="binary",
             static_binary_name="aarch64v80compat",
             comment="For ARMv8.1 and older",
         ),
         "binary_freebsd": BuildConfig(
             name="binary_freebsd",
-            compiler="clang-17-freebsd",
+            compiler="clang-15-freebsd",
             package_type="binary",
             static_binary_name="freebsd",
         ),
         "binary_darwin_aarch64": BuildConfig(
             name="binary_darwin_aarch64",
-            compiler="clang-17-darwin-aarch64",
+            compiler="clang-15-darwin-aarch64",
             package_type="binary",
             static_binary_name="macos-aarch64",
         ),
         "binary_ppc64le": BuildConfig(
             name="binary_ppc64le",
-            compiler="clang-17-ppc64le",
+            compiler="clang-15-ppc64le",
             package_type="binary",
             static_binary_name="powerpc64le",
         ),
         "binary_amd64_compat": BuildConfig(
             name="binary_amd64_compat",
-            compiler="clang-17-amd64-compat",
+            compiler="clang-15-amd64-compat",
             package_type="binary",
             static_binary_name="amd64compat",
             comment="SSE2-only build",
-        ),
-        "binary_riscv64": BuildConfig(
-            name="binary_riscv64",
-            compiler="clang-17-riscv64",
-            package_type="binary",
-            static_binary_name="riscv64",
-        ),
-        "binary_s390x": BuildConfig(
-            name="binary_s390x",
-            compiler="clang-17-s390x",
-            package_type="binary",
-            static_binary_name="s390x",
-        ),
-        "fuzzers": BuildConfig(
-            name="fuzzers",
-            compiler="clang-16",
-            package_type="fuzzers",
         ),
     },
     builds_report_config={
@@ -230,7 +211,6 @@ CI_CONFIG = CiConfig(
             "package_msan",
             "package_debug",
             "binary_release",
-            "fuzzers",
         ],
         "ClickHouse special build check": [
             "binary_tidy",
@@ -240,8 +220,6 @@ CI_CONFIG = CiConfig(
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
-            "binary_riscv64",
-            "binary_s390x",
             "binary_amd64_compat",
         ],
     },
@@ -314,8 +292,6 @@ CI_CONFIG = CiConfig(
         "SQLancer (release)": TestConfig("package_release"),
         "SQLancer (debug)": TestConfig("package_debug"),
         "Sqllogic test (release)": TestConfig("package_release"),
-        "SQLTest": TestConfig("package_release"),
-        "libFuzzer tests": TestConfig("fuzzers"),
     },
 )
 CI_CONFIG.validate()
@@ -323,16 +299,15 @@ CI_CONFIG.validate()
 
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
+    "Fast test",
+    "Style Check",
     "ClickHouse build check",
     "ClickHouse special build check",
-    "Docs Check",
-    "Fast test",
     "Stateful tests (release)",
     "Stateless tests (release)",
-    "Style Check",
+    "Unit tests (release-clang)",
     "Unit tests (asan)",
     "Unit tests (msan)",
-    "Unit tests (release)",
     "Unit tests (tsan)",
     "Unit tests (ubsan)",
 ]

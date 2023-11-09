@@ -4,7 +4,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -95,7 +94,7 @@ public:
         size_t size = set.size();
         writeVarUInt(size, buf);
         for (const auto & elem : set)
-            writeBinaryLittleEndian(elem.key, buf);
+            writeIntBinary(elem, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override

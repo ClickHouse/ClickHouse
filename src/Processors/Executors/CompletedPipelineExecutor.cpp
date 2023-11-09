@@ -5,8 +5,8 @@
 #include <Poco/Event.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <iostream>
 #include <Common/scope_guard_safe.h>
-#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -32,8 +32,7 @@ struct CompletedPipelineExecutor::Data
     }
 };
 
-static void threadFunction(
-    CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
+static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -46,7 +45,7 @@ static void threadFunction(
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads, concurrency_control);
+        data.executor->execute(num_threads);
     }
     catch (...)
     {
@@ -80,13 +79,9 @@ void CompletedPipelineExecutor::execute()
 
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
-        auto func = [
-            data_ptr = data.get(),
-            num_threads = pipeline.getNumThreads(),
-            thread_group = CurrentThread::getGroup(),
-            concurrency_control = pipeline.getConcurrencyControl()]
+        auto func = [data_ptr = data.get(), num_threads = pipeline.getNumThreads(), thread_group = CurrentThread::getGroup()]
         {
-            threadFunction(*data_ptr, thread_group, num_threads, concurrency_control);
+            threadFunction(*data_ptr, thread_group, num_threads);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
@@ -107,7 +102,7 @@ void CompletedPipelineExecutor::execute()
     {
         PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        executor.execute(pipeline.getNumThreads());
     }
 }
 
@@ -120,7 +115,7 @@ CompletedPipelineExecutor::~CompletedPipelineExecutor()
     }
     catch (...)
     {
-        tryLogCurrentException("CompletedPipelineExecutor");
+        tryLogCurrentException("PullingAsyncPipelineExecutor");
     }
 }
 

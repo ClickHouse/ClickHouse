@@ -1,16 +1,8 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
-#include <filesystem>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
 #include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#include <filesystem>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
@@ -46,8 +38,8 @@ HDFSFileInfo::~HDFSFileInfo()
 }
 
 
-void HDFSBuilderWrapper::loadFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const String & prefix, [[maybe_unused]] bool isUser)
+void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
+    const String & prefix, bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
@@ -153,7 +145,10 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         hdfsBuilderSetNameNodePort(builder.get(), port);
     }
 
-    builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
+    if (config.has(std::string(CONFIG_PREFIX)))
+    {
+        builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
+    }
 
     if (!user.empty())
     {

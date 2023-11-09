@@ -1,4 +1,3 @@
-#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>

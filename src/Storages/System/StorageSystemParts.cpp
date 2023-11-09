@@ -34,8 +34,6 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Part hasn't reached removal time yet";
     case DB::DataPartRemovalState::HAS_SKIPPED_MUTATION_PARENT:
         return "Waiting mutation parent to be removed";
-    case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
-        return "Waiting for covered parts to be removed first";
     case DB::DataPartRemovalState::REMOVED:
         return "Part was selected to be removed";
     }
@@ -59,7 +57,6 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>()},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>()},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>()},
-        {"primary_key_size",                            std::make_shared<DataTypeUInt64>()},
         {"marks_bytes",                                 std::make_shared<DataTypeUInt64>()},
         {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>()},
         {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>()},
@@ -122,7 +119,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 
         {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
 
-        {"last_removal_attempt_time",                    std::make_shared<DataTypeDateTime>()},
+        {"last_removal_attemp_time",                    std::make_shared<DataTypeDateTime>()},
         {"removal_state",                               std::make_shared<DataTypeString>()},
     }
     )
@@ -171,8 +168,6 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(columns_size.data_compressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(columns_size.data_uncompressed);
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getIndexSizeFromFile());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(columns_size.marks);
         if (columns_mask[src_index++])
@@ -257,17 +252,17 @@ void StorageSystemParts::processNextStorage(
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_all_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_uncompressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.uncompressed_hash_of_compressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
         }
 
@@ -348,7 +343,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->hasLightweightDelete());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(static_cast<UInt64>(part->last_removal_attempt_time.load(std::memory_order_relaxed)));
+            columns[res_index++]->insert(static_cast<UInt64>(part->last_removal_attemp_time.load(std::memory_order_relaxed)));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(getRemovalStateDescription(part->removal_state.load(std::memory_order_relaxed)));
 

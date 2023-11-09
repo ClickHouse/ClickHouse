@@ -51,7 +51,13 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<AggregateFunctionsArithmericOperationsVisitor>;
     using Base::Base;
 
-    void leaveImpl(QueryTreeNodePtr & node)
+    /// Traverse tree bottom to top
+    static bool shouldTraverseTopToBottom()
+    {
+        return false;
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
             return;
