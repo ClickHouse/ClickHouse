@@ -123,11 +123,7 @@ public:
 
         // In case all FFT values are zero, it means the input signal is flat.
         // It implies the period of the series should be 0.
-<<<<<<< HEAD
-        if(max_mag == 0)
-=======
         if (max_mag == 0)
->>>>>>> a8045235719 (fix header file issue and added edge case handling)
         {
             period = 0;
             return true;
