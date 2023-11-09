@@ -1,11 +1,9 @@
 #!/bin/sh
-
 set -e
 
-WORKDIR=$(dirname "$0")
-WORKDIR=$(readlink -f "${WORKDIR}")
+GITDIR=$(git rev-parse --show-toplevel)
 
-"$WORKDIR/sparse-checkout/setup-sparse-checkout.sh"
+$GITDIR/contrib/sparse-checkout/setup-sparse-checkout.sh
 git submodule init
 git submodule sync
-git submodule update --depth=1 --jobs 16
+git config --file $GITDIR/.gitmodules --get-regexp .*path | sed 's/[^ ]* //' | xargs -I _ --max-procs 64 git submodule update --depth=1 --single-branch _
