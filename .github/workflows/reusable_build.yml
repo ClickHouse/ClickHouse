@@ -37,7 +37,6 @@ jobs:
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          IMAGES_PATH=${{runner.temp}}/images_path
           GITHUB_JOB_OVERRIDDEN=Build-${{inputs.build_name}}
           ${{inputs.additional_envs}}
           EOF

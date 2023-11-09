@@ -37,7 +37,6 @@ jobs:
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          REPORTS_PATH=${{runner.temp}}/reports_dir
           GITHUB_JOB_OVERRIDDEN=${{inputs.test_name}}
           CHECK_NAME=${{inputs.test_name}}
           ${{inputs.additional_envs}}
