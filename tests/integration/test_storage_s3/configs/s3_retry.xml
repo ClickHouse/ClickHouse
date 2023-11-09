@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_inflight_parts_for_one_file>5</s3_max_inflight_parts_for_one_file>
         </default>
     </profiles>
 </clickhouse>
