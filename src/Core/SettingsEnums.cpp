@@ -70,8 +70,8 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
 
 
 IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",   QueryCacheNondeterministicFunctionHandling::Throw},
-     {"save",  QueryCacheNondeterministicFunctionHandling::Save},
+    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
      {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
 
 
