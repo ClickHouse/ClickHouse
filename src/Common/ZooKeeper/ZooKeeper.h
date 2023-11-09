@@ -228,6 +228,7 @@ public:
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     std::vector<ShuffleHost> shuffleHosts();
+    std::vector<ShuffleHost> shuffleHostsByAvailabilityZone();
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.

@@ -30,7 +30,7 @@ enum class LoadBalancing
     ROUND_ROBIN,
     // Prefer the keeper that runs within the same availability zone of ClickHouse server.
     // This is only supported for ClickHouse keeper.
-    // LOCAL_AVAILABILITY_ZONE,
+    KEEPER_LOCAL_AVAILABILITY_ZONE,
 };
 
 DECLARE_SETTING_ENUM(LoadBalancing)

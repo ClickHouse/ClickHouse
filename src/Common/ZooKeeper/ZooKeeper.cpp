@@ -61,8 +61,6 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
-// TODO: here.
-// probably not needed for optional, handle exception anyway...
 std::string getAvailablityZoneByHost(Poco::Logger* logger, const std::string& host,
     const zkutil::ZooKeeperArgs & args, std::shared_ptr<Coordination::ZooKeeperLog> zk_log)
 {
@@ -72,24 +70,27 @@ std::string getAvailablityZoneByHost(Poco::Logger* logger, const std::string& ho
     auto it = host_az_map.find(host);
     if (it != host_az_map.end())
     {
-        LOG_INFO(logger, "Jianfei debug, checking from cache {}, az {}", host, it->second);
+        LOG_DEBUG(logger, "Checking Keeper host availability zone {} from cache: az {}", host, it->second);
         return it->second;
     }
 
     Coordination::ZooKeeper::Node node;
-    node.address = Poco::Net::SocketAddress(host);
-    // TODO: change this.
-    node.secure = false;
-    // avoid intereference for disconnection.
+    String host_string = host;
+    // TODO: push this to the ZooKeeperImpl constructor to handle it instead of duplicating with the rest.
+    node.secure = startsWith(host_string, "secure://");
+    if (node.secure)
+        host_string.erase(0, strlen("secure://"));
+    node.address = Poco::Net::SocketAddress(host_string);
+    // We only connect with one keeper host to get availability information, so set optimal_for_load_balancing to true.
     node.optimal_for_load_balancing = true;
-    Coordination::ZooKeeper::Nodes nodes{node};
-    auto impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+
+    auto impl = std::make_unique<Coordination::ZooKeeper>(Coordination::ZooKeeper::Nodes{node}, args, zk_log);
+
     auto az = impl->getAvailabilityZone();
     host_az_map[host] = az;
     return az;
 }
 
-/// NOTE: boils down to change the init method here.
 void ZooKeeper::init(ZooKeeperArgs args_)
 
 {
@@ -105,7 +106,17 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         nodes.reserve(args.hosts.size());
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::vector<ShuffleHost> shuffled_hosts = shuffleHosts();
+
+        /// TODO: one more optimization to consider, why bother to get all? just
+        /// 1. randomize the order (to avoid multiple keeper within one AZ case);
+        /// 2. connect one keeper at at a time, check the AZ, if it's the same done.
+        /// 3. Do this in a wrapper function though. Still not ZooKeeperImpl.
+        /// Yeah, we should do that.
+        std::vector<ShuffleHost> shuffled_hosts;
+        if (args.get_priority_load_balancing.load_balancing == DB::LoadBalancing::KEEPER_LOCAL_AVAILABILITY_ZONE)
+            shuffled_hosts = shuffleHostsByAvailabilityZone();
+        else
+            shuffled_hosts = shuffleHosts();
 
         // Ignore this for now.
         bool dns_error = false;
@@ -200,73 +211,53 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
     init(ZooKeeperArgs(config, config_name));
 }
 
-std::vector<ShuffleHost> ZooKeeper::shuffleHosts() 
+std::vector<ShuffleHost> ZooKeeper::shuffleHostsByAvailabilityZone() 
 {
-    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
-
     const String local_az = args.availability_zone;
-
-    // std::map<std::string, std::string> host_az_map;
-
-    // Alternatively implement this via get_priority_load_balancing.getPriorityFunc.
-    // Need to populate the az information there. Maybe a good idea, init the az map only once.
-
-    // get_priority = [host_az_map, local_az, this](size_t i)->Priority     {
-    //     auto it = host_az_map.find(args.hosts[i]);
-    //     if (it != host_az_map.end() && it->second == local_az)
-    //         return Priority{0};
-    //     else
-    //         return Priority{1};
-    // };
-
-    /// TODO: all these need to be guarded under config option.
-    /// Maybe not adding new enum, still use Random, but an implementation details.
-    /// The rest of hostname_levenshtein_distance take effect in the server.
-    /// alternatively make the name clear it's only for server & keeper load balancing options.
-    // if (args.get_priority_load_balancing.load_balancing == DB::LoadBalancing::LOCAL_AVAILABILITY_ZONE)
-
-
     for (size_t i = 0; i < args.hosts.size(); i++)
     {
-        std::string az;
-        try
-        {
-            az = getAvailablityZoneByHost(log, args.hosts[i], args, zk_log);
-        }
-        catch(...)
-        {
-            LOG_ERROR(log, "Failed to connecting to the node {} to get availability zone, assuming it's unknown", args.hosts[i]);
-        }
-        // It feels almost better if we make the a method `Node ShuffleHost::keeperNode()`.
-        // DO it later.
+        // TODO: consider to add a method for ShuffleHost::KeeperNode() instead of converting node and host back and forth in-place.
         ShuffleHost shuffle_host;   
         shuffle_host.host = args.hosts[i];
         shuffle_host.original_index = static_cast<UInt8>(i);
         shuffle_host.priority = Priority{1};
         shuffle_host.optimal_for_load_balancing = false;
-        if (az == local_az)
+        std::string az;
+        try
         {
-            shuffle_host.optimal_for_load_balancing = true;
-            shuffle_host.priority = Priority{0};
+            if (local_az == getAvailablityZoneByHost(log, args.hosts[i], args, zk_log))
+            {
+                shuffle_host.optimal_for_load_balancing = true;
+                shuffle_host.priority = Priority{0};
+            }
         }
-        // Does not matter for us.
+        catch(...)
+        {
+            LOG_ERROR(log, "Failed to connecting to the node {} to get availability zone, assuming it's unknown", args.hosts[i]);
+        }
+        shuffle_hosts.emplace_back(shuffle_host);
+    }
+    ::sort(shuffle_hosts.begin(), shuffle_hosts.end(), ShuffleHost::compare);
+    return shuffle_hosts;
+}
+
+std::vector<ShuffleHost> ZooKeeper::shuffleHosts() 
+{
+    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
+    std::vector<ShuffleHost> shuffle_hosts;
+    for (size_t i = 0; i < args.hosts.size(); ++i)
+    {
+        ShuffleHost shuffle_host;
+        shuffle_host.host = args.hosts[i];
+        shuffle_host.original_index = static_cast<UInt8>(i);
+        if (get_priority)
+            shuffle_host.priority = get_priority(i);
         shuffle_host.randomize();
         shuffle_hosts.emplace_back(shuffle_host);
     }
 
-    // Enable this code for other flag.
-    //  and get_priority = null in az case.
-    // for (auto & shuffle_host : shuffle_hosts)
-    // {
-    //     if (get_priority)
-    //         shuffle_host.priority = get_priority(shuffle_host.original_index);
-    // }
     ::sort(shuffle_hosts.begin(), shuffle_hosts.end(), ShuffleHost::compare);
-
-    // First hosts is the optimal one in other load balancing methods.
-    // NOTE TODO: enable this under other lb config.
-    // shuffle_hosts[0].optimal_for_load_balancing = true;
 
     return shuffle_hosts;
 }
