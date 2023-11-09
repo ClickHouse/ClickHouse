@@ -4,7 +4,7 @@ sidebar_position: 172
 sidebar_label: Time Series
 ---
 
-#Time Series Functions
+# Time Series Functions
 
 Below functions are used for time series analysis.
 
