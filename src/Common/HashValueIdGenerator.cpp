@@ -99,7 +99,7 @@ std::unique_ptr<IHashValueIdGenerator> HashValueIdGeneratorFactory::getGenerator
 #define APPLY_ON_NUMBER_COLUMN(type, nested_col, col, is_basic_number) \
     else if (const auto * col##type = typeid_cast<const Column##type *>(nested_col)) \
     { \
-        return std::make_unique<NumericHashValueIdGenerator<type, Column##type, is_basic_number>>(col, state_, max_distinct_values_); \
+        return std::make_unique<NumericHashValueIdGenerator<type, Column##type, (is_basic_number)>>(col, state_, max_distinct_values_); \
     }
 
     WhichDataType which_type(nested_col->getDataType());
