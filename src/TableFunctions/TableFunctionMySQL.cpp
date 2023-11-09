@@ -92,7 +92,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
     const ASTPtr & /*ast_function*/,
     ContextPtr context,
     const std::string & table_name,
-    ColumnsDescription /*cached_columns*/,
+    ColumnsDescription cached_columns,
     bool /*is_insert_query*/) const
 {
     auto res = std::make_shared<StorageMySQL>(
@@ -102,7 +102,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         configuration->table,
         configuration->replace_query,
         configuration->on_duplicate_clause,
-        ColumnsDescription{},
+        cached_columns,
         ConstraintsDescription{},
         String{},
         context,
