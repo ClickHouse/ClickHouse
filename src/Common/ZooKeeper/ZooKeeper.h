@@ -2,6 +2,7 @@
 
 #include "Types.h"
 #include <Poco/Util/LayeredConfiguration.h>
+#include <optional>
 #include <unordered_set>
 #include <future>
 #include <memory>
@@ -579,6 +580,14 @@ public:
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
 private:
+    // getAvailabilityByHost returns the AZ for a given keeper's host. We assume the host does not change its availability zone,
+    // so this function will only send /keeper/availability_zone request once and use cached response for later invocation.
+    // NOTE: delete before merge.
+    // Reason to make this static is because we create a new `ZooKeeper` everytime we call `startSession` in case of caller detect disconnected.
+    // TODO: look into better refactor to avoid later two args.
+    static std::string getAvailabilityByHost(const std::string & host,
+        const zkutil::ZooKeeperArgs & args, std::shared_ptr<Coordination::ZooKeeperLog> zk_log);
+
     void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.

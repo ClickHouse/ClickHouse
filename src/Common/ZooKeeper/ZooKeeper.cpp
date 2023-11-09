@@ -9,9 +9,12 @@
 #include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <ranges>
+#include <variant>
 #include <vector>
 
+#include "Common/Priority.h"
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
@@ -58,6 +61,33 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
+// TODO: here.
+// probably not needed for optional, handle exception anyway...
+std::string getAvailablityZoneByHost(Poco::Logger* logger, const std::string& host,
+    const zkutil::ZooKeeperArgs & args, std::shared_ptr<Coordination::ZooKeeperLog> zk_log)
+{
+    static std::map<std::string, std::string> host_az_map;
+    static std::mutex mutex;
+    std::lock_guard lock(mutex);
+    auto it = host_az_map.find(host);
+    if (it != host_az_map.end())
+    {
+        LOG_INFO(logger, "Jianfei debug, checking from cache {}, az {}", host, it->second);
+        return it->second;
+    }
+
+    Coordination::ZooKeeper::Node node;
+    node.address = Poco::Net::SocketAddress(host);
+    // TODO: change this.
+    node.secure = false;
+    // avoid intereference for disconnection.
+    node.optimal_for_load_balancing = true;
+    Coordination::ZooKeeper::Nodes nodes{node};
+    auto impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+    auto az = impl->getAvailabilityZone();
+    host_az_map[host] = az;
+    return az;
+}
 
 /// NOTE: boils down to change the init method here.
 void ZooKeeper::init(ZooKeeperArgs args_)
@@ -199,35 +229,10 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts()
 
     for (size_t i = 0; i < args.hosts.size(); i++)
     {
-        // TODO: remove this duplicate of "secure://" prefix as above.
-        std::string host_string = args.hosts[i];
-        const bool secure = startsWith(host_string, "secure://");
-        if (secure)
-            host_string.erase(0, strlen("secure://"));
-
-        Coordination::ZooKeeper::Nodes nodes;
-        Coordination::ZooKeeper::Node node;
-        node.address = Poco::Net::SocketAddress(host_string);
-        node.original_index = i;
-        node.secure = secure;
-        // avoid intereference for disconnection.
-        node.optimal_for_load_balancing = true;
-        nodes.emplace_back(node);
-        bool optimal = false;
+        std::string az;
         try
         {
-            impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
-            auto az = impl->getAvailabilityZone();
-            if (!az.empty())
-            {
-                // NOTE: must address.
-                // Another optimization: we should not retry the same host if the az is already known.
-                // Or somehow during session expire/connection retry, server shouldn't have to rebuild this information.
-                // As this is costly.
-                host_az_map[args.hosts[i]] = az;
-                if (az == local_az)
-                    optimal = true;
-            }
+            az = getAvailablityZoneByHost(log, args.hosts[i], args, zk_log);
         }
         catch(...)
         {
@@ -238,11 +243,13 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts()
         ShuffleHost shuffle_host;   
         shuffle_host.host = args.hosts[i];
         shuffle_host.original_index = static_cast<UInt8>(i);
-        shuffle_host.optimal_for_load_balancing = optimal;
-        if (optimal)
+        shuffle_host.priority = Priority{1};
+        shuffle_host.optimal_for_load_balancing = false;
+        if (az == local_az)
+        {
+            shuffle_host.optimal_for_load_balancing = true;
             shuffle_host.priority = Priority{0};
-        else
-            shuffle_host.priority = Priority{1};
+        }
         // Does not matter for us.
         shuffle_host.randomize();
         shuffle_hosts.emplace_back(shuffle_host);
