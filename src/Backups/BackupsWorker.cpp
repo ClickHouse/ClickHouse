@@ -552,7 +552,7 @@ void BackupsWorker::doBackup(
             {
                 BackupEntriesCollector backup_entries_collector(
                     backup_query->elements, backup_settings, backup_coordination,
-                    backup_create_params.read_settings, context, *backups_thread_pool);
+                    backup_create_params.read_settings, context, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST));
                 backup_entries = backup_entries_collector.run();
             }
 
