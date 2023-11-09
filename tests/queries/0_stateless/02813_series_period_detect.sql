@@ -2,6 +2,7 @@ SELECT seriesPeriodDetectFFT([139, 87, 110, 68, 54, 50, 51, 53, 133, 86, 141, 97
 SELECT seriesPeriodDetectFFT([10,20,30,10,20,30,10,20,30, 10,20,30,10,20,30,10,20,30,10,20,30]);
 SELECT seriesPeriodDetectFFT([10.1, 20.45, 40.34, 10.1, 20.45, 40.34,10.1, 20.45, 40.34,10.1, 20.45, 40.34,10.1, 20.45, 40.34,10.1, 20.45, 40.34,10.1, 20.45, 40.34, 10.1, 20.45, 40.34]);
 SELECT seriesPeriodDetectFFT([10.1, 10, 400, 10.1, 10, 400, 10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400]);
+SELECT seriesPeriodDetectFFT([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
 SELECT seriesPeriodDetectFFT([1,2,3]);  -- { serverError BAD_ARGUMENTS}
 SELECT seriesPeriodDetectFFT(); --{ serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 SELECT seriesPeriodDetectFFT([]); -- { serverError ILLEGAL_COLUMN}

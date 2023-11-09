@@ -5,7 +5,7 @@
 #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 #endif
 
-#include "pocketfft_hdronly.h"
+#include <pocketfft_hdronly.h>
 
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -107,23 +107,31 @@ public:
 
         pocketfft::r2c(shape, stride_src, stride_out, axes, pocketfft::FORWARD, src.data(), out.data(), static_cast<double>(1));
 
-        size_t specLen = (len - 1) / 2; //removing the nyquist element when len is even
+        size_t spec_len = (len - 1) / 2; //removing the nyquist element when len is even
 
-        double maxMag = 0;
+        double max_mag = 0;
         size_t idx = 1;
-        for (size_t i = 1; i < specLen; ++i)
+        for (size_t i = 1; i < spec_len; ++i)
         {
             double magnitude = sqrt(out[i].real() * out[i].real() + out[i].imag() * out[i].imag());
-            if (magnitude > maxMag)
+            if (magnitude > max_mag)
             {
-                maxMag = magnitude;
+                max_mag = magnitude;
                 idx = i;
             }
         }
 
-        std::vector<double> xfreq(specLen);
-        double step = 0.5 / (specLen - 1);
-        for (size_t i = 0; i < specLen; ++i)
+        // In case all FFT values are zero, it means the input signal is flat.
+        // It implies the period of the series should be 0.
+        if(max_mag == 0)
+        {
+            period = 0;
+            return true;
+        }
+
+        std::vector<double> xfreq(spec_len);
+        double step = 0.5 / (spec_len - 1);
+        for (size_t i = 0; i < spec_len; ++i)
             xfreq[i] = i * step;
 
         auto freq = xfreq[idx];
