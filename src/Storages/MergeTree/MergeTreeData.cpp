@@ -5167,10 +5167,10 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
 
-class MergeTreeData::RestoredPartsHolder
+class MergeTreeData::BackupRestoredPartsHolder
 {
 public:
-    RestoredPartsHolder(const std::shared_ptr<MergeTreeData> & storage_, const BackupPtr & backup_)
+    BackupRestoredPartsHolder(const std::shared_ptr<MergeTreeData> & storage_, const BackupPtr & backup_)
         : storage(storage_), backup(backup_)
     {
     }
@@ -5219,7 +5219,7 @@ private:
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
 
-        storage->attachRestoredParts(std::move(parts));
+        storage->attachRestoredPartsFromBackup(std::move(parts));
         parts.clear();
         temp_dirs.clear();
         num_parts = 0;
@@ -5246,7 +5246,8 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
-    auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup);
+    auto restored_parts_holder
+        = std::make_shared<BackupRestoredPartsHolder>(std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     size_t num_parts = 0;
@@ -5278,7 +5279,11 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     restored_parts_holder->setNumParts(num_parts);
 }
 
-void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const
+void MergeTreeData::restorePartFromBackup(
+    std::shared_ptr<BackupRestoredPartsHolder> restored_parts_holder,
+    const MergeTreePartInfo & part_info,
+    const String & part_path_in_backup,
+    bool detach_if_broken) const
 {
     String part_name = part_info.getPartNameAndCheckFormat(format_version);
     auto backup = restored_parts_holder->getBackup();

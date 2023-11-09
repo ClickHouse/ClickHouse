@@ -268,7 +268,7 @@ private:
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    void attachRestoredPartsFromBackup(MutableDataPartsVector && parts) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

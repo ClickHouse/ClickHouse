@@ -6297,7 +6297,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     {
         const String old_name = loaded_parts[i]->name;
 
-        output.writeExistingPart(loaded_parts[i]);
+        output.writeExistingPart(loaded_parts[i], /* from_backup */ false);
 
         renamed_parts.old_and_new_names[i].old_name.clear();
 
@@ -10071,24 +10071,12 @@ void StorageReplicatedMergeTree::backupData(
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     const auto & read_settings = backup_entries_collector.getReadSettings();
     auto local_context = backup_entries_collector.getContext();
-    auto zookeeper_retries_info = backup_entries_collector.getZooKeeperRetriesInfo();
-    WithRetries::KeeperSettings zookeeper_settings
-    {
-        .keeper_max_retries = local_context->getSettingsRef().backup_restore_keeper_max_retries,
-        .keeper_retry_initial_backoff_ms = local_context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-        .keeper_retry_max_backoff_ms = local_context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
-        .batch_size_for_keeper_multiread = local_context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
-        .keeper_fault_injection_probability = local_context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
-        .keeper_fault_injection_seed = local_context->getSettingsRef().backup_restore_keeper_fault_injection_seed,
-        .keeper_value_max_size = local_context->getSettingsRef().backup_restore_keeper_value_max_size,
-    };
-
     const auto * backup_coordinator_remote
         = dynamic_cast<BackupCoordinationRemote *>(backup_entries_collector.getBackupCoordination().get());
     WithRetries local_with_retries(
         log,
         [&local_context]() { return local_context->getZooKeeper(); },
-        zookeeper_settings,
+        WithRetries::KeeperSettings::fromBackupRestoreSettings(local_context->getSettingsRef()),
         [](WithRetries::FaultyKeeper &) {});
     WithRetries & final_with_retries = backup_coordinator_remote ? backup_coordinator_remote->with_retries : local_with_retries;
 
@@ -10223,12 +10211,12 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
 
-void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
+void StorageReplicatedMergeTree::attachRestoredPartsFromBackup(MutableDataPartsVector && parts)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto sink = std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false,  getContext(), /*is_attach*/true);
     for (auto part : parts)
-        sink->writeExistingPart(part);
+        sink->writeExistingPart(part, /* from_backup */ true);
 }
 
 template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber<String>(

@@ -1371,15 +1371,19 @@ protected:
     /// Makes backup entries to backup the parts of this table.
     PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
 
-    class RestoredPartsHolder;
+    class BackupRestoredPartsHolder;
 
     /// Restores the parts of this table from backup.
     void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
-    void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const;
+    void restorePartFromBackup(
+        std::shared_ptr<BackupRestoredPartsHolder> restored_parts_holder,
+        const MergeTreePartInfo & part_info,
+        const String & part_path_in_backup,
+        bool detach_if_broken) const;
     MutableDataPartPtr loadPartRestoredFromBackup(const DiskPtr & disk, const String & temp_dir, const String & part_name, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
+    virtual void attachRestoredPartsFromBackup(MutableDataPartsVector && parts) = 0;
 
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);

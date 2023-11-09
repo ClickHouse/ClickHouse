@@ -2320,7 +2320,7 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 }
 
 
-void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
+void StorageMergeTree::attachRestoredPartsFromBackup(MutableDataPartsVector && parts)
 {
     for (auto part : parts)
     {

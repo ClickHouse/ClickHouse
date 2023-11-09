@@ -77,14 +77,6 @@ class ZooKeeperWithFaultInjection
         : keeper(keeper_), name(std::move(name_)), logger(logger_), seed(fault_injection_seed)
     {
         fault_policy = std::make_unique<RandomFaultInjection>(fault_injection_probability, fault_injection_seed);
-
-        if (unlikely(logger))
-            LOG_TRACE(
-                logger,
-                "ZooKeeperWithFaultInjection created: name={} seed={} fault_probability={}",
-                name,
-                seed,
-                fault_injection_probability);
     }
 
 public:
@@ -112,20 +104,6 @@ public:
     }
 
     explicit ZooKeeperWithFaultInjection(zk::Ptr const & keeper_) : keeper(keeper_) { }
-
-    ~ZooKeeperWithFaultInjection()
-    {
-        if (unlikely(logger))
-            LOG_TRACE(
-                logger,
-                "ZooKeeperWithFaultInjection report: name={} seed={} calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
-                name,
-                seed,
-                calls_total,
-                calls_without_fault_injection,
-                calls_total - calls_without_fault_injection,
-                float(calls_total - calls_without_fault_injection) / calls_total);
-    }
 
     void setKeeper(zk::Ptr const & keeper_) { keeper = keeper_; }
     bool isNull() const { return keeper.get() == nullptr; }
