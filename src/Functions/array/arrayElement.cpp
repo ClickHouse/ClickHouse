@@ -325,7 +325,7 @@ struct ArrayElementStringImpl
         result_data.resize(total_result_bytes);
         for (const auto & buf : selected_bufs)
         {
-            memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], buf&offset.first, buf.second);
+            memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], buf.first, buf.second);
             current_result_offset += buf.second;
         }
     }
