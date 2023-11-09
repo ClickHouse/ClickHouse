@@ -322,16 +322,22 @@ jobs:
 ############################################################################################
   InstallPackagesTestRelease:
     needs: [BuilderDebRelease]
-    uses: ./.github/workflows/reusable_install_test.yml
+    uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Install packages (amd64)
       runner_type: style-checker
+      run_command: |
+        cd "$REPO_COPY/tests/ci"
+        python3 install_check.py "$CHECK_NAME"
   InstallPackagesTestAarch64:
     needs: [BuilderDebAarch64]
-    uses: ./.github/workflows/reusable_install_test.yml
+    uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Install packages (arm64)
       runner_type: style-checker-aarch64
+      run_command: |
+        cd "$REPO_COPY/tests/ci"
+        python3 install_check.py "$CHECK_NAME"
 ##############################################################################################
 ########################### FUNCTIONAl STATELESS TESTS #######################################
 ##############################################################################################
