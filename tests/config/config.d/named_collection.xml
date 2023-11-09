@@ -37,5 +37,9 @@
             <access_key_id>test</access_key_id>
             <secret_access_key>testtest</secret_access_key>
         </s3_conn_db>
+        <cache_collection>
+            <max_size>1Mi</max_size>
+            <path>collection</path>
+        </cache_collection>
     </named_collections>
 </clickhouse>
