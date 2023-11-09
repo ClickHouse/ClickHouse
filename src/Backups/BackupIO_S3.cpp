@@ -170,7 +170,6 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
 
             copyS3File(
                 client,
-                client,
                 s3_uri.bucket,
                 fs::path(s3_uri.key) / path_in_backup,
                 0,
@@ -232,7 +231,6 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             copyS3File(
                 client,
-                client,
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
@@ -253,7 +251,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
-    copyDataToS3File(create_read_buffer, start_pos, length, client, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup, s3_settings.request_settings, {},
+    copyDataToS3File(create_read_buffer, start_pos, length, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup, s3_settings.request_settings, {},
                      threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
@@ -283,7 +281,6 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
 {
     return std::make_unique<WriteBufferFromS3>(
         client,
-        client, // already has long timeout
         s3_uri.bucket,
         fs::path(s3_uri.key) / file_name,
         DBMS_DEFAULT_BUFFER_SIZE,

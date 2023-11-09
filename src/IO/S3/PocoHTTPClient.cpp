@@ -300,7 +300,7 @@ ConnectionTimeouts PocoHTTPClient::getTimeouts(Aws::Http::HttpRequest & request)
 
     const auto & request_info = request.GetHeaderValue(Aws::Http::SDK_REQUEST_HEADER);
     auto attempt = extractAttempt(request_info);
-    return timeouts.aggressiveTimeouts(attempt);
+    return timeouts.getAdaptiveTimeouts(request.GetMethod(), attempt);
 }
 
 void PocoHTTPClient::makeRequestInternal(

@@ -133,22 +133,51 @@ ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings
         settings.http_receive_timeout);
 }
 
-ConnectionTimeouts ConnectionTimeouts::aggressiveTimeouts(UInt32 attempt) const
+ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(Aws::Http::HttpMethod method, UInt32 attempt) const
 {
+    constexpr size_t first_method_index = size_t(Aws::Http::HttpMethod::HTTP_GET);
+    constexpr size_t last_method_index = size_t(Aws::Http::HttpMethod::HTTP_PATCH);
+    constexpr size_t methods_count = last_method_index - first_method_index + 1;
+
+    /// HTTP_POST is used for CompleteMultipartUpload requests.
+    /// These requests need longer timeout, especially when minio is used
+    /// The same assumption are made for HTTP_DELETE, HTTP_PATCH
+    /// That requests are more heavy that HTTP_GET, HTTP_HEAD, HTTP_PUT
+
+    static const UInt32 first_attempt_send_receive_timeouts_ms[methods_count][2] = {
+        /*HTTP_GET*/    {200,   200},
+        /*HTTP_POST*/   {200, 30000},
+        /*HTTP_DELETE*/ {200,  1000},
+        /*HTTP_PUT*/    {200,   200},
+        /*HTTP_HEAD*/   {200,   200},
+        /*HTTP_PATCH*/  {200,  1000},
+    };
+
+    static const UInt32 second_attempt_send_receive_timeouts_ms[methods_count][2] = {
+        /*HTTP_GET*/    {1000,  1000},
+        /*HTTP_POST*/   {1000, 30000},
+        /*HTTP_DELETE*/ {1000, 10000},
+        /*HTTP_PUT*/    {1000,  1000},
+        /*HTTP_HEAD*/   {1000,  1000},
+        /*HTTP_PATCH*/  {1000, 10000},
+    };
+
+    static_assert(methods_count == 6);
+    static_assert(sizeof(first_attempt_send_receive_timeouts_ms) == sizeof(second_attempt_send_receive_timeouts_ms));
+    static_assert(sizeof(first_attempt_send_receive_timeouts_ms) == methods_count * sizeof(UInt32) * 2);
+
     auto aggressive = *this;
 
+    if (attempt > 2)
+        return aggressive;
+
+    auto timeout_map = first_attempt_send_receive_timeouts_ms;
     if (attempt == 2)
-    {
-        auto one_second = Poco::Timespan(1, 0);
-        aggressive.send_timeout = saturate(one_second, send_timeout);
-        aggressive.receive_timeout = saturate(one_second, receive_timeout);
-    }
-    else if (attempt == 1)
-    {
-        auto two_hundred_ms = Poco::Timespan(0, 200 * 1000);
-        aggressive.send_timeout = saturate(two_hundred_ms, send_timeout);
-        aggressive.receive_timeout = saturate(two_hundred_ms, receive_timeout);
-    }
+        timeout_map = second_attempt_send_receive_timeouts_ms;
+
+    const size_t method_index = size_t(method) - first_method_index;
+    aggressive.send_timeout = saturate(Poco::Timespan(timeout_map[method_index][0]), send_timeout);
+    aggressive.receive_timeout = saturate(Poco::Timespan(timeout_map[method_index][1]), receive_timeout);
 
     return aggressive;
 }

@@ -118,19 +118,9 @@ std::unique_ptr<Client> Client::create(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
 }
 
-std::unique_ptr<Client> Client::clone(
-    std::optional<bool> override_use_adaptive_timeouts,
-    std::optional<Int64> override_request_timeout_ms) const
+std::unique_ptr<Client> Client::clone() const
 {
-    PocoHTTPClientConfiguration new_configuration = client_configuration;
-
-    if (override_request_timeout_ms.has_value())
-        new_configuration.requestTimeoutMs = *override_request_timeout_ms;
-
-    if (override_use_adaptive_timeouts.has_value())
-        new_configuration.s3_use_adaptive_timeouts = *override_use_adaptive_timeouts;
-
-    return std::unique_ptr<Client>(new Client(*this, new_configuration));
+    return std::unique_ptr<Client>(new Client(*this, client_configuration));
 }
 
 namespace
