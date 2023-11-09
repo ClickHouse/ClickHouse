@@ -18,7 +18,7 @@
 namespace DB
 {
 
-struct FormatImpl
+struct FormatStringImpl
 {
     static constexpr size_t right_padding = 15;
 

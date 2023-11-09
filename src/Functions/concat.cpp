@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
@@ -56,18 +57,6 @@ public:
                 getName(),
                 arguments.size());
 
-        for (const auto arg_idx : collections::range(0, arguments.size()))
-        {
-            const auto * arg = arguments[arg_idx].get();
-            if (!isStringOrFixedString(arg))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}",
-                    arg->getName(),
-                    arg_idx + 1,
-                    getName());
-        }
-
         return std::make_shared<DataTypeString>();
     }
 
@@ -76,7 +65,7 @@ public:
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
         /// Though, benchmarks are really close, for most examples we saw executeBinary is slightly faster (0-3%).
-        /// For 3 and more arguments FormatImpl is much faster (up to 50-60%).
+        /// For 3 and more arguments FormatStringImpl is much faster (up to 50-60%).
         if (arguments.size() == 2)
             return executeBinary(arguments, input_rows_count);
         else
@@ -107,6 +96,7 @@ private:
         else
         {
             /// Fallback: use generic implementation for not very important cases.
+            /// Concat of arbitrary types also goes here.
             return executeFormatImpl(arguments, input_rows_count);
         }
 
@@ -145,8 +135,18 @@ private:
                 constant_strings[i] = const_col->getValue<String>();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                    column->getName(), getName());
+            {
+                // An arbitrary type argument: converting it to a StringColumn as if `toString` was called
+                ColumnsWithTypeAndName args;
+                args.emplace_back(column, arguments[i].type, "tmp");
+                const ColumnPtr converted_col_ptr = ConvertImplGenericToString<ColumnString>::execute(
+                    args, std::make_shared<DataTypeString>(), column->size());
+                const ColumnString * converted_col_str = assert_cast<const ColumnString *>(converted_col_ptr.get());
+                // Same as the normal `ColumnString` branch
+                has_column_string = true;
+                data[i] = &converted_col_str->getChars();
+                offsets[i] = &converted_col_str->getOffsets();
+            }
         }
 
         String pattern;
@@ -155,7 +155,7 @@ private:
         for (size_t i = 0; i < num_arguments; ++i)
             pattern += "{}";
 
-        FormatImpl::formatExecute(
+        FormatStringImpl::formatExecute(
             has_column_string,
             has_column_fixed_string,
             std::move(pattern),
@@ -185,7 +185,8 @@ using FunctionConcat = ConcatImpl<NameConcat, false>;
 using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true>;
 
 
-/// Also works with arrays.
+/// Works with arrays via `arrayConcat`, maps via `mapConcat`, and tuples via `tupleConcat`.
+/// Additionally, allows concatenation of arbitrary types that can be cast to string using the corresponding default serialization.
 class ConcatOverloadResolver : public IFunctionOverloadResolver
 {
 public:

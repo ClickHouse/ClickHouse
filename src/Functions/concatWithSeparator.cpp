@@ -122,7 +122,7 @@ public:
         for (size_t i = 0; i < num_args; ++i)
             pattern += "{}";
 
-        FormatImpl::formatExecute(
+        FormatStringImpl::formatExecute(
             has_column_string,
             has_column_fixed_string,
             std::move(pattern),
