@@ -5,6 +5,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashValueIdGenerator.h>
 #include <Common/typeid_cast.h>
+#include "logger_useful.h"
 #include "typeid_cast.h"
 #include <DataTypes/IDataType.h>
 
@@ -19,61 +20,9 @@ namespace ErrorCodes
 void StringHashValueIdGenerator::setup(const IColumn *col)
 {
     is_nullable = col->isNullable();
-
-    const auto * nested_col = col;
-    if (is_nullable)
-    {
-        const auto * null_col = typeid_cast<const ColumnNullable *>(col);
-        if (!null_col)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
-        nested_col = &(null_col->getNestedColumn());
-    }
-    const auto * str_col = typeid_cast<const ColumnString *>(nested_col);
-    const auto & offsets = str_col->getOffsets();
-    IColumn::Offset prev_offset = 0;
-    const auto & chars = str_col->getChars();
-    const UInt8 * char_pos = chars.data();
-
-    enable_range_mode = true;
-    size_t i = 0;
-    size_t n = std::min(max_sample_rows, str_col->size());
-    for (; i < n; i++)
-    {
-        auto str_len = offsets[i] - prev_offset;
-        if (str_len == 1)
-        {
-            char_pos += str_len;
-            prev_offset = offsets[i];
-            continue;
-        }
-        if (str_len > 9)
-        {
-            enable_range_mode = false;
-            break;
-        }
-        UInt64 val = 0;
-        shortStringToUInt64(char_pos, str_len - 1, val);
-        if (val > range_max)
-            range_max = val;
-        if (val < range_min)
-            range_min = val;
-        if (range_max - range_min + 1 + is_nullable > max_distinct_values)
-        {
-            enable_range_mode = false;
-            break;
-        }
-        prev_offset = offsets[i];
-        char_pos += str_len;
-    }
-    enable_range_mode = enable_range_mode && range_max > range_min && range_max - range_min + 1 + is_nullable <= max_distinct_values;
-    if (enable_range_mode)
-    {
-        allocated_value_id = range_max - range_min + 1 + is_nullable;
-    }
-    else
-    {
-        allocated_value_id = is_nullable;
-    }
+    allocated_value_id = is_nullable;
+    /// String column does not support range mode.
+    enable_range_mode = false;
 }
 
 HashValueIdGeneratorFactory & HashValueIdGeneratorFactory::instance()

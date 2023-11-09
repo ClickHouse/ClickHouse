@@ -93,14 +93,6 @@ inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, In
     for (Int64 i = 0; i < n; ++i)
         lens[i] = offsets[start + i] - offsets[start + i - 1];
 }
-
-inline bool isAllShortString(const UInt64 * __restrict lens, size_t n)
-{
-    bool res = true;
-    for (size_t i = 0; i < n; ++i)
-        res &= lens[i] <= 9;
-    return res;
-}
 )
 
 DECLARE_AVX512BW_SPECIFIC_CODE(
@@ -160,26 +152,6 @@ inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, In
     }
 }
 
-inline bool isAllShortString(const UInt64 * __restrict lens, size_t n)
-{
-    bool res = true;
-    size_t i = 0;
-    auto tmp_lens = lens;
-    for (; i + 8 < n; i += 8)
-    {
-        auto lens_v = _mm512_loadu_epi64(tmp_lens);
-        auto max_str_len = _mm512_set1_epi64(9);
-        if (_mm512_cmpgt_epi64_mask(lens_v, max_str_len) != 0)
-            return false;
-        tmp_lens += 8;
-    }
-    for (; i < n; ++i)
-    {
-        res &= lens[i] <= 9;
-    }
-    return res;
-}
-
 inline bool quickLookupValueId(HashValueIdCacheLine & cache,
     const StringRef & raw_value,
     UInt64 serialized_value,
@@ -232,7 +204,7 @@ public:
         {
             for (UInt64 i = 0, n = range_max - range_min + 1; i < n; ++i)
             {
-                StringRef raw_value(reinterpret_cast<const UInt8 *>(&i), sizeof(UInt64));
+                StringRef raw_value(reinterpret_cast<const UInt8 *>(&i), row_bytes);
                 emplaceValueId(raw_value, i);
             }
             enable_range_mode = false;
@@ -267,8 +239,10 @@ protected:
 
     /// If the values are in range [range_min, range_max], we can use the value - range_min as the
     /// value id directly. It's more efficient than using a hash map.
+    /// range mode is only be used for fixed length rows.
     UInt64 range_min = -1UL;
     UInt64 range_max = 0;
+    size_t row_bytes = 0; // the lenght of each row. must be fixed.
     bool enable_range_mode = false;
     bool is_nullable = false;
 
@@ -490,45 +464,10 @@ private:
 
     ALWAYS_INLINE void computeValueIdForString(const UInt8 * data_pos, const UInt64 * str_lens, size_t n, UInt64 * value_ids, const UInt8 * null_map)
     {
-        bool is_all_short_string = false;
-#if USE_MULTITARGET_CODE
-        if ((isArchSupported(TargetArch::AVX512BW)))
-            is_all_short_string = TargetSpecific::AVX512BW::isAllShortString(str_lens, n);
-        else
-#endif
+        for (size_t i = 0; i < n; ++i)
         {
-            is_all_short_string = TargetSpecific::Default::isAllShortString(str_lens, n);
-        }
-        if (!is_all_short_string || !enable_range_mode)
-        {
-            for (size_t i = 0; i < n; ++i)
-            {
-                getValueId(StringRef(data_pos, str_lens[i] - 1), value_ids[i]);
-                data_pos += str_lens[i];
-            }
-        }
-        else
-        {
-            UInt64 range_delta = range_min - is_nullable;
-            for (size_t i = 0; i < n; ++i)
-            {
-                StringRef raw_value(data_pos, str_lens[i] - 1);
-                if (str_lens[i] <= 1)
-                {
-                    // empty string.
-                    getValueId(raw_value, value_ids[i]);
-                }
-                else
-                {
-                    UInt64 val = 0;
-                    shortStringToUInt64(data_pos, str_lens[i] - 1, val);
-                    if (val > range_max || val < range_min)
-                        getValueId(raw_value, val, value_ids[i]);
-                    else
-                        value_ids[i] = val - range_delta;
-                }
-                data_pos += str_lens[i];
-            }
+            getValueId(StringRef(data_pos, str_lens[i] - 1), value_ids[i]);
+            data_pos += str_lens[i];
         }
         applyNullMap(value_ids, null_map, n);
     }
@@ -569,6 +508,7 @@ private:
 
         enable_range_mode = true;
         auto str_len = str_col->getN();
+        row_bytes = str_len;
         if (str_len > 8)
         {
             enable_range_mode = false;
@@ -684,6 +624,7 @@ private:
             nested_col = &(null_col->getNestedColumn());
         }
         size_t element_bytes = sizeof(ElementType);
+        row_bytes = element_bytes;
         const auto * num_col = typeid_cast<const ColumnType *>(nested_col);
         const UInt8 * data_pos = reinterpret_cast<const UInt8 *>(num_col->getData().data());
         size_t i = 0;
