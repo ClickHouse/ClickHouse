@@ -1076,6 +1076,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -2286,6 +2287,7 @@ stochasticlogisticregression
 storages
 storig
 stringJaccardIndex
+stringJaccardIndexUTF
 stringToH
 stripelog
 strtod

@@ -464,12 +464,19 @@ void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
 
 void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)
 {
-    std::unordered_set<const Node *> visited_nodes;
     std::unordered_set<const Node *> used_inputs;
-    std::stack<Node *> stack;
+    if (!allow_remove_inputs)
+    {
+        for (const auto * input : inputs)
+            used_inputs.insert(input);
+    }
+    removeUnusedActions(used_inputs, allow_constant_folding);
+}
 
-    for (const auto * input : inputs)
-        used_inputs.insert(input);
+void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding)
+{
+    std::unordered_set<const Node *> visited_nodes;
+    std::stack<Node *> stack;
 
     for (const auto * node : outputs)
     {
@@ -488,7 +495,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
             stack.push(&node);
         }
 
-        if (node.type == ActionType::INPUT && !allow_remove_inputs && used_inputs.contains(&node))
+        if (node.type == ActionType::INPUT && used_inputs.contains(&node))
             visited_nodes.insert(&node);
     }
 
@@ -2187,14 +2194,6 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
         {
             /// If filter column is not needed, remove it from output nodes.
             std::erase_if(outputs, [&](const Node * node) { return node == predicate; });
-
-            /// At the very end of this method we'll call removeUnusedActions() with allow_remove_inputs=false,
-            /// so we need to manually remove predicate if it is an input node.
-            if (predicate->type == ActionType::INPUT)
-            {
-                std::erase_if(inputs, [&](const Node * node) { return node == predicate; });
-                nodes.remove_if([&](const Node & node) { return &node == predicate; });
-            }
         }
         else
         {
@@ -2261,7 +2260,15 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
         }
     }
 
-    removeUnusedActions(false);
+    std::unordered_set<const Node *> used_inputs;
+    for (const auto * input : inputs)
+    {
+        if (can_remove_filter && input == predicate)
+            continue;
+        used_inputs.insert(input);
+    }
+
+    removeUnusedActions(used_inputs);
     return actions;
 }
 

@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/logger_useful.h>
-
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -204,7 +204,7 @@ void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
 bool DiskObjectStorageMetadata::getWriteFullObjectKeySetting()
 {
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-    return Context::getGlobalContextInstance()->getSettings().storage_metadata_write_full_object_key;
+    return Context::getGlobalContextInstance()->getServerSettings().storage_metadata_write_full_object_key;
 #else
     return false;
 #endif
