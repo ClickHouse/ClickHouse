@@ -100,7 +100,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
         if (!value_override)
         {
-            if(!(*it)->as<ASTFunction>())
+            if (!(*it)->as<ASTFunction>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
             if (allow_override_by_default)
                 continue;
