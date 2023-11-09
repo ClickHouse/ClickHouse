@@ -35,7 +35,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
 
 InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(context_), options(options_)
+    : query_ptr(query_ptr_), context(context_), options(options_), log(&Poco::Logger::get("InterpreterSelectQueryCoordination"))
 {
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
