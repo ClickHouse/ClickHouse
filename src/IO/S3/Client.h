@@ -121,9 +121,9 @@ public:
     /// Create a client with adjusted settings:
     ///  * override_request_timeout_ms is used to increase timeout for CompleteMultipartUploadRequest
     ///    because it often sits idle for 10 seconds: https://github.com/ClickHouse/ClickHouse/pull/42321
-    ///  * s3_aggressive_timeouts is used to turn off s3_aggressive_timeouts feature for CompleteMultipartUploadRequest
+    ///  * s3_use_adaptive_timeouts is used to turn off s3_use_adaptive_timeouts feature for CompleteMultipartUploadRequest
     std::unique_ptr<Client> clone(
-        std::optional<bool> override_aggressive_timeouts = std::nullopt,
+        std::optional<bool> override_use_adaptive_timeouts = std::nullopt,
         std::optional<Int64> override_request_timeout_ms = std::nullopt) const;
 
     Client & operator=(const Client &) = delete;

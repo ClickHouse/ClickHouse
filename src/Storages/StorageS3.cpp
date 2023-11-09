@@ -1330,7 +1330,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
         });
 
-    client_with_long_timeout = client->clone(std::nullopt, request_settings.long_request_timeout_ms);
+    client_with_long_timeout = client->clone(/*override_use_adaptive_timeouts*/ false, request_settings.long_request_timeout_ms);
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)

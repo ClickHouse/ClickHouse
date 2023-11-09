@@ -119,7 +119,7 @@ std::unique_ptr<Client> Client::create(
 }
 
 std::unique_ptr<Client> Client::clone(
-    std::optional<bool> override_aggressive_timeouts,
+    std::optional<bool> override_use_adaptive_timeouts,
     std::optional<Int64> override_request_timeout_ms) const
 {
     PocoHTTPClientConfiguration new_configuration = client_configuration;
@@ -127,8 +127,8 @@ std::unique_ptr<Client> Client::clone(
     if (override_request_timeout_ms.has_value())
         new_configuration.requestTimeoutMs = *override_request_timeout_ms;
 
-    if (override_aggressive_timeouts.has_value())
-        new_configuration.s3_aggressive_timeouts = *override_aggressive_timeouts;
+    if (override_use_adaptive_timeouts.has_value())
+        new_configuration.s3_use_adaptive_timeouts = *override_use_adaptive_timeouts;
 
     return std::unique_ptr<Client>(new Client(*this, new_configuration));
 }
@@ -908,7 +908,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
-        context->getGlobalContext()->getSettingsRef().s3_aggressive_timeouts,
+        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
         get_request_throttler,
         put_request_throttler,
         error_report);

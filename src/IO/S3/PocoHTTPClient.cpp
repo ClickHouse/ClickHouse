@@ -100,7 +100,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         unsigned int s3_retry_attempts_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
-        bool s3_aggressive_timeouts_,
+        bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,
         std::function<void(const DB::ProxyConfiguration &)> error_report_)
@@ -113,7 +113,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
     , put_request_throttler(put_request_throttler_)
-    , s3_aggressive_timeouts(s3_aggressive_timeouts_)
+    , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
     , error_report(error_report_)
 {
 }
@@ -160,7 +160,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
           Poco::Timespan(client_configuration.http_keep_alive_timeout_ms * 1000))) /// flag indicating whether keep-alive is enabled is set to each session upon creation
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
-    , s3_aggressive_timeouts(client_configuration.s3_aggressive_timeouts)
+    , s3_use_adaptive_timeouts(client_configuration.s3_use_adaptive_timeouts)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
     , get_request_throttler(client_configuration.get_request_throttler)
@@ -295,7 +295,7 @@ UInt32 extractAttempt(const Aws::String & request_info)
 
 ConnectionTimeouts PocoHTTPClient::getTimeouts(Aws::Http::HttpRequest & request) const
 {
-    if (!s3_aggressive_timeouts)
+    if (!s3_use_adaptive_timeouts)
         return timeouts;
 
     const auto & request_info = request.GetHeaderValue(Aws::Http::SDK_REQUEST_HEADER);
