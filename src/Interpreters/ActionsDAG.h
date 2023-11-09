@@ -157,6 +157,9 @@ public:
     /// Same, but return nullptr if node not found.
     const Node * tryFindInOutputs(const std::string & name) const;
 
+    /// Same, but for the list of names.
+    NodeRawConstPtrs findInOutpus(const Names & names) const;
+
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
     void addOrReplaceInOutputs(const Node & node);
@@ -259,6 +262,8 @@ public:
 #endif
 
     ActionsDAGPtr clone() const;
+
+    static ActionsDAGPtr cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
 
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
