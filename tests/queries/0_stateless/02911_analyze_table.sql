@@ -87,4 +87,4 @@ from system.statistics_column_basic
 group by `table`, `column`
 order by `column`;
 
--- drop table if exists foo;
+drop table if exists foo;
