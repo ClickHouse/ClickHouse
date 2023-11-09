@@ -94,7 +94,7 @@ def main():
     missing_job_names = [
         name
         for name in needs_data
-        if not any(1 for build_result in build_results if build_result.job_name == name)
+        if not any(1 for br in build_results if br.job_name.startswith(name))
     ]
     missing_builds = len(missing_job_names)
     for job_name in reversed(missing_job_names):

@@ -7,7 +7,6 @@
 namespace DB
 {
 
-
 Range::Range(const FieldRef & point) /// NOLINT
     : left(point), right(point), left_included(true), right_included(true) {}
 
@@ -160,12 +159,87 @@ void Range::invert()
     std::swap(left_included, right_included);
 }
 
+Range intersect(const Range & a, const Range & b)
+{
+    Range res = Range::createWholeUniverse();
+
+    if (Range::less(a.left, b.left))
+    {
+        res.left = b.left;
+        res.left_included = b.left_included;
+    }
+    else if (Range::equals(a.left, b.left))
+    {
+        res.left = a.left;
+        res.left_included = a.left_included && b.left_included;
+    }
+    else
+    {
+        res.left = a.left;
+        res.left_included = a.left_included;
+    }
+
+    if (Range::less(a.right, b.right))
+    {
+        res.right = a.right;
+        res.right_included = a.right_included;
+    }
+    else if (Range::equals(a.right, b.right))
+    {
+        res.right = a.right;
+        res.right_included = a.right_included && b.right_included;
+    }
+    else
+    {
+        res.right = b.right;
+        res.right_included = b.right_included;
+    }
+
+    if (res.empty())
+    {
+        res.right = res.left;
+        res.right_included = false;
+        res.left_included = false;
+    }
+
+    return res;
+}
+
 String Range::toString() const
 {
     WriteBufferFromOwnString str;
 
     str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
     str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+
+    return str.str();
+}
+
+Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b)
+{
+    size_t result_size = std::min(a.size(), b.size());
+
+    Hyperrectangle res;
+    res.reserve(result_size);
+
+    for (size_t i = 0; i < result_size; ++i)
+        res.push_back(intersect(a[i], b[i]));
+
+    return res;
+}
+
+String toString(const Hyperrectangle & x)
+{
+    WriteBufferFromOwnString str;
+
+    bool first = true;
+    for (const auto & range : x)
+    {
+        if (!first)
+            str << " × ";
+        str << range.toString();
+        first = false;
+    }
 
     return str.str();
 }

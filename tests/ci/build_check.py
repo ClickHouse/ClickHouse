@@ -11,7 +11,7 @@ from ci_config import CI_CONFIG, BuildConfig
 from ccache_utils import CargoCache
 from docker_pull_helper import get_image_with_version
 from env_helper import (
-    GITHUB_JOB,
+    GITHUB_JOB_API_URL,
     IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
@@ -163,9 +163,14 @@ def check_for_success_run(
         version.describe,
         SUCCESS if success else FAILURE,
         0,
-        GITHUB_JOB,
+        GITHUB_JOB_API_URL(),
     )
-    build_result.write_json(Path(TEMP_PATH))
+    result_json_path = build_result.write_json(Path(TEMP_PATH))
+    logging.info(
+        "Build result file %s is written, content:\n %s",
+        result_json_path,
+        result_json_path.read_text(encoding="utf-8"),
+    )
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
@@ -348,7 +353,7 @@ def main():
         version.describe,
         build_status,
         elapsed,
-        GITHUB_JOB,
+        GITHUB_JOB_API_URL(),
     )
     result_json_path = build_result.write_json(temp_path)
     logging.info(
