@@ -57,12 +57,27 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t num_args = arguments.size();
-
-        DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
-
         Columns preprocessed_columns(num_args);
-        for (size_t i = 0; i < num_args; ++i)
-            preprocessed_columns[i] = castColumn(arguments[i], common_type);
+        preprocessed_columns[0] = arguments[0].column;
+
+        for (size_t i = 1; i < num_args; ++i)
+        {
+            preprocessed_columns[i] = castColumn(arguments[i], arguments[0].type);
+            if (!preprocessed_columns[i])
+            {
+                preprocessed_columns.clear();
+                break;
+            }
+        }
+
+        if (preprocessed_columns.empty())
+        {
+            preprocessed_columns.resize(num_args);
+            DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
+
+            for (size_t i = 0; i < num_args; ++i)
+                preprocessed_columns[i] = castColumn(arguments[i], common_type);
+        }
 
         std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
 

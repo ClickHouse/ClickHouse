@@ -16,6 +16,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/IDataType.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/castColumn.h>
@@ -476,6 +477,7 @@ private:
         auto arg_decayed = removeNullable(removeLowCardinality(arg));
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
+            || (isEnum(inner_type_decayed) && isStringOrFixedString(arg_decayed))
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
@@ -1030,13 +1032,19 @@ private:
 
         DataTypePtr array_elements_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
         const DataTypePtr & index_type = arguments[1].type;
-
-        DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, index_type});
-
-        ColumnPtr col_nested = castColumn({ col->getDataPtr(), array_elements_type, "" }, common_type);
-
         const ColumnPtr right_ptr = arguments[1].column->convertToFullColumnIfLowCardinality();
-        ColumnPtr item_arg = castColumn({ right_ptr, removeLowCardinality(index_type), "" }, common_type);
+        ColumnPtr col_nested, item_arg;
+        /// Try cast argument to element type first
+        if (item_arg = castColumn({ right_ptr, removeLowCardinality(index_type), "" }, array_elements_type); item_arg)
+        {
+            col_nested = col->getDataPtr();
+        }
+        else
+        {
+            DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, index_type});
+            col_nested = castColumn({ col->getDataPtr(), array_elements_type, "" }, common_type);
+            item_arg = castColumn({ right_ptr, removeLowCardinality(index_type), "" }, common_type);
+        }
 
         auto col_res = ResultColumnType::create();
 
