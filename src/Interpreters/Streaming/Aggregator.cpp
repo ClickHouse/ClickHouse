@@ -2,8 +2,8 @@
 
 #include <Poco/Util/Application.h>
 
-#include <AggregateFunctions/AggregateFunctionArray.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
