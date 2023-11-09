@@ -24,7 +24,7 @@ PhysicalProperties DeriveOutputProp::visit(QueryPlanStepPtr step)
 PhysicalProperties DeriveOutputProp::visitDefault(IQueryPlanStep & step)
 {
     if (step.stepType() == StepType::Scan)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented", step.getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented with CBO optimizer", step.getName());
 
     PhysicalProperties res;
     res.distribution = children_prop[0].distribution;

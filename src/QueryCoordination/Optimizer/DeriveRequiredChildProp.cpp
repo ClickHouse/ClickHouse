@@ -35,7 +35,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(QueryPlanStepPtr step)
 AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & step)
 {
     if (step.stepType() == StepType::Scan)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented", step.getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented  with CBO optimizer", step.getName());
 
     auto * transforming_step = dynamic_cast<ITransformingStep *>(group_node->getStep().get());
 

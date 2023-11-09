@@ -99,7 +99,7 @@ void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
     if (num_inputs != fragments.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot unite QueryPlans using {} because step has different number of inputs. Has {} plans and {} inputs",
+            "Cannot unite fFragments using {} because step has different number of inputs. Has {} plans and {} inputs",
             step->getName(),
             fragments.size(),
             num_inputs);
@@ -112,7 +112,7 @@ void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
         if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Cannot unite PlanFragments using {} because it has incompatible header with plan {} plan header: {} step header: {}",
+                "Cannot unite fFragments using {} because it has incompatible header with plan {} plan header: {} step header: {}",
                 step->getName(),
                 root->step->getName(),
                 plan_header.dumpStructure(),

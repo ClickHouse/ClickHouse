@@ -18,6 +18,9 @@ namespace DB
 /// can not calculate statistics by range for these data types.
 bool isNumeric(const DataTypePtr & type);
 
+/// Whether type can be converted to ClickHouse data type Float64.
+bool canConvertToFloat64(const DataTypePtr & type);
+
 /// Whether a node is a const column.
 bool isConstColumn(const ActionsDAG::Node * node);
 

@@ -8,7 +8,6 @@ namespace DB
 
 bool isNumeric(const DataTypePtr & type)
 {
-    /// isColumnedAsNumber
     switch (type->getTypeId())
     {
         /// number
@@ -16,7 +15,7 @@ bool isNumeric(const DataTypePtr & type)
         case TypeIndex::UInt16:
         case TypeIndex::UInt32:
         case TypeIndex::UInt64:
-        case TypeIndex::UInt128: /// TODO check
+        case TypeIndex::UInt128:
         case TypeIndex::UInt256:
         case TypeIndex::Int8:
         case TypeIndex::Int16:
@@ -31,19 +30,39 @@ bool isNumeric(const DataTypePtr & type)
         case TypeIndex::Date32:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
+        /// interval
+        case TypeIndex::Interval:
         /// enum
         case TypeIndex::Enum8:
         case TypeIndex::Enum16:
-        /// interval
-        case TypeIndex::Interval:
-        /// ip
-        case TypeIndex::IPv4:
-        case TypeIndex::IPv6:
             return true;
         case TypeIndex::Nullable:
             return isNumeric(dynamic_cast<const DataTypeNullable *>(type.get())->getNestedType());
         default:
             return false;
+    }
+}
+
+bool canConvertToFloat64(const DataTypePtr & type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Array:
+        case TypeIndex::AggregateFunction:
+        case TypeIndex::UUID:
+        case TypeIndex::Tuple:
+        case TypeIndex::Set:
+        case TypeIndex::Nothing:
+        case TypeIndex::Interval:
+        case TypeIndex::JSONPaths:
+        case TypeIndex::Map:
+        case TypeIndex::Function:
+        case TypeIndex::Object:
+        case TypeIndex::IPv4:
+        case TypeIndex::IPv6:
+            return false;
+        default:
+            return true;
     }
 }
 
@@ -54,7 +73,7 @@ bool isConstColumn(const ActionsDAG::Node * node)
 
 bool isAlwaysFalse(const ASTPtr & ast)
 {
-    if (auto literal = ast->as<ASTLiteral>())
+    if (auto * literal = ast->as<ASTLiteral>())
     {
         if (isInt64OrUInt64orBoolFieldType(literal->value.getType()))
             return literal->value.safeGet<UInt64>() == 0;

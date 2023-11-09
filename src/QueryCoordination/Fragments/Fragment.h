@@ -20,7 +20,7 @@ public:
     using Node = QueryPlan::Node;
     using Nodes = std::list<Node>;
 
-    /// Explain distributed plan, only work with query coordination
+    /// Explain options for distributed plan, only work with query coordination
     struct ExplainFragmentOptions
     {
         /// Add output header to step.

@@ -15,6 +15,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <QueryCoordination/Optimizer/Statistics/Utils.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
@@ -356,8 +357,10 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
     const auto time_now = std::chrono::system_clock::now();
     auto event_time = timeInSeconds(time_now);
 
-    /// Collecting columns statistics in batch
-    size_t batch = 20; /// TODO add to settings
+    /// Collecting columns statistics in batch TODO add to settings
+    size_t batch = 20;
+    auto table_columns = DatabaseCatalog::instance().getTable(storage_id, context)->getInMemoryMetadata().columns;
+
     for (size_t i = 0; i < columns.size(); i += batch)
     {
         auto batch_end = std::min(i + batch, columns.size());
@@ -369,8 +372,8 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
         WriteBufferFromOwnString joined_columns;
         for (size_t j = i; j < batch_end; j++)
         {
-            joined_columns << "'" << columns[i] << "'";
-            if (j != batch_end)
+            joined_columns << "'" << columns[j] << "'";
+            if (j != batch_end - 1)
                 joined_columns << ", ";
         }
         String delete_sql = fmt::format(
@@ -388,28 +391,50 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
 
         for (size_t j = i; j < batch_end; j++)
         {
-            const auto & column = columns[i];
+            const auto & column = columns[j];
+
             select_sql << "toDateTime(" << toString(event_time) << "), ";
             select_sql << "'" << storage_id.getDatabaseName() << "', ";
             select_sql << "'" << storage_id.getTableName() << "', ";
-            select_sql << "'" << backQuoteIfNeed(column) << "', ";
+            /// Use function 'materialize' to avoid failure when SquashingTransform
+            /// try to squashing chunks in the following insertion.
+            select_sql << "materialize('" << column << "'), ";
             select_sql << "uniqState(cast('" << column << "', 'String'))"
                        << ", ";
-            select_sql << "min(toFloat64OrDefault(" << backQuoteIfNeed(column) << "))"
-                       << ", ";
-            select_sql << "max(toFloat64OrDefault(" << backQuoteIfNeed(column) << "))"
-                       << ", ";
+            if (canConvertToFloat64(table_columns.get(column).type))
+            {
+                select_sql << "min(toFloat64OrDefault(" << backQuoteIfNeed(column) << "))"
+                           << ", ";
+                select_sql << "max(toFloat64OrDefault(" << backQuoteIfNeed(column) << "))"
+                           << ", ";
+            }
+            else
+            {
+                /// Wrap function 'toString'
+                select_sql << "min(toFloat64OrDefault(toString(" << backQuoteIfNeed(column) << ")))"
+                           << ", ";
+                select_sql << "max(toFloat64OrDefault(toString(" << backQuoteIfNeed(column) << ")))"
+                           << ", ";
+            }
+
             select_sql << "toFloat64(" << toString(avg_row_size) << ")";
 
-            if (j != batch_end)
+            if (j != batch_end - 1)
                 select_sql << ", ";
             else
                 select_sql << " ";
         }
         select_sql << "FROM " << storage_id.getFullTableName();
 
+        String select_sql_str = select_sql.str();
+        LOG_TRACE(
+            &Poco::Logger::get("IStatisticsStorage"),
+            "Collect column statistics for {}, select sql {}",
+            storage_id.getFullNameNotQuoted(),
+            select_sql_str);
+
         /// 3. execute query
-        auto block_io = executeQuery(select_sql.str(), createQueryContext(context), true).second;
+        auto block_io = executeQuery(select_sql_str, createQueryContext(context), true).second;
         auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
 
         /// 4. create inserting executor
@@ -430,16 +455,17 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
         while (!block && executor->pull(block))
         {
             /// How many columns to collect at this time.
-            size_t batch_size = batch_end - i;
-            /// column count for COLUMN_STATS_TABLE_NAME
+            size_t batch_count = batch_end - i;
+            /// column count for table COLUMN_STATS_TABLE_NAME
             size_t column_count = 8;
-            chassert(block.columns() == column_count * batch_size);
+
+            chassert(block.columns() == column_count * batch_count);
 
             /// Split block columns by rows
             auto block_columns = block.getColumns();
             Columns one_row;
 
-            for (size_t j = 0; j < batch_size; j++)
+            for (size_t j = 0; j < batch_count; j++)
             {
                 size_t start = j * column_count;
                 for (size_t n = start; n < start + column_count; n++)
