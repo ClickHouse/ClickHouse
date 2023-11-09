@@ -22,14 +22,14 @@ void Scheduler::run()
         auto task = std::move(stack.top());
         stack.pop();
 
-        LOG_TRACE(&Poco::Logger::get("Scheduler"), "Pop: {}", task->getDescription());
+        LOG_TEST(&Poco::Logger::get("Scheduler"), "Pop: {}", task->getDescription());
         task->execute();
     }
 }
 
 void Scheduler::pushTask(OptimizeTaskPtr task)
 {
-    LOG_TRACE(&Poco::Logger::get("Scheduler"), "Push: {}", task->getDescription());
+    LOG_TEST(&Poco::Logger::get("Scheduler"), "Push: {}", task->getDescription());
     stack.push(std::move(task));
 }
 

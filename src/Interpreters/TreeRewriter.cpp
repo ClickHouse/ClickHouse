@@ -1324,9 +1324,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
     result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
 
-     /// Only apply AST optimization for initial queries.
-    const bool ast_optimizations_allowed =
-        getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+     /// Only apply AST optimization for initial queries and allow_experimental_query_coordination.
+    const bool ast_optimizations_allowed = (getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+                                            || getContext()->getSettings().allow_experimental_query_coordination)
         && !select_options.ignore_ast_optimizations;
 
     bool optimize_multiif_to_if = ast_optimizations_allowed && settings.optimize_multiif_to_if;
@@ -1544,7 +1544,8 @@ void TreeRewriter::normalize(
     /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
-    if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
+    if ((context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY || settings.allow_experimental_query_coordination)
+        && settings.normalize_function_names)
         FunctionNameNormalizer().visit(query.get());
 
     if (settings.optimize_move_to_prewhere)

@@ -31,13 +31,13 @@ Cost CostCalculator::visit(AggregatingStep & step)
 {
     const auto & input = input_statistics.front();
 
-    /// Two stage aggregating, first stage
+    /// Single stage aggregating
     if (!step.isPreliminaryAgg())
     {
         Cost cost(input.getDataSize(), statistics.getDataSize());
         return cost;
     }
-    /// Single stage aggregating
+    /// Two stage aggregating, first stage
     else
     {
         Cost cost(input.getDataSize(), statistics.getDataSize());

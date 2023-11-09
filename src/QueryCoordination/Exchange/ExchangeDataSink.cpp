@@ -34,14 +34,6 @@ void ExchangeDataSink::onStart()
     }
 }
 
-void ExchangeDataSink::calculateKeysPositions()
-{
-    const auto & sample = getPort().getHeader();
-    keys_positions.resize(output_partition.keys_size);
-    for (size_t i = 0; i < output_partition.keys_size; ++i)
-        keys_positions[i] = sample.getPositionByName(output_partition.keys[i]);
-}
-
 void ExchangeDataSink::calcKeysPositions()
 {
     const auto & sample = getPort().getHeader();
@@ -128,7 +120,7 @@ void ExchangeDataSink::consume(Chunk chunk)
 
 void ExchangeDataSink::onFinish()
 {
-    LOG_DEBUG(log, "ExchangeDataSink finish for request {}", request.toString());
+    LOG_TRACE(log, "ExchangeDataSink finish for request {}", request.toString());
 
     for (auto & channel : channels)
         channel.sendData(Block());

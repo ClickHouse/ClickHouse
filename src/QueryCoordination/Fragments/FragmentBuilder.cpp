@@ -1,5 +1,6 @@
 #include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <QueryCoordination/Fragments/FragmentBuilder.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

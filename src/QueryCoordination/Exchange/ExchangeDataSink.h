@@ -3,7 +3,7 @@
 #include <Client/Connection.h>
 #include <Client/ConnectionPool.h>
 #include <Processors/ISink.h>
-#include <QueryCoordination/DataPartition.h>
+#include <Core/ColumnNumbers.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 
@@ -29,26 +29,6 @@ public:
     ExchangeDataSink(
         Block header,
         std::vector<Channel> & channels_,
-        DataPartition & partition,
-        String local_host,
-        String query_id,
-        UInt32 fragment_id,
-        UInt32 exchange_id)
-        : ISink(std::move(header))
-        , log(&Poco::Logger::get("ExchangeDataSink"))
-        , channels(channels_)
-        , output_partition(partition)
-        , request(
-              ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
-    {
-        if (partition.keys_size)
-            calculateKeysPositions();
-    }
-
-
-    ExchangeDataSink(
-        Block header,
-        std::vector<Channel> & channels_,
         const Distribution & distribution,
         String local_host,
         String query_id,
@@ -62,7 +42,7 @@ public:
               ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
     {
         if (!distribution.keys.empty())
-            calculateKeysPositions();
+            calcKeysPositions();
     }
 
     String getName() const override { return "ExchangeDataSink"; }
@@ -82,7 +62,6 @@ private:
     std::vector<Channel> channels;
     size_t num_rows = 0;
 
-    DataPartition output_partition;
     Distribution output_distribution;
 
     ExchangeDataRequest request;
