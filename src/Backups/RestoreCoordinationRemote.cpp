@@ -244,9 +244,10 @@ bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & 
         {
             with_retries.renewZooKeeper(zk);
 
-            fs::path base_path = fs::path(zookeeper_path) / "keeper_map_tables" / root_zk_path;
-            zk->createAncestors(base_path);
-            std::string restore_lock_path = base_path / "restore_lock";
+            /// we need to remove leading '/' from root_zk_path
+            auto normalized_root_zk_path = std::string_view{root_zk_path}.substr(1);
+            std::string restore_lock_path = fs::path(zookeeper_path) / "keeper_map_tables" / normalized_root_zk_path / "restore_lock";
+            zk->createAncestors(restore_lock_path);
             result = zk->tryCreate(restore_lock_path, "restorelock", zkutil::CreateMode::Persistent) == Coordination::Error::ZOK;
 
             if (result)

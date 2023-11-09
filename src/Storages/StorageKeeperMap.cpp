@@ -15,7 +15,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -51,6 +51,8 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/WithRetries.h>
+
+#include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -824,16 +826,24 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
             RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
     }
 
-    /// TODO: Should we backup and verify the table structure?
+    auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
 
-    //auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     /// only 1 table should restore data for a single path
     restorer.addDataRestoreTask(
-        [storage = std::static_pointer_cast<StorageKeeperMap>(shared_from_this()), backup, data_path_in_backup, with_retries, allow_non_empty_tables]
-        { storage->restoreDataImpl(backup, data_path_in_backup, with_retries, allow_non_empty_tables); });
+        [storage = std::static_pointer_cast<StorageKeeperMap>(shared_from_this()),
+         backup,
+         data_path_in_backup,
+         with_retries,
+         allow_non_empty_tables,
+         temp_disk] { storage->restoreDataImpl(backup, data_path_in_backup, with_retries, allow_non_empty_tables, temp_disk); });
 }
 
-void StorageKeeperMap::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::shared_ptr<WithRetries> with_retries, bool allow_non_empty_tables)
+void StorageKeeperMap::restoreDataImpl(
+    const BackupPtr & backup,
+    const String & data_path_in_backup,
+    std::shared_ptr<WithRetries> with_retries,
+    bool allow_non_empty_tables,
+    const DiskPtr & temporary_disk)
 {
     auto table_id = toString(getStorageID().uuid);
 
@@ -858,7 +868,17 @@ void StorageKeeperMap::restoreDataImpl(const BackupPtr & backup, const String & 
 
     /// should we store locally in temp file?
     auto in = backup->readFile(data_file);
-    CompressedReadBuffer compressed_in{*in};
+    std::optional<TemporaryFileOnDisk> temp_data_file;
+    if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
+    {
+        temp_data_file.emplace(temporary_disk);
+        auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
+        copyData(*in, *out);
+        out.reset();
+        in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
+    }
+    std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
+    CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
     fs::path data_path_fs(zk_data_path);
 
     auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_keeper_multi;
@@ -871,7 +891,10 @@ void StorageKeeperMap::restoreDataImpl(const BackupPtr & backup, const String & 
         [&, &zk = holder.faulty_zookeeper]()
         {
             with_retries->renewZooKeeper(zk);
-            zk->multi(create_requests);
+            Coordination::Responses create_responses;
+            if (auto res = zk->tryMulti(create_requests, create_responses);
+                res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
+                throw zkutil::KeeperMultiException(res, create_requests, create_responses);
         });
     };
 
@@ -890,7 +913,9 @@ void StorageKeeperMap::restoreDataImpl(const BackupPtr & backup, const String & 
             [&, &zk = holder.faulty_zookeeper]()
             {
                 with_retries->renewZooKeeper(zk);
-                zk->tryCreate(data_path_fs / key, value, zkutil::CreateMode::Persistent);
+                if (auto res = zk->tryCreate(data_path_fs / key, value, zkutil::CreateMode::Persistent);
+                    res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
+                    throw zkutil::KeeperException::fromPath(res, data_path_fs / key);
             });
         }
         /// otherwise we can do multi requests

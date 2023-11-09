@@ -120,7 +120,12 @@ private:
 
     std::optional<bool> isTableValid() const;
 
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::shared_ptr<WithRetries> with_retries, bool allow_non_empty_tables);
+    void restoreDataImpl(
+        const BackupPtr & backup,
+        const String & data_path_in_backup,
+        std::shared_ptr<WithRetries> with_retries,
+        bool allow_non_empty_tables,
+        const DiskPtr & temporary_disk);
 
     std::string zk_root_path;
     std::string primary_key;

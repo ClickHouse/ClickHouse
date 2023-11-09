@@ -681,7 +681,10 @@ void BackupCoordinationRemote::addKeeperMapTable(const String & table_zookeeper_
     {
         with_retries.renewZooKeeper(zk);
         String path = zookeeper_path + "/keeper_map_tables/" + escapeForFileName(table_id);
-        zk->create(path, fmt::format("{}\n{}", table_zookeeper_root_path, data_path_in_backup), zkutil::CreateMode::Persistent);
+        if (auto res
+            = zk->tryCreate(path, fmt::format("{}\n{}", table_zookeeper_root_path, data_path_in_backup), zkutil::CreateMode::Persistent);
+            res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
+            throw zkutil::KeeperException(res);
     });
 }
 
