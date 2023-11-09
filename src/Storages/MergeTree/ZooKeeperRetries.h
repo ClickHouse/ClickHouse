@@ -212,9 +212,6 @@ private:
 
     bool canTry()
     {
-        if (process_list_element && !process_list_element->checkTimeLimitSoft())
-            return false;
-
         if (unconditional_retry)
         {
             unconditional_retry = false;
@@ -249,6 +246,9 @@ private:
             throwIfError();
             return false;
         }
+
+        if (process_list_element && !process_list_element->checkTimeLimitSoft())
+            return false;
 
         /// retries
         logLastError("will retry due to error");
