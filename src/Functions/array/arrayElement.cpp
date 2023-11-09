@@ -275,8 +275,10 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        std::vector<std::pair<UInt64, Int64>> selected_offsets;
-        selected_offsets.reserve(size);
+        ColumnString::Chars zero_buf(1);
+        zero_buf.push_back(0);
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -302,14 +304,14 @@ struct ArrayElementStringImpl
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
                 total_result_bytes += string_size;
-                selected_offsets.emplace_back(string_pos, string_size);
+                selected_bufs.emplace_back(&data[string_pos], string_size);
                 result_offsets[i] = total_result_bytes;
             }
             else
             {
                 /// Insert an empty row.
                 total_result_bytes += 1;
-                selected_offsets.emplace_back(0, -1);
+                selected_bufs.emplace_back(zero_buf.data(), 1);
                 result_offsets[i] = total_result_bytes;
 
                 if constexpr (used_builder)
@@ -321,18 +323,10 @@ struct ArrayElementStringImpl
 
         ColumnArray::Offset current_result_offset = 0;
         result_data.resize(total_result_bytes);
-        for (const auto & offset : selected_offsets)
+        for (const auto & buf : selected_bufs)
         {
-            if (offset.second == -1)
-            {
-                result_data[current_result_offset] = 0;
-                current_result_offset += 1;
-            }
-            else
-            {
-                memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[offset.first], offset.second);
-                current_result_offset += offset.second;
-            }
+            memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], buf&offset.first, buf.second);
+            current_result_offset += buf.second;
         }
     }
 
@@ -348,11 +342,13 @@ struct ArrayElementStringImpl
         size_t size = offsets.size();
         result_offsets.resize(size);
 
+        ColumnString::Chars zero_buf(1);
+        zero_buf.push_back(0);
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        std::vector<std::pair<UInt64, Int64>> selected_offsets;
-        selected_offsets.reserve(size);
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -380,7 +376,7 @@ struct ArrayElementStringImpl
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
                 total_result_bytes += string_size;
-                selected_offsets.emplace_back(string_pos, string_size);
+                selected_bufs.emplace_back(&data[string_pos], string_size);
 
                 result_offsets[i] = total_result_bytes;
             }
@@ -388,7 +384,7 @@ struct ArrayElementStringImpl
             {
                 /// Insert empty string
                 total_result_bytes += 1;
-                selected_offsets.emplace_back(0, -1);
+                selected_bufs.emplace_back(zero_buf.data(), 1);
                 result_offsets[i] = total_result_bytes;
 
                 if constexpr (used_builder)
@@ -400,18 +396,10 @@ struct ArrayElementStringImpl
 
         ColumnArray::Offset current_result_offset = 0;
         result_data.resize(total_result_bytes);
-        for (const auto & offset : selected_offsets)
+        for (const auto & buf : selected_bufs)
         {
-            if (offset.second > 0)
-            {
-                memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[offset.first], offset.second);
-                current_result_offset += offset.second;
-            }
-            else
-            {
-                result_data[current_result_offset] = 0;
-                current_result_offset += 1;
-            }
+            memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &buf.first, buf.second);
+            current_result_offset += buf.second;
         }
     }
 };
