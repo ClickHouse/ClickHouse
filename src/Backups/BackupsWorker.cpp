@@ -550,7 +550,9 @@ void BackupsWorker::doBackup(
             /// Prepare backup entries.
             BackupEntries backup_entries;
             {
-                BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, backup_create_params.read_settings, context};
+                BackupEntriesCollector backup_entries_collector(
+                    backup_query->elements, backup_settings, backup_coordination,
+                    backup_create_params.read_settings, context, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST));
                 backup_entries = backup_entries_collector.run();
             }
 
@@ -1056,6 +1058,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     auto old_status = info.status;
 
     info.status = status;
+    info.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(CurrentThread::getProfileEvents().getPartiallyAtomicSnapshot());
 
     if (isFinalStatus(status))
         info.end_time = std::chrono::system_clock::now();
