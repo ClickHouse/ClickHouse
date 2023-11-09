@@ -37,6 +37,7 @@
 #include <QueryCoordination/IO/FragmentsRequest.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
 #include <QueryCoordination/QueryCoordinationMetaInfo.h>
+#include <Interpreters/Cluster.h>
 
 #include "config_version.h"
 #include "config.h"
@@ -461,6 +462,11 @@ const String & Connection::getDefaultDatabase() const
 const String & Connection::getDescription() const
 {
     return description;
+}
+
+const String Connection::getHostPort() const
+{
+    return Cluster::Address::toString(host, port);
 }
 
 const String & Connection::getHost() const

@@ -91,14 +91,14 @@ std::unordered_map<UInt32, std::vector<String>> Coordinator::assignSourceFragmen
                         if (!isUpToDate(table_name))
                         {
                             connection = getConnection(shard_info, table_name);
-                            host_port = connection->getDescription();
+                            host_port = connection->getHostPort();
                         }
                     }
                 }
                 else
                 {
                     connection = getConnection(shard_info);
-                    host_port = connection->getDescription();
+                    host_port = connection->getHostPort();
                 }
 
                 host_connection[host_port] = connection;

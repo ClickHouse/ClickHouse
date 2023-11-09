@@ -370,8 +370,9 @@ PoolWithFailoverBase<TNestedPool>::getOne(
         return res;
     };
 
-    bool found = false;
-    while (!all_failed() && !found)
+    size_t total_max_tries = shuffled_pools.size() * max_tries;
+    size_t tries_num = 0;
+    while (!all_failed() && tries_num < total_max_tries)
     {
         for (size_t i = 0; i < shuffled_pools.size(); ++i)
         {
@@ -385,16 +386,16 @@ PoolWithFailoverBase<TNestedPool>::getOne(
 
             std::string fail_message;
             try_result = try_get_entry(*shuffled_pool.pool, fail_message);
+            tries_num++;
 
             if (!fail_message.empty())
                 fail_messages += fail_message + '\n';
 
             if (!try_result.entry.isNull())
             {
-                if (try_result.entry->getDescription() == host_port)
+                if (try_result.entry->getHostPort() == host_port)
                 {
-                    found = true;
-                    break;
+                    return try_result;
                 }
                 else
                 {
@@ -416,11 +417,12 @@ PoolWithFailoverBase<TNestedPool>::getOne(
         }
     }
 
-    if (all_failed() || !found)
+    if (all_failed())
         throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                                "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
-    return try_result;
+    throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                           "All connection tries failed. Not found connection to {}", host_port);
 }
 
 template <typename TNestedPool>

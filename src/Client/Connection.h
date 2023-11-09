@@ -93,6 +93,7 @@ public:
 
     /// For log and exception messages.
     const String & getDescription() const override;
+    const String getHostPort() const;
     const String & getHost() const;
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
