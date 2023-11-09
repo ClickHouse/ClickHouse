@@ -1,3 +1,4 @@
+# yamllint disable rule:comments-indentation
 name: MasterCI
 
 env:
@@ -182,682 +183,97 @@ jobs:
 #########################################################################################
   BuilderDebRelease:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=package_release
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # For a proper version and performance artifacts
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      checkout_depth: 0
+      build_name: package_release
   BuilderDebAarch64:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=package_aarch64
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ runner.temp }}/images_path
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # For a proper version and performance artifacts
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      checkout_depth: 0
+      build_name: package_aarch64
   BuilderBinRelease:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_release
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      checkout_depth: 0
+      build_name: binary_release
   BuilderDebAsan:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=package_asan
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_asan
   BuilderDebUBsan:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=package_ubsan
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_ubsan
   BuilderDebTsan:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=package_tsan
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_tsan
   BuilderDebMsan:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=package_msan
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_msan
   BuilderDebDebug:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=package_debug
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_debug
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderBinClangTidy:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_tidy
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_tidy
   BuilderBinDarwin:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_darwin
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_darwin
+      checkout_depth: 0
   BuilderBinAarch64:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_aarch64
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_aarch64
+      checkout_depth: 0
   BuilderBinFreeBSD:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_freebsd
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_freebsd
+      checkout_depth: 0
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_darwin_aarch64
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_darwin_aarch64
+      checkout_depth: 0
   BuilderBinPPC64:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_ppc64le
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_ppc64le
+      checkout_depth: 0
   BuilderBinAmd64Compat:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_amd64_compat
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_amd64_compat
+      checkout_depth: 0
   BuilderBinAarch64V80Compat:
     needs: [DockerHubPush]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_aarch64_v80compat
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_aarch64_v80compat
+      checkout_depth: 0
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
