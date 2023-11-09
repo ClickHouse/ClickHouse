@@ -1,22 +1,25 @@
-#ifdef __clang__
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wshadow"
-#    pragma clang diagnostic ignored "-Wextra-semi-stmt"
-#    pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
+#include "config.h"
 
-#include <pocketfft_hdronly.h>
+#if USE_POCKETFFT
+#    ifdef __clang__
+#        pragma clang diagnostic push
+#        pragma clang diagnostic ignored "-Wshadow"
+#        pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#        pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#    endif
 
-#ifdef __clang__
-#    pragma clang diagnostic pop
-#endif
+#    include <pocketfft_hdronly.h>
 
-#include <cmath>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#    ifdef __clang__
+#        pragma clang diagnostic pop
+#    endif
+
+#    include <cmath>
+#    include <Columns/ColumnArray.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -146,3 +149,4 @@ REGISTER_FUNCTION(SeriesPeriodDetectFFT)
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>();
 }
 }
+#endif
