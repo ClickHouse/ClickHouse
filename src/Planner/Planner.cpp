@@ -1077,8 +1077,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     const QueryNode & query_node,
     const SelectQueryOptions & select_query_options,
-    PlannerContextPtr & planner_context
-)
+    PlannerContextPtr & planner_context)
 {
     if (select_query_options.subquery_depth != 0)
         return;

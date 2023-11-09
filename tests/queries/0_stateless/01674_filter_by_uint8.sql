@@ -2,6 +2,7 @@
 SELECT ignore(number) FROM numbers(256) ORDER BY arrayFilter(x -> materialize(255), materialize([257])) LIMIT 1;
 SELECT ignore(number) FROM numbers(256) ORDER BY arrayFilter(x -> materialize(255), materialize(['257'])) LIMIT 1;
 
+
 SELECT count() FROM numbers(256) WHERE toUInt8(number);
 
 DROP TABLE IF EXISTS t_filter;

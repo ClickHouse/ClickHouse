@@ -16,10 +16,10 @@ select '---------------------------';
 
 set empty_result_for_aggregation_by_empty_set = 0;
 
-WITH test1 AS (SELECT number-1 as n FROM numbers(42)) 
+WITH test1 AS (SELECT number-1 as n FROM numbers(42))
 SELECT max(n+1)+1 z FROM test1;
 
-WITH test1 AS (SELECT number-1 as n FROM numbers(42)) 
+WITH test1 AS (SELECT number-1 as n FROM numbers(42))
 SELECT max(n+1)+1 z FROM test1 join test1 x using n having z - 1 = (select min(n-1)+41 from test1) + 2;
 
 WITH test1 AS (SELECT number-1 as n FROM numbers(4442) order by n limit 100)
@@ -31,10 +31,10 @@ SELECT max(n) FROM test1 where n=42;
 drop table if exists with_test ;
 create table with_test engine=Memory as select cast(number-1 as Nullable(Int64))  n from numbers(10000);
 
-WITH test1 AS (SELECT n FROM with_test where n <= 40) 
+WITH test1 AS (SELECT n FROM with_test where n <= 40)
 SELECT max(n+1)+1 z FROM test1 join test1 x using (n) having max(n+1)+1 - 1 = (select min(n-1)+41 from test1) + 2;
 
-WITH test1 AS (SELECT n FROM with_test where n <= 40) 
+WITH test1 AS (SELECT n FROM with_test where n <= 40)
 SELECT max(n+1)+1 z FROM test1 join test1 x using (n) having z - 1 = (select min(n-1)+41 from test1) + 2;
 
 WITH test1 AS (SELECT  n FROM with_test order by n limit 100)
@@ -51,6 +51,7 @@ SELECT max(n) FROM test1 where n=42;
 
 WITH test1 AS (SELECT n, null as b FROM with_test where n = 42 or b is null order by n limit 100)
 SELECT max(n) FROM test1 where n=42;
+
 
 WITH test1 AS (SELECT n, null b FROM with_test where b is null)
 SELECT max(n) FROM test1 where n=42;

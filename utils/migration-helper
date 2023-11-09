@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+
+import enum
+import requests
+
+from argparse import ArgumentParser
+
+from bs4 import BeautifulSoup
+
+
+class TestStatus(enum.Enum):
+    FAIL = "FAIL"
+    UNKNOWN = "UNKNOWN"
+    OK = "OK"
+    SKIPPED = "SKIPPED"
+
+
+class Test:
+    def __init__(self, test_name, test_status):
+        self.test_name = test_name
+        self.test_status = test_status
+
+    def __eq__(self, other):
+        if isinstance(other, Test):
+            return (
+                self.test_name == other.test_name
+                and self.test_status == other.test_status
+            )
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(self, other)
+
+    def __str__(self):
+        return str(self.test_name) + " " + str(self.test_status)
+
+
+def extractTestsFromURL(url):
+    request = requests.get(url)
+
+    soup = BeautifulSoup(request.text, "html.parser")
+
+    tables = soup.find_all("table")
+    table = tables[0]
+    table_tr_elements = table.find_all("tr")
+
+    tests = []
+
+    for table_tr_element in table_tr_elements:
+        table_tr_element_td_elements = table_tr_element.find_all("td")
+        if len(table_tr_element_td_elements) != 3:
+            continue
+
+        try:
+            test_name = table_tr_element_td_elements[0].text
+            test_status = TestStatus(table_tr_element_td_elements[1].text)
+            tests.append((test_name, test_status))
+        except Exception as err:
+            continue
+
+    tests.sort(key=lambda test: test[0])
+
+    return tests
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser(description="Migration helper")
+    parser.add_argument(
+        "--report-url", type=str, help="URL of stateless tests result", required=True
+    )
+    parser.add_argument(
+        "--previous-report-url", type=str, help="URL of stateless tests result after"
+    )
+
+    args = parser.parse_args()
+
+    report_tests = extractTestsFromURL(args.report_url)
+
+    print("Report url " + str(args.report_url))
+    print("Previous report url " + str(args.previous_report_url))
+
+    if args.previous_report_url is None:
+        for test_name, test_status in report_tests:
+            if test_status == TestStatus.FAIL:
+                print(test_name)
+    else:
+        previous_tests = extractTestsFromURL(args.previous_report_url)
+        previous_test_to_test_status = {}
+        for test_name, test_status in previous_tests:
+            previous_test_to_test_status[test_name] = test_status
+
+        new_fixed_tests = []
+        new_failed_tests = []
+        new_tests = []
+
+        for test_name, test_status in report_tests:
+            previous_test_status = TestStatus.FAIL
+
+            try:
+                previous_test_status = previous_test_to_test_status[test_name]
+            except:
+                new_tests.append(test_name)
+                continue
+
+            if test_status != previous_test_status:
+                if test_status == TestStatus.OK:
+                    new_fixed_tests.append(test_name)
+                elif test_status == TestStatus.FAIL:
+                    new_failed_tests.append(test_name)
+
+        print("New fixed tests size " + str(len(new_fixed_tests)))
+        for test in new_fixed_tests:
+            print(test)
+
+        print("New failed tests size " + str(len(new_failed_tests)))
+        for test in new_failed_tests:
+            print(test)
+
+        print("New tests " + str(len(new_tests)))
+        for test in new_tests:
+            print(test)

@@ -48,8 +48,7 @@ FROM
         NULL,
         NULL
     WHERE 0
-    GROUP BY
-        GROUPING SETS ((NULL))
+    GROUP BY NULL
         WITH TOTALS
 ) AS js1
 ALL LEFT JOIN

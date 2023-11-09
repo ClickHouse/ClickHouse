@@ -1,5 +1,8 @@
 -- Tags: zookeeper
 
+-- Backward compatibility check
+-- https://s3.amazonaws.com/clickhouse-test-reports/45461/81166c0cadf42af09d09450159c6f62b698f8af1/stress_test__msan_.html
+
 DROP TABLE IF EXISTS table_with_version_replicated_1;
 DROP TABLE IF EXISTS table_with_version_replicated_2;
 
