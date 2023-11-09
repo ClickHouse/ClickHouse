@@ -371,7 +371,6 @@ AggregateFunctionPtr createAggregateFunctionUniqCombined(bool use_64_bit_hash,
 
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 {
-    using namespace std::placeholders;
     factory.registerFunction("uniqCombined",
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
