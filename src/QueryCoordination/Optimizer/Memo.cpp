@@ -13,13 +13,13 @@ Memo::Memo(QueryPlan && plan, ContextPtr context_) : context(context_)
 {
     root_group = &buildGroup(*plan.getRootNode());
 
-    /// root group must required singleton
+    /// Required distribution of children of root is always singleton
     auto & group_nodes = root_group->getGroupNodes();
     for (auto & group_node : group_nodes)
     {
         std::vector<PhysicalProperties> required_child_prop;
         for (size_t j = 0; j < group_node->getChildren().size(); ++j)
-            required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+            required_child_prop.push_back({.distribution = {.type = Distribution::Singleton}});
         group_node->addRequiredChildrenProp(required_child_prop);
     }
 }
@@ -34,12 +34,12 @@ Group & Memo::buildGroup(const QueryPlan::Node & node)
     }
 
     groups.emplace_back(Group(++group_id_counter));
-
     Group & group = groups.back();
 
     GroupNodePtr group_node = std::make_shared<GroupNode>(node.step, child_groups);
     group.addGroupNode(group_node, ++group_node_id_counter);
     all_group_nodes.insert(group_node);
+
     return group;
 }
 
@@ -93,26 +93,31 @@ Group & Memo::rootGroup()
 
 QueryPlan Memo::extractPlan()
 {
-    SubQueryPlan plan
-        = extractPlan(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+    /// The distribution of root node is always singleton.
+    PhysicalProperties required_pro{.distribution = {.type = Distribution::Singleton}};
+    SubQueryPlan plan = extractPlan(*root_group, required_pro);
 
     WriteBufferFromOwnString buffer;
     SubQueryPlan::ExplainPlanOptions settings;
     plan.explainPlan(buffer, settings);
 
-    LOG_TRACE(log, "CBO optimizer find best plan: {}", buffer.str());
-
+    LOG_TRACE(log, "Found best plan: {}", buffer.str());
     return plan;
 }
 
 SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperties & required_prop)
 {
-    const auto & prop_group_node = group.getSatisfyBestGroupNode(required_prop);
-    chassert(prop_group_node.has_value());
+    const auto & prop_group_node = group.getSatisfiedBestGroupNode(required_prop);
+    if (!prop_group_node.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No best node for group {}", group.getId());
 
     auto & group_node = *prop_group_node->second.group_node;
-    LOG_DEBUG(
-        log, "Best node: group id {}, {}, required_prop {}", group.getId(), group_node.getStep()->getName(), required_prop.toString());
+    LOG_TRACE(
+        log,
+        "Found best node {} for group {} required property {}",
+        group_node.getStep()->getName(),
+        group.getId(),
+        required_prop.toString());
 
     auto child_prop = group_node.getChildrenProp(prop_group_node->first);
 

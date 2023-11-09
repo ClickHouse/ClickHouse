@@ -2,16 +2,15 @@
 
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
-#include <QueryCoordination/Optimizer/SortProp.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/SipHash.h>
 
 namespace DB
 {
 
-class PhysicalProperties
+struct Distribution
 {
-public:
-    enum DistributionType : int8_t
+    enum Type : int8_t
     {
         Any = 1,
         Singleton = 2,
@@ -19,29 +18,24 @@ public:
         Hashed = 4,
     };
 
-    static String distributionType(DistributionType type)
-    {
-        switch (type)
-        {
-            case DistributionType::Any:
-                return "Any";
-            case DistributionType::Singleton:
-                return "Singleton";
-            case DistributionType::Replicated:
-                return "Replicated";
-            case DistributionType::Hashed:
-                return "Hashed";
-        }
-    }
+    String toString() const;
 
-    struct Distribution
-    {
-        DistributionType type;
-        Names keys; /// keys for Hashed
+    Type type;
+    Names keys; /// keys for Hashed
+    bool distribution_by_buket_num = false;
+};
 
-        bool distribution_by_buket_num = false;
-    };
+struct SortProp
+{
+    String toString() const;
 
+    SortDescription sort_description = {};
+    DataStream::SortScope sort_scope = DataStream::SortScope::None;
+};
+
+class PhysicalProperties
+{
+public:
     bool operator==(const PhysicalProperties & other) const;
 
     struct HashFunction
@@ -60,8 +54,8 @@ public:
     };
 
     bool satisfy(const PhysicalProperties & required) const;
-    bool satisfySort(const PhysicalProperties & required) const;
-    bool satisfyDistribute(const PhysicalProperties & required) const;
+    bool satisfySorting(const PhysicalProperties & required) const;
+    bool satisfyDistribution(const PhysicalProperties & required) const;
 
     String toString() const;
 

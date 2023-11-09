@@ -75,13 +75,12 @@ void ExchangeDataSink::consume(Chunk chunk)
         }
     }
 
-    if (output_distribution.type == PhysicalProperties::DistributionType::Singleton
-        || output_distribution.type == PhysicalProperties::DistributionType::Replicated)
+    if (output_distribution.type == Distribution::Singleton || output_distribution.type == Distribution::Replicated)
     {
         for (auto & channel : channels)
             channel.sendData(block);
     }
-    else if (output_distribution.type == PhysicalProperties::DistributionType::Hashed)
+    else if (output_distribution.type == Distribution::Hashed)
     {
         if (block.info.bucket_num > -1 && output_distribution.distribution_by_buket_num)
         {

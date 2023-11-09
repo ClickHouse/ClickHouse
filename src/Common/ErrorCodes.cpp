@@ -591,6 +591,7 @@
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
+    M(1003, CBO_OPTIMIZATION_TIMEOUT) \
 /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -607,7 +608,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1002;
+    constexpr ErrorCode END = 1003;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames

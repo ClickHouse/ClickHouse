@@ -1,7 +1,7 @@
-#include <QueryCoordination/QueryCoordinationMetaInfo.h>
-#include <IO/VarInt.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <QueryCoordination/QueryCoordinationMetaInfo.h>
 
 namespace DB
 {
@@ -23,9 +23,7 @@ void QueryCoordinationMetaInfo::write(WriteBuffer & out) const
     writeVarUInt(key_size, out);
 
     for (const auto & key : sharding_keys)
-    {
         writeStringBinary(key, out);
-    }
 }
 
 void QueryCoordinationMetaInfo::read(ReadBuffer & in)
@@ -65,14 +63,10 @@ String QueryCoordinationMetaInfo::toString() const
     String res("Cluster: " + cluster_name);
 
     for (const auto & storage_id : storages)
-    {
         res += (", " + storage_id.database_name + "." + storage_id.table_name);
-    }
 
     for (const auto & key : sharding_keys)
-    {
         res += (", " + key);
-    }
 
     return res;
 }

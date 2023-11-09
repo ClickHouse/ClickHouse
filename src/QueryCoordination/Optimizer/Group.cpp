@@ -30,22 +30,22 @@ void Group::addGroupNode(GroupNodePtr group_node, UInt32 group_node_id)
     group_nodes.emplace_back(std::move(group_node));
 }
 
-Cost Group::getSatisfyBestCost(const PhysicalProperties & required_properties) const
+Cost Group::getSatisfiedBestCost(const PhysicalProperties & required_properties) const
 {
-    auto best_node = getSatisfyBestGroupNode(required_properties);
+    auto best_node = getSatisfiedBestGroupNode(required_properties);
     if (best_node)
         return best_node->second.cost;
     return Cost::infinite();
 }
 
-std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>>
-Group::getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const
+std::optional<std::pair<PhysicalProperties, Group::NodeAndCost>>
+Group::getSatisfiedBestGroupNode(const PhysicalProperties & required_properties) const
 {
     auto min_cost = Cost::infinite();
 
-    std::pair<PhysicalProperties, GroupNodeCost> res;
+    std::pair<PhysicalProperties, NodeAndCost> res;
 
-    for (const auto & [properties, group_node_cost] : prop_to_best_node)
+    for (const auto & [properties, group_node_cost] : prop_to_best)
     {
         if (properties.satisfy(required_properties))
         {
@@ -66,9 +66,9 @@ Group::getSatisfyBestGroupNode(const PhysicalProperties & required_properties) c
 
 bool Group::updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost)
 {
-    if (!prop_to_best_node.contains(properties) || cost < prop_to_best_node[properties].cost)
+    if (!prop_to_best.contains(properties) || cost < prop_to_best[properties].cost)
     {
-        prop_to_best_node[properties] = {group_node, cost};
+        prop_to_best[properties] = {group_node, cost};
         return true;
     }
     return false;
@@ -76,7 +76,7 @@ bool Group::updatePropBestNode(const PhysicalProperties & properties, GroupNodeP
 
 Cost Group::getCostByProp(const PhysicalProperties & properties)
 {
-    return prop_to_best_node[properties].cost;
+    return prop_to_best[properties].cost;
 }
 
 UInt32 Group::getId() const
@@ -124,13 +124,13 @@ String Group::toString() const
         res += "{ " + node->toString() + "}, ";
 
     String prop_map;
-    for (const auto & [prop, cost_group_node] : prop_to_best_node)
+    for (const auto & [prop, cost_group_node] : prop_to_best)
     {
         prop_map += "{ " + prop.toString() + "- (" + std::to_string(cost_group_node.cost.get()) + ", "
             + std::to_string(cost_group_node.group_node->getId()) + ")}, ";
     }
 
-    res += "prop_to_best_node: " + prop_map;
+    res += "prop_to_best: " + prop_map;
     return res;
 }
 

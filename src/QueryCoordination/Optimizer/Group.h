@@ -11,7 +11,7 @@ namespace DB
 class Group
 {
 public:
-    struct GroupNodeCost
+    struct NodeAndCost
     {
         GroupNodePtr group_node;
         Cost cost;
@@ -33,10 +33,10 @@ public:
     bool updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost);
 
     Cost getCostByProp(const PhysicalProperties & properties);
-    Cost getSatisfyBestCost(const PhysicalProperties & required_properties) const;
+    Cost getSatisfiedBestCost(const PhysicalProperties & required_properties) const;
 
-    std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>>
-    getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const;
+    std::optional<std::pair<PhysicalProperties, Group::NodeAndCost>>
+    getSatisfiedBestGroupNode(const PhysicalProperties & required_properties) const;
 
     UInt32 getId() const;
 
@@ -54,7 +54,7 @@ private:
     std::list<GroupNodePtr> group_nodes;
 
     /// optimize temp result
-    std::unordered_map<PhysicalProperties, GroupNodeCost, PhysicalProperties::HashFunction> prop_to_best_node;
+    std::unordered_map<PhysicalProperties, NodeAndCost, PhysicalProperties::HashFunction> prop_to_best;
 
     Statistics statistics;
     bool stats_derived = false;

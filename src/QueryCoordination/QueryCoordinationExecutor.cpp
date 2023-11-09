@@ -1,21 +1,21 @@
-#include <QueryCoordination/QueryCoordinationExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
-#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/setThreadName.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 struct QueryCoordinationExecutor::Data
@@ -66,10 +66,7 @@ bool QueryCoordinationExecutor::pull(Block & block, uint64_t milliseconds)
 {
     if (!begin_execute)
     {
-        auto exception_callback = [this](std::exception_ptr exception_)
-        {
-            setException(exception_);
-        };
+        auto exception_callback = [this](std::exception_ptr exception_) { setException(exception_); };
 
         if (completed_pipelines_executor)
         {
@@ -106,23 +103,26 @@ void QueryCoordinationExecutor::cancel()
     LOG_DEBUG(log, "cancel");
 
     /// Cancel execution if it wasn't finished.
-    cancelWithExceptionHandling([&]()
-    {
-        if (pulling_async_pipeline_executor)
-            pulling_async_pipeline_executor->cancel();
-    });
+    cancelWithExceptionHandling(
+        [&]()
+        {
+            if (pulling_async_pipeline_executor)
+                pulling_async_pipeline_executor->cancel();
+        });
 
-    cancelWithExceptionHandling([&]()
-    {
-        if (completed_pipelines_executor)
-            completed_pipelines_executor->cancel();
-    });
+    cancelWithExceptionHandling(
+        [&]()
+        {
+            if (completed_pipelines_executor)
+                completed_pipelines_executor->cancel();
+        });
 
-    cancelWithExceptionHandling([&]()
-    {
-        if (remote_pipelines_manager)
-            remote_pipelines_manager->cancel();
-    });
+    cancelWithExceptionHandling(
+        [&]()
+        {
+            if (remote_pipelines_manager)
+                remote_pipelines_manager->cancel();
+        });
 
     LOG_DEBUG(log, "cancelled");
 
@@ -132,15 +132,15 @@ void QueryCoordinationExecutor::cancel()
 
 void QueryCoordinationExecutor::cancelReading()
 {
-//    if (!data)
-//        return;
-//
-//    /// Stop reading from source if pipeline wasn't finished.
-//    cancelWithExceptionHandling([&]()
-//    {
-//        if (!data->is_finished && data->executor)
-//            data->executor->cancelReading();
-//    });
+    //    if (!data)
+    //        return;
+    //
+    //    /// Stop reading from source if pipeline wasn't finished.
+    //    cancelWithExceptionHandling([&]()
+    //    {
+    //        if (!data->is_finished && data->executor)
+    //            data->executor->cancelReading();
+    //    });
 }
 
 void QueryCoordinationExecutor::cancelWithExceptionHandling(CancelFunc && cancel_func)

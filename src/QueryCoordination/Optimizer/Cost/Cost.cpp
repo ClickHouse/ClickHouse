@@ -113,14 +113,14 @@ bool Cost::operator>=(const Cost & other) const
 
 void Cost::reset()
 {
-    cpu_cost = 0;
-    mem_cost = 0;
-    net_cost = 0;
+    cpu_cost = 0.0;
+    mem_cost = 0.0;
+    net_cost = 0.0;
 }
 
 String Cost::toString() const
 {
-    return fmt::format("(summary:{}, cup:{}, mem:{}, net:{})", get(), cpu_cost, mem_cost, net_cost);
+    return fmt::format("(summary:{:.2g}, cup:{:.2g}, mem:{:.2g}, net:{:.2g})", get(), cpu_cost, mem_cost, net_cost);
 }
 
 }

@@ -16,7 +16,7 @@ Cost CostCalculator::visitDefault(IQueryPlanStep & step)
         return Cost(statistics.getDataSize());
 
     Float64 total_input_data_size{};
-    for (auto & input : input_statistics)
+    for (const auto & input : input_statistics)
         total_input_data_size += input.getDataSize();
 
     return Cost(total_input_data_size);
@@ -29,7 +29,7 @@ Cost CostCalculator::visit(ReadFromMergeTree &)
 
 Cost CostCalculator::visit(AggregatingStep & step)
 {
-    auto & input = input_statistics.front();
+    const auto & input = input_statistics.front();
 
     /// Two stage aggregating, first stage
     if (!step.isPreliminaryAgg())
@@ -48,7 +48,7 @@ Cost CostCalculator::visit(AggregatingStep & step)
 /// Two stage aggregating, second stage
 Cost CostCalculator::visit(MergingAggregatedStep &)
 {
-    auto & input = input_statistics.front();
+    const auto & input = input_statistics.front();
     Cost cost(input.getDataSize(), statistics.getDataSize());
     return cost;
 }
@@ -65,7 +65,7 @@ Cost CostCalculator::visit(FilterStep &)
 
 Cost CostCalculator::visit(SortingStep & step)
 {
-    auto & input = input_statistics.front();
+    const auto & input = input_statistics.front();
 
     /// Two stage sorting, first stage
     if (step.getPhase() == SortingStep::Phase::Preliminary)
@@ -93,15 +93,15 @@ Cost CostCalculator::visit(SortingStep & step)
 
 Cost CostCalculator::visit(LimitStep &)
 {
-    auto & input = input_statistics.front();
+    const auto & input = input_statistics.front();
     return Cost(input.getDataSize());
 }
 
 /// Now only hash join
 Cost CostCalculator::visit(JoinStep & step)
 {
-    auto & left_input = input_statistics[0];
-    auto & right_input = input_statistics[1];
+    const auto & left_input = input_statistics[0];
+    const auto & right_input = input_statistics[1];
 
     const auto & join = step.getJoin()->getTableJoin();
 
@@ -151,8 +151,8 @@ Cost CostCalculator::visit(JoinStep & step)
         else
         {
             Names right_table_join_on_keys;
-            for (auto & on_clause : join.getClauses())
-                for (auto & right_key : on_clause.key_names_right)
+            for (const auto & on_clause : join.getClauses())
+                for (const auto & right_key : on_clause.key_names_right)
                     right_table_join_on_keys.push_back(right_key);
             right_table_ndv = 1 * right_input.getColumnStatistics(right_table_join_on_keys[0])->getNdv();
             for (size_t i = 1; i < right_table_join_on_keys.size(); i++)
@@ -166,7 +166,7 @@ Cost CostCalculator::visit(JoinStep & step)
     Float64 probe_mem_cost = 0.0;
 
     /// broad cast join
-    if (child_props[1].distribution.type == PhysicalProperties::DistributionType::Replicated)
+    if (child_props[1].distribution.type == Distribution::Replicated)
     {
         build_cpu_cost *= node_count;
         build_mem_cost *= node_count;
@@ -188,7 +188,7 @@ Cost CostCalculator::visit(ExchangeDataStep & step)
 
     Cost cost(input.getDataSize(), 0.0, input.getDataSize());
 
-    if (distribution_type == PhysicalProperties::DistributionType::Replicated)
+    if (distribution_type == Distribution::Replicated)
         cost.multiplyBy(node_count);
 
     return cost;
@@ -196,7 +196,7 @@ Cost CostCalculator::visit(ExchangeDataStep & step)
 
 Cost CostCalculator::visit(CreatingSetStep &)
 {
-    auto & input = input_statistics.front();
+    const auto & input = input_statistics.front();
     return Cost(input.getDataSize(), input.getDataSize());
 }
 
@@ -207,13 +207,13 @@ Cost CostCalculator::visit(ExtremesStep & step)
 
 Cost CostCalculator::visit(RollupStep &)
 {
-    auto & input = input_statistics.front();
+    const auto & input = input_statistics.front();
     return Cost(input.getDataSize(), input.getDataSize());
 }
 
 Cost CostCalculator::visit(CubeStep &)
 {
-    auto & input = input_statistics.front();
+    const auto & input = input_statistics.front();
     return Cost(input.getDataSize(), input.getDataSize());
 }
 
@@ -224,7 +224,7 @@ Cost CostCalculator::visit(TotalsHavingStep & step)
 
 Cost CostCalculator::visit(TopNStep & step)
 {
-    auto & input = input_statistics.front();
+    const auto & input = input_statistics.front();
     if (step.getPhase() == TopNStep::Phase::Preliminary)
     {
         /// cpu_cost: n * log2(n)

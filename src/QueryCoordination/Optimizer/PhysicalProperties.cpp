@@ -3,6 +3,46 @@
 namespace DB
 {
 
+String SortProp::toString() const
+{
+    String res;
+    for (const auto & sort_column : sort_description)
+        res += sort_column.column_name + ", ";
+
+    switch (sort_scope)
+    {
+        case DataStream::SortScope::None:
+            res += "None";
+            break;
+        case DataStream::SortScope::Stream:
+            res += "Stream";
+            break;
+        case DataStream::SortScope::Global:
+            res += "Global";
+            break;
+        case DataStream::SortScope::Chunk:
+            res += "Chunk";
+            break;
+    }
+
+    return res;
+}
+
+String Distribution::toString() const
+{
+    switch (this->type)
+    {
+        case Any:
+            return "Any";
+        case Singleton:
+            return "Singleton";
+        case Replicated:
+            return "Replicated";
+        case Hashed:
+            return "Hashed";
+    }
+}
+
 bool PhysicalProperties::operator==(const PhysicalProperties & other) const
 {
     if (sort_prop.sort_description.size() != other.sort_prop.sort_description.size())
@@ -29,13 +69,13 @@ bool PhysicalProperties::operator==(const PhysicalProperties & other) const
 
 bool PhysicalProperties::satisfy(const PhysicalProperties & required) const
 {
-    bool satisfy_sort = satisfySort(required);
-    bool satisfy_distribute = satisfyDistribute(required);
+    bool satisfy_sort = satisfySorting(required);
+    bool satisfy_distribute = satisfyDistribution(required);
 
     return satisfy_sort && satisfy_distribute;
 }
 
-bool PhysicalProperties::satisfySort(const PhysicalProperties & required) const
+bool PhysicalProperties::satisfySorting(const PhysicalProperties & required) const
 {
     bool sort_description_satisfy = required.sort_prop.sort_description.size()
         == commonPrefix(sort_prop.sort_description, required.sort_prop.sort_description).size();
@@ -51,9 +91,9 @@ bool PhysicalProperties::satisfySort(const PhysicalProperties & required) const
     return true;
 }
 
-bool PhysicalProperties::satisfyDistribute(const PhysicalProperties & required) const
+bool PhysicalProperties::satisfyDistribution(const PhysicalProperties & required) const
 {
-    if (required.distribution.type == DistributionType::Any)
+    if (required.distribution.type == Distribution::Any)
         return true;
 
     if (required.distribution.distribution_by_buket_num != distribution.distribution_by_buket_num)
@@ -68,7 +108,7 @@ bool PhysicalProperties::satisfyDistribute(const PhysicalProperties & required) 
 
 String PhysicalProperties::toString() const
 {
-    return distributionType(distribution.type);
+    return distribution.toString();
 }
 
 }

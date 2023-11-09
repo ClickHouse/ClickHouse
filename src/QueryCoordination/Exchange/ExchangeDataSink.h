@@ -49,7 +49,7 @@ public:
     ExchangeDataSink(
         Block header,
         std::vector<Channel> & channels_,
-        const PhysicalProperties::Distribution & distribution,
+        const Distribution & distribution,
         String local_host,
         String query_id,
         UInt32 fragment_id,
@@ -83,7 +83,7 @@ private:
     size_t num_rows = 0;
 
     DataPartition output_partition;
-    PhysicalProperties::Distribution output_distribution;
+    Distribution output_distribution;
 
     ExchangeDataRequest request;
 

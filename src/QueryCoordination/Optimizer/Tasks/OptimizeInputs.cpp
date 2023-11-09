@@ -56,7 +56,7 @@ void OptimizeInputs::execute()
         {
             auto required_child_prop = required_child_props[frame->child_idx];
             auto & child_group = *child_groups[frame->child_idx];
-            auto best_node = child_group.getSatisfyBestGroupNode(required_child_prop);
+            auto best_node = child_group.getSatisfiedBestGroupNode(required_child_prop);
             if (!best_node)
             {
                 if (frame->pre_child_idx >= frame->child_idx) /// child problem no solution
@@ -119,14 +119,14 @@ void OptimizeInputs::execute()
             }
 
             /// Currently, it only deals with distributed cases
-            if (!output_prop.satisfySort(required_prop))
+            if (!output_prop.satisfySorting(required_prop))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Sort property not satisfied, output sort prop {}, required sort prop {}",
                     output_prop.sort_prop.toString(),
                     required_prop.sort_prop.toString());
 
-            if (!output_prop.satisfyDistribute(required_prop))
+            if (!output_prop.satisfyDistribution(required_prop))
                 frame->total_cost = enforceGroupNode(required_prop, output_prop);
 
             if (frame->total_cost < task_context->getUpperBoundCost())

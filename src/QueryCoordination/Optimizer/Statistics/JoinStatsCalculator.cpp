@@ -252,7 +252,7 @@ Float64 JoinStatsCalculator::Impl::leftDataSetNDV()
         for (size_t i = 1; i < left_join_on_keys.size(); i++)
             left_data_set_ndv = left_data_set_ndv * 0.8 * left_input.getColumnStatistics(left_join_on_keys[i])->getNdv();
     }
-    return left_data_set_ndv;
+    return std::max(1.0, left_data_set_ndv);
 }
 
 Float64 JoinStatsCalculator::Impl::rightDataSetNDV()
@@ -268,7 +268,7 @@ Float64 JoinStatsCalculator::Impl::rightDataSetNDV()
         for (size_t i = 1; i < right_join_on_keys.size(); i++)
             right_data_set_ndv = right_data_set_ndv * 0.8 * right_input.getColumnStatistics(right_join_on_keys[i])->getNdv();
     }
-    return right_data_set_ndv;
+    return std::max(1.0, right_data_set_ndv);
 }
 
 Float64 JoinStatsCalculator::Impl::calculateIntersectingNDV()
@@ -281,12 +281,12 @@ Float64 JoinStatsCalculator::Impl::calculateIntersectingNDV()
 
 Float64 JoinStatsCalculator::Impl::calculateIntersectingRowCountForLeft(Float64 intersecting_ndv)
 {
-    return (intersecting_ndv / leftDataSetNDV()) * left_input.getOutputRowSize();
+    return std::max(1.0, (intersecting_ndv / leftDataSetNDV()) * left_input.getOutputRowSize());
 }
 
 Float64 JoinStatsCalculator::Impl::calculateIntersectingRowCountForRight(Float64 intersecting_ndv)
 {
-    return (intersecting_ndv / rightDataSetNDV()) * right_input.getOutputRowSize();
+    return std::max(1.0, (intersecting_ndv / rightDataSetNDV()) * right_input.getOutputRowSize());
 }
 
 

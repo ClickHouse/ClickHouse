@@ -30,6 +30,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
     : InterpreterSelectQueryCoordination(query_ptr_, Context::createCopy(context_), options_)
 {
+    log = &Poco::Logger::get("InterpreterSelectQueryCoordination");
 }
 
 InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
@@ -118,7 +119,7 @@ void InterpreterSelectQueryCoordination::buildQueryPlanIfNeeded()
 void InterpreterSelectQueryCoordination::optimize()
 {
     if (!plan.isInitialized())
-        return;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Try to optimize plan but it is not initialized.");
 
     /// Optimized by RBO rules
     plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
@@ -126,8 +127,10 @@ void InterpreterSelectQueryCoordination::optimize()
     /// Optimized by CBO optimizer
     if (query_coordination_enabled)
     {
+        Stopwatch watch;
         CostBasedOptimizer optimizer;
         plan = optimizer.optimize(std::move(plan), context);
+        LOG_DEBUG(log, "CBO optimization time costs {}ms", watch.elapsedMilliseconds());
     }
 }
 
@@ -231,7 +234,7 @@ BlockIO InterpreterSelectQueryCoordination::execute()
     }
     else
     {
-        LOG_INFO(&Poco::Logger::get("InterpreterSelectQueryCoordination"), "disable query_coordination");
+        LOG_INFO(log, "query_coordination is not enabled");
 
         auto builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));

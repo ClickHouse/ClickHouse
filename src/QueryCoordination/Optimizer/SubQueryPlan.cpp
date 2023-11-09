@@ -20,7 +20,8 @@ void SubQueryPlan::addStep(QueryPlanStepPtr step)
             if (!blocksHaveEqualStructure(root_header, step_header))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Cannot add step {} to SubQueryPlan because it has incompatible header with root step {} root header: {} step header: {}",
+                    "Cannot add step {} to SubQueryPlan because it has incompatible header with root step {} root header: {} step header: "
+                    "{}",
                     step->getName(),
                     root->step->getName(),
                     root_header.dumpStructure(),

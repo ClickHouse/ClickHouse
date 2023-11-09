@@ -11,7 +11,7 @@ class ExchangeDataStep final : public ISourceStep
 {
 public:
     ExchangeDataStep(
-        PhysicalProperties::Distribution distribution_,
+        Distribution distribution_,
         const DataStream & data_stream,
         size_t max_block_size_,
         SortDescription sort_description_ = {},
@@ -25,7 +25,7 @@ public:
         , sink_merge(exchange_sink_merge)
         , source_merge(exchange_source_merge)
     {
-        setStepDescription(PhysicalProperties::distributionType(distribution.type));
+        setStepDescription("distributed by " + distribution.toString());
 
         output_stream->sort_description = sort_description;
         output_stream->sort_scope = sort_scope_;
@@ -42,11 +42,11 @@ public:
     void setSources(const std::vector<String> & sources_) { sources = sources_; }
     void setFragmentId(UInt32 fragment_id_) { fragment_id = fragment_id_; }
 
-    PhysicalProperties::DistributionType getDistributionType() const { return distribution.type; }
-    const PhysicalProperties::Distribution & getDistribution() const { return distribution; }
+    Distribution::Type getDistributionType() const { return distribution.type; }
+    const Distribution & getDistribution() const { return distribution; }
     const SortDescription & getSortDescription() const { return sort_description; }
 
-    bool isSingleton() const { return distribution.type == PhysicalProperties::DistributionType::Singleton; }
+    bool isSingleton() const { return distribution.type == Distribution::Singleton; }
     bool sinkMerge() const { return sink_merge; }
 
 private:
@@ -59,7 +59,7 @@ private:
 
     size_t max_block_size;
 
-    PhysicalProperties::Distribution distribution;
+    Distribution distribution;
     SortDescription sort_description;
 
     bool sink_merge;

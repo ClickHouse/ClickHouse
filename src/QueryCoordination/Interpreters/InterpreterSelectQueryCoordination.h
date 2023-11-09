@@ -58,6 +58,8 @@ private:
 
     /// Distributed query plan, enabled only if query_coordination_enabled is true.
     FragmentPtrs fragments;
+
+    Poco::Logger * log;
 };
 
 }

@@ -86,8 +86,8 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     add_column_if_not_exist(step.getRealColumnNames());
     add_column_if_not_exist(step.getVirtualColumnNames());
 
-    /// Firstly we set table total row count as input row count,
-    /// and then when drive statistics for filter step the row count will reduce.
+    /// Firstly we set table total row count as table total row count, and
+    /// when driving statistics for filter step the row count will reduce.
     /// TODO Driving statistics for filter step should support data type String
     /// whose value can be cast to Float64.
     Statistics statistics = *input;

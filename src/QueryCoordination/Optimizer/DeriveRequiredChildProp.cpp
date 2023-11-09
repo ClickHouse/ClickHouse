@@ -47,8 +47,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & s
         if (transforming_step && transforming_step->getDataStreamTraits().preserves_sorting)
             setSortProp(group_node->getStep(), required_child_sort_prop, i);
 
-        required_child_prop.push_back(
-            {.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_child_sort_prop});
+        required_child_prop.push_back({.distribution = {.type = Distribution::Singleton}, .sort_prop = required_child_sort_prop});
     }
     return {required_child_prop};
 }
@@ -67,12 +66,12 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(AggregatingStep & step)
     if (!step.isPreliminaryAgg())
     {
         std::vector<PhysicalProperties> required_singleton_prop;
-        required_singleton_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+        required_singleton_prop.push_back({.distribution = {.type = Distribution::Singleton}});
         res.emplace_back(required_singleton_prop);
 
         std::vector<PhysicalProperties> required_hashed_prop;
         PhysicalProperties hashed_prop;
-        hashed_prop.distribution.type = PhysicalProperties::DistributionType::Hashed;
+        hashed_prop.distribution.type = Distribution::Hashed;
         hashed_prop.distribution.keys = step.getParams().keys;
         required_hashed_prop.push_back(hashed_prop);
         res.emplace_back(required_hashed_prop);
@@ -80,7 +79,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(AggregatingStep & step)
     else
     {
         std::vector<PhysicalProperties> required_child_prop;
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+        required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
         res.emplace_back(required_child_prop);
     }
     return res;
@@ -93,12 +92,12 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(MergingAggregatedStep & s
 
     if (step.getParams().keys.empty() || !step.isFinal())
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+        required_child_prop.push_back({.distribution = {.type = Distribution::Singleton}});
     }
     else
     {
         PhysicalProperties hashed_prop;
-        hashed_prop.distribution.type = PhysicalProperties::DistributionType::Hashed;
+        hashed_prop.distribution.type = Distribution::Hashed;
         hashed_prop.distribution.distribution_by_buket_num = true;
         required_child_prop.push_back(hashed_prop);
     }
@@ -115,7 +114,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(ExpressionStep & step)
 
     PhysicalProperties required_child_prop;
     required_child_prop.sort_prop = required_sort_prop;
-    required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
+    required_child_prop.distribution = {.type = Distribution::Any};
     return {{required_child_prop}};
 }
 
@@ -126,7 +125,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(FilterStep & /*step*/)
 
     PhysicalProperties required_child_prop;
     required_child_prop.sort_prop = required_sort_prop;
-    required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
+    required_child_prop.distribution = {.type = Distribution::Any};
     return {{required_child_prop}};
 }
 
@@ -146,9 +145,9 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(TopNStep & step)
     }
 
     if (step.getPhase() == TopNStep::Phase::Preliminary)
-        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
+        required_child_prop.distribution = {.type = Distribution::Any};
     else
-        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
+        required_child_prop.distribution = {.type = Distribution::Singleton};
     return {{required_child_prop}};
 }
 
@@ -166,9 +165,9 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(SortingStep & step)
         required_child_prop.sort_prop.sort_description = step.getInputStreams().front().sort_description;
     }
     if (step.getPhase() == SortingStep::Phase::Preliminary)
-        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
+        required_child_prop.distribution = {.type = Distribution::Any};
     else
-        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
+        required_child_prop.distribution = {.type = Distribution::Singleton};
     return {{required_child_prop}};
 }
 
@@ -185,15 +184,15 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(DistinctStep & step)
         }
     }
 
-    required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
+    required_child_prop.distribution = {.type = Distribution::Singleton};
 
     //    if (step.isPreliminary())
     //    {
-    //        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
+    //        required_child_prop.distribution = {.type = Distribution::Any};
     //    }
     //    else
     //    {
-    //        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
+    //        required_child_prop.distribution = {.type = Distribution::Singleton};
     //    }
     return {{required_child_prop}};
 }
@@ -207,15 +206,9 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(LimitStep & step)
     std::vector<PhysicalProperties> required_child_prop;
 
     if (step.getPhase() == LimitStep::Phase::Preliminary)
-    {
-        required_child_prop.push_back(
-            {.distribution = {.type = PhysicalProperties::DistributionType::Any}, .sort_prop = required_sort_prop});
-    }
+        required_child_prop.push_back({.distribution = {.type = Distribution::Any}, .sort_prop = required_sort_prop});
     else
-    {
-        required_child_prop.push_back(
-            {.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_sort_prop});
-    }
+        required_child_prop.push_back({.distribution = {.type = Distribution::Singleton}, .sort_prop = required_sort_prop});
 
     res.emplace_back(required_child_prop);
     return res;
@@ -227,8 +220,8 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(JoinStep & step)
 
     /// broadcast join
     std::vector<PhysicalProperties> broadcast_join_properties;
-    broadcast_join_properties.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
-    broadcast_join_properties.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Replicated}});
+    broadcast_join_properties.push_back({.distribution = {.type = Distribution::Any}});
+    broadcast_join_properties.push_back({.distribution = {.type = Distribution::Replicated}});
     res.emplace_back(broadcast_join_properties);
 
     /// shuffle join
@@ -245,10 +238,8 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(JoinStep & step)
     {
         auto join_clause = table_join.getOnlyClause(); /// must be equals condition
         std::vector<PhysicalProperties> shaffle_join_prop;
-        shaffle_join_prop.push_back(
-            {.distribution = {.type = PhysicalProperties::DistributionType::Hashed, .keys = join_clause.key_names_left}});
-        shaffle_join_prop.push_back(
-            {.distribution = {.type = PhysicalProperties::DistributionType::Hashed, .keys = join_clause.key_names_right}});
+        shaffle_join_prop.push_back({.distribution = {.type = Distribution::Hashed, .keys = join_clause.key_names_left}});
+        shaffle_join_prop.push_back({.distribution = {.type = Distribution::Hashed, .keys = join_clause.key_names_right}});
         res.emplace_back(shaffle_join_prop);
     }
 
@@ -258,14 +249,14 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(JoinStep & step)
 AlternativeChildrenProp DeriveRequiredChildProp::visit(ExchangeDataStep & /*step*/)
 {
     std::vector<PhysicalProperties> required_child_prop;
-    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+    required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
     return {required_child_prop};
 }
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(CreatingSetStep & /*step*/)
 {
     std::vector<PhysicalProperties> required_child_prop;
-    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Replicated}});
+    required_child_prop.push_back({.distribution = {.type = Distribution::Replicated}});
     return {required_child_prop};
 }
 
@@ -292,9 +283,9 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(CreatingSetsStep & step)
     std::vector<PhysicalProperties> required_child_prop;
 
     /// Ensure that CreatingSetsStep and the left table scan are assigned to the same fragment.
-    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}, .sort_prop = required_sort_prop});
+    required_child_prop.push_back({.distribution = {.type = Distribution::Any}, .sort_prop = required_sort_prop});
     for (size_t i = 1; i < group_node->childSize(); ++i)
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+        required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
     return {required_child_prop};
 }
 
@@ -306,8 +297,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(UnionStep & /*step*/)
         SortProp required_child_sort_prop;
         setSortProp(group_node->getStep(), required_child_sort_prop, i);
 
-        required_child_prop.push_back(
-            {.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_child_sort_prop});
+        required_child_prop.push_back({.distribution = {.type = Distribution::Singleton}, .sort_prop = required_child_sort_prop});
     }
     return {required_child_prop};
 }

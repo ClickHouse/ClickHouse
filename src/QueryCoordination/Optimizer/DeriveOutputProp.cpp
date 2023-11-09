@@ -63,7 +63,7 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 
     if (!context->getSettings().optimize_query_coordination_sharding_key)
     {
-        res.distribution = {.type = PhysicalProperties::DistributionType::Any};
+        res.distribution = {.type = Distribution::Any};
         return res;
     }
 
@@ -82,7 +82,7 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 
     if (sharding_key.empty())
     {
-        res.distribution = {.type = PhysicalProperties::DistributionType::Any};
+        res.distribution = {.type = Distribution::Any};
         return res;
     }
 
@@ -96,7 +96,7 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 
     if (sharding_key_expr->getRequiredColumns().empty())
     {
-        res.distribution = {.type = PhysicalProperties::DistributionType::Any};
+        res.distribution = {.type = Distribution::Any};
         return res;
     }
 
@@ -106,12 +106,12 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
     {
         if (std::count(output_names.begin(), output_names.end(), key) != 1)
         {
-            res.distribution = {.type = PhysicalProperties::DistributionType::Any};
+            res.distribution = {.type = Distribution::Any};
             return res;
         }
     }
 
-    res.distribution.type = PhysicalProperties::DistributionType::Hashed;
+    res.distribution.type = Distribution::Hashed;
     res.distribution.keys = sharding_key_expr->getRequiredColumns();
     return res;
 }
@@ -146,14 +146,14 @@ PhysicalProperties DeriveOutputProp::visit(ExchangeDataStep & step)
 PhysicalProperties DeriveOutputProp::visit(ExpressionStep & step)
 {
     PhysicalProperties res;
-    if (children_prop[0].distribution.type != PhysicalProperties::DistributionType::Hashed)
+    if (children_prop[0].distribution.type != Distribution::Hashed)
     {
         res.distribution = children_prop[0].distribution;
     }
     else
     {
         const auto & input_keys = children_prop[0].distribution.keys;
-        res.distribution.type = PhysicalProperties::DistributionType::Hashed;
+        res.distribution.type = Distribution::Hashed;
         res.distribution.keys.resize(input_keys.size());
 
         FindAliasForInputName alias_finder(step.getExpression());
@@ -165,7 +165,7 @@ PhysicalProperties DeriveOutputProp::visit(ExpressionStep & step)
             if (alias_node)
                 res.distribution.keys[i] = alias_node->result_name;
             else
-                return {.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+                return {.distribution = {.type = Distribution::Any}};
         }
     }
 
