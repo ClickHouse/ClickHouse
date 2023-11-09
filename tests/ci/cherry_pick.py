@@ -289,9 +289,7 @@ close it.
             "Checking if cherry-pick PR #%s needs to be pinged",
             self.cherrypick_pr.number,
         )
-        # The `updated_at` is Optional[datetime]
-        cherrypick_updated_at = self.cherrypick_pr.updated_at or datetime.now()
-        since_updated = datetime.now() - cherrypick_updated_at
+        since_updated = datetime.now() - self.cherrypick_pr.updated_at
         since_updated_str = (
             f"{since_updated.days}d{since_updated.seconds // 3600}"
             f"h{since_updated.seconds // 60 % 60}m{since_updated.seconds % 60}s"
@@ -300,7 +298,7 @@ close it.
             logging.info(
                 "The cherry-pick PR was updated at %s %s ago, "
                 "waiting for the next running",
-                cherrypick_updated_at.isoformat(),
+                self.cherrypick_pr.updated_at.isoformat(),
                 since_updated_str,
             )
             return
@@ -400,7 +398,12 @@ class Backport:
 
     def receive_release_prs(self):
         logging.info("Getting release PRs")
-        self.release_prs = self.gh.get_release_pulls(self._repo_name)
+        self.release_prs = self.gh.get_pulls_from_search(
+            query=f"type:pr repo:{self._repo_name} is:open",
+            sort="created",
+            order="asc",
+            label="release",
+        )
         self.release_branches = [pr.head.ref for pr in self.release_prs]
         self.labels_to_backport = [
             f"v{branch}-must-backport" for branch in self.release_branches

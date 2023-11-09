@@ -8,6 +8,9 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 
 
+static inline constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
+
+
 namespace DB
 {
 
@@ -131,12 +134,9 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
         threshold = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
-        if (threshold > DB::TOP_K_MAX_SIZE || load_factor > DB::TOP_K_MAX_SIZE || threshold * load_factor > DB::TOP_K_MAX_SIZE)
-            throw Exception(
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Too large parameter(s) for aggregate function '{}' (maximum is {})",
-                name,
-                toString(DB::TOP_K_MAX_SIZE));
+        if (threshold > TOP_K_MAX_SIZE || load_factor > TOP_K_MAX_SIZE || threshold * load_factor > TOP_K_MAX_SIZE)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Too large parameter(s) for aggregate function '{}' (maximum is {})", name, toString(TOP_K_MAX_SIZE));
 
         if (threshold == 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Parameter 0 is illegal for aggregate function '{}'", name);

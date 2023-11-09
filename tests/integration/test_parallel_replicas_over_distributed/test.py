@@ -79,29 +79,30 @@ def create_tables(cluster, table_name):
     # populate data
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(1000)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(2000)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT -number, -number FROM numbers(1000)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT -number, -number FROM numbers(2000)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(3)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
 
 
 @pytest.mark.parametrize(
     "cluster,max_parallel_replicas,prefer_localhost_replica",
     [
+        # prefer_localhost_replica=0
         pytest.param("test_single_shard_multiple_replicas", 2, 0),
         pytest.param("test_single_shard_multiple_replicas", 3, 0),
         pytest.param("test_single_shard_multiple_replicas", 4, 0),
@@ -129,6 +130,12 @@ def test_parallel_replicas_over_distributed(
     node = nodes[0]
     expected_result = f"6003\t-1999\t1999\t3\n"
 
+    # w/o parallel replicas
+    assert (
+        node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
+        == expected_result
+    )
+
     # parallel replicas
     assert (
         node.query(
@@ -140,14 +147,5 @@ def test_parallel_replicas_over_distributed(
                 "use_hedged_requests": 0,
             },
         )
-        == expected_result
-    )
-
-    # sync all replicas to get consistent result by next distributed query
-    node.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster} {table_name}")
-
-    # w/o parallel replicas
-    assert (
-        node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
         == expected_result
     )

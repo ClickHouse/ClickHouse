@@ -15,7 +15,7 @@ public:
     CommandMove()
     {
         command_name = "move";
-        description = "Move file or directory from `from_path` to `to_path`";
+        description = "Move file or directory from `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
         usage = "move [OPTION]... <FROM_PATH> <TO_PATH>";
     }
 

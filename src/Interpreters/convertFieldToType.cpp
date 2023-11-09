@@ -283,11 +283,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// Already in needed type.
             return src;
         }
-        if (which_type.isIPv4() && src.getType() == Field::Types::UInt64)
-        {
-            /// convert to UInt32 which is the underlying type for native IPv4
-            return convertNumericType<UInt32>(src, type);
-        }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
     {

@@ -3,7 +3,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/checkStackSize.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -346,7 +345,7 @@ Block createBlockForSet(
 {
     auto get_tuple_type_from_ast = [context](const auto & func) -> DataTypePtr
     {
-        if ((func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
+        if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
             auto element = func->arguments->children.at(0);
@@ -357,7 +356,6 @@ Block createBlockForSet(
         return evaluateConstantExpression(func, context).second;
     };
 
-    assert(right_arg);
     const DataTypePtr & right_arg_type = get_tuple_type_from_ast(right_arg);
 
     size_t left_tuple_depth = getTypeDepth(left_arg_type);
@@ -692,8 +690,6 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 
 void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 {
-    checkStackSize();
-
     if (const auto * identifier = ast->as<ASTIdentifier>())
         visit(*identifier, ast, data);
     else if (const auto * table = ast->as<ASTTableIdentifier>())
@@ -761,8 +757,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
-    auto untuple_alias = function->tryGetAlias();
-    for (const auto & element_name : tuple_type->getElementNames())
+    auto func_alias = function->tryGetAlias();
+    for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
 
@@ -776,12 +772,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-        if (!untuple_alias.empty())
-        {
-            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
-            func->setAlias(untuple_alias + "." + element_alias);
-        }
-
+        if (!func_alias.empty())
+            func->setAlias(func_alias + "." + toString(tid));
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 
