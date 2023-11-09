@@ -139,7 +139,7 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    String create_query;
+    const String create_query;
     String old_create_query;
     bool is_prepared = false;
 

@@ -39,6 +39,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
+#include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -424,6 +425,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
     }
 
+    if (settings.optimize_uniq_to_count)
+    {
+        RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
+        RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
+    }
+
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
     bool got_storage_from_query = false;
@@ -475,13 +482,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Check support for FINAL for parallel replicas
     bool is_query_with_final = isQueryWithFinal(query_info);
-    if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
+    if (is_query_with_final && settings.allow_experimental_parallel_reading_from_replicas > 0)
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
             LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            context->setSetting("parallel_replicas_custom_key", String{""});
         }
         else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
         {
@@ -622,12 +628,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
             query.setFinal();
-
-        /// Save scalar sub queries's results in the query context
-        /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
-        if (!options.only_analyze && context->hasQueryContext())
-            for (const auto & it : syntax_analyzer_result->getScalars())
-                context->getQueryContext()->addScalar(it.first, it.second);
 
         if (view)
         {
@@ -2428,17 +2428,22 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     /// General limit for the number of threads.
     size_t max_threads_execute_query = settings.max_threads;
 
-    /** With distributed query processing, almost no computations are done in the threads,
-     *  but wait and receive data from remote servers.
-     *  If we have 20 remote servers, and max_threads = 8, then it would not be very good
-     *  connect and ask only 8 servers at a time.
-     *  To simultaneously query more remote servers,
-     *  instead of max_threads, max_distributed_connections is used.
+    /**
+     * To simultaneously query more remote servers when async_socket_for_remote is off
+     * instead of max_threads, max_distributed_connections is used:
+     * since threads there mostly spend time waiting for data from remote servers,
+     * we can increase the degree of parallelism to avoid sequential querying of remote servers.
+     *
+     * DANGER: that can lead to insane number of threads working if there are a lot of stream and prefer_localhost_replica is used.
+     *
+     * That is not needed when async_socket_for_remote is on, because in that case
+     * threads are not blocked waiting for data from remote servers.
+     *
      */
-    bool is_remote = false;
-    if (storage && storage->isRemote())
+    bool is_sync_remote = false;
+    if (storage && storage->isRemote() && !settings.async_socket_for_remote)
     {
-        is_remote = true;
+        is_sync_remote = true;
         max_threads_execute_query = max_streams = settings.max_distributed_connections;
     }
 
@@ -2494,7 +2499,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
-        if (max_streams > 1 && !is_remote)
+        if (max_streams > 1 && !is_sync_remote)
             max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
 
         auto & prewhere_info = analysis_result.prewhere_info;
@@ -2592,7 +2597,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     /// The inner local query (that is done in the same process, without
     /// network interaction), it will setMaxThreads earlier and distributed
     /// query will not update it.
-    if (!query_plan.getMaxThreads() || is_remote)
+    if (!query_plan.getMaxThreads() || is_sync_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
 
     query_plan.setConcurrencyControl(settings.use_concurrency_control);
@@ -2931,7 +2936,11 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             query_plan.addStep(std::move(sorting_step));
         }
 
-        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions);
+        // Fan out streams only for the last window to preserve the ordering between windows,
+        // and WindowTransform works on single stream anyway.
+        const bool streams_fan_out = settings.query_plan_enable_multithreading_after_window_functions && ((i + 1) == windows_sorted.size());
+
+        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions, streams_fan_out);
         window_step->setStepDescription("Window step for window '" + window.window_name + "'");
 
         query_plan.addStep(std::move(window_step));

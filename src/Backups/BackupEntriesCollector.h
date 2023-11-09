@@ -31,7 +31,8 @@ public:
                            const BackupSettings & backup_settings_,
                            std::shared_ptr<IBackupCoordination> backup_coordination_,
                            const ReadSettings & read_settings_,
-                           const ContextPtr & context_);
+                           const ContextPtr & context_,
+                           ThreadPool & threadpool_);
     ~BackupEntriesCollector();
 
     /// Collects backup entries and returns the result.
@@ -43,6 +44,7 @@ public:
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
+    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
 
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
@@ -88,6 +90,8 @@ private:
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
+
+    void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
 
     void runPostTasks();
 
@@ -169,6 +173,9 @@ private:
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;
     std::vector<size_t> access_counters;
+
+    ThreadPool & threadpool;
+    std::mutex mutex;
 };
 
 }

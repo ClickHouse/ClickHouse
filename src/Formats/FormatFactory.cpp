@@ -59,6 +59,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
+    format_settings.csv.allow_cr_end_of_line = settings.input_format_csv_allow_cr_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
@@ -100,6 +101,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
+    format_settings.json.skip_null_value_in_named_tuples = settings.output_format_json_skip_null_value_in_named_tuples;
     format_settings.json.read_named_tuples_as_objects = settings.input_format_json_named_tuples_as_objects;
     format_settings.json.defaults_for_missing_elements_in_named_tuple = settings.input_format_json_defaults_for_missing_elements_in_named_tuple;
     format_settings.json.ignore_unknown_keys_in_named_tuple = settings.input_format_json_ignore_unknown_keys_in_named_tuple;
@@ -193,7 +195,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
     format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
     format_settings.orc.output_compression_method = settings.output_format_orc_compression_method;
+    format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
     format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
+    format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
@@ -224,6 +228,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.native.allow_types_conversion = settings.input_format_native_allow_types_conversion;
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
     format_settings.client_protocol_version = context->getClientProtocolVersion();
+    format_settings.date_time_overflow_behavior = settings.date_time_overflow_behavior;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

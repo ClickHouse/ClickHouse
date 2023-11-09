@@ -59,6 +59,9 @@ public:
     static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
     static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
 
+    static bool equals(const Field & lhs, const Field & rhs);
+    static bool less(const Field & lhs, const Field & rhs);
+
     /** Optimize the range. If it has an open boundary and the Field type is "loose"
       * - then convert it to closed, narrowing by one.
       * That is, for example, turn (0,2) into [1].
@@ -85,8 +88,13 @@ public:
     String toString() const;
 };
 
+Range intersect(const Range & a, const Range & b);
+
 /** Hyperrectangle is a product of ranges: each range across each coordinate.
   */
 using Hyperrectangle = std::vector<Range>;
+
+Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b);
+String toString(const Hyperrectangle & x);
 
 }

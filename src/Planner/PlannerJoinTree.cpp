@@ -447,7 +447,7 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     const auto & query_context = planner_context->getQueryContext();
 
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (!row_policy_filter)
+    if (!row_policy_filter || row_policy_filter->empty())
         return {};
 
     return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
@@ -599,15 +599,20 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         size_t max_streams = settings.max_threads;
         size_t max_threads_execute_query = settings.max_threads;
 
-        /** With distributed query processing, almost no computations are done in the threads,
-          * but wait and receive data from remote servers.
-          * If we have 20 remote servers, and max_threads = 8, then it would not be efficient to
-          * connect and ask only 8 servers at a time.
-          * To simultaneously query more remote servers,
-          * instead of max_threads, max_distributed_connections is used.
-          */
-        bool is_remote = table_expression_data.isRemote();
-        if (is_remote)
+        /**
+         * To simultaneously query more remote servers when async_socket_for_remote is off
+         * instead of max_threads, max_distributed_connections is used:
+         * since threads there mostly spend time waiting for data from remote servers,
+         * we can increase the degree of parallelism to avoid sequential querying of remote servers.
+         *
+         * DANGER: that can lead to insane number of threads working if there are a lot of stream and prefer_localhost_replica is used.
+         *
+         * That is not needed when async_socket_for_remote is on, because in that case
+         * threads are not blocked waiting for data from remote servers.
+         *
+         */
+        bool is_sync_remote = table_expression_data.isRemote() && !settings.async_socket_for_remote;
+        if (is_sync_remote)
         {
             max_streams = settings.max_distributed_connections;
             max_threads_execute_query = settings.max_distributed_connections;
@@ -647,7 +652,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
-        if (max_streams > 1 && !is_remote)
+        if (max_streams > 1 && !is_sync_remote)
             max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
 
         if (table_node)
@@ -778,6 +783,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context);
                 add_filter(row_policy_filter_info, "Row-level security filter");
+                if (row_policy_filter_info.actions)
+                    table_expression_data.setRowLevelFilterActions(row_policy_filter_info.actions);
 
                 if (query_context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY)
                 {
@@ -841,7 +848,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                   * network interaction), it will setMaxThreads earlier and distributed
                   * query will not update it.
                   */
-                if (!query_plan.getMaxThreads() || is_remote)
+                if (!query_plan.getMaxThreads() || is_sync_remote)
                     query_plan.setMaxThreads(max_threads_execute_query);
 
                 query_plan.setConcurrencyControl(settings.use_concurrency_control);
@@ -1139,12 +1146,13 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             const auto & join_clause_right_key_nodes = join_clause.getRightKeyNodes();
 
             size_t join_clause_key_nodes_size = join_clause_left_key_nodes.size();
-            assert(join_clause_key_nodes_size == join_clause_right_key_nodes.size());
+            chassert(join_clause_key_nodes_size == join_clause_right_key_nodes.size());
 
             for (size_t i = 0; i < join_clause_key_nodes_size; ++i)
             {
-                table_join_clause.key_names_left.push_back(join_clause_left_key_nodes[i]->result_name);
-                table_join_clause.key_names_right.push_back(join_clause_right_key_nodes[i]->result_name);
+                table_join_clause.addKey(join_clause_left_key_nodes[i]->result_name,
+                                         join_clause_right_key_nodes[i]->result_name,
+                                         join_clause.isNullsafeCompareKey(i));
             }
 
             const auto & join_clause_get_left_filter_condition_nodes = join_clause.getLeftFilterConditionNodes();
