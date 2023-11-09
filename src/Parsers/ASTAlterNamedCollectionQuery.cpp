@@ -14,7 +14,7 @@ ASTPtr ASTAlterNamedCollectionQuery::clone() const
 
 void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "Alter NAMED COLLECTION ";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "ALTER NAMED COLLECTION ";
     if (if_exists)
         settings.ostr << "IF EXISTS ";
     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");

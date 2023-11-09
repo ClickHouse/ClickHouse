@@ -217,6 +217,12 @@ public:
         for (const auto & [name, value] : result_changes_map)
             create_query.changes.emplace_back(name, value);
 
+        if (create_query.changes.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Named collection cannot be empty (collection name: {})",
+                query.collection_name);
+
         writeCreateQueryToMetadata(
             create_query,
             getMetadataPath(query.collection_name),
