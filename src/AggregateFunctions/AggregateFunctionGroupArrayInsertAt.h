@@ -84,7 +84,7 @@ public:
             }
         }
 
-        if (!isUnsignedInteger(arguments[1]))
+        if (!isUInt(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of aggregate function {} must be unsigned integer.", getName());
 
         if (default_value.isNull())
