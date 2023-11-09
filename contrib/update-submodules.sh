@@ -1,9 +1,12 @@
 #!/bin/sh
 set -e
 
-GITDIR=$(git rev-parse --show-toplevel)
+SCRIPT_PATH=$(realpath "$0")
+GIT_DIR=$(dirname "${SCRIPT_PATH}") # <repo>/contrib/
+GIT_DIR=$(dirname "${GIT_DIR}")     # <repo>/
+cd $GIT_DIR
 
-$GITDIR/contrib/sparse-checkout/setup-sparse-checkout.sh
+contrib/sparse-checkout/setup-sparse-checkout.sh
 git submodule init
 git submodule sync
-git config --file $GITDIR/.gitmodules --get-regexp .*path | sed 's/[^ ]* //' | xargs -I _ --max-procs 64 git submodule update --depth=1 --single-branch _
+git config --file .gitmodules --get-regexp .*path | sed 's/[^ ]* //' | xargs -I _ --max-procs 64 git submodule update --depth=1 --single-branch _
