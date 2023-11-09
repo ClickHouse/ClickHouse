@@ -1797,7 +1797,15 @@ bool TCPHandler::receivePacket()
             LOG_DEBUG(log, "Found exchange data receiver");
 
             /// read exchange data
-            readData();
+            try
+            {
+                readData();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Error while read exchange data");
+                state.exchange_data_receiver->receive(std::current_exception());
+            }
 
             LOG_DEBUG(log, "Read exchange data done");
 

@@ -38,6 +38,15 @@ public:
         cv.notify_one();
     }
 
+    void receive(std::exception_ptr exception)
+    {
+        {
+            std::unique_lock lk(mutex);
+            receive_data_exception = exception;
+        }
+        cv.notify_one();
+    }
+
     Status prepare() override;
     String getName() const override { return "ExchangeData"; }
 
@@ -46,8 +55,6 @@ public:
 
     /// Stop reading from stream if output port is finished.
     void onUpdatePorts() override;
-
-    int schedule() override { return 1; }
 
     UInt32 getPlanId() const { return plan_id; }
 
@@ -71,6 +78,8 @@ private:
 
     bool add_aggregation_info = false;
     size_t num_rows = 0;
+
+    std::exception_ptr receive_data_exception{};
 };
 
 }

@@ -20,7 +20,10 @@ void ExchangeDataSource::setStorageLimits(const std::shared_ptr<const StorageLim
 std::optional<Chunk> ExchangeDataSource::tryGenerate()
 {
     std::unique_lock lk(mutex);
-    cv.wait(lk, [this] { return !block_list.empty() || finished || isCancelled(); });
+    cv.wait(lk, [this] { return !block_list.empty() || finished || isCancelled() || receive_data_exception; });
+
+    if (unlikely(receive_data_exception))
+        std::rethrow_exception(receive_data_exception);
 
     Block block = std::move(block_list.front());
     block_list.pop_front();
@@ -47,7 +50,7 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
     else
         rows = block.rows();
 
-    LOG_DEBUG(
+    LOG_TEST(
         &Poco::Logger::get("ExchangeDataSource"), "Fragment {} exchange id {} receive {} rows from {}", fragment_id, plan_id, rows, source);
     num_rows += rows;
 
