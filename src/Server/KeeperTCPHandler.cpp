@@ -394,7 +394,7 @@ void KeeperTCPHandler::runImpl()
     if (use_compression)
     {
         compressed_in.emplace(*in);
-        compressed_out.emplace(*out, CompressionCodecFactory::instance().get("ZSTD",{}));
+        compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
     auto response_fd = poll_wrapper->getResponseFD();
