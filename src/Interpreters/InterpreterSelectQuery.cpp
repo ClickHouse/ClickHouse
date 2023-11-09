@@ -444,6 +444,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             InterpreterSetQuery(getSelectQuery().settings(), context).executeForCurrentContext();
     }
 
+    if (settings.optimize_uniq_to_count)
+    {
+        RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
+        RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
+    }
+
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
     bool got_storage_from_query = false;
