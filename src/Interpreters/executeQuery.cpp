@@ -1108,11 +1108,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     {
                         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
                         const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling = settings.query_cache_nondeterministic_function_handling;
+
                         if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
                             throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'`to cache the query result regardless or omit caching.");
+                                "The query result was not cached because the query contains a non-deterministic function."
+                                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
 
-                        if (!ast_contains_nondeterministic_functions || (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save))
+                        if (!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
                         {
                             QueryCache::Key key(
                                 ast, res.pipeline.getHeader(),
@@ -1123,7 +1125,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             const size_t num_query_runs = query_cache->recordQueryRun(key);
                             if (num_query_runs <= settings.query_cache_min_query_runs)
                             {
-                                LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}", num_query_runs, settings.query_cache_min_query_runs);
+                                LOG_TRACE(&Poco::Logger::get("QueryCache"),
+                                        "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                                        num_query_runs, settings.query_cache_min_query_runs);
                             }
                             else
                             {

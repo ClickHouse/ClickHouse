@@ -171,6 +171,11 @@ Also, results of queries with non-deterministic functions are not cached by defa
 To force caching of results of queries with non-deterministic functions regardless, use setting
 [query_cache_nondeterministic_function_handling](settings/settings.md#query-cache-nondeterministic-function-handling).
 
+:::note
+Prior to ClickHouse v23.11, setting 'query_cache_store_results_of_queries_with_nondeterministic_functions = 0 / 1' controlled whether
+results of queries with non-deterministic results were cached. In newer ClickHouse versions, this setting is obsolete and has no effect.
+:::
+
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
 be marked accessible by other users (i.e. shared) by supplying setting

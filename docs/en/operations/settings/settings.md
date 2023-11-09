@@ -1665,7 +1665,7 @@ Possible values:
 
 - `'throw'` - Throw an exception.
 - `'save'` - Cache the query result even if it is non-deterministic.
-- `'ignore'` - Don't cache the query result (but also don't throw an exception).
+- `'ignore'` - Don't cache the query result and don't throw an exception.
 
 Default value: `throw`.
 
