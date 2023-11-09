@@ -43,7 +43,7 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
-#include <Analyzer/Passes/AnyFunctionPass.h>
+#include <Analyzer/Passes/MoveFunctionsOutOfAnyPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 
 
@@ -164,7 +164,6 @@ private:
   *
   * TODO: Support setting optimize_substitute_columns.
   * TODO: Support GROUP BY injective function elimination.
-  * TODO: Support setting optimize_move_functions_out_of_any.
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
@@ -284,7 +283,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
-    manager.addPass(std::make_unique<AnyFunctionPass>());
+    manager.addPass(std::make_unique<MoveFunctionsOutOfAnyPass>());
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
 
 }
