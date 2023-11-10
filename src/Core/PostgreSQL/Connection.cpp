@@ -59,8 +59,16 @@ void Connection::updateConnection()
     if (connection)
         connection->close();
 
-    /// Always throws if there is no connection.
-    connection = std::make_unique<pqxx::connection>(connection_info.connection_string);
+    try
+    {
+        /// Always throws if there is no connection.
+        connection = std::make_unique<pqxx::connection>(connection_info.connection_string);
+    }
+    catch (const pqxx::broken_connection & e)
+    {
+        LOG_ERROR(log, "Unable to update connection: {}", e.what());
+        throw;
+    }
 
     if (replication)
         connection->set_variable("default_transaction_isolation", "'repeatable read'");
