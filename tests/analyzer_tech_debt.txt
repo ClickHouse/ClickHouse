@@ -35,7 +35,6 @@
 02352_grouby_shadows_arg
 02354_annoy
 02402_merge_engine_with_view
-02404_memory_bound_merging
 02426_orc_bug
 02428_parameterized_view
 02458_use_structure_from_insertion_table
