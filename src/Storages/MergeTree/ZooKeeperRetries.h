@@ -31,10 +31,10 @@ struct ZooKeeperRetriesInfo
 
     static ZooKeeperRetriesInfo fromInsertSettings(const Settings & settings)
     {
-        return ZooKeeperRetriesInfo(
+        return ZooKeeperRetriesInfo{
             settings.insert_keeper_max_retries,
             settings.insert_keeper_retry_initial_backoff_ms,
-            settings.insert_keeper_retry_max_backoff_ms);
+            settings.insert_keeper_retry_max_backoff_ms};
     }
 
     const UInt64 max_retries;
