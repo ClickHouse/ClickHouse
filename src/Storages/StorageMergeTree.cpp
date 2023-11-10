@@ -158,7 +158,7 @@ void StorageMergeTree::startup()
         /// It means that failed "startup" must not create any background tasks that we will have to wait.
         try
         {
-            shutdown();
+            shutdown(false);
         }
         catch (...)
         {
@@ -170,7 +170,7 @@ void StorageMergeTree::startup()
     }
 }
 
-void StorageMergeTree::shutdown()
+void StorageMergeTree::shutdown(bool)
 {
     if (shutdown_called.exchange(true))
         return;
@@ -196,7 +196,7 @@ void StorageMergeTree::shutdown()
 
 StorageMergeTree::~StorageMergeTree()
 {
-    shutdown();
+    shutdown(false);
 }
 
 void StorageMergeTree::read(
@@ -290,7 +290,7 @@ void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr quer
 
 void StorageMergeTree::drop()
 {
-    shutdown();
+    shutdown(true);
     /// In case there is read-only disk we cannot allow to call dropAllData(), but dropping tables is allowed.
     if (isStaticStorage())
         return;
