@@ -480,7 +480,6 @@ private:
     }
 };
 
-template<int string_length_type>
 class FixedStringHashValueIdGenerator : public IHashValueIdGenerator
 {
 public:

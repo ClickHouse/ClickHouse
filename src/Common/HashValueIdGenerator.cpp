@@ -63,24 +63,7 @@ std::unique_ptr<IHashValueIdGenerator> HashValueIdGeneratorFactory::getGenerator
     }
     else if (which_type.isFixedString())
     {
-        const auto * fixed_str_col = typeid_cast<const ColumnFixedString *>(nested_col);
-        if (fixed_str_col->getN() == 1)
-            return std::make_unique<FixedStringHashValueIdGenerator<1>>(col, state_, max_distinct_values_);
-        else if (fixed_str_col->getN() == 2)
-            return std::make_unique<FixedStringHashValueIdGenerator<2>>(col, state_, max_distinct_values_);
-        else if (fixed_str_col->getN() == 3)
-            return std::make_unique<FixedStringHashValueIdGenerator<3>>(col, state_, max_distinct_values_);
-        else if (fixed_str_col->getN() == 4)
-            return std::make_unique<FixedStringHashValueIdGenerator<4>>(col, state_, max_distinct_values_);
-        else if (fixed_str_col->getN() == 5)
-            return std::make_unique<FixedStringHashValueIdGenerator<5>>(col, state_, max_distinct_values_);
-        else if (fixed_str_col->getN() == 6)
-            return std::make_unique<FixedStringHashValueIdGenerator<6>>(col, state_, max_distinct_values_);
-        else if (fixed_str_col->getN() == 7)
-            return std::make_unique<FixedStringHashValueIdGenerator<7>>(col, state_, max_distinct_values_);
-        else if (fixed_str_col->getN() == 8)
-            return std::make_unique<FixedStringHashValueIdGenerator<8>>(col, state_, max_distinct_values_);
-        return std::make_unique<FixedStringHashValueIdGenerator<0>>(col, state_, max_distinct_values_);
+        return std::make_unique<FixedStringHashValueIdGenerator>(col, state_, max_distinct_values_);
     }
     APPLY_ON_BASIC_NUMBER_COLUMN(UInt8, nested_col, col)
     APPLY_ON_BASIC_NUMBER_COLUMN(UInt16, nested_col, col)
