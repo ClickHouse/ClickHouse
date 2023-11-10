@@ -24,27 +24,27 @@ foo	f9	0	0	0	8
 
 2
 
-foo	f0	1	1	2	8
-foo	f1	1	1	2	8
-foo	f10	1	1698786000	1698872400	8
-foo	f11	1	1	2	8
-foo	f12	1	1	2	8
-foo	f13	1	0	0	8
-foo	f14	1	0	0	8
-foo	f15	1	0	0	8
-foo	f16	1	0	0	8
-foo	f17	1	0	0	8
-foo	f18	1	0	0	8
-foo	f19	1	0	0	8
-foo	f2	1	1	2	8
-foo	f20	1	1	2	8
-foo	f3	1	0	1	8
-foo	f4	1	1	2	8
-foo	f5	1	1	2	8
-foo	f6	1	0	0	8
-foo	f7	1	19662	19663	8
-foo	f8	1	19662	19663	8
-foo	f9	1	1698786000	1698872400	8
+foo	f0	2	1	2	8
+foo	f1	2	1	2	8
+foo	f10	2	1698786000	1698872400	8
+foo	f11	2	1	2	8
+foo	f12	2	1	2	8
+foo	f13	2	0	0	8
+foo	f14	2	0	0	8
+foo	f15	2	0	0	8
+foo	f16	2	0	0	8
+foo	f17	2	0	0	8
+foo	f18	2	0	0	8
+foo	f19	2	0	0	8
+foo	f2	2	1	2	8
+foo	f20	2	1	2	8
+foo	f3	2	0	1	8
+foo	f4	2	1	2	8
+foo	f5	2	1	2	8
+foo	f6	2	0	0	8
+foo	f7	2	19662	19663	8
+foo	f8	2	19662	19663	8
+foo	f9	2	1698786000	1698872400	8
 
-foo	f0	1	1	3	8
-foo	f1	1	1	3	8
+foo	f0	3	1	3	8
+foo	f1	3	1	3	8

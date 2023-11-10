@@ -32,7 +32,7 @@ extern const int NOT_IMPLEMENTED;
 
 namespace
 {
-ContextMutablePtr createQueryContext(ContextMutablePtr context_ = nullptr);
+ContextMutablePtr createQueryContext(ContextMutablePtr context_ = nullptr, SettingsChanges setting_changes = {});
 
 /// Load statistics into memory
 std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, const String & cluster_name);
@@ -225,14 +225,13 @@ String StatsForColumnDesc::getStorage()
 
 namespace
 {
-ContextMutablePtr createQueryContext(ContextMutablePtr context_)
+ContextMutablePtr createQueryContext(ContextMutablePtr context_, SettingsChanges setting_changes)
 {
     auto query_context = Context::createCopy(context_ == nullptr ? Context::getGlobalContextInstance() : context_);
 
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); /// Not use user query id
 
-    SettingsChanges setting_changes;
     setting_changes.emplace_back("allow_experimental_query_coordination", false);
     query_context->applySettingsChanges(setting_changes);
 
@@ -345,7 +344,9 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
         storage_id.getTableName(),
         storage_id.getFullNameNotQuoted());
 
-    auto block_io = executeQuery(insert_sql, createQueryContext(context), true).second;
+    SettingsChanges setting_changes;
+    setting_changes.setSetting("optimize_trivial_count_query", 1);
+    auto block_io = executeQuery(insert_sql, createQueryContext(context, setting_changes), true).second;
     auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
     executor->execute();
 }
@@ -396,11 +397,14 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
             select_sql << "toDateTime(" << toString(event_time) << "), ";
             select_sql << "'" << storage_id.getDatabaseName() << "', ";
             select_sql << "'" << storage_id.getTableName() << "', ";
-            /// Use function 'materialize' to avoid failure when SquashingTransform
-            /// try to squashing chunks in the following insertion.
-            select_sql << "materialize('" << column << "'), ";
-            select_sql << "uniqState(cast('" << column << "', 'String'))"
-                       << ", ";
+            select_sql << "'" << column << "', ";
+            if (table_columns.get(column).type->getTypeId() == TypeIndex::Nullable)
+                select_sql << "uniqState(case when " << backQuoteIfNeed(column) << " is null then '' else  cast(" << backQuoteIfNeed(column)
+                           << ", 'String') end)"
+                           << ", ";
+            else
+                select_sql << "uniqState(cast(" << backQuoteIfNeed(column) << ", 'String'))"
+                           << ", ";
             if (canConvertToFloat64(table_columns.get(column).type))
             {
                 select_sql << "min(toFloat64OrDefault(" << backQuoteIfNeed(column) << "))"
@@ -454,6 +458,10 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
         Block block;
         while (!block && executor->pull(block))
         {
+            /// Materialize cost column to avoid failure when SquashingTransform
+            /// trys to squash chunks in the following insertion.
+            materializeBlockInplace(block);
+
             /// How many columns to collect at this time.
             size_t batch_count = batch_end - i;
             /// column count for table COLUMN_STATS_TABLE_NAME
