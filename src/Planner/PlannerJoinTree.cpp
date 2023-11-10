@@ -1450,6 +1450,10 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     }
 
     array_join_action_dag->projectInput();
+
+    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(array_join_table_expression);
+    table_expression_data.setArrayJoinExpressionActions(array_join_action_dag);
+
     auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), array_join_action_dag);
     array_join_actions->setStepDescription("ARRAY JOIN actions");
     plan.addStep(std::move(array_join_actions));
