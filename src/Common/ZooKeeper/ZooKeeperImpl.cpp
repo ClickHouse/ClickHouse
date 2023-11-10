@@ -503,15 +503,7 @@ void ZooKeeper::connect(
 
                 if (!node.optimal_for_load_balancing)
                 {
-                    // argument where the max age of the connection could be.
-                    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
-                    {
-                        args.fallback_session_lifetime.min_sec,
-                        args.fallback_session_lifetime.max_sec,
-                    };
-                    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
-                    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
-
+                    auto session_lifetime_seconds = setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
                     LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
                     " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
                     node.address.toString(), i, session_lifetime_seconds);
@@ -554,6 +546,18 @@ void ZooKeeper::connect(
     {
         LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
     }
+}
+
+UInt32 ZooKeeper::setClientSessionDeadline(UInt32 min_seconds, UInt32 max_seconds)
+{
+    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
+    {
+        min_seconds,
+        max_seconds,
+    };
+    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
+    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
+    return session_lifetime_seconds;
 }
 
 

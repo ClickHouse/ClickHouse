@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "Common/Priority.h"
+#include "Common/ZooKeeper/ZooKeeperArgs.h"
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
@@ -61,6 +62,63 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
+ZooKeeperAvailabilityZoneMap& ZooKeeperAvailabilityZoneMap::instance()
+{
+    static ZooKeeperAvailabilityZoneMap map;
+    return map;
+}
+
+std::string ZooKeeperAvailabilityZoneMap::get(const std::string &host)
+{
+    std::lock_guard lock(mutex);
+    auto it = az_by_host.find(host);
+    if (it == az_by_host.end())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,"No availability zone info for host {}", host);
+    return it->second;
+}
+
+void ZooKeeperAvailabilityZoneMap::update(const std::string &host, const std::string &availability_zone)
+{
+    std::lock_guard lock(mutex);
+    az_by_host[host] = availability_zone;
+}
+
+std::vector<std::string> ZooKeeperAvailabilityZoneMap::shuffleHosts(const std::string & local_az, const std::vector<std::string> & hosts)
+{
+    std::lock_guard lock(mutex);
+    for (const auto & host : hosts)
+    {
+        if (az_by_host.find(host) == az_by_host.end())
+            az_by_host.emplace(host, "unknown");
+    }
+    std::vector<std::string> shuffled_hosts(hosts.begin(), hosts.end());
+    auto compare_function = [this, local_az](const std::string& a, const std::string& b) -> bool {
+        const auto& az_a = az_by_host[a];
+        const auto& az_b = az_by_host[b];
+        if (az_a == az_b)
+            return a < b;
+        if (az_a == local_az)
+            return true;
+        else
+            return false;
+    };
+    std::sort(shuffled_hosts.begin(), shuffled_hosts.end(), compare_function);
+    return shuffled_hosts;
+}
+
+bool ZooKeeperAvailabilityZoneMap::needTryOtherHost(const std::string &local_az, const std::set<std::string> &attempted_host)
+{
+    std::lock_guard lock(mutex);
+    for (const auto &host_az : az_by_host)
+    {
+        const auto & host = host_az.first;
+        const auto & az = host_az.second;
+        if ((az == "unknown" || az == local_az) && !attempted_host.contains(host))
+            return true; 
+    }
+    return false;
+}
+
 std::string getAvailablityZoneByHost(Poco::Logger* logger, const std::string& host,
     const zkutil::ZooKeeperArgs & args, std::shared_ptr<Coordination::ZooKeeperLog> zk_log)
 {
@@ -102,63 +160,68 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         if (args.hosts.empty())
             throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts passed to ZooKeeper constructor.");
 
-        Coordination::ZooKeeper::Nodes nodes;
-        nodes.reserve(args.hosts.size());
-
-        /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-
-        /// TODO: one more optimization to consider, why bother to get all? just
-        /// 1. randomize the order (to avoid multiple keeper within one AZ case);
-        /// 2. connect one keeper at at a time, check the AZ, if it's the same done.
-        /// 3. Do this in a wrapper function though. Still not ZooKeeperImpl.
-        /// Yeah, we should do that.
-        std::vector<ShuffleHost> shuffled_hosts;
         if (args.get_priority_load_balancing.load_balancing == DB::LoadBalancing::KEEPER_LOCAL_AVAILABILITY_ZONE)
-            shuffled_hosts = shuffleHostsByAvailabilityZone();
+        {
+            tryConnectSameAZKeeper();
+        }
+        // TODO: reduce nesting level.
         else
+        {
+            Coordination::ZooKeeper::Nodes nodes;
+            nodes.reserve(args.hosts.size());
+
+            /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
+
+            /// TODO: one more optimization to consider, why bother to get all? just
+            /// 1. randomize the order (to avoid multiple keeper within one AZ case);
+            /// 2. connect one keeper at at a time, check the AZ, if it's the same done.
+            /// 3. Do this in a wrapper function though. Still not ZooKeeperImpl.
+            /// Yeah, we should do that.
+            std::vector<ShuffleHost> shuffled_hosts;
             shuffled_hosts = shuffleHosts();
 
-        // Ignore this for now.
-        bool dns_error = false;
-        for (auto & host : shuffled_hosts)
-        {
-            auto & host_string = host.host;
-            try
+            // Ignore this for now.
+            bool dns_error = false;
+            for (auto & host : shuffled_hosts)
             {
-                const bool secure = startsWith(host_string, "secure://");
+                auto & host_string = host.host;
+                try
+                {
+                    const bool secure = startsWith(host_string, "secure://");
 
-                if (secure)
-                    host_string.erase(0, strlen("secure://"));
-                /// We want to resolve all hosts without DNS cache for keeper connection.
-                Coordination::DNSResolver::instance().removeHostFromCache(host_string);
+                    if (secure)
+                        host_string.erase(0, strlen("secure://"));
+                    /// We want to resolve all hosts without DNS cache for keeper connection.
+                    Coordination::DNSResolver::instance().removeHostFromCache(host_string);
 
-                const Poco::Net::SocketAddress host_socket_addr{host_string};
-                LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, host_socket_addr.toString());
-                nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, host.original_index, host.optimal_for_load_balancing, secure});
+                    const Poco::Net::SocketAddress host_socket_addr{host_string};
+                    LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, host_socket_addr.toString());
+                    nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, host.original_index, host.optimal_for_load_balancing, secure});
+                }
+                catch (const Poco::Net::HostNotFoundException & e)
+                {
+                    /// Most likely it's misconfiguration and wrong hostname was specified
+                    LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
+                }
+                catch (const Poco::Net::DNSException & e)
+                {
+                    /// Most likely DNS is not available now
+                    dns_error = true;
+                    LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", host_string, e.displayText());
+                }
             }
-            catch (const Poco::Net::HostNotFoundException & e)
+
+            if (nodes.empty())
             {
-                /// Most likely it's misconfiguration and wrong hostname was specified
-                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
+                /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
+                if (dns_error)
+                    throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
+                else
+                    throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
             }
-            catch (const Poco::Net::DNSException & e)
-            {
-                /// Most likely DNS is not available now
-                dns_error = true;
-                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", host_string, e.displayText());
-            }
+
+            impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
         }
-
-        if (nodes.empty())
-        {
-            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
-            if (dns_error)
-                throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-            else
-                throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
-        }
-
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
@@ -197,6 +260,54 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     }
 }
 
+void ZooKeeper::tryConnectSameAZKeeper()
+{
+    // todo: sort host.
+    const std::string local_az = args.availability_zone;
+    auto & az_helper = ZooKeeperAvailabilityZoneMap::instance();
+    const auto & hosts = az_helper.shuffleHosts(local_az, args.hosts);
+
+    std::set<std::string> attempted_hosts;
+    for (const auto & host : hosts)
+    {
+        std::string connected_host_az = "unknown";
+        LOG_INFO(log, "Jianfei Connecting to ZooKeeper host {}, number of attempted hosts {}", host, attempted_hosts.size());
+
+        attempted_hosts.insert(host);
+        try
+        {
+            Coordination::ZooKeeper::Node node;
+            String host_string = host;
+            node.secure = startsWith(host_string, "secure://");
+            if (node.secure)
+                host_string.erase(0, strlen("secure://"));
+            node.address = Poco::Net::SocketAddress(host_string);
+            node.optimal_for_load_balancing = true;
+            impl = std::make_unique<Coordination::ZooKeeper>(Coordination::ZooKeeper::Nodes{node}, args, zk_log);
+            connected_host_az = impl->getAvailabilityZone();
+            az_helper.update(host, connected_host_az);
+            if (local_az == connected_host_az)
+            {
+                LOG_INFO(log, "Jianfei Connected to ZooKeeper host {} in the same az {}", host, local_az);
+                return;
+            }
+            // Non optimal case that we need to set a session deadline.
+            auto session_timeout_seconds = impl->setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
+            LOG_INFO(log, "Jianfei Connecting to a different az ZooKeeper with session timeout {} seconds", session_timeout_seconds);
+
+            bool need_try_other_host = az_helper.needTryOtherHost(local_az, attempted_hosts);
+            LOG_INFO(log, "Jianfei need try other host value: {}", need_try_other_host);
+            if (!need_try_other_host)
+                return;
+        }
+        catch(DB::Exception & ex)
+        {
+            LOG_ERROR(log, "Jianfei Failed to connect to ZooKeeper host {}, error {}", host, ex.what());
+        }
+    }
+    throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot connect to any of provided ZooKeeper nodes in the same az");
+
+}
 
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : zk_log(std::move(zk_log_))

@@ -223,6 +223,9 @@ public:
 
     String getAvailabilityZone() const override { return availability_zone; }
 
+    // Update session deadline to be in range [min_seconds, max_seconds].
+    UInt32 setClientSessionDeadline(UInt32 min_seconds, UInt32 max_seconds) override;
+
 private:
     ACLs default_acls;
 
