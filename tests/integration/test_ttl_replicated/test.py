@@ -6,6 +6,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, exec_query_with_retry
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
@@ -19,6 +20,10 @@ node4 = cluster.add_instance(
     tag="20.12.4.5",
     stay_alive=True,
     with_installed_binary=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
+    allow_analyzer=False,
 )
 
 node5 = cluster.add_instance(
@@ -28,6 +33,10 @@ node5 = cluster.add_instance(
     tag="20.12.4.5",
     stay_alive=True,
     with_installed_binary=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
+    allow_analyzer=False,
 )
 node6 = cluster.add_instance(
     "node6",
@@ -36,6 +45,10 @@ node6 = cluster.add_instance(
     tag="20.12.4.5",
     stay_alive=True,
     with_installed_binary=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
+    allow_analyzer=False,
 )
 
 
@@ -66,7 +79,8 @@ def test_ttl_columns(started_cluster):
             """
                 CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_columns', '{replica}')
-                ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0, min_bytes_for_wide_part=0;
+                ORDER BY id PARTITION BY toDayOfMonth(date)
+                SETTINGS merge_with_ttl_timeout=0, min_bytes_for_wide_part=0, max_merge_selecting_sleep_ms=6000;
             """.format(
                 replica=node.name
             )
@@ -99,7 +113,7 @@ def test_merge_with_ttl_timeout(started_cluster):
                 CREATE TABLE {table}(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                SETTINGS min_bytes_for_wide_part=0;
+                SETTINGS min_bytes_for_wide_part=0, max_merge_selecting_sleep_ms=6000;
             """.format(
                 replica=node.name, table=table
             )
@@ -134,13 +148,11 @@ def test_merge_with_ttl_timeout(started_cluster):
             )
         )
 
-    time.sleep(15)  # TTL merges shall not happen.
-
-    assert (
-        node1.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "3\n"
+    assert_eq_with_retry(
+        node1, "SELECT countIf(a = 0) FROM {table}".format(table=table), "3\n"
     )
-    assert (
-        node2.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "3\n"
+    assert_eq_with_retry(
+        node2, "SELECT countIf(a = 0) FROM {table}".format(table=table), "3\n"
     )
 
 
@@ -155,7 +167,7 @@ def test_ttl_many_columns(started_cluster):
                     _offset Int32 TTL date,
                     _partition Int32 TTL date)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_2', '{replica}')
-                ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
+                ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0, max_merge_selecting_sleep_ms=6000;
             """.format(
                 replica=node.name
             )
@@ -213,7 +225,7 @@ def test_ttl_table(started_cluster, delete_suffix):
                 CREATE TABLE test_ttl(date DateTime, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 1 DAY {delete_suffix} SETTINGS merge_with_ttl_timeout=0;
+                TTL date + INTERVAL 1 DAY {delete_suffix} SETTINGS merge_with_ttl_timeout=0, max_merge_selecting_sleep_ms=6000;
             """.format(
                 replica=node.name, delete_suffix=delete_suffix
             )
@@ -304,7 +316,7 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
             CREATE TABLE test_ttl(date DateTime, id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_double_delete', '{replica}')
             ORDER BY id PARTITION BY toDayOfMonth(date)
-            TTL date + INTERVAL 1 DAY, date + INTERVAL 2 DAY SETTINGS merge_with_ttl_timeout=0
+            TTL date + INTERVAL 1 DAY, date + INTERVAL 2 DAY SETTINGS merge_with_ttl_timeout=0, max_merge_selecting_sleep_ms=6000
         """.format(
                 replica=node1.name
             )
@@ -422,7 +434,8 @@ def test_ttl_empty_parts(started_cluster):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_empty_parts', '{replica}')
             ORDER BY id
             SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, old_parts_lifetime = 1
+                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0,
+                cleanup_thread_preferred_points_per_iteration=0, old_parts_lifetime = 1
 
         """.format(
                 replica=node.name
@@ -517,7 +530,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_delete_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             """.format(
                 suff=num_run, replica=node.name
             )
@@ -529,7 +542,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_group_by_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val)
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             """.format(
                 suff=num_run, replica=node.name
             )
@@ -541,7 +554,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_where_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1
-                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100, remove_empty_parts=0
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             """.format(
                 suff=num_run, replica=node.name
             )

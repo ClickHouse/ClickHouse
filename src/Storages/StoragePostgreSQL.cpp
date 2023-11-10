@@ -122,7 +122,7 @@ Pipe StoragePostgreSQL::read(
         query_info_,
         column_names_,
         storage_snapshot->metadata->getColumns().getOrdinary(),
-        IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
+        IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL, remote_table_schema, remote_table_name, context_);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;

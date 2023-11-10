@@ -111,7 +111,7 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     return nested->serializeValueIntoArena(n, arena, begin);
 }
@@ -273,12 +273,12 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
-void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
+void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
 {
     callback(nested);
 }
 
-void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnMap::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     callback(*nested);
     nested->forEachSubcolumnRecursively(callback);

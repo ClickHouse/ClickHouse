@@ -1,7 +1,9 @@
-#include <algorithm>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
-#include "arrayScalarProduct.h"
 
 
 namespace DB
@@ -10,6 +12,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -70,44 +74,32 @@ namespace ErrorCodes
   * The "curve" will be present by a line that moves one step either towards right or top on each threshold change.
   */
 
-
-struct NameArrayAUC
-{
-    static constexpr auto name = "arrayAUC";
-};
-
-
-class ArrayAUCImpl
+class FunctionArrayAUC : public IFunction
 {
 public:
-    using ResultType = Float64;
+    static constexpr auto name = "arrayAUC";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC>(); }
 
-    static DataTypePtr getReturnType(const DataTypePtr & /* score_type */, const DataTypePtr & label_type)
-    {
-        if (!(isNumber(label_type) || isEnum(label_type)))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} label must have numeric type.", std::string(NameArrayAUC::name));
-
-        return std::make_shared<DataTypeNumber<ResultType>>();
-    }
-
-    template <typename ResultType, typename T, typename U>
-    static ResultType apply(
-        const T * scores,
-        const U * labels,
-        size_t size)
+private:
+    static Float64 apply(
+        const IColumn & scores,
+        const IColumn & labels,
+        ColumnArray::Offset current_offset,
+        ColumnArray::Offset next_offset)
     {
         struct ScoreLabel
         {
-            T score;
+            Float64 score;
             bool label;
         };
 
+        size_t size = next_offset - current_offset;
         PODArrayWithStackMemory<ScoreLabel, 1024> sorted_labels(size);
 
         for (size_t i = 0; i < size; ++i)
         {
-            bool label = labels[i] > 0;
-            sorted_labels[i].score = scores[i];
+            bool label = labels.getFloat64(current_offset + i) > 0;
+            sorted_labels[i].score = scores.getFloat64(current_offset + i);
             sorted_labels[i].label = label;
         }
 
@@ -129,18 +121,85 @@ public:
         /// Then divide the area to the area of rectangle.
 
         if (count_positive == 0 || count_positive == size)
-            return std::numeric_limits<ResultType>::quiet_NaN();
+            return std::numeric_limits<Float64>::quiet_NaN();
 
-        return static_cast<ResultType>(area) / count_positive / (size - count_positive);
+        return static_cast<Float64>(area) / count_positive / (size - count_positive);
+    }
+
+    static void vector(
+        const IColumn & scores,
+        const IColumn & labels,
+        const ColumnArray::Offsets & offsets,
+        PaddedPODArray<Float64> & result)
+    {
+        size_t size = offsets.size();
+        result.resize(size);
+
+        ColumnArray::Offset current_offset = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto next_offset = offsets[i];
+            result[i] = apply(scores, labels, current_offset, next_offset);
+            current_offset = next_offset;
+        }
+    }
+
+public:
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        for (size_t i = 0; i < getNumberOfArguments(); ++i)
+        {
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+            if (!array_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for function {} must be an array.", getName());
+
+            const auto & nested_type = array_type->getNestedType();
+            if (!isNativeNumber(nested_type) && !isEnum(nested_type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}",
+                                getName(), nested_type->getName());
+        }
+
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    {
+        ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
+
+        const ColumnArray * col_array1 = checkAndGetColumn<ColumnArray>(col1.get());
+        if (!col_array1)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+
+        const ColumnArray * col_array2 = checkAndGetColumn<ColumnArray>(col2.get());
+        if (!col_array2)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of second argument of function {}", arguments[1].column->getName(), getName());
+
+        if (!col_array1->hasEqualOffsets(*col_array2))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
+
+        auto col_res = ColumnVector<Float64>::create();
+
+        vector(
+            col_array1->getData(),
+            col_array2->getData(),
+            col_array1->getOffsets(),
+            col_res->getData());
+
+        return col_res;
     }
 };
 
-
-/// auc(array_score, array_label) - Calculate AUC with array of score and label
-using FunctionArrayAUC = FunctionArrayScalarProduct<ArrayAUCImpl, NameArrayAUC>;
 
 REGISTER_FUNCTION(ArrayAUC)
 {
     factory.registerFunction<FunctionArrayAUC>();
 }
+
 }

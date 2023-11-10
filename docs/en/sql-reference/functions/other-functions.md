@@ -11,7 +11,7 @@ sidebar_label: Other
 Returns the name of the host on which this function was executed. If the function executes on a remote server (distributed processing), the remote server name is returned.
 If the function executes in the context of a distributed table, it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-## getMacro
+## getMacro {#getMacro}
 
 Returns a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
 
@@ -186,7 +186,7 @@ Returns the type name of the passed argument.
 
 If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
 
-## blockSize()
+## blockSize() {#blockSize}
 
 In ClickHouse, queries are processed in blocks (chunks).
 This function returns the size (row count) of the block the function is called on.
@@ -311,7 +311,7 @@ Sleeps ‘seconds’ seconds for each row. The sleep time can be specified as in
 Returns the name of the current database.
 Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
 
-## currentUser()
+## currentUser() {#currentUser}
 
 Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
 
@@ -660,21 +660,26 @@ SELECT
 
 ## formatReadableTimeDelta
 
-Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second as string.
+Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as string.
 
 **Syntax**
 
 ``` sql
-formatReadableTimeDelta(column[, maximum_unit])
+formatReadableTimeDelta(column[, maximum_unit, minimum_unit])
 ```
 
 **Arguments**
 
 - `column` — A column with a numeric time delta.
-- `maximum_unit` — Optional. Maximum unit to show. Acceptable values `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+- `maximum_unit` — Optional. Maximum unit to show.
+  * Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+  * Default value: `years`.
+- `minimum_unit` — Optional. Minimum unit to show. All smaller units are truncated.
+  * Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+  * If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown.
+  * Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.
 
-Example:
-
+**Example**
 ``` sql
 SELECT
     arrayJoin([100, 12345, 432546534]) AS elapsed,
@@ -701,6 +706,20 @@ SELECT
 │      12345 │ 205 minutes and 45 seconds                                      │
 │  432546534 │ 7209108 minutes and 54 seconds                                  │
 └────────────┴─────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT
+    arrayJoin([100, 12345, 432546534.00000006]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes', 'nanoseconds') AS time_delta
+```
+
+```text
+┌────────────elapsed─┬─time_delta─────────────────────────────────────┐
+│                100 │ 1 minute and 40 seconds                        │
+│              12345 │ 205 minutes and 45 seconds                     │
+│ 432546534.00000006 │ 7209108 minutes, 54 seconds and 60 nanoseconds │
+└────────────────────┴────────────────────────────────────────────────┘
 ```
 
 ## parseTimeDelta
@@ -771,7 +790,7 @@ If executed in the context of a distributed table, this function generates a nor
 
 Returns the sequence number of the data block where the row is located.
 
-## rowNumberInBlock()
+## rowNumberInBlock() {#rowNumberInBlock}
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
@@ -896,7 +915,7 @@ Result:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x)
+## runningDifference(x) {#runningDifference}
 
 Calculates the difference between two consecutive row values in the data block.
 Returns 0 for the first row, and for subsequent rows the difference to the previous row.
@@ -2274,7 +2293,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## queryID
+## queryID {#queryID}
 
 Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
 
@@ -2552,3 +2571,261 @@ Result:
 
 This function can be used together with [generateRandom](../../sql-reference/table-functions/generate.md) to generate completely random tables.
 
+## structureToCapnProtoSchema {#structure_to_capn_proto_schema}
+
+Converts ClickHouse table structure to CapnProto schema.
+
+**Syntax**
+
+``` sql
+structureToCapnProtoSchema(structure)
+```
+
+**Arguments**
+
+- `structure` — Table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
+- `root_struct_name` — Name for root struct in CapnProto schema. Default value - `Message`;
+
+**Returned value**
+
+- CapnProto schema 
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT structureToCapnProtoSchema('column1 String, column2 UInt32, column3 Array(String)') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+@0xf96402dd754d0eb7;
+
+struct Message
+{
+    column1 @0 : Data;
+    column2 @1 : UInt32;
+    column3 @2 : List(Data);
+}
+```
+
+Query:
+
+``` sql
+SELECT structureToCapnProtoSchema('column1 Nullable(String), column2 Tuple(element1 UInt32, element2 Array(String)), column3 Map(String, String)') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+@0xd1c8320fecad2b7f;
+
+struct Message
+{
+    struct Column1
+    {
+        union
+        {
+            value @0 : Data;
+            null @1 : Void;
+        }
+    }
+    column1 @0 : Column1;
+    struct Column2
+    {
+        element1 @0 : UInt32;
+        element2 @1 : List(Data);
+    }
+    column2 @1 : Column2;
+    struct Column3
+    {
+        struct Entry
+        {
+            key @0 : Data;
+            value @1 : Data;
+        }
+        entries @0 : List(Entry);
+    }
+    column3 @2 : Column3;
+}
+```
+
+Query:
+
+``` sql
+SELECT structureToCapnProtoSchema('column1 String, column2 UInt32', 'Root') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+@0x96ab2d4ab133c6e1;
+
+struct Root
+{
+    column1 @0 : Data;
+    column2 @1 : UInt32;
+}
+```
+
+## structureToProtobufSchema {#structure_to_protobuf_schema}
+
+Converts ClickHouse table structure to Protobuf schema.
+
+**Syntax**
+
+``` sql
+structureToProtobufSchema(structure)
+```
+
+**Arguments**
+
+- `structure` — Table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
+- `root_message_name` — Name for root message in Protobuf schema. Default value - `Message`;
+
+**Returned value**
+
+- Protobuf schema
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT structureToProtobufSchema('column1 String, column2 UInt32, column3 Array(String)') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+syntax = "proto3";
+
+message Message
+{
+    bytes column1 = 1;
+    uint32 column2 = 2;
+    repeated bytes column3 = 3;
+}
+```
+
+Query:
+
+``` sql
+SELECT structureToProtobufSchema('column1 Nullable(String), column2 Tuple(element1 UInt32, element2 Array(String)), column3 Map(String, String)') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+syntax = "proto3";
+
+message Message
+{
+    bytes column1 = 1;
+    message Column2
+    {
+        uint32 element1 = 1;
+        repeated bytes element2 = 2;
+    }
+    Column2 column2 = 2;
+    map<string, bytes> column3 = 3;
+}
+```
+
+Query:
+
+``` sql
+SELECT structureToProtobufSchema('column1 String, column2 UInt32', 'Root') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+syntax = "proto3";
+
+message Root
+{
+    bytes column1 = 1;
+    uint32 column2 = 2;
+}
+```
+
+## formatQuery
+
+Returns a formatted, possibly multi-line, version of the given SQL query.
+
+Throws an exception if the query is not well-formed. To return `NULL` instead, function `formatQueryOrNull()` may be used.
+
+**Syntax**
+
+```sql
+formatQuery(query)
+formatQueryOrNull(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT
+    a,
+    b
+FROM tab
+WHERE (a > 3) AND (b < 3)            │
+└───────────────────────────────────────────────────────────────┘
+```
+
+## formatQuerySingleLine
+
+Like formatQuery() but the returned formatted string contains no line breaks.
+
+Throws an exception if the query is not well-formed. To return `NULL` instead, function `formatQuerySingleLineOrNull()` may be used.
+
+**Syntax**
+
+```sql
+formatQuerySingleLine(query)
+formatQuerySingleLineOrNull(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```

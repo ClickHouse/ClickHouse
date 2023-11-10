@@ -69,11 +69,15 @@ struct S3Settings
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
         size_t retry_attempts = 10;
-        size_t request_timeout_ms = 30000;
+        size_t request_timeout_ms = 3000;
+        size_t long_request_timeout_ms = 30000; // TODO: Take this from config like request_timeout_ms
+        bool allow_native_copy = true;
 
         bool throw_on_zero_files_match = false;
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
+
+        void setStorageClassName(const String & storage_class_name) { upload_settings.storage_class_name = storage_class_name; }
 
         RequestSettings() = default;
         explicit RequestSettings(const Settings & settings);

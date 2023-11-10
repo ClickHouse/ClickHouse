@@ -4,6 +4,8 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <Interpreters/Context.h>
+#include <Core/ServerSettings.h>
 
 
 namespace DB
@@ -25,6 +27,7 @@ IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32, Data>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4, Data>(std::forward<TArgs>(args)...);
     return createWithNumericType<AggregateFunctionTemplate, Data, TArgs...>(argument_type, std::forward<TArgs>(args)...);
 }
 
@@ -42,6 +45,13 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
     return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 }
 
+size_t getMaxArraySize()
+{
+    if (auto context = Context::getGlobalContextInstance())
+        return context->getServerSettings().aggregate_function_group_array_max_element_size;
+
+    return 0xFFFFFF;
+}
 
 template <bool Tlast>
 AggregateFunctionPtr createAggregateFunctionGroupArray(
@@ -50,7 +60,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     assertUnary(name, argument_types);
 
     bool limit_size = false;
-    UInt64 max_elems = std::numeric_limits<UInt64>::max();
+    UInt64 max_elems = getMaxArraySize();
 
     if (parameters.empty())
     {
@@ -77,7 +87,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     {
         if (Tlast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())");
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
     }
     else
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
@@ -124,6 +134,8 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
+    factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
     factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
 }

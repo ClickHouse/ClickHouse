@@ -23,8 +23,6 @@ void registerTableFunctions()
     registerTableFunctionMongoDB(factory);
     registerTableFunctionRedis(factory);
 
-    registerTableFunctionMeiliSearch(factory);
-
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);
@@ -75,6 +73,7 @@ void registerTableFunctions()
 
 #if USE_AZURE_BLOB_STORAGE
     registerTableFunctionAzureBlobStorage(factory);
+    registerTableFunctionAzureBlobStorageCluster(factory);
 #endif
 
 

@@ -18,6 +18,7 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
+#include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
@@ -42,6 +43,9 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
+#include <Analyzer/Passes/MoveFunctionsOutOfAnyPass.h>
+#include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
+
 
 namespace DB
 {
@@ -160,9 +164,7 @@ private:
   *
   * TODO: Support setting optimize_substitute_columns.
   * TODO: Support GROUP BY injective function elimination.
-  * TODO: Support setting optimize_move_functions_out_of_any.
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
-  * TODO: Support setting optimize_duplicate_order_by_and_distinct.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
@@ -246,6 +248,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
 
     manager.addPass(std::make_unique<CountDistinctPass>());
+    manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
@@ -278,6 +281,10 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
+
+    manager.addPass(std::make_unique<MoveFunctionsOutOfAnyPass>());
+    manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
+
 }
 
 }

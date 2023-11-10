@@ -170,7 +170,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
 
     epoll_event events[2];
     events[0].data.fd = events[1].data.fd = -1;
-    size_t ready_count = epoll.getManyReady(2, events, false);
+    size_t ready_count = epoll.getManyReady(2, events, 0);
     for (size_t i = 0; i != ready_count; ++i)
     {
         if (events[i].data.fd == socket_fd)
@@ -179,7 +179,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
             is_timeout_alarmed = true;
     }
 
-    if (is_timeout_alarmed && !is_socket_ready)
+    if (is_timeout_alarmed && !is_socket_ready && !haveMoreAddressesToConnect())
     {
         /// In not async case timeout exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
@@ -223,6 +223,11 @@ void ConnectionEstablisherAsync::resetResult()
         result.entry->disconnect();
         result.reset();
     }
+}
+
+bool ConnectionEstablisherAsync::haveMoreAddressesToConnect()
+{
+    return !result.entry.isNull() && result.entry->haveMoreAddressesToConnect();
 }
 
 #endif

@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <iostream>
+#include <numeric>
 
 #include <Interpreters/AggregationCommon.h>
 

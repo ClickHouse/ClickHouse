@@ -300,6 +300,56 @@ bool TabSeparatedFormatReader::checkForSuffix()
     return false;
 }
 
+void TabSeparatedFormatReader::skipRow()
+{
+    ReadBuffer & istr = *buf;
+    while (!istr.eof())
+    {
+        char * pos;
+        if (is_raw)
+            pos = find_first_symbols<'\r', '\n'>(istr.position(), istr.buffer().end());
+        else
+            pos = find_first_symbols<'\\', '\r', '\n'>(istr.position(), istr.buffer().end());
+
+        istr.position() = pos;
+
+        if (istr.position() > istr.buffer().end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+        else if (pos == istr.buffer().end())
+            continue;
+
+        if (!is_raw && *istr.position() == '\\')
+        {
+            ++istr.position();
+            if (!istr.eof())
+                ++istr.position();
+            continue;
+        }
+
+        if (*istr.position() == '\n')
+        {
+            ++istr.position();
+            if (!istr.eof() && *istr.position() == '\r')
+                ++istr.position();
+            return;
+        }
+        else if (*istr.position() == '\r')
+        {
+            ++istr.position();
+            if (!istr.eof() && *istr.position() == '\n')
+            {
+                ++istr.position();
+                return;
+            }
+        }
+    }
+}
+
+bool TabSeparatedFormatReader::checkForEndOfRow()
+{
+    return buf->eof() || *buf->position() == '\n';
+}
+
 TabSeparatedSchemaReader::TabSeparatedSchemaReader(
     ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesSchemaReader(
@@ -315,19 +365,22 @@ TabSeparatedSchemaReader::TabSeparatedSchemaReader(
 {
 }
 
-std::pair<std::vector<String>, DataTypes> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<std::vector<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
-    return {fields, data_types};
+    return std::make_pair(fields, data_types);
 }
 
-DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypesImpl()
+std::optional<DataTypes> TabSeparatedSchemaReader::readRowAndGetDataTypesImpl()
 {
-    return readRowAndGetFieldsAndDataTypes().second;
+    auto fields_with_types = readRowAndGetFieldsAndDataTypes();
+    if (!fields_with_types)
+        return {};
+    return std::move(fields_with_types->second);
 }
 
 void registerInputFormatTabSeparated(FormatFactory & factory)
@@ -411,11 +464,6 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             continue;
         }
 
-        ++number_of_rows;
-        if ((number_of_rows >= min_rows)
-            && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
-            need_more_data = false;
-
         if (*pos == '\n')
         {
             ++pos;
@@ -427,7 +475,14 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             ++pos;
             if (loadAtPosition(in, memory, pos) && *pos == '\n')
                 ++pos;
+            else
+                continue;
         }
+
+        ++number_of_rows;
+        if ((number_of_rows >= min_rows)
+            && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+            need_more_data = false;
     }
 
     saveUpToPosition(in, memory, pos);

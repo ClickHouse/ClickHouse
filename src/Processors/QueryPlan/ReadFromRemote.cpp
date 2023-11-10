@@ -86,9 +86,7 @@ static String formattedAST(const ASTPtr & ast)
         return {};
 
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
-    ast_format_settings.hilite = false;
-    ast_format_settings.always_quote_identifiers = true;
+    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
     ast->format(ast_format_settings);
     return buf.str();
 }
@@ -105,7 +103,8 @@ ReadFromRemote::ReadFromRemote(
     Tables external_tables_,
     Poco::Logger * log_,
     UInt32 shard_count_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
+    const String & cluster_name_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , shards(std::move(shards_))
     , stage(stage_)
@@ -118,6 +117,7 @@ ReadFromRemote::ReadFromRemote(
     , storage_limits(std::move(storage_limits_))
     , log(log_)
     , shard_count(shard_count_)
+    , cluster_name(cluster_name_)
 {
 }
 
@@ -164,7 +164,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             if (my_table_func_ptr)
                 try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
             else
-                try_results = my_shard.shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, my_main_table.getQualifiedName());
+                try_results = my_shard.shard_info.pool->getManyChecked(
+                    timeouts, &current_settings, PoolMode::GET_MANY,
+                    my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
         }
         catch (const Exception & ex)
         {
@@ -185,7 +187,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         if (try_results.empty() || local_delay < max_remote_delay)
         {
             auto plan = createLocalPlan(
-                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, 0, 0, /*coordinator=*/nullptr);
+                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
 
             return std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(my_context),
@@ -234,18 +236,46 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
-    std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
+    if (context->canUseParallelReplicas())
+    {
+        if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
+        {
+            const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
+            if (cluster_for_parallel_replicas != cluster_name)
+                LOG_INFO(
+                    log,
+                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
+                    "used: {}",
+                    cluster_for_parallel_replicas,
+                    cluster_name);
+        }
 
-    remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
+        LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
+        context->setSetting("cluster_for_parallel_replicas", cluster_name);
+    }
 
+    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+        shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
     remote_query_executor->setLogger(log);
-    remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+
+    if (context->canUseParallelReplicas())
+    {
+        // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
+        // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
+        // The coordinator will return query result from the shard.
+        // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
+        // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
+        // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
+        remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+    }
+    else
+        remote_query_executor->setPoolMode(PoolMode::GET_MANY);
 
     if (!table_func_ptr)
-        remote_query_executor->setMainTable(main_table);
+        remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 
-    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
+    pipes.emplace_back(
+        createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
@@ -277,7 +307,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Block header_,
     QueryProcessingStage::Enum stage_,
     StorageID main_table_,
-    ASTPtr table_func_ptr_,
     ContextMutablePtr context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
@@ -290,7 +319,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , main_table(std::move(main_table_))
-    , table_func_ptr(table_func_ptr_)
     , context(context_)
     , throttler(throttler_)
     , scalars(scalars_)

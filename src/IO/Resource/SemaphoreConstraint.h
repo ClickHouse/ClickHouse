@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ISchedulerConstraint.h>
-#include <IO/SchedulerRoot.h>
 
 #include <mutex>
 #include <limits>
@@ -27,6 +26,8 @@ public:
 
     bool equals(ISchedulerNode * other) override
     {
+        if (!ISchedulerNode::equals(other))
+            return false;
         if (auto * o = dynamic_cast<SemaphoreConstraint *>(other))
             return max_requests == o->max_requests && max_cost == o->max_cost;
         return false;
@@ -78,7 +79,10 @@ public:
         requests++;
         cost += request->cost;
         child_active = child_now_active;
-
+        if (!active())
+            busy_periods++;
+        dequeued_requests++;
+        dequeued_cost += request->cost;
         return {request, active()};
     }
 
@@ -113,6 +117,30 @@ public:
         return active();
     }
 
+    size_t activeChildren() override
+    {
+        std::unique_lock lock(mutex);
+        return child_active;
+    }
+
+    bool isSatisfied() override
+    {
+        std::unique_lock lock(mutex);
+        return satisfied();
+    }
+
+    std::pair<Int64, Int64> getInflights()
+    {
+        std::unique_lock lock(mutex);
+        return {requests, cost};
+    }
+
+    std::pair<Int64, Int64> getLimits()
+    {
+        std::unique_lock lock(mutex);
+        return {max_requests, max_cost};
+    }
+
 private:
     bool satisfied() const
     {
@@ -124,15 +152,15 @@ private:
         return satisfied() && child_active;
     }
 
-private:
+    const Int64 max_requests = default_max_requests;
+    const Int64 max_cost = default_max_cost;
+
     std::mutex mutex;
     Int64 requests = 0;
     Int64 cost = 0;
     bool child_active = false;
 
     SchedulerNodePtr child;
-    Int64 max_requests = default_max_requests;
-    Int64 max_cost = default_max_cost;
 };
 
 }

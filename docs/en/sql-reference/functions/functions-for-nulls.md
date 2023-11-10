@@ -8,7 +8,7 @@ sidebar_label: Nullable
 
 ## isNull
 
-Returns whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
+Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
 ``` sql
 isNull(x)
@@ -88,6 +88,50 @@ Result:
 
 ``` text
 ┌─x─┐
+│ 2 │
+└───┘
+```
+
+## isZeroOrNull
+
+Returns whether the argument is 0 (zero) or [NULL](../../sql-reference/syntax.md#null-literal).
+
+``` sql
+isZeroOrNull(x)
+```
+
+**Arguments:**
+
+- `x` — A value of non-compound data type.
+
+**Returned value**
+
+- `1` if `x` is 0 (zero) or `NULL`.
+- `0` else.
+
+**Example**
+
+Table:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    0 │
+│ 3 │    3 │
+└───┴──────┘
+```
+
+Query:
+
+``` sql
+SELECT x FROM t_null WHERE isZeroOrNull(y);
+```
+
+Result:
+
+``` text
+┌─x─┐
+│ 1 │
 │ 2 │
 └───┘
 ```

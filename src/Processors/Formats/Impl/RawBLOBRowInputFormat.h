@@ -22,6 +22,11 @@ public:
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
+
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
+
+    bool done_count_rows = false;
 };
 
 class RawBLOBSchemaReader: public IExternalSchemaReader

@@ -76,7 +76,7 @@ namespace Net
     ///            <verificationMode>none|relaxed|strict|once</verificationMode>
     ///            <verificationDepth>1..9</verificationDepth>
     ///            <loadDefaultCAFile>true|false</loadDefaultCAFile>
-    ///            <cipherList>ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH</cipherList>
+    ///            <cipherList>ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH</cipherList>
     ///            <preferServerCiphers>true|false</preferServerCiphers>
     ///            <privateKeyPassphraseHandler>
     ///                <name>KeyFileHandler</name>
@@ -85,7 +85,7 @@ namespace Net
     ///                </options>
     ///            </privateKeyPassphraseHandler>
     ///            <invalidCertificateHandler>
-    ///                 <name>ConsoleCertificateHandler</name>
+    ///                 <name>RejectCertificateHandler</name>
     ///            </invalidCertificateHandler>
     ///            <cacheSessions>true|false</cacheSessions>
     ///            <sessionIdContext>someString</sessionIdContext> <!-- server only -->
@@ -186,7 +186,7 @@ namespace Net
         ///
         /// Valid initialization code would be:
         ///     SharedPtr<PrivateKeyPassphraseHandler> pConsoleHandler = new KeyConsoleHandler;
-        ///     SharedPtr<InvalidCertificateHandler> pInvalidCertHandler = new ConsoleCertificateHandler;
+        ///     SharedPtr<InvalidCertificateHandler> pInvalidCertHandler = new RejectCertificateHandler;
         ///     Context::Ptr pContext = new Context(Context::SERVER_USE, "any.pem", "any.pem", "rootcert.pem", Context::VERIFY_RELAXED, 9, false, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
         ///     SSLManager::instance().initializeServer(pConsoleHandler, pInvalidCertHandler, pContext);
 
@@ -203,7 +203,7 @@ namespace Net
         ///
         /// Valid initialization code would be:
         ///     SharedPtr<PrivateKeyPassphraseHandler> pConsoleHandler = new KeyConsoleHandler;
-        ///     SharedPtr<InvalidCertificateHandler> pInvalidCertHandler = new ConsoleCertificateHandler;
+        ///     SharedPtr<InvalidCertificateHandler> pInvalidCertHandler = new RejectCertificateHandler;
         ///     Context::Ptr pContext = new Context(Context::CLIENT_USE, "", "", "rootcert.pem", Context::VERIFY_RELAXED, 9, false, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
         ///     SSLManager::instance().initializeClient(pConsoleHandler, pInvalidCertHandler, pContext);
 

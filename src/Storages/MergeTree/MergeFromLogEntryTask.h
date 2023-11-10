@@ -3,6 +3,8 @@
 #include <memory>
 #include <utility>
 
+#include <pcg_random.hpp>
+
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -22,7 +24,7 @@ public:
         StorageReplicatedMergeTree & storage_,
         IExecutableTask::TaskResultCallback & task_result_callback_);
 
-    Priority getPriority() override { return priority; }
+    Priority getPriority() const override { return priority; }
 
 protected:
     /// Both return false if we can't execute merge.
@@ -47,6 +49,7 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
+    pcg64 rng;
 };
 
 

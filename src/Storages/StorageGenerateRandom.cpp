@@ -352,7 +352,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt256::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt256), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt256), rng, true);
             return column;
         }
         case TypeIndex::UUID:
@@ -360,7 +360,7 @@ ColumnPtr fillColumnWithRandomData(
             auto column = ColumnUUID::create();
             column->getData().resize(limit);
             /// NOTE This is slightly incorrect as random UUIDs should have fixed version 4.
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UUID), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UUID), rng, true);
             return column;
         }
         case TypeIndex::Int8:
@@ -511,7 +511,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnIPv4::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(IPv4), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(IPv4), rng, true);
             return column;
         }
         case TypeIndex::IPv6:

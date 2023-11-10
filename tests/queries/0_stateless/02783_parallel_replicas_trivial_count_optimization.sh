@@ -5,6 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 function has_used_parallel_replicas () {
+    # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
@@ -34,7 +35,6 @@ function run_query_with_pure_parallel_replicas () {
         --allow_experimental_parallel_reading_from_replicas 1 \
         --allow_experimental_analyzer 0
 
-    # Not implemented yet
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_pure_analyzer" \

@@ -14,6 +14,7 @@ node_dist = cluster.add_instance(
     tag="21.11.9.1",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

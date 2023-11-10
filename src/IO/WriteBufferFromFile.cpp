@@ -103,7 +103,7 @@ void WriteBufferFromFile::close()
     if (fd < 0)
         return;
 
-    next();
+    finalize();
 
     if (0 != ::close(fd))
         throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");

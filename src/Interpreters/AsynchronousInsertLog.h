@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Common/Exception.h"
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
@@ -21,12 +21,18 @@ struct AsynchronousInsertLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
-    ASTPtr query;
     String query_id;
+    String query_for_logging;
+    String database;
+    String table;
+    String format;
     UInt64 bytes{};
     UInt64 rows{};
     String exception;
     Status status{};
+
+    using DataKind = AsynchronousInsertQueue::DataKind;
+    DataKind data_kind{};
 
     time_t flush_time{};
     Decimal64 flush_time_microseconds{};

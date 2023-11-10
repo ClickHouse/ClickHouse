@@ -1,13 +1,17 @@
 #ifdef ENABLE_QPL_COMPRESSION
+
 #include <cstdio>
 #include <thread>
 #include <Compression/CompressionCodecDeflateQpl.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include "libaccel_config.h"
+#include <Common/MemorySanitizer.h>
+#include <base/scope_guard.h>
+#include <immintrin.h>
+
 
 namespace DB
 {
@@ -33,6 +37,7 @@ DeflateQplJobHWPool::DeflateQplJobHWPool()
     // loop all configured workqueue size to get maximum job number.
     accfg_ctx * ctx_ptr = nullptr;
     auto ctx_status = accfg_new(&ctx_ptr);
+    SCOPE_EXIT({ accfg_unref(ctx_ptr); });
     if (ctx_status == 0)
     {
         auto * dev_ptr = accfg_device_get_first(ctx_ptr);
@@ -382,6 +387,11 @@ UInt32 CompressionCodecDeflateQpl::getMaxCompressedDataSize(UInt32 uncompressed_
 
 UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+/// QPL library is using AVX-512 with some shuffle operations.
+/// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
+#if defined(MEMORY_SANITIZER)
+    __msan_unpoison(dest, getMaxCompressedDataSize(source_size));
+#endif
     Int32 res = HardwareCodecDeflateQpl::RET_ERROR;
     if (DeflateQplJobHWPool::instance().isJobPoolReady())
         res = hw_codec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
@@ -390,8 +400,25 @@ UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 so
     return res;
 }
 
+inline void touchBufferWithZeroFilling(char * buffer, UInt32 buffer_size)
+{
+    for (char * p = buffer; p < buffer + buffer_size; p += ::getPageSize()/(sizeof(*p)))
+    {
+        *p = 0;
+    }
+}
+
 void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
+/// QPL library is using AVX-512 with some shuffle operations.
+/// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
+#if defined(MEMORY_SANITIZER)
+    __msan_unpoison(dest, uncompressed_size);
+#endif
+/// Device IOTLB miss has big perf. impact for IAA accelerators.
+/// To avoid page fault, we need touch buffers related to accelerator in advance.
+    touchBufferWithZeroFilling(dest, uncompressed_size);
+
     switch (getDecompressMode())
     {
         case CodecMode::Synchronous:

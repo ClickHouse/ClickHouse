@@ -39,6 +39,16 @@ struct S3ObjectStorageSettings
 
 class S3ObjectStorage : public IObjectStorage
 {
+public:
+    struct Clients
+    {
+        std::shared_ptr<S3::Client> client;
+        std::shared_ptr<S3::Client> client_with_long_timeout;
+
+        Clients() = default;
+        Clients(std::shared_ptr<S3::Client> client, const S3ObjectStorageSettings & settings);
+    };
+
 private:
     friend class S3PlainObjectStorage;
 
@@ -49,9 +59,11 @@ private:
         String version_id_,
         const S3Capabilities & s3_capabilities_,
         String bucket_,
-        String connection_string)
-        : bucket(bucket_)
-        , client(std::move(client_))
+        String connection_string,
+        String object_key_prefix_)
+        : bucket(std::move(bucket_))
+        , object_key_prefix(std::move(object_key_prefix_))
+        , clients(std::make_unique<Clients>(std::move(client_), *s3_settings_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
@@ -125,11 +137,15 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
@@ -156,17 +172,19 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
-
-    void setNewClient(std::unique_ptr<S3::Client> && client_);
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
+private:
     std::string bucket;
+    String object_key_prefix;
 
-    MultiVersion<S3::Client> client;
+    MultiVersion<Clients> clients;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 
@@ -183,7 +201,11 @@ private:
 class S3PlainObjectStorage : public S3ObjectStorage
 {
 public:
-    std::string generateBlobNameForPath(const std::string & path) override { return path; }
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
+    {
+        return ObjectStorageKey::createAsRelative(object_key_prefix, path);
+    }
+
     std::string getName() const override { return "S3PlainObjectStorage"; }
 
     template <class ...Args>

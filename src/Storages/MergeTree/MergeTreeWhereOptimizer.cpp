@@ -22,6 +22,33 @@ namespace DB
 /// This is used to assume that condition is likely to have good selectivity.
 static constexpr auto threshold = 2;
 
+static NameToIndexMap fillNamesPositions(const Names & names)
+{
+    NameToIndexMap names_positions;
+
+    for (size_t position = 0; position < names.size(); ++position)
+    {
+        const auto & name = names[position];
+        names_positions[name] = position;
+    }
+
+    return names_positions;
+}
+
+/// Find minimal position of any of the column in primary key.
+static Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndexMap & primary_key_positions)
+{
+    Int64 min_position = std::numeric_limits<Int64>::max() - 1;
+
+    for (const auto & column : condition_table_columns)
+    {
+        auto it = primary_key_positions.find(column);
+        if (it != primary_key_positions.end())
+            min_position = std::min(min_position, static_cast<Int64>(it->second));
+    }
+
+    return min_position;
+}
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
@@ -35,6 +62,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
           metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
+    , primary_key_names_positions(fillNamesPositions(metadata_snapshot->getPrimaryKey().column_names))
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -60,6 +88,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = determineArrayJoinedNames(select);
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = select.final();
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
@@ -89,6 +118,7 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = {};
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = is_final;
 
     RPNBuilderTreeContext tree_context(context);
@@ -108,6 +138,9 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
 static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & columns_names, NameSet & result_set, bool & has_invalid_column)
 {
     if (node.isConstant())
+        return;
+
+    if (node.isSubqueryOrSet())
         return;
 
     if (!node.isFunction())
@@ -193,7 +226,7 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     return false;
 }
 
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, std::set<Int64> & pk_positions) const
 {
     auto function_node_optional = node.toFunctionNodeOrNull();
 
@@ -204,7 +237,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function_node_optional->getArgumentAt(i);
-            analyzeImpl(res, argument, where_optimizer_context);
+            analyzeImpl(res, argument, where_optimizer_context, pk_positions);
         }
     }
     else
@@ -231,6 +264,15 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (cond.viable)
             cond.good = isConditionGood(node, table_columns);
 
+        if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+        {
+            /// Consider all conditions good with this setting enabled.
+            cond.good = cond.viable;
+            /// Find min position in PK of any column that is used in this condition.
+            cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
+            pk_positions.emplace(cond.min_position_in_primary_key);
+        }
+
         res.emplace_back(std::move(cond));
     }
 }
@@ -240,7 +282,29 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     const WhereOptimizerContext & where_optimizer_context) const
 {
     Conditions res;
-    analyzeImpl(res, node, where_optimizer_context);
+    std::set<Int64> pk_positions;
+    analyzeImpl(res, node, where_optimizer_context, pk_positions);
+
+    /// E.g., if the primary key is (a, b, c) but the condition is a = 1 and c = 1,
+    /// we should only put (a = 1) to the tail of PREWHERE,
+    /// and treat (c = 1) as a normal column.
+    if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+    {
+        Int64 min_valid_pk_pos = -1;
+        for (auto pk_pos : pk_positions)
+        {
+            if (pk_pos != min_valid_pk_pos + 1)
+                break;
+            min_valid_pk_pos = pk_pos;
+        }
+        for (auto & cond : res)
+        {
+            if (cond.min_position_in_primary_key > min_valid_pk_pos)
+                cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+        }
+        LOG_TRACE(log, "The min valid primary key position for moving to the tail of PREWHERE is {}", min_valid_pk_pos);
+    }
+
     return res;
 }
 

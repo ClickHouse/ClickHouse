@@ -2,6 +2,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -28,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -148,6 +150,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         if (index->type->name == "annoy")
             index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
+        else if (index->type->name == "usearch")
+            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
@@ -222,17 +226,69 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     return true;
 }
 
+bool ParserForeignKeyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_references("REFERENCES");
+    ParserCompoundIdentifier table_name_p(true, true);
+    ParserExpression expression_p;
+
+    ASTPtr name;
+    ASTPtr expr;
+
+    if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    if (!s_references.ignore(pos, expected))
+        return false;
+
+    if (!table_name_p.parse(pos, name, expected))
+        return false;
+
+    if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    ParserKeyword s_on("ON");
+    while (s_on.ignore(pos, expected))
+    {
+        ParserKeyword s_delete("DELETE");
+        ParserKeyword s_update("UPDATE");
+
+        if (!s_delete.ignore(pos, expected) && !s_update.ignore(pos, expected))
+            return false;
+
+        ParserKeyword s_restrict("RESTRICT");
+        ParserKeyword s_cascade("CASCADE");
+        ParserKeyword s_set_null("SET NULL");
+        ParserKeyword s_no_action("NO ACTION");
+        ParserKeyword s_set_default("SET DEFAULT");
+
+        if (!s_restrict.ignore(pos, expected) && !s_cascade.ignore(pos, expected) &&
+            !s_set_null.ignore(pos, expected) && !s_no_action.ignore(pos, expected) &&
+            !s_set_default.ignore(pos, expected))
+        {
+            return false;
+        }
+    }
+
+    auto foreign_key = std::make_shared<ASTForeignKeyDeclaration>();
+    foreign_key->name = "Foreign Key";
+    node = foreign_key;
+
+    return true;
+}
 
 bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_index("INDEX");
     ParserKeyword s_constraint("CONSTRAINT");
     ParserKeyword s_projection("PROJECTION");
+    ParserKeyword s_foreign_key("FOREIGN KEY");
     ParserKeyword s_primary_key("PRIMARY KEY");
 
     ParserIndexDeclaration index_p;
     ParserConstraintDeclaration constraint_p;
     ParserProjectionDeclaration projection_p;
+    ParserForeignKeyDeclaration foreign_key_p;
     ParserColumnDeclaration column_p{true, true};
     ParserExpression primary_key_p;
 
@@ -256,6 +312,11 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     else if (s_primary_key.ignore(pos, expected))
     {
         if (!primary_key_p.parse(pos, new_node, expected))
+            return false;
+    }
+    else if (s_foreign_key.ignore(pos, expected))
+    {
+        if (!foreign_key_p.parse(pos, new_node, expected))
             return false;
     }
     else
@@ -300,17 +361,32 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr constraints = std::make_shared<ASTExpressionList>();
     ASTPtr projections = std::make_shared<ASTExpressionList>();
     ASTPtr primary_key;
+    ASTPtr primary_key_from_columns;
 
     for (const auto & elem : list->children)
     {
-        if (elem->as<ASTColumnDeclaration>())
+        if (auto * cd = elem->as<ASTColumnDeclaration>())
+        {
+            if (cd->primary_key_specifier)
+            {
+                if (!primary_key_from_columns)
+                    primary_key_from_columns = makeASTFunction("tuple");
+                auto column_identifier = std::make_shared<ASTIdentifier>(cd->name);
+                primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
+            }
             columns->children.push_back(elem);
+        }
         else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
             constraints->children.push_back(elem);
         else if (elem->as<ASTProjectionDeclaration>())
             projections->children.push_back(elem);
+        else if (elem->as<ASTForeignKeyDeclaration>())
+        {
+            /// Ignore the foreign key node
+            continue;
+        }
         else if (elem->as<ASTIdentifier>() || elem->as<ASTFunction>())
         {
             if (primary_key)
@@ -336,6 +412,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         res->set(res->projections, projections);
     if (primary_key)
         res->set(res->primary_key, primary_key);
+    if (primary_key_from_columns)
+        res->set(res->primary_key_from_columns, primary_key_from_columns);
 
     node = res;
 
@@ -449,6 +527,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         break;
     }
+
     // If any part of storage definition is found create storage node
     if (!storage_like)
         return false;
@@ -490,7 +569,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
     ParserToken s_dot(TokenType::Dot);
@@ -599,6 +678,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     /// List of columns.
     if (s_lparen.ignore(pos, expected))
     {
+        /// Columns and all table properties (indices, constraints, projections, primary_key)
         if (!table_properties_p.parse(pos, columns_list, expected))
             return false;
 
@@ -697,6 +777,18 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->primary_key = query->columns_list->primary_key;
+
+    }
+
+    if (query->columns_list && (query->columns_list->primary_key_from_columns))
+    {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+
+        query->storage->primary_key = query->columns_list->primary_key_from_columns;
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
@@ -715,7 +807,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_live("LIVE");
@@ -853,7 +945,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true);
+    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_window("WINDOW");
@@ -990,11 +1082,16 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->if_not_exists = if_not_exists;
     query->is_window_view = true;
 
-    StorageID table_id = table->as<ASTTableIdentifier>()->getTableId();
-    query->setDatabase(table_id.database_name);
-    query->setTable(table_id.table_name);
-    query->uuid = table_id.uuid;
+    auto * table_id = table->as<ASTTableIdentifier>();
+    query->database = table_id->getDatabase();
+    query->table = table_id->getTable();
+    query->uuid = table_id->uuid;
     query->cluster = cluster_str;
+
+    if (query->database)
+        query->children.push_back(query->database);
+    if (query->table)
+        query->children.push_back(query->table);
 
     if (to_table)
         query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
@@ -1240,11 +1337,13 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
+    ParserCompoundIdentifier to_table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ false);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserKeyword s_populate("POPULATE");
+    ParserKeyword s_empty("EMPTY");
     ParserKeyword s_or_replace("OR REPLACE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -1340,8 +1439,26 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (s_populate.ignore(pos, expected))
             is_populate = true;
-        else if (ParserKeyword{"EMPTY"}.ignore(pos, expected))
+        else if (s_empty.ignore(pos, expected))
             is_create_empty = true;
+
+        if (ParserKeyword{"TO"}.ignore(pos, expected))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'ENGINE' and 'TO [db].[table]'");
+    }
+    else
+    {
+        if (storage_p.ignore(pos, expected))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
+
+        if (s_populate.ignore(pos, expected))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
+
+        if (s_empty.ignore(pos, expected))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
     }
 
     /// AS SELECT ...
@@ -1396,15 +1513,17 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
-    ParserKeyword s_attach("ATTACH");
     ParserKeyword s_named_collection("NAMED COLLECTION");
+    ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
-
-    ParserToken s_comma(TokenType::Comma);
     ParserIdentifier name_p;
+    ParserToken s_comma(TokenType::Comma);
+
+    String cluster_str;
+    bool if_not_exists = false;
 
     ASTPtr collection_name;
-    String cluster_str;
 
     if (!s_create.ignore(pos, expected))
         return false;
@@ -1412,10 +1531,13 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!s_named_collection.ignore(pos, expected))
         return false;
 
+    if (s_if_not_exists.ignore(pos, expected))
+        if_not_exists = true;
+
     if (!name_p.parse(pos, collection_name, expected))
         return false;
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
@@ -1440,7 +1562,9 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
+    query->if_not_exists = if_not_exists;
     query->changes = changes;
+    query->cluster = std::move(cluster_str);
 
     node = query;
     return true;
@@ -1455,7 +1579,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
-    ParserCompoundIdentifier dict_name_p(true, true);
+    ParserCompoundIdentifier dict_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserToken s_dot(TokenType::Dot);

@@ -42,7 +42,8 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
 
 Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()
 {
-    finalize();
+    if (ctx)
+        LZ4F_freeCompressionContext(ctx);
 }
 
 void Lz4DeflatingWriteBuffer::nextImpl()
@@ -159,6 +160,7 @@ void Lz4DeflatingWriteBuffer::finalizeBefore()
 void Lz4DeflatingWriteBuffer::finalizeAfter()
 {
     LZ4F_freeCompressionContext(ctx);
+    ctx = nullptr;
 }
 
 }

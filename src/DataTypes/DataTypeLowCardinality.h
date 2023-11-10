@@ -12,6 +12,7 @@ class DataTypeLowCardinality : public IDataType
 private:
     DataTypePtr dictionary_type;
 
+
 public:
     explicit DataTypeLowCardinality(DataTypePtr dictionary_type_);
 
@@ -22,6 +23,7 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
+
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
     MutableColumnPtr createColumn() const override;
@@ -43,6 +45,7 @@ public:
     bool canBeUsedInBooleanContext() const override { return dictionary_type->canBeUsedInBooleanContext(); }
     bool isValueRepresentedByNumber() const override { return dictionary_type->isValueRepresentedByNumber(); }
     bool isValueRepresentedByInteger() const override { return dictionary_type->isValueRepresentedByInteger(); }
+    bool isValueRepresentedByUnsignedInteger() const override { return dictionary_type->isValueRepresentedByUnsignedInteger(); }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return dictionary_type->haveMaximumSizeOfValue(); }
     size_t getMaximumSizeOfValueInMemory() const override { return dictionary_type->getMaximumSizeOfValueInMemory(); }
@@ -88,4 +91,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
 ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 
+/// Removes LowCardinality and Nullable in a correct order and returns T
+/// if the type is LowCardinality(T) or LowCardinality(Nullable(T)); type otherwise
+DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type);
 }

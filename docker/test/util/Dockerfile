@@ -1,12 +1,12 @@
 # docker build -t clickhouse/test-util .
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 # 15.0.2
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=16
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
 
 RUN apt-get update \
     && apt-get install \
@@ -44,7 +44,6 @@ RUN apt-get update \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
         cmake \
-        fakeroot \
         gdb \
         git \
         gperf \
@@ -94,7 +93,10 @@ RUN mkdir /tmp/ccache \
     && rm -rf /tmp/ccache
 
 ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.4.1
+ARG SCCACHE_VERSION=v0.5.4
+ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
+# sccache requires a value for the region. So by default we use The Default Region
+ENV SCCACHE_REGION=us-east-1
 RUN arch=${TARGETARCH:-amd64} \
   && case $arch in \
     amd64) rarch=x86_64 ;; \

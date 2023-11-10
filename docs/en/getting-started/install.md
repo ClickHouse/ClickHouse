@@ -378,6 +378,10 @@ request](https://github.com/ClickHouse/ClickHouse/commits/master) and find CI ch
 https://s3.amazonaws.com/clickhouse/builds/PRs/.../.../binary_aarch64_v80compat/clickhouse". You can then click the link to download the
 build.
 
+### macOS-only: Install with Homebrew
+
+To install ClickHouse using [homebrew](https://brew.sh/), see [here](https://formulae.brew.sh/cask/clickhouse).
+
 ## Launch {#launch}
 
 To start the server as a daemon, run:

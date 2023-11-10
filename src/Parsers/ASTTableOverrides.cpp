@@ -36,8 +36,6 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
         settings.ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
         ASTIdentifier(table_name).formatImpl(settings, state, frame);
     }
-    if (!columns && (!storage || storage->children.empty()))
-        return;
     auto override_frame = frame;
     if (is_standalone)
     {

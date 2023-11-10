@@ -191,7 +191,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
 
-    if (function_name == "equals" || is_asof_join_inequality)
+    if (function_name == "equals" || function_name == "isNotDistinctFrom" || is_asof_join_inequality)
     {
         const auto * left_child = join_expressions_actions_node->children.at(0);
         const auto * right_child = join_expressions_actions_node->children.at(1);
@@ -253,7 +253,8 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
                 }
                 else
                 {
-                    join_clause.addKey(left_key, right_key);
+                    bool null_safe_comparison = function_name == "isNotDistinctFrom";
+                    join_clause.addKey(left_key, right_key, null_safe_comparison);
                 }
             }
             else
@@ -474,6 +475,24 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
                     right_key_node = &join_expression_actions->addCast(*right_key_node, common_type, {});
             }
 
+            if (join_clause.isNullsafeCompareKey(i) && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
+            {
+                /**
+                  * In case of null-safe comparison (a IS NOT DISTICT FROM b),
+                  * we need to wrap keys with a non-nullable type.
+                  * The type `tuple` can be used for this purpose,
+                  * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
+                  * Thus, join algorithm will match keys with values tuple(NULL).
+                  * Example:
+                  *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
+                  * This will be semantically transformed to:
+                  *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
+                  */
+                auto wrap_nullsafe_function = FunctionFactory::instance().get("tuple", planner_context->getQueryContext());
+                left_key_node = &join_expression_actions->addFunction(wrap_nullsafe_function, {left_key_node}, {});
+                right_key_node = &join_expression_actions->addFunction(wrap_nullsafe_function, {right_key_node}, {});
+            }
+
             join_expression_actions->addOrReplaceInOutputs(*left_key_node);
             join_expression_actions->addOrReplaceInOutputs(*right_key_node);
 
@@ -542,7 +561,8 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
     if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
         return;
 
-    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dictionary)
+    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
+        storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
         table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
     else if (auto storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_key_value)
         table_join->setStorageJoin(storage_key_value);
@@ -583,13 +603,17 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
     const String & key_name = clauses[0].key_names_right[0];
 
     auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
-    const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(key_name);
-    if (!table_column_name)
-        return {};
 
-    const auto & storage_primary_key = storage->getPrimaryKey();
-    if (storage_primary_key.size() != 1 || storage_primary_key[0] != *table_column_name)
+    if (const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(key_name))
+    {
+        const auto & storage_primary_key = storage->getPrimaryKey();
+        if (storage_primary_key.size() != 1 || storage_primary_key[0] != *table_column_name)
+            return {};
+    }
+    else
+    {
         return {};
+    }
 
     /** For right table expression during execution columns have unique name.
       * Direct key value join implementation during storage querying must use storage column names.
@@ -607,8 +631,8 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     for (const auto & right_table_expression_column : right_table_expression_header)
     {
-        const auto * table_column_name_ = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
-        if (!table_column_name_)
+        const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
+        if (!table_column_name)
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
@@ -634,6 +658,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
     {
+        Names required_column_names;
         for (const auto & result_column : right_table_expression_header)
         {
             const auto * source_column_name = right_table_expression_data.getColumnNameOrNull(result_column.name);
@@ -643,8 +668,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
                     fmt::join(storage->getKeyNames(), ", "), result_column.name);
 
             table_join->setRename(*source_column_name, result_column.name);
+            required_column_names.push_back(*source_column_name);
         }
-        return storage->getJoinLocked(table_join, planner_context->getQueryContext());
+        return storage->getJoinLocked(table_join, planner_context->getQueryContext(), required_column_names);
     }
 
     /** JOIN with constant.

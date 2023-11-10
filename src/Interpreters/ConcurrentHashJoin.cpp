@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/WeakHash.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -48,7 +49,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<Tabl
     }
 }
 
-bool ConcurrentHashJoin::addJoinedBlock(const Block & right_block, bool check_limits)
+bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_limits)
 {
     Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
 
@@ -76,7 +77,7 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & right_block, bool check_li
                 if (!lock.owns_lock())
                     continue;
 
-                bool limit_exceeded = !hash_join->data->addJoinedBlock(dispatched_block, check_limits);
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
 
                 dispatched_block = {};
                 blocks_left--;

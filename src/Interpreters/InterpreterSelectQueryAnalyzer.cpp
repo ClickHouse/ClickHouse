@@ -188,7 +188,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
-    , planner(query_tree_, select_query_options_)
+    , planner(query_tree_, select_query_options)
 {
 }
 
@@ -259,6 +259,12 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
 {
     planner.addStorageLimits(storage_limits);
+}
+
+void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const
+{
+    for (const auto & used_row_policy : planner.getUsedRowPolicies())
+        elem.used_row_policies.emplace(used_row_policy);
 }
 
 }

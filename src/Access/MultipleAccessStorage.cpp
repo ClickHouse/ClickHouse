@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
+    extern const int ACCESS_ENTITY_NOT_FOUND;
 }
 
 using Storage = IAccessStorage;
@@ -45,7 +46,7 @@ void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages
 {
     std::lock_guard lock{mutex};
     nested_storages = std::make_shared<const Storages>(storages);
-    ids_cache.reset();
+    ids_cache.clear();
 }
 
 void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
@@ -68,7 +69,7 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     auto new_storages = std::make_shared<Storages>(*nested_storages);
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
-    ids_cache.reset();
+    ids_cache.clear();
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()
@@ -178,6 +179,91 @@ ConstStoragePtr MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
+StoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name)
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage->getStorageName() == storage_name)
+            return storage;
+    }
+
+    return nullptr;
+}
+
+
+ConstStoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name) const
+{
+    return const_cast<MultipleAccessStorage *>(this)->findStorageByName(storage_name);
+}
+
+
+StoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name)
+{
+    auto storage = findStorageByName(storage_name);
+    if (storage)
+        return storage;
+
+    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "Access storage with name {} is not found", storage_name);
+}
+
+
+ConstStoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name) const
+{
+    return const_cast<MultipleAccessStorage *>(this)->getStorageByName(storage_name);
+}
+
+StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const DB::String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage == exclude)
+            continue;
+
+        if (storage->find(type, name))
+            return storage;
+    }
+
+    return nullptr;
+}
+
+void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
+{
+    auto source_storage = getStorageByName(source_storage_name);
+    auto destination_storage = getStorageByName(destination_storage_name);
+
+    auto to_move = source_storage->read(ids);
+    bool need_rollback = false;
+
+    try
+    {
+        source_storage->remove(ids);
+        need_rollback = true;
+        destination_storage->insert(to_move, ids);
+    }
+    catch (Exception & e)
+    {
+        String message;
+
+        bool need_comma = false;
+        for (const auto & entity : to_move)
+        {
+            if (std::exchange(need_comma, true))
+                message += ", ";
+
+            message += entity->formatTypeWithName();
+        }
+
+        e.addMessage("while moving {} from {} to {}", message, source_storage_name, destination_storage_name);
+
+        if (need_rollback)
+            source_storage->insert(to_move, ids);
+
+        throw;
+    }
+}
+
 AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
     if (auto storage = findStorage(id))
@@ -245,7 +331,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -268,13 +354,14 @@ std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & en
             getStorageName());
     }
 
-    auto id = storage_for_insertion->insert(entity, replace_if_exists, throw_if_exists);
-    if (id)
+    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists))
     {
         std::lock_guard lock{mutex};
-        ids_cache.set(*id, storage_for_insertion);
+        ids_cache.set(id, storage_for_insertion);
+        return true;
     }
-    return id;
+
+    return false;
 }
 
 
@@ -328,7 +415,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-std::optional<UUID>
+std::optional<AuthResult>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
                                         bool throw_if_user_not_exists,
@@ -339,14 +426,14 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto id = storage->authenticate(credentials, address, external_authenticators,
+        auto auth_result = storage->authenticate(credentials, address, external_authenticators,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
-        if (id)
+        if (auth_result)
         {
             std::lock_guard lock{mutex};
-            ids_cache.set(*id, storage);
-            return id;
+            ids_cache.set(auth_result->user_id, storage);
+            return auth_result;
         }
     }
 
@@ -415,4 +502,15 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     throwBackupNotAllowed();
 }
 
+bool MultipleAccessStorage::containsStorage(std::string_view storage_type) const
+{
+    auto storages = getStoragesInternal();
+
+    for (const auto & storage : *storages)
+    {
+        if (storage->getStorageType() == storage_type)
+            return true;
+    }
+    return false;
+}
 }

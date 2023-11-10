@@ -92,7 +92,7 @@ public:
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
-    void flush() override;
+    void flushAndPrepareForShutdown() override;
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -127,6 +127,18 @@ private:
     {
         time_t first_write_time = 0;
         Block data;
+
+        /// Schema version, checked to avoid mixing blocks with different sets of columns, from
+        /// before and after an ALTER. There are some remaining mild problems if an ALTER happens
+        /// in the middle of a long-running INSERT:
+        ///  * The data produced by the INSERT after the ALTER is not visible to SELECTs until flushed.
+        ///    That's because BufferSource skips buffers with old metadata_version instead of converting
+        ///    them to the latest schema, for simplicity.
+        ///  * If there are concurrent INSERTs, some of which started before the ALTER and some started
+        ///    after, then the buffer's metadata_version will oscillate back and forth between the two
+        ///    schemas, flushing the buffer each time. This is probably fine because long-running INSERTs
+        ///    usually don't produce lots of small blocks.
+        int32_t metadata_version = 0;
 
         std::unique_lock<std::mutex> lockForReading() const;
         std::unique_lock<std::mutex> lockForWriting() const;

@@ -111,11 +111,11 @@ void PartitionedSink::consume(Chunk chunk)
     }
 }
 
-void PartitionedSink::onException()
+void PartitionedSink::onException(std::exception_ptr exception)
 {
     for (auto & [_, sink] : partition_id_to_sink)
     {
-        sink->onException();
+        sink->onException(exception);
     }
 }
 

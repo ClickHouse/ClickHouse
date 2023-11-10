@@ -30,7 +30,7 @@ def test_select_single_column():
 
     select_query = "SELECT a FROM table1"
     assert (
-        "it's necessary to have grant SELECT(a) ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -39,7 +39,7 @@ def test_select_single_column():
 
     instance.query("REVOKE SELECT(a) ON default.table1 FROM A")
     assert (
-        "it's necessary to have grant SELECT(a) ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -51,7 +51,7 @@ def test_select_single_column_with_table_grant():
 
     select_query = "SELECT a FROM table1"
     assert (
-        "it's necessary to have grant SELECT(a) ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -60,7 +60,7 @@ def test_select_single_column_with_table_grant():
 
     instance.query("REVOKE SELECT(a) ON default.table1 FROM A")
     assert (
-        "it's necessary to have grant SELECT(a) ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -72,19 +72,19 @@ def test_select_all_columns():
 
     select_query = "SELECT * FROM table1"
     assert (
-        "it's necessary to have grant SELECT(d, a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
     instance.query("GRANT SELECT(d) ON default.table1 TO A")
     assert (
-        "it's necessary to have grant SELECT(d, a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
     instance.query("GRANT SELECT(a) ON default.table1 TO A")
     assert (
-        "it's necessary to have grant SELECT(d, a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -99,7 +99,7 @@ def test_select_all_columns_with_table_grant():
 
     select_query = "SELECT * FROM table1"
     assert (
-        "it's necessary to have grant SELECT(d, a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -114,7 +114,7 @@ def test_alias():
 
     select_query = "SELECT x, y, x + y AS s FROM table1"
     assert (
-        "it's necessary to have grant SELECT(x, y) ON default.table1"
+        "it's necessary to have the grant SELECT(x, y) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -129,7 +129,7 @@ def test_alias_columns():
 
     select_query = "SELECT * FROM table1"
     assert (
-        "it's necessary to have grant SELECT(x, y) ON default.table1"
+        "it's necessary to have the grant SELECT(x, y) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -138,7 +138,7 @@ def test_alias_columns():
 
     select_query = "SELECT s FROM table1"
     assert (
-        "it's necessary to have grant SELECT(s) ON default.table1"
+        "it's necessary to have the grant SELECT(s) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -156,7 +156,7 @@ def test_materialized_columns():
 
     select_query = "SELECT * FROM table1"
     assert (
-        "it's necessary to have grant SELECT(x, y) ON default.table1"
+        "it's necessary to have the grant SELECT(x, y) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -165,7 +165,7 @@ def test_materialized_columns():
 
     select_query = "SELECT p FROM table1"
     assert (
-        "it's necessary to have grant SELECT(p) ON default.table1"
+        "it's necessary to have the grant SELECT(p) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -186,13 +186,13 @@ def test_select_join():
 
     select_query = "SELECT * FROM table1 JOIN table2 USING(d)"
     assert (
-        "it's necessary to have grant SELECT(d, x, y) ON default.table2"
+        "it's necessary to have the grant SELECT(d, x, y) ON default.table2"
         in instance.query_and_get_error(select_query, user="A")
     )
 
     instance.query("GRANT SELECT(d, x, y) ON default.table2 TO A")
     assert (
-        "it's necessary to have grant SELECT(d, a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -201,7 +201,7 @@ def test_select_join():
 
     instance.query("REVOKE SELECT ON default.table2 FROM A")
     assert (
-        "it's necessary to have grant SELECT(d, x, y) ON default.table2"
+        "it's necessary to have the grant SELECT(d, x, y) ON default.table2"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -216,13 +216,13 @@ def test_select_union():
 
     select_query = "SELECT * FROM table1 UNION ALL SELECT * FROM table2"
     assert (
-        "it's necessary to have grant SELECT(a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
     instance.query("GRANT SELECT(a, b) ON default.table1 TO A")
     assert (
-        "it's necessary to have grant SELECT(a, b) ON default.table2"
+        "it's necessary to have the grant SELECT(a, b) ON default.table2"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -231,7 +231,7 @@ def test_select_union():
 
     instance.query("REVOKE SELECT ON default.table1 FROM A")
     assert (
-        "it's necessary to have grant SELECT(a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -243,7 +243,7 @@ def test_select_count():
 
     select_query = "SELECT count() FROM table1"
     assert (
-        "it's necessary to have grant SELECT for at least one column on default.table1"
+        "it's necessary to have the grant SELECT for at least one column on default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -252,7 +252,7 @@ def test_select_count():
 
     instance.query("REVOKE SELECT(x) ON default.table1 FROM A")
     assert (
-        "it's necessary to have grant SELECT for at least one column on default.table1"
+        "it's necessary to have the grant SELECT for at least one column on default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -261,7 +261,7 @@ def test_select_count():
 
     instance.query("REVOKE SELECT(y) ON default.table1 FROM A")
     assert (
-        "it's necessary to have grant SELECT for at least one column on default.table1"
+        "it's necessary to have the grant SELECT for at least one column on default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -279,7 +279,7 @@ def test_select_where():
 
     select_query = "SELECT a FROM table1 WHERE b = 0"
     assert (
-        "it's necessary to have grant SELECT(a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -288,7 +288,7 @@ def test_select_where():
 
     instance.query("REVOKE SELECT ON default.table1 FROM A")
     assert (
-        "it's necessary to have grant SELECT(a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -306,7 +306,7 @@ def test_select_prewhere():
 
     select_query = "SELECT a FROM table1 PREWHERE b = 0"
     assert (
-        "it's necessary to have grant SELECT(a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -315,7 +315,7 @@ def test_select_prewhere():
 
     instance.query("REVOKE SELECT ON default.table1 FROM A")
     assert (
-        "it's necessary to have grant SELECT(a, b) ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -334,11 +334,11 @@ def test_select_with_row_policy():
     select_query = "SELECT a FROM table1"
     select_query2 = "SELECT count() FROM table1"
     assert (
-        "it's necessary to have grant SELECT(a) ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
     assert (
-        "it's necessary to have grant SELECT for at least one column on default.table1"
+        "it's necessary to have the grant SELECT for at least one column on default.table1"
         in instance.query_and_get_error(select_query2, user="A")
     )
 
@@ -348,10 +348,10 @@ def test_select_with_row_policy():
 
     instance.query("REVOKE SELECT(a) ON default.table1 FROM A")
     assert (
-        "it's necessary to have grant SELECT(a) ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
     assert (
-        "it's necessary to have grant SELECT for at least one column on default.table1"
+        "it's necessary to have the grant SELECT for at least one column on default.table1"
         in instance.query_and_get_error(select_query2, user="A")
     )

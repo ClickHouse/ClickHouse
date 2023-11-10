@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/mysql
-sidebar_position: 42
+sidebar_position: 137
 sidebar_label: mysql
 ---
 

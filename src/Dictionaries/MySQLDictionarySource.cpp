@@ -71,7 +71,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         MySQLSettings mysql_settings;
 
         std::optional<MySQLDictionarySource::Configuration> dictionary_configuration;
-        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix) : nullptr;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
         if (named_collection)
         {
             auto allowed_arguments{dictionary_allowed_keys};

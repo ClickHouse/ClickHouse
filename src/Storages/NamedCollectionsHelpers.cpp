@@ -1,4 +1,5 @@
 #include "NamedCollectionsHelpers.h"
+#include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -15,19 +16,16 @@ namespace ErrorCodes
 
 namespace
 {
-    NamedCollectionPtr tryGetNamedCollectionFromASTs(ASTs asts, bool throw_unknown_collection)
+    std::optional<std::string> getCollectionName(ASTs asts)
     {
         if (asts.empty())
-            return nullptr;
+            return std::nullopt;
 
         const auto * identifier = asts[0]->as<ASTIdentifier>();
         if (!identifier)
-            return nullptr;
+            return std::nullopt;
 
-        const auto & collection_name = identifier->name();
-        if (throw_unknown_collection)
-            return NamedCollectionFactory::instance().get(collection_name);
-        return NamedCollectionFactory::instance().tryGet(collection_name);
+        return identifier->name();
     }
 
     std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool fallback_to_ast_value, ContextPtr context)
@@ -74,7 +72,18 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     NamedCollectionUtils::loadIfNot();
 
-    auto collection = tryGetNamedCollectionFromASTs(asts, throw_unknown_collection);
+    auto collection_name = getCollectionName(asts);
+    if (!collection_name.has_value())
+        return nullptr;
+
+    context->checkAccess(AccessType::NAMED_COLLECTION, *collection_name);
+
+    NamedCollectionPtr collection;
+    if (throw_unknown_collection)
+        collection = NamedCollectionFactory::instance().get(*collection_name);
+    else
+        collection = NamedCollectionFactory::instance().tryGet(*collection_name);
+
     if (!collection)
         return nullptr;
 
@@ -106,11 +115,13 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     auto collection_name = config.getString(config_prefix + ".name", "");
     if (collection_name.empty())
         return nullptr;
+
+    context->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
 
     const auto & collection = NamedCollectionFactory::instance().get(collection_name);
     auto collection_copy = collection->duplicate();

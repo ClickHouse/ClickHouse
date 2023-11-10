@@ -105,6 +105,16 @@ public:
         }
     }
 
+    void reinitialize()
+    {
+        while (current_visitor >= 0)
+        {
+            visitors[current_visitor]->reinitialize();
+            current_visitor--;
+        }
+        current_visitor = 0;
+    }
+
 private:
     bool updateVisitorsForNextRun()
     {

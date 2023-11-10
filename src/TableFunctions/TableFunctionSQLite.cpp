@@ -29,20 +29,20 @@ namespace ErrorCodes
 
 
 StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
+        ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
     auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
                                          sqlite_db,
                                          database_path,
                                          remote_table_name,
-                                         ColumnsDescription{}, ConstraintsDescription{}, context);
+                                         cached_columns, ConstraintsDescription{}, context);
 
     storage->startup();
     return storage;
 }
 
 
-ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* context */) const
+ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* context */, bool /*is_insert_query*/) const
 {
     return StorageSQLite::getTableStructureFromData(sqlite_db, remote_table_name);
 }

@@ -49,6 +49,7 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("any", { createAggregateFunctionAny, properties });
+    factory.registerAlias("any_value", "any", AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("anyLast", { createAggregateFunctionAnyLast, properties });
     factory.registerFunction("anyHeavy", { createAggregateFunctionAnyHeavy, properties });
 

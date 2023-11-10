@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/s3Cluster
-sidebar_position: 55
+sidebar_position: 181
 sidebar_label: s3Cluster
 title: "s3Cluster Table Function"
 ---
@@ -16,7 +16,7 @@ s3Cluster(cluster_name, source, [,access_key_id, secret_access_key] [,format] [,
 **Arguments**
 
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
-- `source` — URL to a file or a bunch of files. Supports following wildcards in readonly mode: `*`, `?`, `{'abc','def'}` and `{N..M}` where `N`, `M` — numbers, `abc`, `def` — strings. For more information see [Wildcards In Path](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
+- `source` — URL to a file or a bunch of files. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{'abc','def'}` and `{N..M}` where `N`, `M` — numbers, `abc`, `def` — strings. For more information see [Wildcards In Path](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
 - `access_key_id` and `secret_access_key` — Keys that specify credentials to use with given endpoint. Optional.
 - `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
@@ -31,18 +31,18 @@ Select the data from all the files in the `/root/data/clickhouse` and `/root/dat
 
 ``` sql
 SELECT * FROM s3Cluster(
-    'cluster_simple', 
-    'http://minio1:9001/root/data/{clickhouse,database}/*', 
-    'minio', 
-    'minio123', 
-    'CSV', 
+    'cluster_simple',
+    'http://minio1:9001/root/data/{clickhouse,database}/*',
+    'minio',
+    'minio123',
+    'CSV',
     'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
 ) ORDER BY (name, value, polygon);
 ```
 
 Count the total amount of rows in all files in the cluster `cluster_simple`:
 
-:::tip    
+:::tip
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 

@@ -207,8 +207,8 @@ public:
 
     void read(DB::ReadBuffer & buf)
     {
-        DB::readIntBinary<size_t>(sample_count, buf);
-        DB::readIntBinary<size_t>(total_values, buf);
+        DB::readBinaryLittleEndian(sample_count, buf);
+        DB::readBinaryLittleEndian(total_values, buf);
 
         size_t size = std::min(total_values, sample_count);
         static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
@@ -224,22 +224,22 @@ public:
         rng_buf >> rng;
 
         for (size_t i = 0; i < samples.size(); ++i)
-            DB::readBinary(samples[i], buf);
+            DB::readBinaryLittleEndian(samples[i], buf);
 
         sorted = false;
     }
 
     void write(DB::WriteBuffer & buf) const
     {
-        DB::writeIntBinary<size_t>(sample_count, buf);
-        DB::writeIntBinary<size_t>(total_values, buf);
+        DB::writeBinaryLittleEndian(sample_count, buf);
+        DB::writeBinaryLittleEndian(total_values, buf);
 
         DB::WriteBufferFromOwnString rng_buf;
         rng_buf << rng;
         DB::writeStringBinary(rng_buf.str(), buf);
 
         for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
-            DB::writeBinary(samples[i], buf);
+            DB::writeBinaryLittleEndian(samples[i], buf);
     }
 
 private:

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/view
-sidebar_position: 51
+sidebar_position: 210
 sidebar_label: view
 title: view
 ---

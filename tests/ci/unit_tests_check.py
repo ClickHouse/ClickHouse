@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
+import json
 import logging
 import os
 import sys
 import subprocess
 import atexit
+from pathlib import Path
 from typing import List, Tuple
 
 from github import Github
@@ -12,7 +14,6 @@ from github import Github
 from build_download_helper import download_unit_tests
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -25,7 +26,7 @@ from docker_pull_helper import get_image_with_version
 from env_helper import TEMP_PATH, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, TestResult
+from report import ERROR, FAILURE, FAIL, OK, SUCCESS, TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -44,67 +45,128 @@ def get_test_name(line):
 
 
 def process_results(
-    result_folder: str,
-) -> Tuple[str, str, TestResults, List[str]]:
-    OK_SIGN = "OK ]"
-    FAILED_SIGN = "FAILED  ]"
-    SEGFAULT = "Segmentation fault"
-    SIGNAL = "received signal SIG"
-    PASSED = "PASSED"
+    result_directory: Path,
+) -> Tuple[str, str, TestResults]:
+    """The json is described by the next proto3 scheme:
+    (It's wrong, but that's a copy/paste from
+    https://google.github.io/googletest/advanced.html#generating-a-json-report)
+
+    syntax = "proto3";
+
+    package googletest;
+
+    import "google/protobuf/timestamp.proto";
+    import "google/protobuf/duration.proto";
+
+    message UnitTest {
+      int32 tests = 1;
+      int32 failures = 2;
+      int32 disabled = 3;
+      int32 errors = 4;
+      google.protobuf.Timestamp timestamp = 5;
+      google.protobuf.Duration time = 6;
+      string name = 7;
+      repeated TestCase testsuites = 8;
+    }
+
+    message TestCase {
+      string name = 1;
+      int32 tests = 2;
+      int32 failures = 3;
+      int32 disabled = 4;
+      int32 errors = 5;
+      google.protobuf.Duration time = 6;
+      repeated TestInfo testsuite = 7;
+    }
+
+    message TestInfo {
+      string name = 1;
+      string file = 6;
+      int32 line = 7;
+      enum Status {
+        RUN = 0;
+        NOTRUN = 1;
+      }
+      Status status = 2;
+      google.protobuf.Duration time = 3;
+      string classname = 4;
+      message Failure {
+        string failures = 1;
+        string type = 2;
+      }
+      repeated Failure failures = 5;
+    }"""
 
     test_results = []  # type: TestResults
-    total_counter = 0
-    failed_counter = 0
-    result_log_path = f"{result_folder}/test_result.txt"
-    if not os.path.exists(result_log_path):
-        logging.info("No output log on path %s", result_log_path)
-        return "error", "No output log", test_results, []
+    report_path = result_directory / "test_result.json"
+    if not report_path.exists():
+        logging.info("No output log on path %s", report_path)
+        return ERROR, "No output log", test_results
 
-    status = "success"
+    with open(report_path, "r", encoding="utf-8") as j:
+        report = json.load(j)
+
+    total_counter = report["tests"]
+    failed_counter = report["failures"]
+    error_counter = report["errors"]
+
     description = ""
-    passed = False
-    with open(result_log_path, "r", encoding="utf-8") as test_result:
-        for line in test_result:
-            if OK_SIGN in line:
-                logging.info("Found ok line: '%s'", line)
-                test_name = get_test_name(line.strip())
-                logging.info("Test name: '%s'", test_name)
-                test_results.append(TestResult(test_name, "OK"))
-                total_counter += 1
-            elif FAILED_SIGN in line and "listed below" not in line and "ms)" in line:
-                logging.info("Found fail line: '%s'", line)
-                test_name = get_test_name(line.strip())
-                logging.info("Test name: '%s'", test_name)
-                test_results.append(TestResult(test_name, "FAIL"))
-                total_counter += 1
-                failed_counter += 1
-            elif SEGFAULT in line:
-                logging.info("Found segfault line: '%s'", line)
-                status = "failure"
-                description += "Segmentation fault. "
-                break
-            elif SIGNAL in line:
-                logging.info("Received signal line: '%s'", line)
-                status = "failure"
-                description += "Exit on signal. "
-                break
-            elif PASSED in line:
-                logging.info("PASSED record found: '%s'", line)
-                passed = True
+    SEGFAULT = "Segmentation fault. "
+    SIGNAL = "Exit on signal. "
+    for suite in report["testsuites"]:
+        suite_name = suite["name"]
+        for test_case in suite["testsuite"]:
+            case_name = test_case["name"]
+            test_time = float(test_case["time"][:-1])
+            raw_logs = None
+            if "failures" in test_case:
+                raw_logs = ""
+                for failure in test_case["failures"]:
+                    raw_logs += failure["failure"]
+                if (
+                    "Segmentation fault" in raw_logs  # type: ignore
+                    and SEGFAULT not in description
+                ):
+                    description += SEGFAULT
+                if (
+                    "received signal SIG" in raw_logs  # type: ignore
+                    and SIGNAL not in description
+                ):
+                    description += SIGNAL
+            if test_case["status"] == "NOTRUN":
+                test_status = "SKIPPED"
+            elif raw_logs is None:
+                test_status = OK
+            else:
+                test_status = FAIL
 
-    if not passed:
-        status = "failure"
-        description += "PASSED record not found. "
+            test_results.append(
+                TestResult(
+                    f"{suite_name}.{case_name}",
+                    test_status,
+                    test_time,
+                    raw_logs=raw_logs,
+                )
+            )
 
-    if failed_counter != 0:
-        status = "failure"
+    check_status = SUCCESS
+    tests_status = OK
+    tests_time = float(report["time"][:-1])
+    if failed_counter:
+        check_status = FAILURE
+        test_status = FAIL
+    if error_counter:
+        check_status = ERROR
+        test_status = ERROR
+    test_results.append(TestResult(report["name"], tests_status, tests_time))
 
     if not description:
         description += (
-            f"fail: {failed_counter}, passed: {total_counter - failed_counter}"
+            f"fail: {failed_counter + error_counter}, "
+            f"passed: {total_counter - failed_counter - error_counter}"
         )
 
-    return status, description, test_results, [result_log_path]
+    return check_status, description, test_results
 
 
 def main():
@@ -114,8 +176,8 @@ def main():
 
     check_name = sys.argv[1]
 
-    if not os.path.exists(TEMP_PATH):
-        os.makedirs(TEMP_PATH)
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -133,16 +195,18 @@ def main():
 
     download_unit_tests(check_name, REPORTS_PATH, TEMP_PATH)
 
-    tests_binary_path = os.path.join(TEMP_PATH, "unit_tests_dbms")
-    os.chmod(tests_binary_path, 0o777)
+    tests_binary = temp_path / "unit_tests_dbms"
+    os.chmod(tests_binary, 0o777)
 
-    test_output = os.path.join(TEMP_PATH, "test_output")
-    if not os.path.exists(test_output):
-        os.makedirs(test_output)
+    test_output = temp_path / "test_output"
+    test_output.mkdir(parents=True, exist_ok=True)
 
-    run_command = f"docker run --cap-add=SYS_PTRACE --volume={tests_binary_path}:/unit_tests_dbms --volume={test_output}:/test_output {docker_image}"
+    run_command = (
+        f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
+        f"--volume={test_output}:/test_output {docker_image}"
+    )
 
-    run_log_path = os.path.join(test_output, "run.log")
+    run_log_path = test_output / "run.log"
 
     logging.info("Going to run func tests: %s", run_command)
 
@@ -156,17 +220,16 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
     s3_helper = S3Helper()
-    state, description, test_results, additional_logs = process_results(test_output)
+    state, description, test_results = process_results(test_output)
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, check_name, test_results)
 
     report_url = upload_results(
         s3_helper,
         pr_info.number,
         pr_info.sha,
         test_results,
-        [run_log_path] + additional_logs,
+        [run_log_path] + [p for p in test_output.iterdir() if not p.is_dir()],
         check_name,
     )
     print(f"::notice ::Report url: {report_url}")

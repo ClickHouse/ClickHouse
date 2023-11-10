@@ -27,8 +27,8 @@ public:
     std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override;
 
     UInt64 getSize() const override;
-    UInt128 getChecksum() const override;
-    std::optional<UInt128> getPartialChecksum(size_t prefix_length) const override;
+    UInt128 getChecksum(const ReadSettings & read_settings) const override;
+    std::optional<UInt128> getPartialChecksum(size_t prefix_length, const ReadSettings & read_settings) const override;
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
     bool isEncryptedByDisk() const override { return copy_encrypted; }

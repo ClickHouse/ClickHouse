@@ -53,12 +53,12 @@ CREATE SETTINGS PROFILE s4_01294 SETTINGS INHERIT readonly, INHERIT readonly
 CREATE SETTINGS PROFILE s5_01294 SETTINGS INHERIT readonly, readonly = 1
 CREATE SETTINGS PROFILE s6_01294 SETTINGS INHERIT readonly, readonly CONST
 -- system.settings_profiles
-s1_01294	local directory	0	0	[]	[]
-s2_01294	local directory	1	0	['r1_01294']	[]
-s3_01294	local directory	1	0	['r1_01294']	[]
-s4_01294	local directory	1	0	['r1_01294']	[]
-s5_01294	local directory	3	0	['u1_01294']	[]
-s6_01294	local directory	0	1	[]	['r1_01294','u1_01294']
+s1_01294	local_directory	0	0	[]	[]
+s2_01294	local_directory	1	0	['r1_01294']	[]
+s3_01294	local_directory	1	0	['r1_01294']	[]
+s4_01294	local_directory	1	0	['r1_01294']	[]
+s5_01294	local_directory	3	0	['u1_01294']	[]
+s6_01294	local_directory	0	1	[]	['r1_01294','u1_01294']
 -- system.settings_profile_elements
 s2_01294	\N	\N	0	readonly	0	\N	\N	\N	\N
 s3_01294	\N	\N	0	max_memory_usage	5000000	4000000	6000000	CONST	\N

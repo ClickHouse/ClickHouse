@@ -11,36 +11,36 @@ ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, y) FROM (select toDecimal256
 ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, y) FROM (select toDecimal32(1, 0) x, toDecimal256(1, 1) y);"
 
 types=("Int8" "Int16" "Int32" "Int64" "UInt8" "UInt16" "UInt32" "UInt64" "Float32" "Float64")
-
-for left in "${types[@]}"
-do
-    for right in "${types[@]}"
-    do
-        ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, w) FROM values('x ${left}, w ${right}', (4, 1), (1, 0), (10, 2))"
-        ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, w) FROM values('x ${left}, w ${right}', (0, 0), (1, 0))"
-    done
-done
-
 exttypes=("Int128" "Int256" "UInt256")
-
-for left in "${exttypes[@]}"
-do
-    for right in "${exttypes[@]}"
-    do
-        ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(to${left}(1), to${right}(2))"
-    done
-done
-
 # Decimal types
 dtypes=("32" "64" "128" "256")
 
-for left in "${dtypes[@]}"
-do
-    for right in "${dtypes[@]}"
+(
+    for left in "${types[@]}"
     do
-        ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(toDecimal${left}(2, 4), toDecimal${right}(1, 4))"
+        for right in "${types[@]}"
+        do
+            echo "SELECT avgWeighted(x, w) FROM values('x ${left}, w ${right}', (4, 1), (1, 0), (10, 2));"
+            echo "SELECT avgWeighted(x, w) FROM values('x ${left}, w ${right}', (0, 0), (1, 0));"
+        done
     done
-done
+
+    for left in "${exttypes[@]}"
+    do
+        for right in "${exttypes[@]}"
+        do
+            echo "SELECT avgWeighted(to${left}(1), to${right}(2));"
+        done
+    done
+
+    for left in "${dtypes[@]}"
+    do
+        for right in "${dtypes[@]}"
+        do
+            echo "SELECT avgWeighted(toDecimal${left}(2, 4), toDecimal${right}(1, 4));"
+        done
+    done
+) | clickhouse-client -nm
 
 echo "$(${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null --query="SELECT avgWeighted(['string'], toFloat64(0))" 2>&1)" \
   | grep -c 'Code: 43. DB::Exception: .* DB::Exception:.* Types .* are non-conforming as arguments for aggregate function avgWeighted'

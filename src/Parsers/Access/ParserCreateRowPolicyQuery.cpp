@@ -1,3 +1,4 @@
+#include <Access/IAccessStorage.h>
 #include <Parsers/Access/ParserCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -245,6 +246,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     String new_short_name;
     std::optional<bool> is_restrictive;
     std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters;
+    String storage_name;
 
     while (true)
     {
@@ -271,6 +273,9 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
+        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+            continue;
+
         break;
     }
 
@@ -294,6 +299,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     query->is_restrictive = is_restrictive;
     query->filters = std::move(filters);
     query->roles = std::move(roles);
+    query->storage_name = std::move(storage_name);
 
     return true;
 }

@@ -3,7 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -29,28 +29,28 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     }
 }
 
-void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
+void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name)
 {
     if (headers_finished_sending)
         return;
 
     WriteBufferFromOwnString progress_string_writer;
+
     accumulated_progress.writeJSON(progress_string_writer);
 
     if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
+        *response_header_ostr << header_name << progress_string_writer.str() << "\r\n" << std::flush;
+}
+
+void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
+{
+    accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
+    writeHeaderProgressImpl("X-ClickHouse-Summary: ");
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
-    if (headers_finished_sending)
-        return;
-
-    WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
-
-    if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
+    writeHeaderProgressImpl("X-ClickHouse-Progress: ");
 }
 
 void WriteBufferFromHTTPServerResponse::writeExceptionCode()
@@ -158,9 +158,9 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         return;
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
-
     if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {
+        accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
 
         /// Send all common headers before our special progress headers.
