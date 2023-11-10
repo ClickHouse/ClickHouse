@@ -1,5 +1,18 @@
-CREATE TABLE IF NOT EXISTS v (values Array(Enum('foo' = 1, 'bar' = 2))) ENGINE = Memory;
+DROP TABLE IF EXISTS v;
+DROP TABLE IF EXISTS v2;
+
+CREATE TABLE IF NOT EXISTS v (value Array(Enum('foo' = 1, 'bar' = 2))) ENGINE = Memory;
 INSERT INTO v VALUES (['foo', 'bar']), (['foo']), (['bar']);
-SELECT * FROM v WHERE has(values, 'foo');
-SELECT * FROM v WHERE hasAny(values, ['bar']);
-SELECT * FROM v WHERE has(values, 'x'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT * FROM v WHERE has(value, 'foo') ORDER BY value;
+SELECT * FROM v WHERE hasAny(value, ['bar']) ORDER BY value;
+SELECT * FROM v WHERE has(value, 'x') ORDER BY value; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+
+
+CREATE TABLE IF NOT EXISTS v2 (value Array(Array(Nullable(Enum('foo' = 1, 'bar' = 2))))) ENGINE = Memory;
+INSERT INTO v2 VALUES ([['foo', 'bar']]), ([['foo']]), ([['bar']]);
+SELECT * FROM v2 WHERE has(value, ['foo']) ORDER BY value;
+SELECT * FROM v2 WHERE has(value, [NULL]) ORDER BY value;
+
+DROP TABLE v;
+DROP TABLE v2;
+

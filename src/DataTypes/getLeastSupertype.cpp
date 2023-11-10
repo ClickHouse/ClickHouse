@@ -471,13 +471,24 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         type_ids.insert(type->getTypeId());
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
-    /// No other types are compatible with Strings. TODO Enums?
+    /// If there's exactly 1 Enum and others are either String and FixedString, the common
+    /// type is Enum
     {
         size_t have_string = type_ids.count(TypeIndex::String);
         size_t have_fixed_string = type_ids.count(TypeIndex::FixedString);
+        size_t has_enum = type_ids.count(TypeIndex::Enum16) + type_ids.count(TypeIndex::Enum8);
 
         if (have_string || have_fixed_string)
         {
+            if (has_enum == 1 && have_string + have_fixed_string + has_enum == type_ids.size())
+            {
+                for (const auto & type : types)
+                {
+                    if (isEnum(type))
+                        return type;
+                }
+            }
+
             bool all_strings = type_ids.size() == (have_string + have_fixed_string);
             if (!all_strings)
                 return throwOrReturn<on_error>(types, "because some of them are String/FixedString and some of them are not", ErrorCodes::NO_COMMON_TYPE);
