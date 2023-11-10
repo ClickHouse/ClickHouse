@@ -545,12 +545,6 @@ private:
         {
             allocated_value_id = is_nullable;
         }
-
-        /// assign 0 for null values.
-        if (is_nullable)
-        {
-            emplaceValueId(StringRef(char_pos, 0), 0);
-        }
     }
 
     void computeValueIdImpl(const IColumn *col, UInt64 * value_ids) override
@@ -667,12 +661,6 @@ private:
         else
         {
             allocated_value_id = is_nullable;
-        }
-
-        /// assign 0 for null values.
-        if (is_nullable)
-        {
-            emplaceValueId(StringRef(data_pos, 0), 0);
         }
     }
 
