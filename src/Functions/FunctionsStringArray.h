@@ -9,14 +9,15 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -910,9 +911,7 @@ private:
         }
         else
         {
-            ColumnsWithTypeAndName cols;
-            cols.emplace_back(col_arr.getDataPtr(), nested_type, "tmp");
-            return ConvertImplGenericToString<ColumnString>::execute(cols, std::make_shared<DataTypeString>(), col_arr.size());
+            return castColumn({col_arr.getDataPtr(), nested_type, "tmp"}, std::make_shared<DataTypeString>());
         }
     }
 
