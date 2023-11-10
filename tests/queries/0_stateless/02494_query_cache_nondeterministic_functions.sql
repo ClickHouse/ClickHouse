@@ -3,28 +3,21 @@
 
 SYSTEM DROP QUERY CACHE;
 
--- rand() is non-deterministic, the query is rejected by default
--- to throw is the default behavior
-SELECT count(rand(1)) SETTINGS use_query_cache = true; -- { serverError CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS }
-SELECT count(rand(1)) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'; -- { serverError CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT '-- query_cache_nondeterministic_function_handling = throw';
+SELECT count(now()) SETTINGS use_query_cache = true; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT count(now()) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT count(*) FROM system.query_cache;
 
 SYSTEM DROP QUERY CACHE;
 
-SELECT '---';
-
--- 'save' forces caching
-SELECT count(rand(1)) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save';
+SELECT '-- query_cache_nondeterministic_function_handling = save';
+SELECT count(now()) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save';
 SELECT count(*) FROM system.query_cache;
 
 SYSTEM DROP QUERY CACHE;
 
-SELECT '---';
-
--- 'ignore' suppresses the exception but doesn't cache
-SELECT count(rand(1)) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore';
+SELECT '-- query_cache_nondeterministic_function_handling = ignore';
+SELECT count(now()) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore';
 SELECT count(*) FROM system.query_cache;
 
 SYSTEM DROP QUERY CACHE;
-
-SELECT '---';
