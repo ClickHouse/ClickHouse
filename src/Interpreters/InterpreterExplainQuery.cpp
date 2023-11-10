@@ -541,14 +541,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (context->getSettingsRef().allow_experimental_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-                plan = std::move(interpreter).extractQueryPlan();
                 context = interpreter.getContext();
+                plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
                 InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-                interpreter.buildQueryPlan(plan);
                 context = interpreter.getContext();
+                interpreter.buildQueryPlan(plan);
             }
 
             // Collect the selected marks, rows, parts during build query pipeline.
