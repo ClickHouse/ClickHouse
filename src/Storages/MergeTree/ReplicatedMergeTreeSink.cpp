@@ -595,7 +595,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// For example during RESTORE REPLICA.
             if (!writing_existing_part)
             {
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
+                /// We have lost connection to all keepers but it might be recovered, so keep retrying
+                retries_ctl.setUserError(
+                    ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
+                return;
             }
         }
 
