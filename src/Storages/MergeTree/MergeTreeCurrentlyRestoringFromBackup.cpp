@@ -103,7 +103,7 @@ private:
             throwTableIsNotEmpty(reason, fmt::format("concurrent INSERT or ATTACH is using block number {}", *allocated_block_number));
     }
 
-    /// Finds any part on the current replica.
+    /// Finds any part in the storage.
     std::optional<String> findAnyPartInStorage() const
     {
         if (storage.getTotalActiveSizeInBytes() == 0)

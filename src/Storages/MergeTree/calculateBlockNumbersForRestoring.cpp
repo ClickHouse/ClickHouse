@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_RESTORE_TABLE;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace
@@ -57,7 +57,7 @@ namespace
         /// Generate a descriptive error message.
         if (left.part && right.part)
         {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
                             "Read incorrect parts from backup: Two parts share the same min_block: {} and {}",
                             left.part->getPartNameForLogs(), right.part->getPartNameForLogs());
         }
@@ -65,26 +65,26 @@ namespace
         {
             if (left.mutation->number == right.mutation->number)
             {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "Read incorrect mutations from backup: Two mutations share the same number: {} ({}) and {} ({})",
                                 left.mutation->name, left.mutation->toString(), right.mutation->name, right.mutation->toString());
             }
             else
             {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "Read incorrect mutations from backup: Two mutations share the same block number: {} ({}) and {} ({})",
                                 left.mutation->name, left.mutation->toString(), right.mutation->name, right.mutation->toString());
             }
         }
         else if (left.part && right.mutation)
         {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
                             "Read incorrect information from backup: A part and a mutation share the same block number: {} and {} ({})",
                             left.part->getPartNameForLogs(), right.mutation->name, right.mutation->toString());
         }
         else
         {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
                             "Read incorrect information from backup: A part and a mutation share the same block number: {} and {} ({})",
                             right.part->getPartNameForLogs(), left.mutation->name, left.mutation->toString());
         }
@@ -147,21 +147,21 @@ namespace
         {
             if (mutation.block_numbers)
             {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "Read incorrect mutations from the backup: {} ({}) has ReplicatedMergeTree format while the table expect mutations in MergeTree format",
                                 mutation.name, mutation.toString());
             }
 
             if (!mutation.block_number)
             {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "Read incorrect mutations from the backup: {} ({}) is in an unknown format without a block number",
                                 mutation.name, mutation.toString());
             }
 
             if (mutation.block_number.value() != mutation.number)
             {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "Read incorrect mutations from the backup: {} ({}) has unexpected block number != {}",
                                 mutation.name, mutation.toString(), mutation.number);
             }
