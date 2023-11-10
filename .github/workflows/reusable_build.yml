@@ -25,6 +25,8 @@ name: Build ClickHouse
 jobs:
   Build:
     name: Build-${{inputs.build_name}}
+    env:
+      GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
     steps:
       - name: Check out repository code
@@ -37,7 +39,6 @@ jobs:
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          GITHUB_JOB_OVERRIDDEN=Build-${{inputs.build_name}}
           ${{inputs.additional_envs}}
           EOF
           python3 "$GITHUB_WORKSPACE"/tests/ci/ci_config.py --build-name "${{inputs.build_name}}" >> "$GITHUB_ENV"

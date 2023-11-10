@@ -51,7 +51,10 @@ jobs:
           batches_output=$(python3 -c 'import json; print(json.dumps(list(range(${{inputs.batches}}))))')
           echo "batches=${batches_output}" >> "$GITHUB_OUTPUT"
   Test:
-    name: ${{inputs.test_name}}-${{matrix.batch}}
+    # Do not add `-0` to the end, if there's only one batch
+    name: ${{inputs.test_name}}${{ inputs.batches > 1 && format('-{0}',matrix.batch) || '' }}
+    env:
+      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ inputs.batches > 1 && format('-{0}',matrix.batch) || '' }}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
     needs: [PrepareStrategy]
     strategy:
@@ -69,7 +72,6 @@ jobs:
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          GITHUB_JOB_OVERRIDDEN=${{inputs.test_name}}-${{matrix.batch}}
           ${{inputs.additional_envs}}
           EOF
       - name: Common setup
