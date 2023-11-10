@@ -69,6 +69,10 @@ Pipelines PipelinesBuilder::build()
 
         QueryPipeline && pipeline = fragment->buildQueryPipeline(channels, local_host);
 
+        WriteBufferFromOwnString buffer;
+        fragment->explainPipeline(buffer, false);
+        LOG_TRACE(log, "Fragment {} explain pipeline: {}", fragment->getFragmentID(), buffer.str());
+
         // register ExchangeDataSource
         for (const auto & processor : pipeline.getProcessors())
         {

@@ -29,9 +29,9 @@ std::vector<SubQueryPlan> SplitAggregation::transform(SubQueryPlan & sub_plan, C
     if (!group_step)
         return {};
 
-    auto partial_agg_step = aggregate_step->makePreliminaryAgg();
-
     const Settings & settings = context->getSettingsRef();
+    auto partial_agg_step = aggregate_step->makePreliminaryAgg(settings);
+
     std::shared_ptr<MergingAggregatedStep> merge_agg_step
         = aggregate_step->makeMergingAggregatedStep(partial_agg_step->getOutputStream(), settings);
 

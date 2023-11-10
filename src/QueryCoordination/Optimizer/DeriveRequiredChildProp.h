@@ -10,7 +10,7 @@ namespace DB
 class DeriveRequiredChildProp : public PlanStepVisitor<AlternativeChildrenProp>
 {
 public:
-    explicit DeriveRequiredChildProp(GroupNodePtr group_node_) : group_node(group_node_) { }
+    explicit DeriveRequiredChildProp(GroupNodePtr group_node_, ContextPtr context_) : group_node(group_node_), context(context_) { }
 
     using Base = PlanStepVisitor<AlternativeChildrenProp>;
 
@@ -48,6 +48,7 @@ public:
 
 private:
     GroupNodePtr group_node;
+    ContextPtr context;
 };
 
 }

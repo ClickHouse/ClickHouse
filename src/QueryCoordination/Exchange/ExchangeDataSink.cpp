@@ -74,7 +74,7 @@ void ExchangeDataSink::consume(Chunk chunk)
     }
     else if (output_distribution.type == Distribution::Hashed)
     {
-        if (block.info.bucket_num > -1 && output_distribution.distribution_by_buket_num)
+        if (output_distribution.distribution_by_buket_num)
         {
             size_t which_channel = block.info.bucket_num % channels.size();
             channels[which_channel].sendData(block);

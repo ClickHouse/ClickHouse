@@ -6,6 +6,8 @@
 #include <QueryCoordination/Optimizer/Tasks/OptimizeGroup.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeInputs.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeTask.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -32,7 +34,7 @@ void OptimizeInputs::execute()
         children_statistics.emplace_back(child_group->getStatistics());
 
     if (!frame)
-        frame = std::make_unique<Frame>(group_node);
+        frame = std::make_unique<Frame>(group_node, task_context->getQueryContext());
 
     LOG_TRACE(log, "It's upper bound cost: {}", task_context->getUpperBoundCost().toString());
 
@@ -127,7 +129,10 @@ void OptimizeInputs::execute()
                     required_prop.sort_prop.toString());
 
             if (!output_prop.satisfyDistribution(required_prop))
+            {
+                enforceTwoLevelAggIfNeed(required_prop);
                 frame->total_cost = enforceGroupNode(required_prop, output_prop);
+            }
 
             if (frame->total_cost < task_context->getUpperBoundCost())
                 task_context->setUpperBoundCost(frame->total_cost);
@@ -137,6 +142,21 @@ void OptimizeInputs::execute()
     }
 }
 
+
+void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperties & required_prop)
+{
+    if (!(required_prop.distribution.type == Distribution::Type::Hashed && required_prop.distribution.distribution_by_buket_num))
+        return;
+
+    auto * aggregate_step = typeid_cast<AggregatingStep *>(group_node->getStep().get());
+    if (!aggregate_step || !aggregate_step->isPreliminaryAgg())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Required distribution by buket num, but is not preliminary AggregatingStep");
+
+    /// distribution type is Hashed and use distribution_by_buket_num need enforce two level aggregate.
+    /// Prevent different nodes from using different aggregation policies, the hash causes the data to be incorrect.
+    LOG_TRACE(log, "Enforce two level aggregate");
+    aggregate_step->enforceTwoLevelAgg();
+}
 
 Cost OptimizeInputs::enforceGroupNode(const PhysicalProperties & required_prop, const PhysicalProperties & output_prop)
 {

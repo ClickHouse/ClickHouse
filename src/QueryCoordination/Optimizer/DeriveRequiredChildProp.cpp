@@ -1,4 +1,5 @@
 #include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
+#include <QueryCoordination/Optimizer/Group.h>
 
 
 namespace DB
@@ -90,7 +91,16 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(MergingAggregatedStep & s
     AlternativeChildrenProp res;
     std::vector<PhysicalProperties> required_child_prop;
 
-    if (step.getParams().keys.empty() || !step.isFinal())
+    /// Explicit require property, not enumerations
+    auto statistics = group_node->getGroup().getStatistics();
+
+    bool estimate_two_level_agg = false;
+    if (statistics.getOutputRowSize() >= context->getSettings().group_by_two_level_threshold
+        || statistics.getDataSize() >= context->getSettings().group_by_two_level_threshold_bytes)
+        estimate_two_level_agg = true;
+
+    /// If cube rollup totals so !step.isFinal()
+    if (step.getParams().keys.empty() || !step.isFinal() || !estimate_two_level_agg)
     {
         required_child_prop.push_back({.distribution = {.type = Distribution::Singleton}});
     }
@@ -98,6 +108,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(MergingAggregatedStep & s
     {
         PhysicalProperties hashed_prop;
         hashed_prop.distribution.type = Distribution::Hashed;
+        hashed_prop.distribution.keys = step.getParams().keys;
         hashed_prop.distribution.distribution_by_buket_num = true;
         required_child_prop.push_back(hashed_prop);
     }

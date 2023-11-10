@@ -78,7 +78,9 @@ public:
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
-    std::shared_ptr<AggregatingStep> makePreliminaryAgg() const;
+    void enforceTwoLevelAgg();
+
+    std::shared_ptr<AggregatingStep> makePreliminaryAgg(const Settings & settings) const;
 
     std::shared_ptr<MergingAggregatedStep> makeMergingAggregatedStep(const DataStream & input_stream_, const Settings & settings) const;
 

@@ -61,6 +61,8 @@ public:
 
     QueryPipeline buildQueryPipeline(std::vector<ExchangeDataSink::Channel> & channels, const String & local_host);
 
+    void explainPipeline(WriteBuffer & buffer, bool show_header);
+
 private:
     bool isInitialized() const;
 

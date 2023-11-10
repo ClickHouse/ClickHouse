@@ -554,7 +554,13 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     return aggregating_projection;
 }
 
-std::shared_ptr<AggregatingStep> AggregatingStep::makePreliminaryAgg() const
+void AggregatingStep::enforceTwoLevelAgg()
+{
+    params.group_by_two_level_threshold = 1;
+    params.group_by_two_level_threshold_bytes = 1;
+}
+
+std::shared_ptr<AggregatingStep> AggregatingStep::makePreliminaryAgg(const Settings & settings) const
 {
     std::shared_ptr<AggregatingStep> preliminary_agg = std::make_shared<AggregatingStep>(
         input_streams.front(),
@@ -569,7 +575,7 @@ std::shared_ptr<AggregatingStep> AggregatingStep::makePreliminaryAgg() const
         group_by_use_nulls,
         sort_description_for_merging,
         group_by_sort_description,
-        should_produce_results_in_order_of_bucket_number,
+        (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results),
         memory_bound_merging_of_aggregation_results_enabled,
         explicit_sorting_required_for_aggregation_in_order);
 
@@ -608,7 +614,7 @@ std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedSte
         settings.distributed_aggregation_memory_efficient && grouping_sets_params.empty(),
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
-        should_produce_results_in_order_of_bucket_number,
+        (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results),
         settings.max_block_size,
         settings.aggregation_in_order_max_block_bytes,
         group_by_sort_description,

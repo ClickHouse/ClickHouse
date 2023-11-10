@@ -15,9 +15,9 @@ public:
     /// support recover task
     struct Frame
     {
-        Frame(GroupNodePtr node)
+        Frame(GroupNodePtr node, ContextPtr context)
         {
-            DeriveRequiredChildProp visitor(node);
+            DeriveRequiredChildProp visitor(node, context);
             alternative_child_prop = node->accept(visitor);
         }
 
@@ -60,6 +60,8 @@ private:
     bool isInitialTask() const;
 
     Cost enforceGroupNode(const PhysicalProperties & required_prop, const PhysicalProperties & output_prop);
+
+    void enforceTwoLevelAggIfNeed(const PhysicalProperties & required_prop);
 
     GroupNodePtr group_node;
     std::unique_ptr<Frame> frame;
