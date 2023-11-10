@@ -460,12 +460,19 @@ def test_cmd_crst(started_cluster):
         print("cons output(after crst) -------------------------------------")
         print(data)
 
-        # 2 connections, 1 for 'cons' command, 1 for zk
+        # 2 or 3 connections, 1 for 'crst', 1 for 'cons' command, 1 for zk
+        # there can be a case when 'crst' connection is not cleaned before the cons call
+        print("cons output(after crst) -------------------------------------")
+        print(data)
         cons = [n for n in data.split("\n") if len(n) > 0]
-        assert len(cons) == 2
+        assert len(cons) == 2 or len(cons) == 3
 
         # connection for zk
-        zk_conn = [n for n in cons if not n.__contains__("sid=0xffffffffffffffff")][0]
+        zk_conns = [n for n in cons if not n.__contains__("sid=0xffffffffffffffff")]
+
+        # there can only be one
+        assert len(zk_conns) == 1
+        zk_conn = zk_conns[0]
 
         conn_stat = re.match(r"(.*?)[:].*[(](.*?)[)].*", zk_conn.strip(), re.S).group(2)
         assert conn_stat is not None
