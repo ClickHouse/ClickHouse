@@ -57,14 +57,6 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
 {
     auto & projection_nodes = getProjection().getNodes();
-
-    if (used_projection_columns.empty())
-    {
-        /// Keep at least 1 column if used columns are empty
-        projection_nodes.erase(projection_nodes.begin() + 1, projection_nodes.end());
-        projection_columns.erase(projection_columns.begin() + 1, projection_columns.end());
-    }
-
     size_t projection_columns_size = projection_columns.size();
     size_t write_index = 0;
 
@@ -85,14 +77,6 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<std::stri
 void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
 {
     auto & projection_nodes = getProjection().getNodes();
-
-    if (used_projection_columns_indexes.empty())
-    {
-        /// Keep at least 1 column if used columns are empty
-        projection_nodes.erase(projection_nodes.begin() + 1, projection_nodes.end());
-        projection_columns.erase(projection_columns.begin() + 1, projection_columns.end());
-    }
-
     size_t projection_columns_size = projection_columns.size();
     size_t write_index = 0;
 

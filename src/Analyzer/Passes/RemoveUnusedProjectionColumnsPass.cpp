@@ -1,11 +1,14 @@
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
 
+#include <Functions/FunctionFactory.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/SortNode.h>
-#include <Functions/FunctionFactory.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -13,13 +16,15 @@ namespace DB
 namespace
 {
 
-class CollectUsedColumnsVisitor : public InDepthQueryTreeVisitor<CollectUsedColumnsVisitor>
+class CollectUsedColumnsVisitor : public InDepthQueryTreeVisitorWithContext<CollectUsedColumnsVisitor>
 {
 public:
+    using Base = InDepthQueryTreeVisitorWithContext<CollectUsedColumnsVisitor>;
+    using Base::Base;
+
     bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        auto node_type = child->getNodeType();
-        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        if (isQueryOrUnionNode(child))
         {
             subqueries_nodes_to_visit.insert(child);
             return false;
@@ -28,9 +33,21 @@ public:
         return true;
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto node_type = node->getNodeType();
+
+        if (node_type == QueryTreeNodeType::QUERY)
+        {
+            auto & query_node = node->as<QueryNode &>();
+            auto table_expressions = extractTableExpressions(query_node.getJoinTree());
+            for (const auto & table_expression : table_expressions)
+                if (isQueryOrUnionNode(table_expression))
+                    query_or_union_node_to_used_columns.emplace(table_expression, std::unordered_set<std::string>());
+
+            return;
+        }
+
         if (node_type != QueryTreeNodeType::COLUMN)
             return;
 
@@ -39,10 +56,7 @@ public:
         auto column_source_node_type = column_source_node->getNodeType();
 
         if (column_source_node_type == QueryTreeNodeType::QUERY || column_source_node_type == QueryTreeNodeType::UNION)
-        {
-            auto * column_source_node_ptr = column_source_node.get();
-            query_or_union_node_to_used_columns[column_source_node_ptr].insert(column_node.getColumnName());
-        }
+            query_or_union_node_to_used_columns[column_source_node].insert(column_node.getColumnName());
     }
 
     void reset()
@@ -52,17 +66,59 @@ public:
     }
 
     std::unordered_set<QueryTreeNodePtr> subqueries_nodes_to_visit;
-    std::unordered_map<IQueryTreeNode *, std::unordered_set<std::string>> query_or_union_node_to_used_columns;
+    std::unordered_map<QueryTreeNodePtr, std::unordered_set<std::string>> query_or_union_node_to_used_columns;
 };
+
+std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, const std::unordered_set<std::string> & used_column_names)
+{
+    std::unordered_set<size_t> result;
+
+    auto * union_node = query_or_union_node->as<UnionNode>();
+    auto * query_node = query_or_union_node->as<QueryNode>();
+
+    const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+    size_t projection_columns_size = projection_columns.size();
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        const auto & projection_column = projection_columns[i];
+        if (used_column_names.contains(projection_column.name))
+            result.insert(i);
+    }
+
+    return result;
+}
+
+/// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
+void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, std::unordered_set<size_t> & used_projection_columns_indexes)
+{
+    if (auto * union_node = query_or_union_node->as<UnionNode>())
+    {
+        for (auto & query_node : union_node->getQueries().getNodes())
+            updateUsedProjectionIndexes(query_node, used_projection_columns_indexes);
+        return;
+    }
+
+    const auto & query_node = query_or_union_node->as<const QueryNode &>();
+    const auto & projection_nodes = query_node.getProjection().getNodes();
+    size_t projection_nodes_size = projection_nodes.size();
+
+    for (size_t i = 0; i < projection_nodes_size; ++i)
+    {
+        const auto & projection_node = projection_nodes[i];
+        if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) && hasFunctionNode(projection_node, "arrayJoin"))
+            used_projection_columns_indexes.insert(i);
+    }
+}
 
 }
 
-void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     std::vector<QueryTreeNodePtr> nodes_to_visit;
     nodes_to_visit.push_back(query_tree_node);
 
-    CollectUsedColumnsVisitor visitor;
+    CollectUsedColumnsVisitor visitor(std::move(context));
 
     while (!nodes_to_visit.empty())
     {
@@ -73,10 +129,16 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr query_tree_node, Co
 
         for (auto & [query_or_union_node, used_columns] : visitor.query_or_union_node_to_used_columns)
         {
+            auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
+            updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
+
+            /// Keep at least 1 column if used columns are empty
+            used_projection_indexes.insert(0);
+
             if (auto * union_node = query_or_union_node->as<UnionNode>())
-                union_node->removeUnusedProjectionColumns(used_columns);
+                union_node->removeUnusedProjectionColumns(used_projection_indexes);
             else if (auto * query_node = query_or_union_node->as<QueryNode>())
-                query_node->removeUnusedProjectionColumns(used_columns);
+                query_node->removeUnusedProjectionColumns(used_projection_indexes);
         }
 
         for (const auto & subquery_node_to_visit : visitor.subqueries_nodes_to_visit)
