@@ -95,8 +95,10 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(MergingAggregatedStep & s
     auto statistics = group_node->getGroup().getStatistics();
 
     bool estimate_two_level_agg = false;
-    if (statistics.getOutputRowSize() >= context->getSettings().group_by_two_level_threshold
-        || statistics.getDataSize() >= context->getSettings().group_by_two_level_threshold_bytes)
+    auto group_by_two_level_threshold = context->getSettings().group_by_two_level_threshold;
+    auto group_by_two_level_threshold_bytes = context->getSettings().group_by_two_level_threshold_bytes;
+    if ((group_by_two_level_threshold && statistics.getOutputRowSize() >= group_by_two_level_threshold)
+        || (group_by_two_level_threshold_bytes && statistics.getDataSize() >= group_by_two_level_threshold_bytes))
         estimate_two_level_agg = true;
 
     /// If cube rollup totals so !step.isFinal()
