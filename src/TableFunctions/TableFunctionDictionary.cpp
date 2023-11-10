@@ -8,6 +8,7 @@
 
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/StorageDictionary.h>
 #include <Storages/checkAndGetLiteralArgument.h>
