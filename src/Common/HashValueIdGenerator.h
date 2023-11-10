@@ -242,7 +242,7 @@ protected:
     /// range mode is only be used for fixed length rows.
     UInt64 range_min = -1UL;
     UInt64 range_max = 0;
-    size_t row_bytes = 0; // the lenght of each row. must be fixed.
+    size_t row_bytes = 0; // the length of each row. must be fixed.
     bool enable_range_mode = false;
     bool is_nullable = false;
 
@@ -480,7 +480,7 @@ private:
     }
 };
 
-template<int string_lenght_type>
+template<int string_length_type>
 class FixedStringHashValueIdGenerator : public IHashValueIdGenerator
 {
 public:

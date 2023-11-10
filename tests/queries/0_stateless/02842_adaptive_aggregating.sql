@@ -38,7 +38,7 @@ CREATE TABLE adaptive_aggregate_table(
     `high_card_int_key` UInt32
 )Engine=Memory;
 
-insert into aggregation_lowcardinality_keys select toString(number%4), number % 4, number from numbers(100);
-insert into aggregation_lowcardinality_keys select concat('123456789_', toString(number%100 + 4)), number % 100, number from numbers(200);
-insert into aggregation_lowcardinality_keys select toString(number%4), number % 4, number from numbers(100);
-select low_card_str_key, low_card_int_key , uniq(high_card_int_key) from default.aggregation_lowcardinality_keys group by low_card_str_key, low_card_int_key order by low_card_str_key, low_card_int_key;
+insert into adaptive_aggregate_table select toString(number%4), number % 4, number from numbers(100);
+insert into adaptive_aggregate_table select concat('123456789_', toString(number%100 + 4)), number % 100, number from numbers(200);
+insert into adaptive_aggregate_table select toString(number%4), number % 4, number from numbers(100);
+select low_card_str_key, low_card_int_key , uniq(high_card_int_key) from adaptive_aggregate_table group by low_card_str_key, low_card_int_key order by low_card_str_key, low_card_int_key;
