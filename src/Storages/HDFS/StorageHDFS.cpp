@@ -35,7 +35,6 @@
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
