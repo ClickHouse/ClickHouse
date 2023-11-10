@@ -391,7 +391,7 @@ private:
                     else if (and_arguments.size() == 1)
                     {
                         /// Replace AND with a single argument with the argument itself
-                        new_or_operands.emplace_back(std::move(and_arguments[0]));
+                        new_or_operands.emplace_back(and_arguments[0]);
                     }
                 }
                 else
@@ -415,7 +415,6 @@ private:
         function_node.resolveAsFunction(or_function_resolver);
     }
 
-private:
     bool is_inside_on_section = false;
     std::deque<const JoinNode *> join_stack;
 };
