@@ -345,7 +345,7 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
         storage_id.getFullNameNotQuoted());
 
     SettingsChanges setting_changes;
-    setting_changes.setSetting("optimize_trivial_count_query", 1);
+    setting_changes.setSetting("optimize_trivial_count_query", 1); /// always enable trivial count optimization
     auto block_io = executeQuery(insert_sql, createQueryContext(context, setting_changes), true).second;
     auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
     executor->execute();
