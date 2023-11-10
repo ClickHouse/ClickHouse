@@ -1201,6 +1201,8 @@ void Planner::buildPlanForUnionNode()
     {
         Planner query_planner(query_node, select_query_options);
         query_planner.buildQueryPlanIfNeeded();
+        for (const auto & row_policy : query_planner.getUsedRowPolicies())
+            used_row_policies.insert(row_policy);
         auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
         query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
         query_plans.push_back(std::move(query_node_plan));
@@ -1348,8 +1350,10 @@ void Planner::buildPlanForQueryNode()
         select_query_options,
         top_level_identifiers,
         planner_context);
+
     auto from_stage = join_tree_query_plan.from_stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
+    used_row_policies = std::move(join_tree_query_plan.used_row_policies);
 
     LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),

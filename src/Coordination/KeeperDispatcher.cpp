@@ -813,6 +813,8 @@ void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
 
 void KeeperDispatcher::clusterUpdateThread()
 {
+    using enum KeeperServer::ConfigUpdateState;
+    bool last_command_was_leader_change = false;
     auto & shutdown_called = keeper_context->shutdown_called;
     while (!shutdown_called)
     {
@@ -820,13 +822,18 @@ void KeeperDispatcher::clusterUpdateThread()
         if (!cluster_update_queue.pop(action))
             return;
 
-        if (server->applyConfigUpdate(action))
+        if (const auto res = server->applyConfigUpdate(action, last_command_was_leader_change); res == Accepted)
             LOG_DEBUG(log, "Processing config update {}: accepted", action);
-        else // TODO (myrrc) sleep a random amount? sleep less?
+        else
         {
+            last_command_was_leader_change = res == WaitBeforeChangingLeader;
+
             (void)cluster_update_queue.pushFront(action);
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
-            std::this_thread::sleep_for(50ms);
+
+            std::this_thread::sleep_for(last_command_was_leader_change
+                ? configuration_and_settings->coordination_settings->sleep_before_leader_change_ms
+                : 50ms);
         }
     }
 }
