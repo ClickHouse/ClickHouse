@@ -141,6 +141,8 @@ public:
 
     bool requestLeader();
 
+    void yieldLeadership();
+
     void recalculateStorageStats();
 };
 

@@ -1147,7 +1147,7 @@ public:
         double p;
         if (isFloat(p_column.column->getDataType()))
             p = p_column.column->getFloat64(0);
-        else if (isUnsignedInteger(p_column.column->getDataType()))
+        else if (isUInt(p_column.column->getDataType()))
             p = p_column.column->getUInt(0);
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
