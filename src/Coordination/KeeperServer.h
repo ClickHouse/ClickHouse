@@ -128,7 +128,10 @@ public:
 
     int getServerID() const { return server_id; }
 
-    bool applyConfigUpdate(const ClusterUpdateAction& action);
+    enum class ConfigUpdateState { Accepted, Declined, WaitBeforeChangingLeader };
+    ConfigUpdateState applyConfigUpdate(
+        const ClusterUpdateAction& action,
+        bool last_command_was_leader_change = false);
 
     // TODO (myrrc) these functions should be removed once "reconfig" is stabilized
     void applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action);
