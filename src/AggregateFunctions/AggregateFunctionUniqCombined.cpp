@@ -42,103 +42,43 @@ namespace ErrorCodes
 namespace
 {
 
-/** Hash function for uniqCombined/uniqCombined64 (based on Ret).
- */
-template <typename T, typename Ret>
-struct AggregateFunctionUniqCombinedTraits
-{
-    static Ret hash(T x)
-    {
-        if constexpr (sizeof(T) > sizeof(UInt64))
-            return static_cast<Ret>(DefaultHash64<T>(x));
-        else
-            return static_cast<Ret>(intHash64(x));
-    }
-};
-
-template <typename Ret>
-struct AggregateFunctionUniqCombinedTraits<UInt128, Ret>
-{
-    static Ret hash(UInt128 x)
-    {
-        return static_cast<Ret>(sipHash64(x));
-    }
-};
-
-template <typename Ret>
-struct AggregateFunctionUniqCombinedTraits<Float32, Ret>
-{
-    static Ret hash(Float32 x)
-    {
-        UInt64 res = bit_cast<UInt64>(x);
-        return static_cast<Ret>(intHash64(res));
-    }
-};
-
-template <typename Ret>
-struct AggregateFunctionUniqCombinedTraits<Float64, Ret>
-{
-    static Ret hash(Float64 x)
-    {
-        UInt64 res = bit_cast<UInt64>(x);
-        return static_cast<Ret>(intHash64(res));
-    }
-};
-
 // Unlike HashTableGrower always grows to power of 2.
 struct UniqCombinedHashTableGrower : public HashTableGrowerWithPrecalculation<>
 {
     void increaseSize() { increaseSizeDegree(1); }
 };
 
-template <typename Key, UInt8 K>
-struct AggregateFunctionUniqCombinedDataWithKey
+
+template <typename T, UInt8 K, typename HashValueType>
+struct AggregateFunctionUniqCombinedData
 {
+    using Key = std::conditional_t<
+        std::is_same_v<T, String> || std::is_same_v<T, IPv6>,
+        UInt64,
+        HashValueType>;
+
     // TODO(ilezhankin): pre-generate values for |UniqCombinedBiasData|,
     //                   at the moment gen-bias-data.py script doesn't work.
 
     // We want to migrate from |HashSet| to |HyperLogLogCounter| when the sizes in memory become almost equal.
     // The size per element in |HashSet| is sizeof(Key)*2 bytes, and the overall size of |HyperLogLogCounter| is 2^K * 6 bits.
     // For Key=UInt32 we can calculate: 2^X * 4 * 2 ≤ 2^(K-3) * 6 ⇒ X ≤ K-4.
-    using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, UniqCombinedHashTableGrower>, 16, K - 5 + (sizeof(Key) == sizeof(UInt32)), K, TrivialHash, Key>;
 
-    Set set;
-};
-
-template <typename Key>
-struct AggregateFunctionUniqCombinedDataWithKey<Key, 17>
-{
-    using Set = CombinedCardinalityEstimator<Key,
+    /// Note: I don't recall what is special with '17' - probably it is one of the original functions that has to be compatible.
+    using Set = CombinedCardinalityEstimator<
+        Key,
         HashSet<Key, TrivialHash, UniqCombinedHashTableGrower>,
         16,
-        12 + (sizeof(Key) == sizeof(UInt32)),
-        17,
+        K - 5 + (sizeof(Key) == sizeof(UInt32)),
+        K,
         TrivialHash,
         Key,
-        HyperLogLogBiasEstimator<UniqCombinedBiasData>,
+        std::conditional_t<K == 17, HyperLogLogBiasEstimator<UniqCombinedBiasData>, TrivialBiasEstimator>,
         HyperLogLogMode::FullFeatured>;
 
     Set set;
 };
 
-
-template <typename T, UInt8 K, typename HashValueType>
-struct AggregateFunctionUniqCombinedData : public AggregateFunctionUniqCombinedDataWithKey<HashValueType, K>
-{
-};
-
-
-/// For String keys, 64 bit hash is always used (both for uniqCombined and uniqCombined64),
-///  because of backwards compatibility (64 bit hash was already used for uniqCombined).
-template <UInt8 K, typename HashValueType>
-struct AggregateFunctionUniqCombinedData<String, K, HashValueType> : public AggregateFunctionUniqCombinedDataWithKey<UInt64 /*always*/, K>
-{
-};
-
-template <UInt8 K, typename HashValueType>
-struct AggregateFunctionUniqCombinedData<IPv6, K, HashValueType> : public AggregateFunctionUniqCombinedDataWithKey<UInt64 /*always*/, K>
-{
-};
 
 template <typename T, UInt8 K, typename HashValueType>
 class AggregateFunctionUniqCombined final
@@ -169,7 +109,30 @@ public:
         else
         {
             const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
-            this->data(place).set.insert(AggregateFunctionUniqCombinedTraits<T, HashValueType>::hash(value));
+
+            HashValueType hash;
+
+            if constexpr (std::is_same_v<T, UInt128>)
+            {
+                /// This specialization exists due to historical circumstances.
+                /// Initially UInt128 was introduced only for UUID, and then the other big-integer types were added.
+                hash = static_cast<HashValueType>(sipHash64(value));
+            }
+            else if constexpr (std::is_floating_point_v<T>)
+            {
+                hash = static_cast<HashValueType>(intHash64(bit_cast<UInt64>(value)));
+            }
+            else if constexpr (sizeof(T) > sizeof(UInt64))
+            {
+                hash = static_cast<HashValueType>(DefaultHash64<T>(value));
+            }
+            else
+            {
+                /// This specialization exists also for compatibility with the initial implementation.
+                hash = static_cast<HashValueType>(intHash64(value));
+            }
+
+            this->data(place).set.insert(hash);
         }
     }
 
