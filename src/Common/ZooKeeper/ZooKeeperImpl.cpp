@@ -436,7 +436,6 @@ void ZooKeeper::connect(
 
     WriteBufferFromOwnString fail_reasons;
 
-    /// NOTE: seems like keeper client just try from beginning and return if first one succeeds?
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
         for (size_t i = 0; i < nodes.size(); ++i)
@@ -466,7 +465,6 @@ void ZooKeeper::connect(
                 socket.setSendTimeout(args.operation_timeout_ms * 1000);
                 socket.setNoDelay(true);
 
-                // NOTE: socket emplace for the keeper read and write.
                 in.emplace(socket);
                 out.emplace(socket);
                 compressed_in.reset();
@@ -501,7 +499,7 @@ void ZooKeeper::connect(
 
                 original_index = static_cast<Int8>(node.original_index);
 
-                if (!node.optimal_for_load_balancing)
+                if (i != 0)
                 {
                     auto session_lifetime_seconds = setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
                     LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
@@ -509,8 +507,7 @@ void ZooKeeper::connect(
                     node.address.toString(), i, session_lifetime_seconds);
                 }
 
-                if (connected)
-                    break;
+                break;
             }
             catch (...)
             {
@@ -854,7 +851,7 @@ void ZooKeeper::receiveEvent()
             {
                 for (const auto & callback : it->second)
                     if (callback)
-                        (*callback)(watch_response);   /// NOTE We may process callbacks not under mutex.
+                        (*callback)(watch_response);
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
                 watches.erase(it);

@@ -779,7 +779,6 @@ try
         }
     );
 
-    /// NOTE: maybe here?
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 

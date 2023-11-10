@@ -55,7 +55,6 @@ struct ShuffleHost
     UInt8 original_index = 0;
     Priority priority;
     UInt64 random = 0;
-    bool optimal_for_load_balancing;
 
     void randomize()
     {
@@ -227,8 +226,7 @@ public:
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    std::vector<ShuffleHost> shuffleHosts();
-    std::vector<ShuffleHost> shuffleHostsByAvailabilityZone();
+    std::vector<ShuffleHost> shuffleHosts() const;
 
     void tryConnectSameAZKeeper();
 
@@ -661,6 +659,7 @@ using ZooKeeperPtr = ZooKeeper::Ptr;
 class ZooKeeperAvailabilityZoneMap
 {
 public:
+    static constexpr char AZ_UNKNWON[] = "AZ_UNKNWON";
     static ZooKeeperAvailabilityZoneMap & instance();
 
     std::string get(const std::string & host);
@@ -674,6 +673,7 @@ public:
     bool needTryOtherHost(const std::string & local_az, const std::set<std::string> & attempted_host);
 
 private:
+
     std::map<std::string, std::string> az_by_host;
     std::mutex mutex;
 };

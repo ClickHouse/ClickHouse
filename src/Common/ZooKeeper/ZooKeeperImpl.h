@@ -106,7 +106,6 @@ public:
     {
         Poco::Net::SocketAddress address;
         UInt8 original_index;
-        bool optimal_for_load_balancing;
         bool secure;
     };
 

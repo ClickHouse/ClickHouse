@@ -2929,16 +2929,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
 
-    /// NOTE: plumbing az value here. Guess the config is only zookeeper configuration.
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
-    // NOTE: here change the keeper constructor flow entry point.
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
     else if (shared->zookeeper->hasReachedDeadline())
         shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
 
-    /// NOTE: where this is reconnecting. shared->zookeeper->startNewSession() creating new `ZooKeeper` object. New process.
-    /// So nothing to worry about.
     if (shared->zookeeper->expired())
     {
         Stopwatch watch;
