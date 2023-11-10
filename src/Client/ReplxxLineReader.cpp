@@ -293,7 +293,6 @@ ReplxxLineReader::ReplxxLineReader(
     , word_break_characters(word_break_characters_)
     , editor(getEditor())
 {
-    using namespace std::placeholders;
     using Replxx = replxx::Replxx;
 
     if (!history_file_path.empty())
