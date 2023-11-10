@@ -14,6 +14,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -758,6 +760,13 @@ bool TableJoin::allowParallelHashJoin() const
     if (isSpecialStorage() || !oneDisjunct())
         return false;
     return true;
+}
+
+ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context) const
+{
+    ASTPtr expression_list = rightKeysList();
+    auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
+    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
 }

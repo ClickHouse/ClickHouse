@@ -343,6 +343,15 @@ def main():
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
     logging.info("Build finished with %s, log path %s", success, log_path)
+    if not success:
+        # We check if docker works, because if it's down, it's infrastructure
+        try:
+            subprocess.check_call("docker info", shell=True)
+        except subprocess.CalledProcessError:
+            logging.error(
+                "The dockerd looks down, won't upload anything and generate report"
+            )
+            sys.exit(1)
 
     # FIXME performance
     performance_urls = []

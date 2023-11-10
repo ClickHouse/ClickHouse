@@ -32,7 +32,7 @@ public:
     virtual bool needContext() const { return false; }
     virtual void setContext(ContextPtr &) {}
 
-    virtual void setMaxRowsToRead(size_t) {}
+    virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
     virtual size_t getNumRowsRead() const { return 0; }
 
     virtual ~ISchemaReader() = default;
@@ -54,12 +54,17 @@ public:
     virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
 
 protected:
-    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
+    void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
+    {
+        max_rows_to_read = max_rows;
+        max_bytes_to_read = max_bytes;
+    }
     size_t getNumRowsRead() const override { return rows_read; }
 
     virtual void transformFinalTypeIfNeeded(DataTypePtr &) {}
 
     size_t max_rows_to_read;
+    size_t max_bytes_to_read;
     size_t rows_read = 0;
     DataTypePtr default_type;
     String hints_str;

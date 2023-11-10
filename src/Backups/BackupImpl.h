@@ -141,6 +141,7 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
+    std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
     bool deduplicate_files = true;

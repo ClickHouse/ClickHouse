@@ -48,7 +48,9 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings);
         auto disk = disk_it->second;
         if (!dynamic_cast<const DiskObjectStorage *>(disk.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cached disk is allowed only on top of object storage");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot wrap disk `{}` with cache layer `{}`: cached disk is allowed only on top of object storage",
+                disk_name, name);
 
         auto disk_object_storage = disk->createDiskObjectStorage();
 

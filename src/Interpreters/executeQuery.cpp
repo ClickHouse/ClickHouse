@@ -322,6 +322,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// This does not have impact on the final span logs, because these internal queries are issued by external queries,
     /// we still have enough span logs for the execution of external queries.
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
+    if (query_span)
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
     auto query_start_time = std::chrono::system_clock::now();
 
@@ -666,9 +668,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
-            if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
-                context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+            const auto & query_settings = context->getSettingsRef();
+            if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
+            {
+                if (!interpreter->supportsTransactions())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
+            }
 
             if (!interpreter->ignoreQuota() && !quota_checked)
             {

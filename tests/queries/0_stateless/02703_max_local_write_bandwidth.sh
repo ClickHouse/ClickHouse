@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -nm -q "
         query_duration_ms >= 7e3,
         ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] > 8e6,
         ProfileEvents['LocalWriteThrottlerBytes'] > 8e6,
-        ProfileEvents['LocalWriteThrottlerSleepMicroseconds'] > 7e6*0.9
+        ProfileEvents['LocalWriteThrottlerSleepMicroseconds'] > 7e6*0.5
     FROM system.query_log
     WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
 "

@@ -1741,7 +1741,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 OpImpl::template processString<OpCase::Vector>(in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, 1);
             }
 
-            return ColumnConst::create(std::move(col_res), col_left->size());
+            return ColumnConst::create(std::move(col_res), col_left_const->size());
         }
         else if (!col_left_const && !col_right_const && col_right)
         {

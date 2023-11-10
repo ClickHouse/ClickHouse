@@ -10,7 +10,7 @@ This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
 `NATS` lets you:
 
-- Publish or subcribe to message subjects.
+- Publish or subscribe to message subjects.
 - Process new messages as they become available.
 
 ## Creating a Table {#table_engine-redisstreams-creating-a-table}
@@ -46,7 +46,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Required parameters:
 
 - `nats_url` – host:port (for example, `localhost:5672`)..
-- `nats_subjects` – List of subject for NATS table to subscribe/publsh to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
+- `nats_subjects` – List of subject for NATS table to subscribe/publish to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
 - `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
 Optional parameters:

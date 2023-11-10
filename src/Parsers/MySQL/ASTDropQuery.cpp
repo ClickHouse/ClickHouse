@@ -44,8 +44,9 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
     bool if_exists = false;
     bool is_truncate = false;
 
-    if (s_truncate.ignore(pos, expected) && s_table.ignore(pos, expected))
+    if (s_truncate.ignore(pos, expected))
     {
+        s_table.ignore(pos, expected);
         is_truncate = true;
         query->kind = ASTDropQuery::Kind::Table;
         ASTDropQuery::QualifiedName name;

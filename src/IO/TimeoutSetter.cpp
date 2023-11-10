@@ -29,19 +29,28 @@ TimeoutSetter::TimeoutSetter(Poco::Net::StreamSocket & socket_, Poco::Timespan t
 
 TimeoutSetter::~TimeoutSetter()
 {
+    if (was_reset)
+        return;
+
     try
     {
-        bool connected = socket.impl()->initialized();
-        if (!connected)
-            return;
-
-        socket.setSendTimeout(old_send_timeout);
-        socket.setReceiveTimeout(old_receive_timeout);
+        reset();
     }
     catch (...)
     {
         tryLogCurrentException("Client", "TimeoutSetter: Can't reset timeouts");
     }
+}
+
+void TimeoutSetter::reset()
+{
+    bool connected = socket.impl()->initialized();
+    if (!connected)
+        return;
+
+    socket.setSendTimeout(old_send_timeout);
+    socket.setReceiveTimeout(old_receive_timeout);
+    was_reset = true;
 }
 
 }

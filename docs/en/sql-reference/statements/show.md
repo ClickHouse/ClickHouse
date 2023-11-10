@@ -273,7 +273,7 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 Displays a list of primary and data skipping indexes of a table.
 
 ```sql
-SHOW [EXTENDED] {INDEX | INDEXES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 The database and table name can be specified in abbreviated form as `<db>.<table>`, i.e. `FROM tab FROM db` and `FROM db.tab` are

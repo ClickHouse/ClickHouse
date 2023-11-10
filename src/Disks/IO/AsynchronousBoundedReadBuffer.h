@@ -1,11 +1,12 @@
 #pragma once
 
-#include "config.h"
-#include <IO/ReadBufferFromFile.h>
+#include <chrono>
+#include <utility>
 #include <IO/AsynchronousReader.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include <utility>
+#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -39,7 +40,7 @@ public:
 
     off_t seek(off_t offset_, int whence) override;
 
-    void prefetch(int64_t priority) override;
+    void prefetch(Priority priority) override;
 
     void setReadUntilPosition(size_t position) override; /// [..., position).
 
@@ -71,8 +72,8 @@ private:
 
     struct LastPrefetchInfo
     {
-        UInt64 submit_time = 0;
-        size_t priority = 0;
+        std::chrono::system_clock::time_point submit_time;
+        Priority priority;
     };
     LastPrefetchInfo last_prefetch_info;
 
@@ -87,7 +88,7 @@ private:
         int64_t size,
         const std::unique_ptr<Stopwatch> & execution_watch);
 
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, int64_t priority);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 
     void resetPrefetch(FilesystemPrefetchState state);
 
