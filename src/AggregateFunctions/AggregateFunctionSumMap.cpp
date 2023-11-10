@@ -222,10 +222,14 @@ public:
                 if (!keepKey(key))
                     continue;
 
-                decltype(merged_maps.begin()) it;
-                it = merged_maps.find(key);
+                auto [it, inserted] = merged_maps.emplace(key, Array());
 
-                if (it != merged_maps.end())
+                if (inserted)
+                {
+                    it->second.resize(size);
+                    it->second[col] = value;
+                }
+                else
                 {
                     if (!value.isNull())
                     {
@@ -234,15 +238,6 @@ public:
                         else
                             applyVisitor(Visitor(value), it->second[col]);
                     }
-                }
-                else
-                {
-                    // Create a value array for this key
-                    Array new_values;
-                    new_values.resize(size);
-                    new_values[col] = value;
-
-                    merged_maps.emplace(key, std::move(new_values));
                 }
             }
         }
