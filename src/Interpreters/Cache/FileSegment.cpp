@@ -933,7 +933,6 @@ FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
 
 FileSegmentsHolder::~FileSegmentsHolder()
 {
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());

@@ -209,18 +209,28 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     void assertInitialized() const;
-
     void assertCacheCorrectness();
 
     void loadMetadata();
     void loadMetadataImpl();
     void loadMetadataForKeys(const std::filesystem::path & keys_dir);
 
-    /// bool - if `file_segments_limit` reached or not.
-    FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const;
+    /// Get all file segments from cache which intersect with `range`.
+    /// If `file_segments_limit` > 0, return no more than first file_segments_limit
+    /// file segments.
+    FileSegments getImpl(
+        const LockedKey & locked_key,
+        const FileSegment::Range & range,
+        size_t file_segments_limit) const;
 
+    /// Split range into subranges by max_file_segment_size,
+    /// each subrange size must be less or equal to max_file_segment_size.
     std::vector<FileSegment::Range> splitRange(size_t offset, size_t size);
 
+    /// Split range into subranges by max_file_segment_size (same as in splitRange())
+    /// and create a new file segment for each subrange.
+    /// If `file_segments_limit` > 0, create no more than first file_segments_limit
+    /// file segments.
     FileSegments splitRangeIntoFileSegments(
         LockedKey & locked_key,
         size_t offset,
