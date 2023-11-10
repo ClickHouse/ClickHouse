@@ -207,7 +207,7 @@ The optional keyword `FULL` causes the output to include the collation, comment 
 
 The statement produces a result table with the following structure:
 - `field` - The name of the column (String)
-- `type` - The column data type. If setting `[use_mysql_types_in_show_columns](../../operations/settings/settings.md#use_mysql_types_in_show_columns) = 1` (default: 0), then the equivalent type name in MySQL is shown. (String)
+- `type` - The column data type. If the query was made through the MySQL wire protocol, then the equivalent type name in MySQL is shown. (String)
 - `null` - `YES` if the column data type is Nullable, `NO` otherwise (String)
 - `key` - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
 - `default` - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))
@@ -668,6 +668,15 @@ If either `LIKE` or `ILIKE` clause is specified, the query returns a list of sys
 
 Returns a list of merges. All merges are listed in the [system.merges](../../operations/system-tables/merges.md) table.
 
+- `table` -- Table name.
+- `database` -- The name of the database the table is in.
+- `estimate_complete` -- The estimated time to complete (in seconds).
+- `elapsed` -- The time elapsed (in seconds) since the merge started.
+- `progress` -- The percentage of completed work (0-100 percent).
+- `is_mutation` -- 1 if this process is a part mutation.
+- `size_compressed` -- The total size of the compressed data of the merged parts.
+- `memory_usage` -- Memory consumption of the merge process.
+
 
 **Syntax**
 
@@ -686,10 +695,9 @@ SHOW MERGES;
 Result:
 
 ```text
-┌─table──────┬─database─┬─estimate_complete─┬─────elapsed─┬─progress─┬─is_mutation─┬─size─────┬─mem───────┐
-│ your_table │ default  │              0.14 │ 0.365592338 │     0.73 │           0 │ 5.40 MiB │ 10.25 MiB │
-└────────────┴──────────┴───────────────────┴─────────────┴──────────┴─────────────┴────────────┴─────────┘
-
+┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
+│ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
 ```
 
 Query:
@@ -701,9 +709,8 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 Result:
 
 ```text
-┌─table──────┬─database─┬─estimate_complete─┬─────elapsed─┬─progress─┬─is_mutation─┬─size─────┬─mem───────┐
-│ your_table │ default  │              0.05 │ 1.727629065 │     0.97 │           0 │ 5.40 MiB │ 10.25 MiB │
-└────────────┴──────────┴───────────────────┴─────────────┴──────────┴─────────────┴────────────┴─────────┘
-
+┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
+│ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
 ```
 

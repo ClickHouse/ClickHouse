@@ -582,7 +582,7 @@ void WriteBufferFromS3::completeMultipartUpload()
         if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         {
             /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
+            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it here, DB::S3::Client take care of it
             LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error, will retry. {}, Parts: {}", getVerboseLogDetails(), multipart_tags.size());
         }
         else

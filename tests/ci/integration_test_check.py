@@ -29,7 +29,7 @@ from download_release_packages import download_last_release
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, read_test_results
+from report import ERROR, TestResult, TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -260,6 +260,7 @@ def main():
         ),
     )
 
+    ch_helper = ClickHouseHelper()
     with TeePopen(run_command, output_path_log, my_env) as process:
         retcode = process.wait()
         if retcode == 0:
@@ -267,6 +268,25 @@ def main():
         elif retcode == 13:
             logging.warning(
                 "There were issues with infrastructure. Not writing status report to restart job."
+            )
+            prepared_events = prepare_tests_results_for_clickhouse(
+                pr_info,
+                [
+                    TestResult(
+                        "integration_infrastructure_fail",
+                        "ERROR",
+                        stopwatch.duration_seconds,
+                    )
+                ],
+                ERROR,
+                stopwatch.duration_seconds,
+                stopwatch.start_time_str,
+                "",
+                check_name_with_group,
+            )
+
+            ch_helper.insert_events_into(
+                db="default", table="checks", events=prepared_events
             )
             sys.exit(1)
         else:
@@ -276,8 +296,6 @@ def main():
 
     state, description, test_results, additional_logs = process_results(result_path)
     state = override_status(state, check_name, invert=validate_bugfix_check)
-
-    ch_helper = ClickHouseHelper()
 
     s3_helper = S3Helper()
     report_url = upload_results(
