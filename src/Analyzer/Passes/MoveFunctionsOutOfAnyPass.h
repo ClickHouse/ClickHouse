@@ -7,13 +7,13 @@ namespace DB
 
 /** Rewrite 'any' and 'anyLast' functions pushing them inside original function.
   *
-  * Example: any(f(x, y, g(z)))
-  * Result: f(any(x), any(y), g(any(z)))
+  * Example: SELECT any(f(x, y, g(z)));
+  * Result: SELECT f(any(x), any(y), g(any(z)));
   */
-class AnyFunctionPass final : public IQueryTreePass
+class MoveFunctionsOutOfAnyPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "AnyFunction"; }
+    String getName() override { return "MoveFunctionsOutOfAnyPass"; }
 
     String getDescription() override
     {

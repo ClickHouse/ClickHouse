@@ -419,7 +419,7 @@ void StorageNATS::startup()
 }
 
 
-void StorageNATS::shutdown()
+void StorageNATS::shutdown(bool /* is_drop */)
 {
     shutdown_called = true;
 
