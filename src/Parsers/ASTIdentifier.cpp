@@ -87,11 +87,6 @@ void ASTIdentifier::setShortName(const String & new_name)
     semantic->table = table;
 }
 
-void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
-{
-    ASTWithAlias::updateTreeHashImpl(hash_state);
-}
-
 const String & ASTIdentifier::name() const
 {
     if (children.empty())
@@ -252,7 +247,7 @@ void ASTTableIdentifier::resetTable(const String & database_name, const String &
 void ASTTableIdentifier::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(uuid);
-    ASTIdentifier::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 String getIdentifierName(const IAST * ast)

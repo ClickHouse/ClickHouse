@@ -47,8 +47,6 @@ public:
     const String & shortName() const { return name_parts.back(); }
     const String & name() const;
 
-    void updateTreeHashImpl(SipHash & hash_state) const override;
-
     void restoreTable();  // TODO(ilezhankin): get rid of this
     std::shared_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
 

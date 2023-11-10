@@ -27,11 +27,9 @@ public:
     void setAlias(const String & to) override { alias = to; }
 
     /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const final;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override final;
 
     virtual void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
-
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     virtual void appendColumnNameImpl(WriteBuffer & ostr) const = 0;

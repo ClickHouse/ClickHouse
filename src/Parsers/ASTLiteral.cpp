@@ -10,16 +10,18 @@
 namespace DB
 {
 
+void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
+{
+    const char * prefix = "Literal_";
+    hash_state.update(prefix, strlen(prefix));
+    applyVisitor(FieldVisitorHash(hash_state), value);
+}
+
 ASTPtr ASTLiteral::clone() const
 {
     auto res = std::make_shared<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
-}
-
-void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
-{
-    ASTWithAlias::updateTreeHashImpl(hash_state);
 }
 
 namespace

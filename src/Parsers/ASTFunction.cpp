@@ -601,7 +601,9 @@ ASTPtr ASTFunction::clone() const
 
 void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
 {
-    ASTWithAlias::updateTreeHashImpl(hash_state);
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 template <typename Container>
