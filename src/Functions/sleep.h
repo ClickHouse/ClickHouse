@@ -50,7 +50,8 @@ public:
         return std::make_shared<FunctionSleep<variant>>(context->getSettingsRef().function_sleep_max_microseconds_per_block);
     }
 
-    FunctionSleep(UInt64 max_microseconds_) : max_microseconds(max_microseconds_)
+    FunctionSleep(UInt64 max_microseconds_)
+        : max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
     {
     }
 
@@ -103,8 +104,8 @@ public:
 
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
 
-        if (seconds < 0 || !std::isfinite(seconds))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot sleep infinite or negative amount of time (not implemented)");
+        if (seconds < 0 || !std::isfinite(seconds) || seconds > static_cast<Float64>(std::numeric_limits<UInt32>::max()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot sleep infinite, very large or negative amount of time (not implemented)");
 
         size_t size = col->size();
 
@@ -112,7 +113,7 @@ public:
         if (size > 0)
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
-            UInt64 microseconds = static_cast<UInt64>(seconds * 1e6);
+            UInt64 microseconds = static_cast<UInt64>(seconds) * 1000000ull;
             if (max_microseconds && seconds * 1e6 > max_microseconds)
                 throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {} microseconds",
                     max_microseconds, microseconds);
@@ -120,7 +121,7 @@ public:
             if (!dry_run)
             {
                 UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
-                microseconds = static_cast<UInt64>(seconds * count * 1e6);
+                microseconds = static_cast<UInt64>(seconds) * count * 1000000ull;
 
                 if (max_microseconds && microseconds > max_microseconds)
                     throw Exception(ErrorCodes::TOO_SLOW,
