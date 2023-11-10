@@ -34,6 +34,10 @@ name: Testing workflow
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
 
 env:
   CHECK_NAME: ${{inputs.test_name}}
@@ -73,6 +77,7 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
           EOF
       - name: Common setup
         uses: ./.github/actions/common_setup
