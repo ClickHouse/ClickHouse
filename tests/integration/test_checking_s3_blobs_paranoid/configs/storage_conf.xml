@@ -18,6 +18,7 @@
                 <endpoint>http://resolver:8083/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
+                <skip_access_check>1</skip_access_check>
             </broken_s3>
         </disks>
 

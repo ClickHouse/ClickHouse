@@ -171,7 +171,7 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
-    ConnectionTimeouts getTimeouts(Aws::Http::HttpRequest & request) const;
+    ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte = true) const;
 
 protected:
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);

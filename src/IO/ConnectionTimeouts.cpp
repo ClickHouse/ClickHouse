@@ -133,51 +133,84 @@ ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings
         settings.http_receive_timeout);
 }
 
-ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(Aws::Http::HttpMethod method, UInt32 attempt) const
+class SendReceiveTimeoutsForFirstAttempt
 {
-    constexpr size_t first_method_index = size_t(Aws::Http::HttpMethod::HTTP_GET);
-    constexpr size_t last_method_index = size_t(Aws::Http::HttpMethod::HTTP_PATCH);
-    constexpr size_t methods_count = last_method_index - first_method_index + 1;
+private:
+    static constexpr size_t known_methods_count = 6;
+    using KnownMethodsArray = std::array<String, known_methods_count>;
+    static const KnownMethodsArray known_methods;
 
-    /// HTTP_POST is used for CompleteMultipartUpload requests.
-    /// These requests need longer timeout, especially when minio is used
+    /// HTTP_POST is used for CompleteMultipartUpload requests. Its latency could be high.
+    /// These requests need longer timeout, especially when minio is used.
     /// The same assumption are made for HTTP_DELETE, HTTP_PATCH
     /// That requests are more heavy that HTTP_GET, HTTP_HEAD, HTTP_PUT
 
-    static const UInt32 first_attempt_send_receive_timeouts_ms[methods_count][2] = {
-        /*HTTP_GET*/    {200,   200},
-        /*HTTP_POST*/   {200, 30000},
-        /*HTTP_DELETE*/ {200,  1000},
-        /*HTTP_PUT*/    {200,   200},
-        /*HTTP_HEAD*/   {200,   200},
-        /*HTTP_PATCH*/  {200,  1000},
+    static constexpr Poco::Timestamp::TimeDiff first_byte_ms[known_methods_count][2] =
+    {
+        /* GET */ {200, 200},
+        /* POST */ {200, 200},
+        /* DELETE */ {200, 200},
+        /* PUT */ {200, 200},
+        /* HEAD */ {200, 200},
+        /* PATCH */ {200, 200},
     };
 
-    static const UInt32 second_attempt_send_receive_timeouts_ms[methods_count][2] = {
-        /*HTTP_GET*/    {1000,  1000},
-        /*HTTP_POST*/   {1000, 30000},
-        /*HTTP_DELETE*/ {1000, 10000},
-        /*HTTP_PUT*/    {1000,  1000},
-        /*HTTP_HEAD*/   {1000,  1000},
-        /*HTTP_PATCH*/  {1000, 10000},
+    static constexpr Poco::Timestamp::TimeDiff rest_bytes_ms[known_methods_count][2] =
+    {
+        /* GET */ {500, 500},
+        /* POST */ {1000, 30000},
+        /* DELETE */ {1000, 10000},
+        /* PUT */ {1000, 3000},
+        /* HEAD */ {500, 500},
+        /* PATCH */ {1000, 10000},
     };
 
-    static_assert(methods_count == 6);
-    static_assert(sizeof(first_attempt_send_receive_timeouts_ms) == sizeof(second_attempt_send_receive_timeouts_ms));
-    static_assert(sizeof(first_attempt_send_receive_timeouts_ms) == methods_count * sizeof(UInt32) * 2);
+    static_assert(sizeof(first_byte_ms) == sizeof(rest_bytes_ms));
+    static_assert(sizeof(first_byte_ms) == known_methods_count * sizeof(Poco::Timestamp::TimeDiff) * 2);
+
+    static size_t getMethodIndex(const String & method)
+    {
+        KnownMethodsArray::const_iterator it = std::find(known_methods.begin(), known_methods.end(), method);
+        chassert(it != known_methods.end());
+        if (it == known_methods.end())
+            return 0;
+        return std::distance(known_methods.begin(), it);
+    }
+
+public:
+    static std::pair<Poco::Timespan, Poco::Timespan> getSendReceiveTimeout(const String & method, bool first_byte)
+    {
+        auto idx = getMethodIndex(method);
+
+        if (first_byte)
+            return std::make_pair(
+                Poco::Timespan(first_byte_ms[idx][0] * 1000),
+                Poco::Timespan(first_byte_ms[idx][1] * 1000)
+            );
+
+        return std::make_pair(
+            Poco::Timespan(rest_bytes_ms[idx][0] * 1000),
+            Poco::Timespan(rest_bytes_ms[idx][1] * 1000)
+        );
+    }
+};
+
+const SendReceiveTimeoutsForFirstAttempt::KnownMethodsArray SendReceiveTimeoutsForFirstAttempt::known_methods =
+{
+        "GET", "POST", "DELETE", "PUT", "HEAD", "PATCH"
+};
+
+
+ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const
+{
+    if (!first_attempt)
+        return *this;
+
+    auto [send, recv] = SendReceiveTimeoutsForFirstAttempt::getSendReceiveTimeout(method, first_byte);
 
     auto aggressive = *this;
-
-    if (attempt > 2)
-        return aggressive;
-
-    auto timeout_map = first_attempt_send_receive_timeouts_ms;
-    if (attempt == 2)
-        timeout_map = second_attempt_send_receive_timeouts_ms;
-
-    const size_t method_index = size_t(method) - first_method_index;
-    aggressive.send_timeout = saturate(Poco::Timespan(timeout_map[method_index][0]), send_timeout);
-    aggressive.receive_timeout = saturate(Poco::Timespan(timeout_map[method_index][1]), receive_timeout);
+    aggressive.send_timeout = saturate(send, send_timeout);
+    aggressive.receive_timeout = saturate(recv, receive_timeout);
 
     return aggressive;
 }

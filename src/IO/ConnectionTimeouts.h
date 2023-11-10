@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Poco/Timespan.h>
-#include <aws/core/http/HttpTypes.h>
 
 namespace DB
 {
@@ -69,7 +68,7 @@ struct ConnectionTimeouts
     static ConnectionTimeouts getTCPTimeoutsWithFailover(const Settings & settings);
     static ConnectionTimeouts getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout);
 
-    ConnectionTimeouts getAdaptiveTimeouts(Aws::Http::HttpMethod method, UInt32 attempt) const;
+    ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
 };
 
 }

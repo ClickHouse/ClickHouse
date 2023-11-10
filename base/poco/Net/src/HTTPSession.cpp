@@ -95,7 +95,7 @@ void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco
 {
 	 _connectionTimeout = connectionTimeout;
 
-     if (_sendTimeout != sendTimeout)
+     if (_sendTimeout.totalMicroseconds() != sendTimeout.totalMicroseconds())
      {
          _sendTimeout = sendTimeout;
 
@@ -103,7 +103,7 @@ void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco
              _socket.setSendTimeout(_sendTimeout);
      }
 
-     if (_receiveTimeout != receiveTimeout)
+     if (_receiveTimeout.totalMicroseconds() != receiveTimeout.totalMicroseconds())
      {
          _receiveTimeout = receiveTimeout;
 

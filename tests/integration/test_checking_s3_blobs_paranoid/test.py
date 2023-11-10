@@ -556,7 +556,7 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
 
 
 @pytest.mark.parametrize("node_name", ["node", "node_with_inf_s3_retries"])
-def test_aggressive_timeouts(cluster, broken_s3, node_name):
+def test_adaptive_timeouts(cluster, broken_s3, node_name):
     node = cluster.instances[node_name]
 
     broken_s3.setup_fake_puts(part_length=1)
@@ -565,12 +565,12 @@ def test_aggressive_timeouts(cluster, broken_s3, node_name):
         count=1000000,
     )
 
-    insert_query_id = f"TEST_AGGRESSIVE_TIMEOUTS_{node_name}"
+    insert_query_id = f"TEST_ADAPTIVE_TIMEOUTS_{node_name}"
     node.query(
         f"""
             INSERT INTO
                 TABLE FUNCTION s3(
-                    'http://resolver:8083/root/data/aggressive_timeouts',
+                    'http://resolver:8083/root/data/adaptive_timeouts',
                     'minio', 'minio123',
                     'CSV', auto, 'none'
                 )
@@ -593,20 +593,20 @@ def test_aggressive_timeouts(cluster, broken_s3, node_name):
 
     assert put_objects == 1
 
-    s3_aggressive_timeouts_state = node.query(
+    s3_use_adaptive_timeouts = node.query(
         f"""
         SELECT
             value
         FROM system.settings
         WHERE
-            name='s3_aggressive_timeouts'
+            name='s3_use_adaptive_timeouts'
         """
     ).strip()
 
     if node_name == "node_with_inf_s3_retries":
         # first 2 attempts failed
-        assert s3_aggressive_timeouts_state == "1"
-        assert s3_errors == 2
+        assert s3_use_adaptive_timeouts == "1"
+        assert s3_errors == 1
     else:
-        assert s3_aggressive_timeouts_state == "0"
+        assert s3_use_adaptive_timeouts == "0"
         assert s3_errors == 0
