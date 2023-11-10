@@ -41,12 +41,6 @@ namespace ErrorCodes
 void abortOnFailedAssertion(const String & description)
 {
     LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", description);
-
-    /// This is to suppress -Wmissing-noreturn
-    volatile bool always_false = false;
-    if (always_false)
-        return;
-
     abort();
 }
 
