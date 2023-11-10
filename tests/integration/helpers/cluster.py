@@ -2622,9 +2622,7 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                logging.info(
-                    f"Check LDAP Online {self.ldap_host} {self.ldap_port}"
-                )
+                logging.info(f"Check LDAP Online {self.ldap_host} {self.ldap_port}")
                 self.exec_in_container(
                     self.ldap_id,
                     [
