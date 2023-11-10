@@ -31,6 +31,17 @@ CREATE TABLE foo
     f20 IntervalDay
 ) Engine = MergeTree() order by f0;
 
+
+analyze table foo;
+
+select row_count from system.statistics_table;
+select '';
+select `table`, `column`, uniqMerge(ndv), any(min_value), any(max_value), any(avg_row_size)
+from system.statistics_column_basic
+group by `table`, `column`
+order by `column`;
+select '';
+
 INSERT INTO foo
 SELECT 1,
        1.0,
@@ -79,12 +90,46 @@ SELECT 2,
 
 analyze table foo;
 
-select * from system.statistics_table;
+select row_count from system.statistics_table;
 select '';
-
 select `table`, `column`, uniqMerge(ndv), any(min_value), any(max_value), any(avg_row_size)
 from system.statistics_column_basic
 group by `table`, `column`
 order by `column`;
+select '';
+
+INSERT INTO foo
+SELECT 3,
+       3.0,
+       toDecimal32(2, 9),
+       true,
+       '2',
+       '2',
+       '00000000-0000-0000-0000-000000000002',
+       '2023-11-02',
+       '2023-11-02',
+       '2023-11-02 00:00:00',
+       '2023-11-02 00:00:00',
+       'world',
+       '2',
+       array(2, 2),
+       '{"a": 2}',
+       tuple(2, 2),
+       'ss',
+       '1.1.1.2',
+       '0:0:0:0::2',
+       (2, 2),
+       2;
+
+analyze table foo(f0, f1);
+
+select `table`, `column`, uniqMerge(ndv), any(min_value), any(max_value), any(avg_row_size)
+from system.statistics_column_basic where `column` in ('f0', 'f1')
+group by `table`, `column`
+order by `column`;
+
+analyze table foo(f0, f100); -- { serverError 60 }
 
 drop table if exists foo;
+truncate table system.statistics_table sync;
+truncate table system.statistics_column_basic sync;
