@@ -361,6 +361,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
                 locked_key.getKey(), current_pos, hole_size, FileSegment::State::DETACHED, settings);
 
             file_segments.insert(it, file_segment);
+            ++added;
         }
         else
         {
@@ -395,14 +396,6 @@ void FileCache::fillHolesWithEmptyFileSegments(
         return;
     }
 
-    if (file_segments_limit && file_segments.size() >= file_segments_limit)
-    {
-        std::string res;
-        for (const auto & f : file_segments)
-            res += " - " + f->range().toString();
-        LOG_ERROR(log, "Limit: {}, file segments: {}, added: {}, range: {}, file_segments: {}",
-                  file_segments_limit, file_segments.size(), added, range.toString(), res);
-    }
     chassert(!file_segments_limit || file_segments.size() < file_segments_limit);
 
     if (current_pos <= range.right)
