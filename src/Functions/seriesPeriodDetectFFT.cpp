@@ -17,9 +17,12 @@
 #    include <cmath>
 #    include <Columns/ColumnArray.h>
 #    include <Columns/ColumnsNumber.h>
+#    include <DataTypes/DataTypeArray.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <Functions/FunctionFactory.h>
+#    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
+
 
 namespace DB
 {
@@ -52,7 +55,18 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return std::make_shared<DataTypeFloat64>(); }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        if (!array_type)
+            throw DB::Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function {} must be array but it  has type {}.",
+                getName(),
+                arguments[0]->getName());
+
+        return std::make_shared<DataTypeFloat64>();
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
