@@ -2,6 +2,8 @@
     <profiles>
         <default>
             <allow_experimental_analyzer>1</allow_experimental_analyzer>
+            <!-- Enabled temporary to check all tests with this settings -->
+            <analyzer_compatibility_join_using_top_level_identifier>1</analyzer_compatibility_join_using_top_level_identifier>
         </default>
     </profiles>
 </clickhouse>

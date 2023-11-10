@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (a UInt64, b UInt64) ENGINE = Memory;
 INSERT INTO t1 VALUES (1, 2), (3, 4), (5, 6);
 
-SET analyzer_compatibility_join_using_top_level_identifier = 1;
+-- SET analyzer_compatibility_join_using_top_level_identifier = 1;
 
 SELECT 1 as k FROM (SELECT 10 AS a) t1 JOIN (SELECT 1 AS k, 20 AS b) t2 USING k;
 
