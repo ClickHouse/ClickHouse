@@ -222,7 +222,7 @@ CI_CONFIG = CiConfig(
         ),
         "fuzzers": BuildConfig(
             name="fuzzers",
-            compiler="clang-16",
+            compiler="clang-17",
             package_type="fuzzers",
         ),
     },
