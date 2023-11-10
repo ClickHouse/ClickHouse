@@ -133,6 +133,15 @@ public:
                     "Aggregate function {} requires relative accuracy parameter with value between 0 and 1 but is {}",
                     getName(),
                     relative_accuracy);
+            // Throw exception if the relative accuracy is too small.
+            // This is to avoid the case where the user specifies a relative accuracy that is too small
+            // and the sketch is not able to allocate enough memory to satisfy the accuracy requirement.
+            if (relative_accuracy < 1e-6)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires relative accuracy parameter with value greater than 1e-6 but is {}",
+                    getName(),
+                    relative_accuracy);
         }
     }
 
