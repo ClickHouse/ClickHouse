@@ -703,17 +703,26 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & settings) const
 {
-    if (settings.optimize_trivial_approximate_count_query)
-    {
-        std::shared_lock lock(rocksdb_ptr_mx);
-        if (!rocksdb_ptr)
-            return {};
-        UInt64 estimated_rows;
-        if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
-            return {};
-        return estimated_rows;
-    }
-    return {};
+    if (!settings.optimize_trivial_approximate_count_query)
+        return {};
+    std::shared_lock lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        return {};
+    UInt64 estimated_rows;
+    if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
+        return {};
+    return estimated_rows;
+}
+
+std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(const Settings & /*settings*/) const
+{
+    std::shared_lock lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        return {};
+    UInt64 estimated_bytes;
+    if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
+        return {};
+    return estimated_bytes;
 }
 
 }

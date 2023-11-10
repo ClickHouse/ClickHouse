@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
+#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 
 
 namespace rocksdb
@@ -88,6 +89,8 @@ public:
     bool supportsTrivialCountOptimization() const override { return true; }
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
+
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
     const String primary_key;
