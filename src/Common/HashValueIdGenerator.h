@@ -202,10 +202,18 @@ public:
 
         if (enable_range_mode && (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID || m_value_ids.size() > range_max - range_min + 1))
         {
-            for (UInt64 i = 0, n = range_max - range_min + 1; i < n; ++i)
+            size_t alloc_size = 0;
+            if (__builtin_add_overflow(sizeof(UInt64), pad_left + pad_right, &alloc_size))
+                throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
+            /// need to pad the address.
+            auto * range_values_ptr = pool.alloc(alloc_size) + pad_left;
+            for (UInt64 i = range_min; i <= range_max; ++i)
             {
-                StringRef raw_value(reinterpret_cast<const UInt8 *>(&i), row_bytes);
+                UInt64 value_id = i - range_min + is_nullable;
+                memcpy(range_values_ptr, reinterpret_cast<const UInt8 *>(value_id), sizeof(UInt64));
+                StringRef raw_value(range_values_ptr, row_bytes);
                 emplaceValueId(raw_value, i);
+                range_values_ptr += sizeof(UInt64);
             }
             enable_range_mode = false;
             enable_value_id_cache_line = false;
@@ -369,6 +377,7 @@ protected:
 
     }
 
+    /// If the row is null, assign 0 for this row.
     ALWAYS_INLINE void applyNullMap(UInt64 * __restrict value_ids, const UInt8 * __restrict null_map, size_t n)
     {
         if (null_map)
@@ -536,6 +545,12 @@ private:
         {
             allocated_value_id = is_nullable;
         }
+
+        /// assign 0 for null values.
+        if (is_nullable)
+        {
+            emplaceValueId(StringRef(char_pos, 0), 0);
+        }
     }
 
     void computeValueIdImpl(const IColumn *col, UInt64 * value_ids) override
@@ -652,6 +667,12 @@ private:
         else
         {
             allocated_value_id = is_nullable;
+        }
+
+        /// assign 0 for null values.
+        if (is_nullable)
+        {
+            emplaceValueId(StringRef(data_pos, 0), 0);
         }
     }
 
