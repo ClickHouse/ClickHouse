@@ -382,7 +382,7 @@ void StorageFileLog::startup()
         task->holder->activateAndSchedule();
 }
 
-void StorageFileLog::shutdown()
+void StorageFileLog::shutdown(bool)
 {
     if (task)
     {
