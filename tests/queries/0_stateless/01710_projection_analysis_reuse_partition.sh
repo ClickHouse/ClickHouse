@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} -q "drop table if exists t"
-${CLICKHOUSE_CLIENT} -q "create table t(s LowCardinality(String), e DateTime64(3), projection p1 (select * order by s, e)) engine MergeTree partition by toYYYYMM(e) order by tuple()"
+${CLICKHOUSE_CLIENT} -q "create table t(s LowCardinality(String), e DateTime64(3), projection p1 (select * order by s, e)) engine MergeTree partition by toYYYYMM(e) order by tuple() settings index_granularity = 8192, index_granularity_bytes = '100M'"
 ${CLICKHOUSE_CLIENT} -q "insert into t select 'AAP', toDateTime('2023-07-01') + 360 * number from numbers(50000)"
 ${CLICKHOUSE_CLIENT} -q "insert into t select 'AAPL', toDateTime('2023-07-01') + 360 * number from numbers(50000)"
 
