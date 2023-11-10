@@ -429,6 +429,7 @@ private:
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
+            else
 #endif
             {
                 TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
@@ -457,6 +458,7 @@ private:
                 prev_offset = offsets[i + j];
             }
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
+            TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, remained, str_lens);
             computeValueIdForString(char_pos, str_lens, remained, tmp_value_ids, null_map_pos);
             TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, remained);
         }
@@ -470,13 +472,6 @@ private:
             data_pos += str_lens[i];
         }
         applyNullMap(value_ids, null_map, n);
-    }
-
-    ALWAYS_INLINE void shortStringToUInt64(const UInt8 * __restrict values, size_t value_bytes, UInt64 & val)
-    {
-        auto * val_pos = reinterpret_cast<UInt8 *>(&val);
-        for (size_t j = 0; j < value_bytes; ++j)
-            val_pos[j] = values[j];
     }
 };
 
