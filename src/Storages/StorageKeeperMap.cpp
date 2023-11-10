@@ -703,13 +703,14 @@ private:
             for (const auto & key : keys)
                 keys_full_path.push_back(data_zookeeper_path / key);
 
-            zkutil::ZooKeeper::MultiGetResponse data;
+            zkutil::ZooKeeper::MultiTryGetResponse data;
             auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
             holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]
             {
                 with_retries->renewZooKeeper(zk);
-                data = zk->get(keys_full_path);
+                data = zk->tryGet(keys_full_path);
+                data.waitForResponses();
             });
 
             for (size_t i = 0; i < keys.size(); ++i)
