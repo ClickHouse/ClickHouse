@@ -22,9 +22,9 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <math.h>
 #include <queue>
-#include <stddef.h>
+#include <cmath>
+#include <cstddef>
 
 
 namespace DB
@@ -159,8 +159,8 @@ private:
         std::priority_queue<
             QueueItem,
             PriorityQueueStorage<QueueItem>,
-            std::greater<QueueItem>>
-                queue{std::greater<QueueItem>(),
+            std::greater<>>
+                queue{std::greater<>(),
                         PriorityQueueStorage<QueueItem>(storage)};
 
         auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };

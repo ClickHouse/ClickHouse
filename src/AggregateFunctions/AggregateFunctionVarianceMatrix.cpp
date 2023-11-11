@@ -120,7 +120,7 @@ public:
         UNREACHABLE();
     }
 
-    void create(AggregateDataPtr __restrict place) const override
+    void create(AggregateDataPtr __restrict const place) const override
     {
         new (place) Data(this->argument_types.size());
     }
