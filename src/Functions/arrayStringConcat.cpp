@@ -119,19 +119,16 @@ private:
 
     static ColumnPtr serializeNestedColumn(const ColumnArray & col_arr, const DataTypePtr & nested_type)
     {
-        if (isString(nested_type))
+        DataTypePtr type = nested_type;
+        ColumnPtr column = col_arr.getDataPtr();
+
+        if (type->isNullable())
         {
-            return col_arr.getDataPtr();
+            type = removeNullable(type);
+            column = assert_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
         }
-        else if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(col_arr.getData());
-                 col_nullable && isString(col_nullable->getNestedColumn().getDataType()))
-        {
-            return col_nullable->getNestedColumnPtr();
-        }
-        else
-        {
-            return castColumn({col_arr.getDataPtr(), nested_type, "tmp"}, std::make_shared<DataTypeString>());
-        }
+
+        return castColumn({column, type, "tmp"}, std::make_shared<DataTypeString>());
     }
 
 public:
@@ -146,6 +143,9 @@ public:
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -164,7 +164,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         String delimiter;
         if (arguments.size() == 2)
@@ -177,27 +177,7 @@ public:
         }
 
         const auto & nested_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
-            col_const_arr && isString(nested_type))
-        {
-            Array src_arr = col_const_arr->getValue<Array>();
-            String dst_str;
-            bool first_non_null = true;
-            for (size_t i = 0, size = src_arr.size(); i < size; ++i)
-            {
-                if (src_arr[i].isNull())
-                    continue;
-                if (!first_non_null)
-                    dst_str += delimiter;
-                first_non_null = false;
-                dst_str += src_arr[i].get<const String &>();
-            }
-
-            return result_type->createColumnConst(col_const_arr->size(), dst_str);
-        }
-
-        ColumnPtr src_column = arguments[0].column->convertToFullColumnIfConst();
-        const ColumnArray & col_arr = assert_cast<const ColumnArray &>(*src_column.get());
+        const ColumnArray & col_arr = assert_cast<const ColumnArray &>(*arguments[0].column);
 
         ColumnPtr str_subcolumn = serializeNestedColumn(col_arr, nested_type);
         const ColumnString & col_string = assert_cast<const ColumnString &>(*str_subcolumn.get());
@@ -207,6 +187,7 @@ public:
             executeInternal(col_string, col_arr, delimiter, *col_res, col_nullable->getNullMapData().data());
         else
             executeInternal(col_string, col_arr, delimiter, *col_res);
+
         return col_res;
     }
 };
