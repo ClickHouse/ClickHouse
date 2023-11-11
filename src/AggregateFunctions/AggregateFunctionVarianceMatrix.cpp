@@ -100,7 +100,6 @@ class AggregateFunctionVarianceMatrix final
     : public IAggregateFunctionDataHelper<Data, AggregateFunctionVarianceMatrix<Data>>
 {
 public:
-
     explicit AggregateFunctionVarianceMatrix(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionVarianceMatrix<Data>>(argument_types_, {}, createResultType())
     {}
@@ -111,16 +110,15 @@ public:
 
     String getName() const override
     {
-        if constexpr (Data::kind == StatisticsMatrixFunctionKind::covarPopMatrix)
-            return "covarPopMatrix";
-        if constexpr (Data::kind == StatisticsMatrixFunctionKind::covarSampMatrix)
-            return "covarSampMatrix";
-        if constexpr (Data::kind == StatisticsMatrixFunctionKind::corrMatrix)
-            return "corrMatrix";
-        UNREACHABLE();
+        switch (Data::kind)
+        {
+            case StatisticsMatrixFunctionKind::covarPopMatrix: return "covarPopMatrix";
+            case StatisticsMatrixFunctionKind::covarSampMatrix: return "covarSampMatrix";
+            case StatisticsMatrixFunctionKind::corrMatrix: return "corrMatrix";
+        }
     }
 
-    void create(AggregateDataPtr __restrict const place) const override
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         new (place) Data(this->argument_types.size());
     }
