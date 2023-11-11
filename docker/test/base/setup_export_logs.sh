@@ -20,8 +20,8 @@ EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"CAST(0 AS UInt32) AS pull_
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name, "}
 
 # trace_log needs more columns for symbolization
-EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(String), lines Array(String), "
-EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace) AS symbols, arrayMap(x -> addressToLine(x), trace) AS lines"
+EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), lines Array(LowCardinality(String)), "
+EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> toLowCardinality(demangle(addressToSymbol(x))), trace) AS symbols, arrayMap(x -> toLowCardinality(addressToLine(x)), trace) AS lines"
 
 
 function __set_connection_args
@@ -141,7 +141,7 @@ function setup_logs_replication
 
         # Calculate hash of its structure. Note: 4 is the version of extra columns - increment it if extra columns are changed:
         hash=$(clickhouse-client --query "
-            SELECT sipHash64(5, groupArray((name, type)))
+            SELECT sipHash64(8, groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
                 ORDER BY position)
