@@ -297,8 +297,8 @@ class CiLogsCredentials:
             return ""
         extra_columns = (
             f"CAST({pr_info.number} AS UInt32) AS pull_request_number, '{pr_info.sha}' AS commit_sha, "
-            f"toDateTime('{check_start_time}', 'UTC') AS check_start_time, '{check_name}' AS check_name, "
-            f"'{get_instance_type()}' AS instance_type, '{get_instance_id()}' AS instance_id"
+            f"toDateTime('{check_start_time}', 'UTC') AS check_start_time, toLowCardinality('{check_name}') AS check_name, "
+            f"toLowCardinality('{get_instance_type()}') AS instance_type, '{get_instance_id()}' AS instance_id"
         )
         return (
             f'-e EXTRA_COLUMNS_EXPRESSION="{extra_columns}" '
