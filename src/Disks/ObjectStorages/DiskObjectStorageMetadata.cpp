@@ -117,6 +117,9 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     if (storage_metadata_write_full_object_key)
         write_version = VERSION_FULL_OBJECT_KEY;
 
+    if (!inline_data.empty() && write_version < VERSION_INLINE_DATA)
+        write_version = VERSION_INLINE_DATA;
+
     chassert(write_version >= VERSION_ABSOLUTE_PATHS && write_version <= VERSION_FULL_OBJECT_KEY);
     writeIntText(write_version, buf);
     writeChar('\n', buf);
@@ -153,8 +156,11 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     writeBoolText(read_only, buf);
     writeChar('\n', buf);
 
-    writeEscapedString(inline_data, buf);
-    writeChar('\n', buf);
+    if (write_version >= VERSION_INLINE_DATA)
+    {
+        writeEscapedString(inline_data, buf);
+        writeChar('\n', buf);
+    }
 
     buf.finalize();
     if (sync)

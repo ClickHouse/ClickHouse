@@ -53,6 +53,7 @@
 #include <Functions/toFixedString.h>
 #include <Functions/TransformDateTime64.h>
 #include <Functions/FunctionsCodingIP.h>
+#include <Functions/CastOverloadResolver.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
@@ -3127,14 +3128,8 @@ class ExecutableFunctionCast : public IExecutableFunction
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
-    struct Diagnostic
-    {
-        std::string column_from;
-        std::string column_to;
-    };
-
     explicit ExecutableFunctionCast(
-            WrapperType && wrapper_function_, const char * name_, std::optional<Diagnostic> diagnostic_)
+            WrapperType && wrapper_function_, const char * name_, std::optional<CastDiagnostic> diagnostic_)
             : wrapper_function(std::move(wrapper_function_)), name(name_), diagnostic(std::move(diagnostic_)) {}
 
     String getName() const override { return name; }
@@ -3170,24 +3165,16 @@ protected:
 private:
     WrapperType wrapper_function;
     const char * name;
-    std::optional<Diagnostic> diagnostic;
+    std::optional<CastDiagnostic> diagnostic;
 };
 
 struct CastName { static constexpr auto name = "CAST"; };
 struct CastInternalName { static constexpr auto name = "_CAST"; };
 
-enum class CastType
-{
-    nonAccurate,
-    accurate,
-    accurateOrNull
-};
-
 class FunctionCastBase : public IFunctionBase
 {
 public:
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
-    using Diagnostic = ExecutableFunctionCast::Diagnostic;
 };
 
 template <typename FunctionName>
@@ -3201,7 +3188,7 @@ public:
             , MonotonicityForRange && monotonicity_for_range_
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
-            , std::optional<Diagnostic> diagnostic_
+            , std::optional<CastDiagnostic> diagnostic_
             , CastType cast_type_)
         : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
@@ -3251,7 +3238,7 @@ private:
     DataTypes argument_types;
     DataTypePtr return_type;
 
-    std::optional<Diagnostic> diagnostic;
+    std::optional<CastDiagnostic> diagnostic;
     CastType cast_type;
     ContextPtr context;
 

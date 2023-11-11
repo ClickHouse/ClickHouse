@@ -104,15 +104,14 @@
     </url_scheme_mappers>
 
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
-    <!-- It is off by default. Next headers are obligate for CORS.-->
-    <!-- http_options_response>
+    <http_options_response>
         <header>
             <name>Access-Control-Allow-Origin</name>
             <value>*</value>
         </header>
         <header>
             <name>Access-Control-Allow-Headers</name>
-            <value>origin, x-requested-with</value>
+            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
         </header>
         <header>
             <name>Access-Control-Allow-Methods</name>
@@ -122,7 +121,7 @@
             <name>Access-Control-Max-Age</name>
             <value>86400</value>
         </header>
-    </http_options_response -->
+    </http_options_response>
 
     <!-- It is the name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.
@@ -245,7 +244,7 @@
     <max_connections>4096</max_connections>
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
-    <keep_alive_timeout>3</keep_alive_timeout>
+    <keep_alive_timeout>10</keep_alive_timeout>
 
     <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
     <!-- <grpc_port>9100</grpc_port> -->
