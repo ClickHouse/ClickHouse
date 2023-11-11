@@ -172,7 +172,11 @@ static inline std::optional<size_t> extractMaxSplits(
         return std::nullopt;
 
     if (const ColumnConst * column = checkAndGetColumn<ColumnConst>(arguments[max_substrings_argument_position].column.get()))
-        return column->getUInt(0);
+    {
+        size_t res = column->getUInt(0);
+        if (res)
+            return res;
+    }
 
     return std::nullopt;
 }
