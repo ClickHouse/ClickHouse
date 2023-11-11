@@ -16,62 +16,55 @@
 namespace DB
 {
 
-struct KeeperStorageRequestProcessor;
-using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
-struct KeeperStorageSnapshot;
+struct KeeperMemNode
+{
+    uint64_t acl_id = 0; /// 0 -- no ACL by default
+    bool is_sequental = false;
+    Coordination::Stat stat{};
+    int32_t seq_num = 0;
+    uint64_t size_bytes; // save size to avoid calculate every time
 
-/// Keeper state machine almost equal to the ZooKeeper's state machine.
-/// Implements all logic of operations, data changes, sessions allocation.
-/// In-memory and not thread safe.
-class KeeperStorage
+    KeeperMemNode() : size_bytes(sizeof(KeeperMemNode)) { }
+
+    /// Object memory size
+    uint64_t sizeInBytes() const { return size_bytes; }
+
+    void setData(String new_data);
+
+    const auto & getData() const noexcept { return data; }
+
+    void addChild(StringRef child_path, bool update_size = true);
+
+    void removeChild(StringRef child_path);
+
+    const auto & getChildren() const noexcept { return children; }
+
+    // Invalidate the calculated digest so it's recalculated again on the next
+    // getDigest call
+    void invalidateDigestCache() const;
+
+    // get the calculated digest of the node
+    UInt64 getDigest(std::string_view path) const;
+
+    // copy only necessary information for preprocessing and digest calculation
+    // (e.g. we don't need to copy list of children)
+    void shallowCopy(const KeeperMemNode & other);
+
+    void recalculateSize();
+
+private:
+    String data;
+    ChildrenSet children{};
+    mutable std::optional<UInt64> cached_digest;
+};
+
+class KeeperStorageBase
 {
 public:
-    struct Node
-    {
-        uint64_t acl_id = 0; /// 0 -- no ACL by default
-        bool is_sequental = false;
-        Coordination::Stat stat{};
-        int32_t seq_num = 0;
-        uint64_t size_bytes; // save size to avoid calculate every time
-
-        Node() : size_bytes(sizeof(Node)) { }
-
-        /// Object memory size
-        uint64_t sizeInBytes() const { return size_bytes; }
-
-        void setData(String new_data);
-
-        const auto & getData() const noexcept { return data; }
-
-        void addChild(StringRef child_path, bool update_size = true);
-
-        void removeChild(StringRef child_path);
-
-        const auto & getChildren() const noexcept { return children; }
-
-        // Invalidate the calculated digest so it's recalculated again on the next
-        // getDigest call
-        void invalidateDigestCache() const;
-
-        // get the calculated digest of the node
-        UInt64 getDigest(std::string_view path) const;
-
-        // copy only necessary information for preprocessing and digest calculation
-        // (e.g. we don't need to copy list of children)
-        void shallowCopy(const Node & other);
-
-        void recalculateSize();
-
-    private:
-        String data;
-        ChildrenSet children{};
-        mutable std::optional<UInt64> cached_digest;
-    };
-
     enum DigestVersion : uint8_t
     {
         NO_DIGEST = 0,
@@ -79,7 +72,11 @@ public:
         V2 = 2  // added system nodes that modify the digest on startup so digest from V0 is invalid
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
+    struct Digest
+    {
+        DigestVersion version{DigestVersion::NO_DIGEST};
+        uint64_t value{0};
+    };
 
     struct ResponseForSession
     {
@@ -88,11 +85,34 @@ public:
     };
     using ResponsesForSessions = std::vector<ResponseForSession>;
 
-    struct Digest
+    struct RequestForSession
     {
-        DigestVersion version{DigestVersion::NO_DIGEST};
-        uint64_t value{0};
+        int64_t session_id;
+        int64_t time{0};
+        Coordination::ZooKeeperRequestPtr request;
+        int64_t zxid{0};
+        std::optional<Digest> digest;
+        int64_t log_idx{0};
     };
+    using RequestsForSessions = std::vector<RequestForSession>;
+
+    struct AuthID
+    {
+        std::string scheme;
+        std::string id;
+
+        bool operator==(const AuthID & other) const { return scheme == other.scheme && id == other.id; }
+    };
+
+    // using Container = SnapshotableHashTable<Node>;
+    using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
+    using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
+    using SessionIDs = std::unordered_set<int64_t>;
+
+    /// Just vector of SHA1 from user:password
+    using AuthIDs = std::vector<AuthID>;
+    using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
+    using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
 
     static bool checkDigest(const Digest & first, const Digest & second)
     {
@@ -105,37 +125,21 @@ public:
         return first.value == second.value;
     }
 
+};
+
+/// Keeper state machine almost equal to the ZooKeeper's state machine.
+/// Implements all logic of operations, data changes, sessions allocation.
+/// In-memory and not thread safe.
+template<typename Container_>
+class KeeperStorage : public KeeperStorageBase
+{
+public:
+    using Container = Container_;
+    using Node = Container::Node;
+
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
+
     static String generateDigest(const String & userdata);
-
-    struct RequestForSession
-    {
-        int64_t session_id;
-        int64_t time{0};
-        Coordination::ZooKeeperRequestPtr request;
-        int64_t zxid{0};
-        std::optional<Digest> digest;
-        int64_t log_idx{0};
-    };
-
-    struct AuthID
-    {
-        std::string scheme;
-        std::string id;
-
-        bool operator==(const AuthID & other) const { return scheme == other.scheme && id == other.id; }
-    };
-
-    using RequestsForSessions = std::vector<RequestForSession>;
-
-    using Container = SnapshotableHashTable<Node>;
-    using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
-    using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
-    using SessionIDs = std::unordered_set<int64_t>;
-
-    /// Just vector of SHA1 from user:password
-    using AuthIDs = std::vector<AuthID>;
-    using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
-    using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
 
     int64_t session_id_counter{1};
 
@@ -307,7 +311,7 @@ public:
         std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
 
         std::list<Delta> deltas;
-        KeeperStorage & storage;
+        KeeperStorage<Container> & storage;
     };
 
     UncommittedState uncommitted_state{*this};
@@ -487,6 +491,6 @@ private:
     void addDigest(const Node & node, std::string_view path);
 };
 
-using KeeperStoragePtr = std::unique_ptr<KeeperStorage>;
+using KeeperMemoryStorage = KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
 
 }

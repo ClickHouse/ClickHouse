@@ -121,6 +121,7 @@ private:
 
 public:
 
+    using Node = V;
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
     using ValueUpdater = std::function<void(V & value)>;

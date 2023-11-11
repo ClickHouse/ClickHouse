@@ -1320,7 +1320,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     /// Node
-    using Node = DB::KeeperStorage::Node;
+    using Node = DB::KeeperMemoryStorage::Node;
     DB::SnapshotableHashTable<Node> world;
     Node n1;
     n1.setData("1234");
@@ -1359,9 +1359,9 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 }
 
-void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0)
+void addNode(DB::KeeperMemoryStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0)
 {
-    using Node = DB::KeeperStorage::Node;
+    using Node = DB::KeeperMemoryStorage::Node;
     Node node{};
     node.setData(data);
     node.stat.ephemeralOwner = ephemeral_owner;
@@ -1383,9 +1383,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     ChangelogDirTest test("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "", keeper_context);
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -1395,7 +1395,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     storage.getSessionID(130);
     storage.getSessionID(130);
 
-    DB::KeeperStorageSnapshot snapshot(&storage, 2);
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, 2);
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
@@ -1433,9 +1433,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
     ChangelogDirTest test("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "", keeper_context);
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
     storage.getSessionID(130);
 
     for (size_t i = 0; i < 50; ++i)
@@ -1443,7 +1443,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
 
-    DB::KeeperStorageSnapshot snapshot(&storage, 50);
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, 50);
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
     EXPECT_EQ(snapshot.snapshot_container_size, 54);
 
@@ -1476,9 +1476,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
     ChangelogDirTest test("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "", keeper_context);
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
     storage.getSessionID(130);
 
     for (size_t j = 1; j <= 5; ++j)
@@ -1488,7 +1488,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
             addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
         }
 
-        DB::KeeperStorageSnapshot snapshot(&storage, j * 50);
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, j * 50);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, j * 50);
         EXPECT_TRUE(fs::exists(std::string{"./snapshots/snapshot_"} + std::to_string(j * 50) + ".bin" + params.extension));
@@ -1517,15 +1517,15 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
     ChangelogDirTest test("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-    DB::KeeperStorage storage(500, "", keeper_context);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, params.enable_compression);
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
 
     {
-        DB::KeeperStorageSnapshot snapshot(&storage, 50);
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, 50);
         for (size_t i = 0; i < 50; ++i)
         {
             addNode(storage, "/hello_" + std::to_string(i), "wlrd_" + std::to_string(i));
@@ -1571,14 +1571,14 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
     ChangelogDirTest test("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-    DB::KeeperStorage storage(500, "", keeper_context);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, params.enable_compression);
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
     {
-        DB::KeeperStorageSnapshot snapshot(&storage, 50);
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, 50);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
@@ -1602,7 +1602,7 @@ nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t z
     auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     DB::writeIntBinary(time, buf);
     DB::writeIntBinary(zxid, buf);
-    DB::writeIntBinary(DB::KeeperStorage::DigestVersion::NO_DIGEST, buf);
+    DB::writeIntBinary(DB::KeeperMemoryStorage::DigestVersion::NO_DIGEST, buf);
     return buf.getBuffer();
 }
 
@@ -1629,7 +1629,7 @@ void testLogAndStateMachine(
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, settings, keeper_context, nullptr);
     state_machine->init();
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{
@@ -1672,7 +1672,7 @@ void testLogAndStateMachine(
     }
 
     SnapshotsQueue snapshots_queue1{1};
-    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, settings, keeper_context, nullptr);
+    auto restore_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue1, settings, keeper_context, nullptr);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
 
@@ -1791,7 +1791,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, settings, keeper_context, nullptr);
     state_machine->init();
 
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
@@ -1825,11 +1825,11 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, settings, keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
-    String digest = KeeperStorage::generateDigest(user_auth_data);
+    String digest = KeeperMemoryStorage::generateDigest(user_auth_data);
 
     std::shared_ptr<ZooKeeperAuthRequest> auth_req = std::make_shared<ZooKeeperAuthRequest>();
     auth_req->scheme = "digest";
@@ -1877,11 +1877,11 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, settings, keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
-    String digest = KeeperStorage::generateDigest(user_auth_data);
+    String digest = KeeperMemoryStorage::generateDigest(user_auth_data);
 
     std::shared_ptr<ZooKeeperAuthRequest> auth_req = std::make_shared<ZooKeeperAuthRequest>();
     auth_req->scheme = "digest";
@@ -2104,9 +2104,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     ChangelogDirTest test("./snapshots");
     setSnapshotDirectory("./snapshots");
 
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "", keeper_context);
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -2116,13 +2116,13 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     storage.getSessionID(130);
     storage.getSessionID(130);
 
-    DB::KeeperStorageSnapshot snapshot(&storage, 2);
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, 2);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 2);
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin" + params.extension));
 
-    DB::KeeperSnapshotManager new_manager(3, keeper_context, !params.enable_compression);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> new_manager(3, keeper_context, !params.enable_compression);
 
     auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
 
@@ -2308,9 +2308,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotEqual)
     std::optional<UInt128> snapshot_hash;
     for (size_t i = 0; i < 15; ++i)
     {
-        DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, params.enable_compression);
 
-        DB::KeeperStorage storage(500, "", keeper_context);
+        DB::KeeperMemoryStorage storage(500, "", keeper_context);
         addNode(storage, "/hello", "");
         for (size_t j = 0; j < 5000; ++j)
         {
@@ -2326,7 +2326,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotEqual)
         for (size_t j = 0; j < 3333; ++j)
             storage.getSessionID(130 * j);
 
-        DB::KeeperStorageSnapshot snapshot(&storage, storage.zxid);
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, storage.zxid);
 
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
 
@@ -2389,7 +2389,7 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     using namespace DB;
     using namespace Coordination;
 
-    DB::KeeperStorage storage{500, "", keeper_context};
+    DB::KeeperMemoryStorage storage{500, "", keeper_context};
 
     constexpr std::string_view path = "/test";
 
@@ -2506,7 +2506,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     using namespace DB;
     using namespace Coordination;
 
-    KeeperStorage storage{500, "", keeper_context};
+    KeeperMemoryStorage storage{500, "", keeper_context};
 
     int32_t zxid = 0;
 
@@ -2660,7 +2660,7 @@ TEST_P(CoordinationTest, TestDurableState)
 TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
-    KeeperStorage storage{500, "", keeper_context};
+    KeeperMemoryStorage storage{500, "", keeper_context};
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = DB::keeper_api_feature_flags_path;
     auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
@@ -2679,7 +2679,7 @@ TEST_P(CoordinationTest, TestSystemNodeModify)
 
     // On INIT we abort when a system path is modified
     keeper_context->setServerState(KeeperContext::Phase::RUNNING);
-    KeeperStorage storage{500, "", keeper_context};
+    KeeperMemoryStorage storage{500, "", keeper_context};
     const auto assert_create = [&](const std::string_view path, const auto expected_code)
     {
         auto request = std::make_shared<ZooKeeperCreateRequest>();
@@ -2771,7 +2771,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     using namespace DB;
     using namespace Coordination;
 
-    KeeperStorage storage{500, "", keeper_context};
+    KeeperMemoryStorage storage{500, "", keeper_context};
 
     int32_t zxid = 0;
 
@@ -2850,7 +2850,7 @@ TEST_P(CoordinationTest, TestReapplyingDeltas)
     create_request->path = "/test/data";
     create_request->is_sequential = true;
 
-    const auto process_create = [](KeeperStorage & storage, const auto & request, int64_t zxid)
+    const auto process_create = [](KeeperMemoryStorage & storage, const auto & request, int64_t zxid)
     {
         storage.preprocessRequest(request, 1, 0, zxid);
         auto responses = storage.processRequest(request, 1, zxid);
@@ -2871,19 +2871,19 @@ TEST_P(CoordinationTest, TestReapplyingDeltas)
             process_create(storage, create_request, zxid);
     };
 
-    KeeperStorage storage1{500, "", keeper_context};
+    KeeperMemoryStorage storage1{500, "", keeper_context};
     commit_initial_data(storage1);
 
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
         storage1.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
 
     /// create identical new storage
-    KeeperStorage storage2{500, "", keeper_context};
+    KeeperMemoryStorage storage2{500, "", keeper_context};
     commit_initial_data(storage2);
 
     storage1.applyUncommittedState(storage2, initial_zxid);
 
-    const auto commit_unprocessed = [&](KeeperStorage & storage)
+    const auto commit_unprocessed = [&](KeeperMemoryStorage & storage)
     {
         for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
         {
@@ -2896,7 +2896,7 @@ TEST_P(CoordinationTest, TestReapplyingDeltas)
     commit_unprocessed(storage1);
     commit_unprocessed(storage2);
 
-    const auto get_children = [&](KeeperStorage & storage)
+    const auto get_children = [&](KeeperMemoryStorage & storage)
     {
         const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = "/test";
