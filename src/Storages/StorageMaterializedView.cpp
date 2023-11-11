@@ -398,7 +398,7 @@ void StorageMaterializedView::startup()
         DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 }
 
-void StorageMaterializedView::shutdown()
+void StorageMaterializedView::shutdown(bool)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
@@ -435,7 +435,13 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 {
     /// We backup the target table's data only if it's inner.
     if (hasInnerTable())
-        getTargetTable()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    {
+        if (auto table = tryGetTargetTable())
+            table->backupData(backup_entries_collector, data_path_in_backup, partitions);
+        else
+            LOG_WARNING(&Poco::Logger::get("StorageMaterializedView"),
+                        "Inner table does not exist, will not backup any data");
+    }
 }
 
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

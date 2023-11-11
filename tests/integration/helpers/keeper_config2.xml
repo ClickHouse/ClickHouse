@@ -12,7 +12,6 @@
     <keeper_server>
         <tcp_port>2181</tcp_port>
         <server_id>2</server_id>
-        <availability_zone>az-zoo2</availability_zone>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>

@@ -10,7 +10,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <stack>
+#include <algorithm>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -109,6 +109,19 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (normal_projections.empty())
         return false;
 
+    ContextPtr context = reading->getContext();
+    auto it = std::find_if(normal_projections.begin(), normal_projections.end(), [&](const auto * projection)
+    {
+        return projection->name == context->getSettings().preferred_optimize_projection_name.value;
+    });
+
+    if (it != normal_projections.end())
+    {
+        const ProjectionDescription * preferred_projection = *it;
+        normal_projections.clear();
+        normal_projections.push_back(preferred_projection);
+    }
+
     QueryDAG query;
     {
         auto & child = iter->node->children[iter->next_child - 1];
@@ -124,29 +137,23 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     const Names & required_columns = reading->getRealColumnNames();
     const auto & parts = reading->getParts();
+    const auto & alter_conversions = reading->getAlterConvertionsForParts();
     const auto & query_info = reading->getQueryInfo();
-    ContextPtr context = reading->getContext();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, /* alter_conversions = */ {});
+    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
     size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
 
-    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
-
-    // Here we iterate over the projections and check if we have the same projections as we specified in preferred_projection_name
-    bool is_projection_found = false;
-    const auto & proj_name_from_settings = context->getSettings().preferred_optimize_projection_name.value;
-    if (!proj_name_from_settings.empty())
+    /// Nothing to read. Ignore projections.
+    if (ordinary_reading_marks == 0)
     {
-        for (const auto * projection : normal_projections)
-        {
-            if (projection->name == proj_name_from_settings)
-            {
-                is_projection_found = true;
-                break;
-            }
-        }
+        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
+        return false;
     }
+
+    const auto & parts_with_ranges = ordinary_reading_select_result->partsWithRanges();
+
+    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
     for (const auto * projection : normal_projections)
     {
@@ -161,8 +168,16 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             added_filter_nodes.nodes.push_back(query.filter_node);
 
         bool analyzed = analyzeProjectionCandidate(
-            candidate, *reading, reader, required_columns, parts,
-            metadata, query_info, context, max_added_blocks, added_filter_nodes);
+            candidate,
+            *reading,
+            reader,
+            required_columns,
+            parts_with_ranges,
+            metadata,
+            query_info,
+            context,
+            max_added_blocks,
+            added_filter_nodes);
 
         if (!analyzed)
             continue;
@@ -170,9 +185,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         if (candidate.sum_marks >= ordinary_reading_marks)
             continue;
 
-        if (!is_projection_found && (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks))
-            best_candidate = &candidate;
-        else if (is_projection_found && projection->name == proj_name_from_settings)
+        if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
             best_candidate = &candidate;
     }
 

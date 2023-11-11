@@ -6,8 +6,6 @@
 
 #include <Common/isValidUTF8.h>
 
-#include <Functions/FunctionsConversion.h>
-
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/ParallelReadBuffer.h>
