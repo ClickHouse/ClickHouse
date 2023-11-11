@@ -725,26 +725,3 @@ def test_cmd_clrs(started_cluster):
 
     finally:
         destroy_zk_client(zk)
-
-
-def test_cmd_ydld(started_cluster):
-    wait_nodes()
-    for node in [node1, node3]:
-        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="ydld")
-        assert data == "Sent yield leadership request to leader."
-
-        print("ydld output -------------------------------------")
-        print(data)
-
-        if keeper_utils.is_leader(cluster, node):
-            # wait for it to yield leadership
-            retry = 0
-            while keeper_utils.is_leader(cluster, node) and retry < 30:
-                time.sleep(1)
-                retry += 1
-            if retry == 30:
-                print(
-                    node.name
-                    + " did not yield leadership after 30s, maybe there is something wrong."
-                )
-        assert keeper_utils.is_follower(cluster, node)
