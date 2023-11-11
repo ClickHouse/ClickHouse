@@ -341,6 +341,8 @@ void StorageMergeTree::alter(
                     prev_mutation = it->first;
             }
 
+            /// Always wait previous mutations synchronously, because alters
+            /// should be executed in sequential order.
             if (prev_mutation != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
@@ -368,9 +370,7 @@ void StorageMergeTree::alter(
             resetObjectColumnsFromActiveParts(parts_lock);
         }
 
-        /// Always execute required mutations synchronously, because alters
-        /// should be executed in sequential order.
-        if (!maybe_mutation_commands.empty())
+        if (!maybe_mutation_commands.empty() && local_context->getSettingsRef().alter_sync > 0)
             waitForMutation(mutation_version, false);
     }
 
