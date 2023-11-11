@@ -1,2 +1,12 @@
 <clickhouse>
+  <availability_zone>az-zoo2</availability_zone>
+  <zookeeper>
+    <zookeeper_load_balancing>keeper_local_availability_zone</zookeeper_load_balancing>
+    <fallback_session_lifetime>
+        <min>2</min>
+        <max>3</max>
+    </fallback_session_lifetime>
+    <!-- Is it just to force always reconnect? Not good in that case for our testing. -->
+    <session_timeout_ms>500</session_timeout_ms>
+  </zookeeper>
 </clickhouse>

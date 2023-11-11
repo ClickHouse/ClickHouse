@@ -666,7 +666,7 @@ public:
     void update(const std::string & host, const std::string & availability_zone);
 
     // shuffleHosts returns a more optimal host order to connect. We try our best based on previous az information to return the local host first.
-    std::vector<std::string> shuffleHosts(const std::string & local_az, const std::vector<std::string> & hosts);
+    std::vector<ShuffleHost> shuffleHosts(const std::string & local_az, const std::vector<std::string> & hosts);
 
     // maybeWorthTryingOtherHost returns true if we want to connecto `local_az` and we have tried `attempted_host` already.
     // For example, if some hosts their availability zone are still unknown, or we still have some same az not tried yet.
