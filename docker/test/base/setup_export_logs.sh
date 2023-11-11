@@ -19,6 +19,11 @@ EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, c
 EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, now() AS check_start_time, '' AS check_name, '' AS instance_type, '' AS instance_id"}
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name, "}
 
+# trace_log needs more columns for symbolization
+EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(String), lines Array(String), "
+EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace) AS symbols, arrayMap(x -> addressToLine(x), trace) AS lines"
+
+
 function __set_connection_args
 {
     # It's impossible to use generous $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
@@ -125,9 +130,18 @@ function setup_logs_replication
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
     do
+        if [[ "$table" = "trace_log" ]]
+        then
+            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_TRACE_LOG}"
+            EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
+        else
+            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
+            EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
+        fi
+
         # Calculate hash of its structure. Note: 4 is the version of extra columns - increment it if extra columns are changed:
         hash=$(clickhouse-client --query "
-            SELECT sipHash64(4, groupArray((name, type)))
+            SELECT sipHash64(5, groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
                 ORDER BY position)
@@ -135,7 +149,7 @@ function setup_logs_replication
 
         # Create the destination table with adapted name and structure:
         statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
-            s/^\($/('"$EXTRA_COLUMNS"'/;
+            s/^\($/('"$EXTRA_COLUMNS_FOR_TABLE"'/;
             s/ORDER BY \(/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"'/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
             /^TTL /d
@@ -155,7 +169,7 @@ function setup_logs_replication
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
             SETTINGS flush_on_detach=0
             EMPTY AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION}, *
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
         " || continue
 
@@ -163,7 +177,7 @@ function setup_logs_replication
 
         clickhouse-client --query "
             CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION}, *
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
         " || continue
     done
