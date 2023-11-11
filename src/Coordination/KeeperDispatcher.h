@@ -237,12 +237,6 @@ public:
         return server->requestLeader();
     }
 
-    /// Yield leadership and become follower.
-    void yieldLeadership()
-    {
-        return server->yieldLeadership();
-    }
-
     void recalculateStorageStats()
     {
         return server->recalculateStorageStats();
