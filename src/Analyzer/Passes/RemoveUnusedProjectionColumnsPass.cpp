@@ -132,8 +132,9 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr query_tree_node, Co
             auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
             updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
 
-            /// Keep at least 1 column if used columns are empty
-            used_projection_indexes.insert(0);
+            /// Keep at least 1 column if used projection columns are empty
+            if (used_projection_indexes.empty())
+                used_projection_indexes.insert(0);
 
             if (auto * union_node = query_or_union_node->as<UnionNode>())
                 union_node->removeUnusedProjectionColumns(used_projection_indexes);
