@@ -7,13 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_COLUMN;
-}
-
-
 /** Functions that split strings into an array of strings or vice versa.
   *
   * alphaTokens(s[, max_substrings])            - select from the string subsequence `[a-zA-Z]+`.
