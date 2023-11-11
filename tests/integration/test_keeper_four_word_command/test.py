@@ -736,15 +736,19 @@ def test_cmd_ydld(started_cluster):
         print("ydld output -------------------------------------")
         print(data)
 
-        if keeper_utils.is_leader(cluster, node):
+        # Whenever there is a leader switch, there is a brief amount of time when any
+        # of the 4 letter commands will return empty result. Thus, we need to test for
+        # negative condition. So we can't use keeper_utils.is_leader() here and likewise
+        # in the while loop below.
+        if not keeper_utils.is_follower(cluster, node):
             # wait for it to yield leadership
             retry = 0
-            while keeper_utils.is_leader(cluster, node) and retry < 30:
+            while not keeper_utils.is_follower(cluster, node) and retry < 30:
                 time.sleep(1)
                 retry += 1
             if retry == 30:
                 print(
                     node.name
-                    + " did not yield leadership after 30s, maybe there is something wrong."
+                    + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
                 )
         assert keeper_utils.is_follower(cluster, node)
