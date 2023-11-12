@@ -210,6 +210,8 @@ public:
 
 private:
     String mutable_name;
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
+
 public:
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
@@ -274,7 +276,7 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    MergeTreeDataPartState getState() const;
+    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
     static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
     constexpr std::string_view stateString() const { return stateString(state); }
@@ -678,8 +680,6 @@ private:
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
-
-    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

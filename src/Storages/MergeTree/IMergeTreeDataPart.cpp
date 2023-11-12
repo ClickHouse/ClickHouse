@@ -381,11 +381,6 @@ void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
     incrementStateMetric(state);
 }
 
-MergeTreeDataPartState IMergeTreeDataPart::getState() const
-{
-    return state;
-}
-
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {

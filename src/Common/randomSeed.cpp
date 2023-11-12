@@ -13,10 +13,10 @@
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_CLOCK_GETTIME;
-    }
+namespace ErrorCodes
+{
+    extern const int CANNOT_CLOCK_GETTIME;
+}
 }
 
 
