@@ -102,7 +102,6 @@ jobs:
     with:
       test_name: Style check
       runner_type: style-checker
-      batches: 1
       run_command: |
           cd "$REPO_COPY/tests/ci"
           python3 style_check.py
@@ -118,7 +117,6 @@ jobs:
       test_name: Docs check
       runner_type: func-tester-aarch64
       additional_envs: |
-      batches: 1
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 docs_check.py
