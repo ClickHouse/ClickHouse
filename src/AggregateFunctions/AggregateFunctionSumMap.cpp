@@ -216,23 +216,23 @@ public:
             // Insert column values for all keys
             for (size_t i = 0; i < keys_vec_size; ++i)
             {
-                auto value = value_column[values_vec_offset + i];
+                Field value = value_column[values_vec_offset + i];
                 Field key = key_column[keys_vec_offset + i];
-
-                /// Compatibility with previous versions.
-                if (key.getType() == Field::Types::Decimal32)
-                {
-                    auto source = key.get<DecimalField<Decimal32>>();
-                    key = DecimalField<Decimal128>(source.getValue(), source.getScale());
-                }
-                else if (key.getType() == Field::Types::Decimal64)
-                {
-                    auto source = key.get<DecimalField<Decimal64>>();
-                    key = DecimalField<Decimal128>(source.getValue(), source.getScale());
-                }
 
                 if (!keepKey(key))
                     continue;
+
+                /// Compatibility with previous versions.
+                if (value.getType() == Field::Types::Decimal32)
+                {
+                    auto source = value.get<DecimalField<Decimal32>>();
+                    value = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                }
+                else if (value.getType() == Field::Types::Decimal64)
+                {
+                    auto source = value.get<DecimalField<Decimal64>>();
+                    value = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                }
 
                 auto [it, inserted] = merged_maps.emplace(key, Array());
 
