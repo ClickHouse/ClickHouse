@@ -148,16 +148,16 @@ QueryCache::Key::Key(ASTPtr ast_, const String & user_name_)
 }
 
 /// Hashing of ASTs must consider aliases (issue #56258)
-const bool dont_ignore_aliases = false;
+constexpr bool ignore_aliases = false;
 
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash(dont_ignore_aliases) == other.ast->getTreeHash(dont_ignore_aliases);
+    return ast->getTreeHash(ignore_aliases) == other.ast->getTreeHash(ignore_aliases);
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    IAST::Hash hash = key.ast->getTreeHash(dont_ignore_aliases);
+    IAST::Hash hash = key.ast->getTreeHash(ignore_aliases);
     return hash.low64;
 }
 
