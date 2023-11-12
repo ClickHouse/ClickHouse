@@ -436,13 +436,15 @@ class ClickhouseIntegrationTestsRunner:
         cmd = (
             f"cd {repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
-            f"| tee '{out_file_full}'"
         )
 
-        logging.info("Getting all tests with cmd '%s'", cmd)
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            cmd, shell=True
+        logging.info(
+            "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
+        with open(out_file_full, "wb") as ofd:
+            subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                cmd, shell=True, stdout=ofd, stderr=ofd
+            )
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
