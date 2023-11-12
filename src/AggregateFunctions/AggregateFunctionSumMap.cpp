@@ -219,6 +219,18 @@ public:
                 auto value = value_column[values_vec_offset + i];
                 Field key = key_column[keys_vec_offset + i];
 
+                /// Compatibility with previous versions.
+                if (key.getType() == Field::Types::Decimal32)
+                {
+                    auto source = key.get<DecimalField<Decimal32>>();
+                    key = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                }
+                else if (key.getType() == Field::Types::Decimal64)
+                {
+                    auto source = key.get<DecimalField<Decimal64>>();
+                    key = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                }
+
                 if (!keepKey(key))
                     continue;
 
