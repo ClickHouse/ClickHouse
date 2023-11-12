@@ -489,7 +489,8 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
 
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
-        executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
+
+        executeQuery(istr, ostr, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -726,7 +727,8 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
         // Setting alters should be executed on all replicas
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
-            alter->isMovePartitionToDiskOrVolumeAlter())
+            alter->isMovePartitionToDiskOrVolumeAlter() ||
+            alter->isCommentAlter())
             return false;
     }
 

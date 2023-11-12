@@ -435,7 +435,7 @@ void StorageKafka::startup()
 }
 
 
-void StorageKafka::shutdown()
+void StorageKafka::shutdown(bool)
 {
     for (auto & task : tasks)
     {
