@@ -394,6 +394,11 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
 
+# Forbid mt19937() and random_device() which are outdated and slow
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -P '(std::mt19937|std::mersenne_twister_engine|std::random_device)' && echo "Use pcg64_fast (from pcg_random.h) and randomSeed (from Common/randomSeed.h) instead"
+
 # Require checking return value of close(),
 # since it can hide fd misuse and break other places.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
