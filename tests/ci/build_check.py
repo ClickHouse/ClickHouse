@@ -434,7 +434,7 @@ FORMAT JSONCompactEachRow"""
         profile_data_file = temp_path / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
             for profile_source in profiles_dir.iterdir():
-                if profile_source != "binary_sizes.txt":
+                if profile_source.name != "binary_sizes.txt":
                     with open(profiles_dir / profile_source, "rb") as ps_fd:
                         profile_fd.write(ps_fd.read())
 
