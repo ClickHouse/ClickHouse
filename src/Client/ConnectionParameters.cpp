@@ -30,7 +30,8 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     , port(connection_port.value_or(getPortFromConfig(config)))
 {
     bool is_secure = config.getBool("secure", false);
-    security = is_secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud");
+    security = (is_secure || is_clickhouse_cloud) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
     default_database = config.getString("database", "");
 
