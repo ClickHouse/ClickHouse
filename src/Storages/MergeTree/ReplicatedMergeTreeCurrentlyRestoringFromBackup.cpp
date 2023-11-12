@@ -561,6 +561,18 @@ public:
         return false;
     }
 
+    /// Whether any parts are being restored from a backup?
+    bool containsAnyParts() const
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & [_, entry] : entries)
+        {
+            if (!entry.part_infos.empty())
+                return true;
+        }
+        return false;
+    }
+
     /// Finds any part which is already restoring.
     std::optional<String> findAnyRestoringPart() const
     {
@@ -585,7 +597,7 @@ public:
         return false;
     }
 
-    /// Stores information about parts and mutations we're going to restore in memory and ZooKeeper.
+    /// Stores in memory and ZooKeeper the information about parts and mutations we're going to restore.
     /// A returned `scope_guard` is used to control how long this information should be kept.
     scope_guard addEntry(
         const std::vector<MergeTreePartInfo> & part_infos_,
@@ -1044,6 +1056,11 @@ bool ReplicatedMergeTreeCurrentlyRestoringFromBackup::containsPart(const MergeTr
     return currently_restoring_info->containsPart(part_info);
 }
 
+bool ReplicatedMergeTreeCurrentlyRestoringFromBackup::containsAnyParts() const
+{
+    return currently_restoring_info->containsAnyParts();
+}
+
 bool ReplicatedMergeTreeCurrentlyRestoringFromBackup::containsMutation(const String & mutation_name) const
 {
     return currently_restoring_info->containsMutation(mutation_name);
@@ -1095,7 +1112,7 @@ scope_guard ReplicatedMergeTreeCurrentlyRestoringFromBackup::allocateBlockNumber
         auto temp_nodes = block_numbers_allocator->allocateBlockNumbers(
             part_infos_, mutation_infos_, check_for_no_parts_reason, zookeeper, context_);
 
-        /// Store information about parts and mutations we're going to restore in memory and ZooKeeper.
+        /// Store in memory and ZooKeeper the information about parts and mutations we're going to restore.
         remove_entry = currently_restoring_info->addEntry(part_infos_, mutation_infos_, zookeeper_path_for_checking_, zookeeper, keeper_settings);
 
         /// Remove temporary nodes (the destructor of `temp_nodes` could do that too, but removeNodes() is better here because it checks errors).

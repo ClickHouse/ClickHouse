@@ -85,9 +85,8 @@ private:
 
         LOG_INFO(log, "Checking that no parts exist in the table before restoring its data (reason: {})", magic_enum::enum_name(reason));
 
-        /// The order of checks is important:
-        /// an INSERT command first allocates a block number, then it attaches it to the table.
-        /// That's why it's more reliable to check first block numbers, then data parts.
+        /// An INSERT command first allocates a block number, then it attaches it to the table.
+        /// So we do those checks twice to avoid race conditions.
 
         auto allocated_block_number = findAnyAllocatedBlockNumber(base_increment_value, ignore_block_numbers);
 
@@ -135,7 +134,7 @@ private:
                             base, current);
         }
 
-        if (!ignore_block_numbers)
+        if (!ignore_block_numbers || !ignore_block_numbers->count)
         {
             if (current > base)
                 return base + 1;
@@ -143,20 +142,20 @@ private:
         }
 
         Int64 ignore_first = ignore_block_numbers->first;
-        Int64 ignore_count = ignore_block_numbers->count;
+        Int64 ignore_last = ignore_block_numbers->first + ignore_block_numbers->count - 1;
 
-        if ((ignore_first < base + 1) || (ignore_first + ignore_count < ignore_first) || (current < ignore_first + ignore_count - 1))
+        if ((ignore_first < base + 1) || (current < ignore_last))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "The block number increment changed in a unexpected way: base={}, ignore_first={}, ignore_count={}, current={}",
-                            base, ignore_first, ignore_count, current);
+                            "The block number increment changed in a unexpected way: base={}, ignore_first={}, ignore_last={}, current={}",
+                            base, ignore_first, ignore_last, current);
         }
 
         if (ignore_first > base + 1)
             return base + 1;
 
-        if (current >= ignore_first + ignore_count)
-            return ignore_first + ignore_count;
+        if (current > ignore_last)
+            return ignore_last + 1;
 
         return {};
     }
@@ -193,6 +192,18 @@ public:
         for (const auto & entry : entries)
         {
             if (entry->part_infos.contains(part_info))
+                return true;
+        }
+        return false;
+    }
+
+    /// Whether any parts are being restored from a backup?
+    bool containsAnyParts() const
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & entry : entries)
+        {
+            if (!entry->part_infos.empty())
                 return true;
         }
         return false;
@@ -301,6 +312,11 @@ bool MergeTreeCurrentlyRestoringFromBackup::containsPart(const MergeTreePartInfo
     return currently_restoring_info->containsPart(part_info);
 }
 
+bool MergeTreeCurrentlyRestoringFromBackup::containsAnyParts() const
+{
+    return currently_restoring_info->containsAnyParts();
+}
+
 bool MergeTreeCurrentlyRestoringFromBackup::containsMutation(Int64 mutation_number) const
 {
     return currently_restoring_info->containsMutation(mutation_number);
@@ -313,10 +329,10 @@ scope_guard MergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers(
 {
     auto check_for_no_parts_reason = getCheckForNoPartsReason(check_table_is_empty_, !mutation_infos_.empty());
 
-    /// Create temporary zookeeper nodes to allocate block numbers and mutation numbers.
+    /// Allocate block numbers for restoring parts and mutations.
     block_numbers_allocator->allocateBlockNumbers(part_infos_, mutation_infos_, check_for_no_parts_reason);
 
-    /// Store information about parts and mutations we're going to restore in memory and ZooKeeper.
+    /// Store in memory the information about parts and mutations we're going to restore.
     return currently_restoring_info->addEntry(part_infos_, mutation_infos_);
 }
 

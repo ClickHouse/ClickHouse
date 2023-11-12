@@ -1472,20 +1472,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         if (std::optional<Int64> min_version = getMinPartDataVersion())
             end_it = current_mutations_by_version.upper_bound(*min_version);
 
-        if (currently_restoring_from_backup)
-        {
-            /// Restored mutations must not be considered as finished until the RESTORE process is done
-            /// (even if related to-do parts have not been attached yet).
-            for (auto it = begin_it; it != end_it; ++it)
-            {
-                if (currently_restoring_from_backup->containsMutation(it->first))
-                {
-                    end_it = it;
-                    break;
-                }
-            }
-        }
-
         size_t done_count = std::distance(begin_it, end_it);
 
         if (done_count <= finished_mutations_to_keep)
@@ -1501,6 +1487,11 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         }
 
         if (done_count <= finished_mutations_to_keep)
+            return 0;
+
+        /// We don't want to remove any mutation during an active RESTORE going to attach any parts
+        /// because those new parts should be mutated as well.
+        if (currently_restoring_from_backup && currently_restoring_from_backup->containsAnyParts())
             return 0;
 
         size_t to_delete_count = done_count - finished_mutations_to_keep;

@@ -22,6 +22,9 @@ public:
     /// Whether this part is being restored from a backup?
     bool containsPart(const MergeTreePartInfo & part_info) const;
 
+    /// Whether any parts are being restored from a backup?
+    bool containsAnyParts() const;
+
     /// Whether this mutation is being restored from a backup.
     bool containsMutation(Int64 mutation_number) const;
 

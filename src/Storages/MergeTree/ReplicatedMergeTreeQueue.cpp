@@ -981,12 +981,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(const ZooKeeperWithFaultInject
                 mutation.parts_to_do = getPartNamesToMutate(*entry, current_parts, queue_representation, format_version);
 
                 if (mutation.parts_to_do.size() == 0)
-                {
-                    /// Restored mutations must not be considered as finished until the RESTORE process is done
-                    /// (even if related to-do parts have not been attached yet).
-                    if (!currently_restoring_from_backup || !currently_restoring_from_backup->containsMutation(entry->znode_name))
-                        some_mutations_are_probably_done = true;
-                }
+                    some_mutations_are_probably_done = true;
 
                 /// otherwise it's already done
                 if (entry->isAlterMutation() && entry->znode_name > mutation_pointer)
@@ -996,6 +991,11 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(const ZooKeeperWithFaultInject
                 }
             }
         }
+
+        /// We don't want to remove any mutation during an active RESTORE going to attach any parts
+        /// because those new parts should be mutated as well.
+        if (some_mutations_are_probably_done && currently_restoring_from_backup && currently_restoring_from_backup->containsAnyParts())
+            some_mutations_are_probably_done = false;
 
         storage.merge_selecting_task->schedule();
 
@@ -2643,11 +2643,11 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & z
         checked_partitions_cache.insert(partition_id);
     }
 
-    /// Restored mutations must not be considered as finished until the RESTORE process is done
-    /// (even if related to-do parts have not been attached yet).
-    if (currently_restoring_from_backup && currently_restoring_from_backup->containsMutation(znode_name))
+    /// We don't want to remove any mutation during an active RESTORE going to attach any parts
+    /// because those new parts should be mutated as well.
+    if (currently_restoring_from_backup && currently_restoring_from_backup->containsAnyParts())
     {
-        LOG_TRACE(queue.log, "Mutation {} is being restored from backup", znode_name);
+        LOG_TRACE(queue.log, "Mutation {} is not done yet because there are some parts being restored", znode_name);
         return false;
     }
 
