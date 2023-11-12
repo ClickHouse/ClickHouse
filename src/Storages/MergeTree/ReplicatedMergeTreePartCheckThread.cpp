@@ -613,49 +613,57 @@ bool ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part
 MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackgroundCheck()
 {
     MergeTreeDataPartPtr part;
+    int retries = 3;
+    auto checked_part = last_checked_part;
+    while(!part && retries--)
     {
-        auto parts_lock = storage.lockParts();
-        auto active_parts = storage.getDataPartsStateRange(MergeTreeDataPartState::Active);
-        if (active_parts.empty())
         {
-            LOG_DEBUG(log, "Background part check: no active parts");
-            return nullptr;
+            auto parts_lock = storage.lockParts();
+            auto active_parts = storage.getDataPartsStateRange(MergeTreeDataPartState::Active);
+            if (active_parts.empty())
+            {
+                LOG_DEBUG(log, "Background part check: no active parts");
+                return nullptr;
+            }
+
+            LOG_DEBUG(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
+
+            if (checked_part == MergeTreePartInfo{})
+            {
+                const size_t active_parts_size = std::distance(active_parts.begin(), active_parts.end());
+                std::uniform_int_distribution<size_t> dist(0, active_parts_size - 1);
+                const size_t i = dist(gen);
+                chassert(i < active_parts_size);
+
+                part = *(active_parts.advance_begin(i).begin());
+
+                LOG_DEBUG(log, "Background part check: first part to check {}", part->name);
+            }
+            else
+            {
+                auto next_it = storage.data_parts_by_state_and_info.upper_bound(
+                    MergeTreeData::DataPartStateAndInfo{MergeTreeDataPartState::Active, checked_part});
+                if (next_it == storage.data_parts_by_state_and_info.end())
+                    next_it = storage.data_parts_by_state_and_info.begin();
+
+                part = *next_it;
+            }
+
+            MergeTreeDataPartPtr covering_part = storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock);
+            if (covering_part != part)
+                part = covering_part;
         }
 
-        LOG_DEBUG(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
-
-        if (last_randomly_checked_part == MergeTreePartInfo{})
+        if (part->last_check_time.has_value())
         {
-            const size_t active_parts_size = std::distance(active_parts.begin(), active_parts.end());
-            std::uniform_int_distribution<size_t> dist(0, active_parts_size - 1);
-            const size_t i = dist(gen);
-            chassert(i < active_parts_size);
-
-            part = *(active_parts.advance_begin(i).begin());
-
-            LOG_DEBUG(log, "Background part check: first part to check {}", part->name);
+            const auto check_delay_for_part_seconds
+                = std::chrono::seconds{storage.getSettings()->delay_between_background_part_checks_for_individual_part_seconds};
+            if (part->last_check_time.value() + check_delay_for_part_seconds > std::chrono::steady_clock::now())
+            {
+                checked_part = part->info;
+                part = nullptr;
+            }
         }
-        else
-        {
-            auto next_it = storage.data_parts_by_state_and_info.upper_bound(
-                MergeTreeData::DataPartStateAndInfo{MergeTreeDataPartState::Active, last_randomly_checked_part});
-            if (next_it == storage.data_parts_by_state_and_info.end())
-                next_it = storage.data_parts_by_state_and_info.begin();
-
-            part = *next_it;
-        }
-
-        MergeTreeDataPartPtr covering_part = storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock);
-        if (covering_part != part)
-            part = covering_part;
-    }
-
-    if (part->last_check_time.has_value())
-    {
-        const auto check_delay_for_part_seconds
-            = std::chrono::seconds{storage.getSettings()->delay_between_background_part_checks_for_individual_part_seconds};
-        if (part->last_check_time.value() + check_delay_for_part_seconds > std::chrono::steady_clock::now())
-            return nullptr;
     }
 
     return part;
@@ -704,7 +712,7 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
 
         LOG_DEBUG(log, "Background part check: going to check part {}", part_to_check->name);
 
-        last_randomly_checked_part = part_to_check->info;
+        last_checked_part = part_to_check->info;
         auto check_start = steady_clock::now();
         auto result = checkActivePart(part_to_check);
         check_duration_ms = duration_cast<milliseconds>(steady_clock::now() - check_start);
