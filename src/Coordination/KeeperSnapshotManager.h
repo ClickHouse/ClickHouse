@@ -40,8 +40,6 @@ struct SnapshotDeserializationResult
     ClusterConfigPtr cluster_config;
 };
 
-struct IKeeperStorageSnapshot {};
-
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
 /// turned into snapshot mode. This operation is fast and KeeperStorageSnapshot
 /// class do it in constructor. It also copies iterators from storage hash table
@@ -51,13 +49,16 @@ struct IKeeperStorageSnapshot {};
 /// This representation of snapshot have to be serialized into NuRaft
 /// buffer and send over network or saved to file.
 template<typename Storage>
-struct KeeperStorageSnapshot : IKeeperStorageSnapshot
+struct KeeperStorageSnapshot
 {
 public:
     KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_ = nullptr);
 
     KeeperStorageSnapshot(
         Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_ = nullptr);
+
+    KeeperStorageSnapshot(const KeeperStorageSnapshot<Storage>&) = delete;
+    KeeperStorageSnapshot(KeeperStorageSnapshot<Storage>&&) = default;
 
     ~KeeperStorageSnapshot();
 
@@ -97,7 +98,8 @@ struct SnapshotFileInfo
     DiskPtr disk;
 };
 
-using KeeperStorageSnapshotPtr = std::shared_ptr<IKeeperStorageSnapshot>;
+/// TODO(hanfei): use
+using KeeperStorageSnapshotPtr = std::unique_ptr<std::variant<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
 using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&)>;
 
 /// Class responsible for snapshots serialization and deserialization. Each snapshot
