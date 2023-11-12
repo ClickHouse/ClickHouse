@@ -17,15 +17,20 @@ if backupview_dir not in sys.path:
 from backupview import open_backup, FileInfo, ExtractionInfo
 
 
-def calculate_num_files_and_total_size(dir):
+def calculate_num_files(dir):
     count = 0
+    for _, _, files in os.walk(dir, topdown=False):
+        count += len([1 for name in files if name])
+    return count
+
+
+def calculate_total_size(dir):
     total_size = 0
     for root, _, files in os.walk(dir, topdown=False):
-        for name in files:
-            if name:
-                count += 1
-                total_size += os.path.getsize(os.path.join(dir, root, name))
-    return (count, total_size)
+        total_size += sum(
+            [os.path.getsize(os.path.join(dir, root, name)) for name in files if name]
+        )
+    return total_size
 
 
 ###########################################################################################
@@ -129,12 +134,11 @@ def test_backup_1():
             data_file="/shards/1/replicas/1/data/mydb/tbl1/all_0_0_0/default_compression_codec.txt",
         )
 
-        temp_dir = tempfile.TemporaryDirectory()
-        temp_dir_path = temp_dir.name
-
-        assert b.extract_table_data(
-            table="mydb.tbl1", out=temp_dir_path
-        ) == ExtractionInfo(num_files=32, num_bytes=1728)
-
-        assert calculate_num_files_and_total_size(temp_dir_path) == (32, 1728)
-        temp_dir.cleanup()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            res = b.extract_table_data(table="mydb.tbl1", out=temp_dir)
+            num_files = res.num_files
+            num_bytes = res.num_bytes
+            assert calculate_num_files(temp_dir) == num_files
+            assert calculate_total_size(temp_dir) == num_bytes
+            assert num_files == 32
+            assert num_bytes == 1728
