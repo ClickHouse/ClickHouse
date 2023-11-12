@@ -334,10 +334,10 @@ void DatabasePostgreSQL::removeOutdatedTables()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
-        /** Avoid repeated interrupting other normal routines (they acquire locks!) 
-          * for the case of unavailable connection, since it is possible to be 
-          * unsuccessful again, and the unsuccessful conn is very time-consuming: 
-          * connection period is exclusive and timeout is at least 2 seconds for 
+        /** Avoid repeated interrupting other normal routines (they acquire locks!)
+          * for the case of unavailable connection, since it is possible to be
+          * unsuccessful again, and the unsuccessful conn is very time-consuming:
+          * connection period is exclusive and timeout is at least 2 seconds for
           * PostgreSQL.
           */
         cleaner_task->scheduleAfter(reschedule_error_multiplier * cleaner_reschedule_ms);
