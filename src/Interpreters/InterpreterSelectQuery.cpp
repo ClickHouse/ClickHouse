@@ -654,6 +654,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+                const auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
@@ -662,7 +663,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     supported_prewhere_columns,
                     log};
 
-                where_optimizer.optimize(current_info, context);
+                where_optimizer.optimize(current_info, context, metadata_snapshot->getProjections(), primary_key, options.projection_optimized);
             }
         }
 
