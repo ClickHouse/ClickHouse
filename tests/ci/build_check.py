@@ -433,8 +433,8 @@ FORMAT JSONCompactEachRow"""
         )
         profile_data_file = temp_path / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
-            for profile_sourse in profiles_dir.iterdir():
-                with open(profiles_dir / profile_sourse, "rb") as ps_fd:
+            for profile_source in profiles_dir.iterdir():
+                with open(profiles_dir / profile_source, "rb") as ps_fd:
                     profile_fd.write(ps_fd.read())
 
         logging.info(
@@ -444,6 +444,32 @@ FORMAT JSONCompactEachRow"""
             query,
         )
         ch_helper.insert_file(url, auth, query, profile_data_file)
+
+        query = f"""INSERT INTO binary_sizes
+(
+    pull_request_number,
+    commit_sha,
+    check_start_time,
+    check_name,
+    instance_type,
+    instance_id,
+    file,
+    size
+)
+SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', file, size
+FROM input('size UInt64, file String')
+FORMAT Regexp
+SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
+"""
+        binary_sizes_file = temp_path / "binary_sizes.txt"
+
+        logging.info(
+            "::notice ::Log Uploading binary sizes data, path: %s, size: %s, query: %s",
+            binary_sizes_file,
+            binary_sizes_file.stat().st_size,
+            query,
+        )
+        ch_helper.insert_file(url, auth, query, binary_sizes_file)
 
     # Upload statistics to CI database
     prepared_events = prepare_tests_results_for_clickhouse(
