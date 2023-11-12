@@ -3,6 +3,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 namespace
 {
 
