@@ -26,7 +26,7 @@ CREATE TABLE build_time_trace
     time DateTime64(6),
     pid UInt32,
     tid UInt32,
-    ph Enum8('B' = 1, 'E' = 2, 'X' = 3, 'i' = 4, 'I' = 5, 'C' = 6, 'b' = 7, 'n' = 8, 'e' = 9, 'S' = 10, 'T' = 11, 'p' = 12, 'F' = 13, 's' = 14, 't' = 15, 'f' = 16, 'P' = 17, 'N' = 18, 'O' = 19, 'D' = 20, 'M' = 21),
+    ph Enum8('B', 'E', 'X', 'i', 'I', 'C', 'b', 'n', 'e', 'S', 'T', 'p', 'F', 's', 't', 'f', 'P', 'N', 'O', 'D', 'M'),
     ts UInt64,
     dur UInt64,
     cat LowCardinality(String),
