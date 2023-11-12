@@ -212,10 +212,17 @@ def upload_master_static_binaries(
     elif pr_info.base_ref != "master":
         return
 
-    s3_path = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
-    binary = build_output_path / "clickhouse"
-    url = s3_helper.upload_build_file_to_s3(binary, s3_path)
-    print(f"::notice ::Binary static URL: {url}")
+    # Full binary with debug info:
+    s3_path_full = "/".join((pr_info.base_ref, static_binary_name, "clickhouse-full"))
+    binary_full = build_output_path / "clickhouse"
+    url_full = s3_helper.upload_build_file_to_s3(binary_full, s3_path_full)
+    print(f"::notice ::Binary static URL (with debug info): {url_full}")
+
+    # Stripped binary without debug info:
+    s3_path_compact = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
+    binary_compact = build_output_path / "clickhouse-stripped"
+    url_compact = s3_helper.upload_build_file_to_s3(binary_compact, s3_path_compact)
+    print(f"::notice ::Binary static URL (compact): {url_compact}")
 
 
 def main():
