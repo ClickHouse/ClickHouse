@@ -1125,6 +1125,7 @@ azureBlobStorageCluster
 backend
 backoff
 backticks
+backupview
 balancer
 basename
 bcrypt
