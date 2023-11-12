@@ -27,7 +27,7 @@ public:
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_,
-        const std::string & superdisgest_);
+        const std::string & superdigest_);
 
     /// Read state from the latest snapshot
     virtual void init() = 0;
