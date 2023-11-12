@@ -1016,12 +1016,8 @@ class Location:
                 )
 
         if name == "S3":
-            if len(args) == 1:
-                return S3(args[0])
-            elif len(args) == 2:
-                return S3(args[0], args[1])
-            elif len(args) == 3:
-                return S3(args[0], args[1], args[2])
+            if 1 <= len(args) and len(args) <= 3:
+                return S3(*args)
             else:
                 raise Exception(
                     f"Couldn't parse a location from '{desc}': S3(<uri> [, <access_key_id>, <secret_access_key>]) requires from 1 to 3 arguments, got {len(args)} arguments"
