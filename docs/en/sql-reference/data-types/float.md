@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS float_vs_decimal
    my_decimal Decimal64(3)
 )Engine=MergeTree ORDER BY tuple()
 
-INSERT INTO float_vs_decimal SELECT round(canonicalRand(), 3) AS res, res FROM system.numbers LIMIT 1000000; # Generate 1 000 000 random number with 2 decimal places and store them as a float and as a decimal
+INSERT INTO float_vs_decimal SELECT round(randCanonical(), 3) AS res, res FROM system.numbers LIMIT 1000000; # Generate 1 000 000 random number with 2 decimal places and store them as a float and as a decimal
 
 SELECT sum(my_float), sum(my_decimal) FROM float_vs_decimal;
 > 500279.56300000014	500279.563

@@ -846,7 +846,7 @@ Strings Context::getWarnings() const
         }
         res = res + "]" + (single_element ? " is" : " are")
             + " changed. "
-              "Please check 'select * from system.settings where changed and is_obsolete' and read the changelog.";
+              "Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
         common_warnings.emplace_back(res);
     }
 
@@ -3430,7 +3430,8 @@ void Context::initializeTraceCollector()
 /// Call after unexpected crash happen.
 void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    shared->system_logs->handleCrash();
+    if (shared->system_logs)
+        shared->system_logs->handleCrash();
 }
 
 bool Context::hasTraceCollector() const

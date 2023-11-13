@@ -238,7 +238,7 @@ public:
         if constexpr (has_second_arg)
         {
             assertBinary(Name::name, types);
-            if (!isUnsignedInteger(types[1]))
+            if (!isUInt(types[1]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",

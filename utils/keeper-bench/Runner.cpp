@@ -127,6 +127,9 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
 
         if (config.has(key + ".connection_timeout_ms"))
             connection_info.connection_timeout_ms = config.getInt(key + ".connection_timeout_ms");
+
+        if (config.has(key + ".use_compression"))
+            connection_info.use_compression = config.getBool(key + ".use_compression");
     };
 
     fill_connection_details("connections", default_connection_info);
@@ -430,8 +433,9 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     nodes.push_back(node);
     zkutil::ZooKeeperArgs args;
     args.session_timeout_ms = connection_info.session_timeout_ms;
-    args.connection_timeout_ms = connection_info.operation_timeout_ms;
-    args.operation_timeout_ms = connection_info.connection_timeout_ms;
+    args.connection_timeout_ms = connection_info.connection_timeout_ms;
+    args.operation_timeout_ms = connection_info.operation_timeout_ms;
+    args.use_compression = connection_info.use_compression;
     return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
 }
 

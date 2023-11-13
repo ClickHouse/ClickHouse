@@ -431,7 +431,8 @@ static void buildORCSearchArgumentImpl(
         case KeyCondition::RPNElement::FUNCTION_IN_SET:
         case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
         case KeyCondition::RPNElement::FUNCTION_IS_NULL:
-        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL: {
+        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
+        {
             const bool need_wrap_not = curr.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL
                 || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
                 || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET;
@@ -625,19 +626,24 @@ static void buildORCSearchArgumentImpl(
 
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_UNKNOWN: {
+        /// There is no optimization with space-filling curves for ORC.
+        case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+        case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
+        {
             builder.literal(orc::TruthValue::YES_NO_NULL);
             rpn_stack.pop_back();
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_NOT: {
+        case KeyCondition::RPNElement::FUNCTION_NOT:
+        {
             builder.startNot();
             rpn_stack.pop_back();
             buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_AND: {
+        case KeyCondition::RPNElement::FUNCTION_AND:
+        {
             builder.startAnd();
             rpn_stack.pop_back();
             buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
@@ -645,7 +651,8 @@ static void buildORCSearchArgumentImpl(
             builder.end();
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_OR: {
+        case KeyCondition::RPNElement::FUNCTION_OR:
+        {
             builder.startOr();
             rpn_stack.pop_back();
             buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
@@ -653,12 +660,14 @@ static void buildORCSearchArgumentImpl(
             builder.end();
             break;
         }
-        case KeyCondition::RPNElement::ALWAYS_FALSE: {
+        case KeyCondition::RPNElement::ALWAYS_FALSE:
+        {
             builder.literal(orc::TruthValue::NO);
             rpn_stack.pop_back();
             break;
         }
-        case KeyCondition::RPNElement::ALWAYS_TRUE: {
+        case KeyCondition::RPNElement::ALWAYS_TRUE:
+        {
             builder.literal(orc::TruthValue::YES);
             rpn_stack.pop_back();
             break;

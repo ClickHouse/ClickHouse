@@ -45,7 +45,7 @@ public:
         bool has_force_restore_data_flag);
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     ~StorageMergeTree() override;
 
@@ -108,7 +108,7 @@ public:
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
