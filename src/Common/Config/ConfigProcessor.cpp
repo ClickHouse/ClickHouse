@@ -326,6 +326,11 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                     NodePtr new_node = config->importNode(with_node, true);
                     config_root->replaceChild(new_node, config_node);
                 }
+                else if (with_element.hasChildNodes() && with_element.firstChild()->nodeType() == Node::TEXT_NODE)
+                {
+                    NodePtr new_node = config->importNode(with_node, true);
+                    config_root->replaceChild(new_node, config_node);
+                }
                 else
                 {
                     Element & config_element = dynamic_cast<Element &>(*config_node);
