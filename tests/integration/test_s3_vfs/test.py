@@ -136,10 +136,14 @@ def test_s3_vfs(started_cluster, policy):
     wait_for_large_objects_count(cluster, 2)
 
     zk = cluster.get_kazoo_client("zoo1")
-    # should be around 27 * 2
-    for ch in zk.get_children("/vfs_log"):
-        logging.error(zk.get(f"/vfs_log/{ch}"))
-    zk.stop()
+    log_items = [
+        zk.get(f"/vfs_log/{log_pointer}")[0].decode("utf-8")
+        for log_pointer in sorted(zk.get_children("/vfs_log"))
+    ]
+
+    assert len(log_items) == 54  # 27 items for 2 replicas
+    for item in log_items:
+        logging.info(item)
 
     assert False
     return

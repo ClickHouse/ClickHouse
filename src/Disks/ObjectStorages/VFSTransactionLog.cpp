@@ -29,4 +29,38 @@ void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type, const StoredObj
         ops.emplace_back(zkutil::makeCreateRequest(
             VFS_LOG_ITEM, VFSTransactionLogItem{type, object.remote_path}.serialize(), zkutil::CreateMode::PersistentSequential));
 }
+
+void VFSSnapshot::add(const VFSTransactionLogItem & item)
+{
+    using enum VFSTransactionLogItem::Type;
+    switch (item.type)
+    {
+        case CreateInode: {
+            chassert(!items.contains(item.object_storage_path));
+            items.emplace(item.object_storage_path, 0);
+            break;
+        }
+        case Link: {
+            auto it = items.find(item.object_storage_path);
+            chassert(it != items.end());
+            ++it->second;
+            break;
+        }
+        case Unlink: {
+            auto it = items.find(item.object_storage_path);
+            chassert(it != items.end());
+            if (--it->second == 0)
+                items.erase(it);
+            break;
+        }
+    }
+}
+
+String VFSSnapshot::serializeItems() const
+{
+    String out;
+    for (const auto &[path, links] : items)
+        out += fmt::format("{} {}\n", path, links);
+    return out;
+}
 }

@@ -29,6 +29,9 @@ public:
     String getStructure() const;
 
 private:
+    // TODO myrrc not sure we should couple object storage and garbage collector via friendship
+    friend class ObjectStorageVFSGCThread;
+
     DiskTransactionPtr createObjectStorageTransaction() final;
     zkutil::ZooKeeperPtr zookeeper;
 };

@@ -5,7 +5,10 @@
 
 namespace DB
 {
-static constexpr auto VFS_LOG_ITEM = "/vfs_log/log-";
+// TODO myrrc not sure this one belongs here
+static constexpr auto VFS_SNAPSHOT_ITEM = "/vfs_log/snapshot";
+
+static constexpr auto VFS_LOG_ITEM = "/vfs_log/ops/log-";
 
 struct VFSTransactionLogItem
 {
@@ -26,4 +29,13 @@ void getStoredObjectsVFSLogOps( //NOLINT
     VFSTransactionLogItem::Type type,
     const StoredObjects & objects,
     Coordination::Requests & ops);
+
+struct VFSSnapshot
+{
+    size_t end_logpointer{0};
+    std::unordered_map<String /*object_storage_path*/, size_t /*links*/> items;
+
+    void add(const VFSTransactionLogItem & item);
+    String serializeItems() const;
+};
 }

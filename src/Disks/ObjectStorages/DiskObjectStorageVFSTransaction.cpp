@@ -220,9 +220,10 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(VFSTransactionLogItem::
     operations_to_execute.emplace_back(std::make_unique<KeeperOperation>(
         object_storage,
         metadata_storage,
-        [zk = this->zookeeper, type, objects, log = this->log]
+        // log_1 due to https://reviews.llvm.org/D26278
+        [zk = this->zookeeper, type, objects, log_1 = this->log]
         {
-            LOG_TRACE(log, "Executing {} {}", type, fmt::join(objects, ", "));
+            LOG_TRACE(log_1, "Executing {} {}", type, fmt::join(objects, ", "));
             Coordination::Requests ops;
             getStoredObjectsVFSLogOps(type, objects, ops);
             zk->multi(ops);
