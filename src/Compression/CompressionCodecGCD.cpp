@@ -1,10 +1,11 @@
 #include <Compression/ICompressionCodec.h>
+#include <DataTypes/IDataType.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Common/Exception.h>
+#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
-#include "Common/Exception.h"
-#include "DataTypes/IDataType.h"
 
 #include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
@@ -92,6 +93,16 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     unalignedStore<T>(dest, gcd_divider);
     dest += sizeof(T);
 
+    /// There are two cases:
+    /// 1) GCD is 0. It may happen if there are some zeros in the source data.
+    /// We cannot apply this codec anymore. So let's copy the source data to the destination.
+    /// 2) GCD is 1. It means that we can do nothing (except copying source data) and the result will be the same.
+    if unlikely(gcd_divider == 0)
+    {
+        memcpy(dest, source, source_size);
+        return;
+    }
+
     if constexpr (sizeof(T) <= 8)
     {
         /// libdivide supports only UInt32 and UInt64.
@@ -132,10 +143,24 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     const T gcd_multiplier = unalignedLoad<T>(source);
     source += sizeof(T);
 
+    /// Again two cases:
+    /// 1) GCD is 0. This is "special" flag which signals what remaining data
+    /// left unchanged due to unapplicability of the codec.
+    /// 2) GCD is 1. Even if we proceed futher with the loop the resulting data will likely be the same.
+    if unlikely(gcd_multiplier == 0 || gcd_multiplier == 1)
+    {
+        /// Subtraction is safe, because we checked that source_size >= sizeof(T)
+        if unlikely(source_size - sizeof(T) != output_size)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress");
+
+        memcpy(dest, source, source_size);
+        return;
+    }
+
     while (source < source_end)
     {
         if (dest + sizeof(T) > dest_end) [[unlikely]]
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress");
         unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd_multiplier);
 
         source += sizeof(T);
