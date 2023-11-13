@@ -29,3 +29,8 @@ def test_get_availability_zone():
 
     with KeeperClient.from_cluster(cluster, "zoo2") as client2:
         assert client2.get("/keeper/availability_zone") == "az-zoo2"
+    
+    # keeper3 is not configured with availability_zone value.
+    with KeeperClient.from_cluster(cluster, "zoo3") as client3:
+        with pytest.raises(Exception):
+            client3.get("/keeper/availability_zone")
