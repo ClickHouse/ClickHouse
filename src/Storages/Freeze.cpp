@@ -120,8 +120,6 @@ String FreezeMetaData::getFileName(const String & path)
 
 Unfreezer::Unfreezer(ContextPtr context) : local_context(context)
 {
-    if (local_context->hasZooKeeper())
-        zookeeper = local_context->getZooKeeper();
 }
 
 BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
@@ -188,7 +186,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     return result;
 }
 
-bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper)
+bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context)
 {
     if (disk->supportZeroCopyReplication())
     {
@@ -196,7 +194,15 @@ bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const Strin
         if (meta.load(disk, path))
         {
             FreezeMetaData::clean(disk, path);
-            return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.replica_name, "", local_context, zookeeper);
+            return StorageReplicatedMergeTree::removeSharedDetachedPart(
+                disk,
+                path,
+                part_name,
+                meta.table_shared_id,
+                meta.replica_name,
+                "",
+                local_context,
+                local_context->getFaultyZooKeeper("Unfreezer", nullptr, false));
         }
     }
 
@@ -229,7 +235,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
             const auto & path = it->path();
 
-            bool keep_shared = removeFreezedPart(disk, path, partition_directory, local_context, zookeeper);
+            bool keep_shared = removeFreezedPart(disk, path, partition_directory, local_context);
 
             result.push_back(PartitionCommandResultInfo{
                 .command_type = "UNFREEZE PART",

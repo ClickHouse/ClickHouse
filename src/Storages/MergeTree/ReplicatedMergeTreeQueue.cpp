@@ -1,16 +1,17 @@
-#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/CurrentMetrics.h>
-#include "Storages/MutationCommands.h"
 #include <Parsers/formatAST.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/sort.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 #include <ranges>
 
@@ -62,7 +63,7 @@ void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings &
     broken_parts_to_enqueue_fetches_on_loading = std::move(parts_to_fetch);
 }
 
-void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
+void ReplicatedMergeTreeQueue::initialize(ZooKeeperWithFaultInjectionPtr zookeeper)
 {
     clear();
     std::lock_guard lock(state_mutex);
@@ -129,7 +130,7 @@ bool ReplicatedMergeTreeQueue::checkPartInQueueAndGetSourceParts(const String & 
 }
 
 
-bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
+bool ReplicatedMergeTreeQueue::load(ZooKeeperWithFaultInjectionPtr zookeeper)
 {
     String queue_path = fs::path(replica_path) / "queue";
     LOG_DEBUG(log, "Loading queue from {}", queue_path);
@@ -210,7 +211,7 @@ void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
     for (const auto & broken_part_name : broken_parts)
         storage.removePartAndEnqueueFetch(broken_part_name, /* storage_init = */true);
 
-    Strings parts_in_zk = storage.getZooKeeper()->getChildren(replica_path + "/parts");
+    Strings parts_in_zk = storage.getFaultyZooKeeper()->getChildren(replica_path + "/parts");
     storage.paranoidCheckForCoveredPartsInZooKeeperOnStart(parts_in_zk, {});
 
     std::lock_guard lock(state_mutex);
@@ -279,7 +280,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 }
 
 
-void ReplicatedMergeTreeQueue::insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry)
+void ReplicatedMergeTreeQueue::insert(ZooKeeperWithFaultInjectionPtr zookeeper, LogEntryPtr & entry)
 {
     std::optional<time_t> min_unprocessed_insert_time_changed;
 
@@ -463,7 +464,7 @@ void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name, cons
 }
 
 void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
-    zkutil::ZooKeeperPtr zookeeper,
+    ZooKeeperWithFaultInjectionPtr zookeeper,
     std::optional<time_t> min_unprocessed_insert_time_changed,
     std::optional<time_t> max_processed_insert_time_changed) const
 {
@@ -494,7 +495,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 }
 
 
-void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry)
+void ReplicatedMergeTreeQueue::removeProcessedEntry(ZooKeeperWithFaultInjectionPtr zookeeper, LogEntryPtr & entry)
 {
     std::optional<time_t> min_unprocessed_insert_time_changed;
     std::optional<time_t> max_processed_insert_time_changed;
@@ -558,7 +559,8 @@ bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & 
     return virtual_parts.remove(part_info);
 }
 
-std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
+std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(
+    ZooKeeperWithFaultInjectionPtr zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
@@ -858,7 +860,7 @@ ActiveDataPartSet getPartNamesToMutate(
 
 }
 
-int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
+int32_t ReplicatedMergeTreeQueue::updateMutations(ZooKeeperWithFaultInjectionPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
 
@@ -982,8 +984,8 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 }
 
 
-ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
-    zkutil::ZooKeeperPtr zookeeper, const String & mutation_id)
+ReplicatedMergeTreeMutationEntryPtr
+ReplicatedMergeTreeQueue::removeMutation(ZooKeeperWithFaultInjectionPtr zookeeper, const String & mutation_id)
 {
     std::lock_guard lock(update_mutations_mutex);
 
@@ -1105,7 +1107,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 }
 
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
-    zkutil::ZooKeeperPtr zookeeper,
+    ZooKeeperWithFaultInjectionPtr zookeeper,
     const MergeTreePartInfo & part_info,
     const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry)
 {
@@ -1690,9 +1692,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
 
 
 bool ReplicatedMergeTreeQueue::processEntry(
-    std::function<zkutil::ZooKeeperPtr()> get_zookeeper,
-    LogEntryPtr & entry,
-    std::function<bool(LogEntryPtr &)> func)
+    std::function<ZooKeeperWithFaultInjectionPtr()> get_zookeeper, LogEntryPtr & entry, std::function<bool(LogEntryPtr &)> func)
 {
     std::exception_ptr saved_exception;
 
@@ -1779,8 +1779,8 @@ std::map<std::string, MutationCommands> ReplicatedMergeTreeQueue::getUnfinishedM
     return result;
 }
 
-ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
-                                                                              std::optional<PartitionIdsHint> && partition_ids_hint)
+ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(
+    ZooKeeperWithFaultInjectionPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint)
 {
     return ReplicatedMergeTreeMergePredicate(*this, zookeeper, std::move(partition_ids_hint));
 }
@@ -1889,7 +1889,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 }
 
 
-bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper)
+bool ReplicatedMergeTreeQueue::tryFinalizeMutations(ZooKeeperWithFaultInjectionPtr zookeeper)
 {
     std::vector<ReplicatedMergeTreeMutationEntryPtr> candidates;
     {
@@ -2147,9 +2147,9 @@ LocalMergePredicate::LocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
 }
 
 
-template<typename VirtualPartsT, typename MutationsStateT>
+template <typename VirtualPartsT, typename MutationsStateT>
 CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommittingBlocks(
-    zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_)
+    ZooKeeperWithFaultInjectionPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_)
 {
     CommittingBlocks committing_blocks;
 
@@ -2199,9 +2199,8 @@ CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommitti
 }
 
 ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
-    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_)
-    : BaseMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>(std::move(partition_ids_hint_))
-    , queue(queue_)
+    ReplicatedMergeTreeQueue & queue_, ZooKeeperWithFaultInjectionPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_)
+    : BaseMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>(std::move(partition_ids_hint_)), queue(queue_)
 {
     {
         std::lock_guard lock(queue.state_mutex);

@@ -26,7 +26,7 @@ namespace ErrorCodes
 /// Since 22.11 it creates single ephemeral node with `path_prefix` that references persistent fake "secondary node".
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
-    template<typename T>
+    template <bool async_insert, typename T>
     friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 
@@ -109,7 +109,7 @@ private:
     String conflict_path;
 };
 
-template<typename T>
+template <bool async_insert, typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {
@@ -85,7 +86,8 @@ void ReplicatedMergeTreeAttachThread::run()
     }
 }
 
-void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path)
+void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(
+    const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & replica_path)
 {
     /// Since 20.4 and until 22.9 "/metadata" node was created on replica startup and "/metadata_version" was created on ALTER.
     /// Since 21.12 we could use "/metadata" to check if replica is dropped (see StorageReplicatedMergeTree::dropReplica),
@@ -106,7 +108,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 {
     storage.setZooKeeper();
 
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
     const auto & zookeeper_path = storage.zookeeper_path;
     bool metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
     if (!metadata_exists)

@@ -6,6 +6,9 @@
 namespace DB
 {
 
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
+
 /// Special metadata used during freeze table. Required for zero-copy
 /// replication.
 struct FreezeMetaData
@@ -37,10 +40,9 @@ public:
     BlockIO systemUnfreeze(const String & backup_name);
 private:
     ContextPtr local_context;
-    zkutil::ZooKeeperPtr zookeeper;
     Poco::Logger * log = &Poco::Logger::get("Unfreezer");
     static constexpr std::string_view backup_directory_prefix = "shadow";
-    static bool removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper);
+    static bool removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context);
 };
 
 }

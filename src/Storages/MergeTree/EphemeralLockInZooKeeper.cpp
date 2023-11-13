@@ -20,11 +20,11 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: name of the main node is shorter than prefix.");
 }
 
-template <typename T>
+template <bool async_insert = false, typename T = std::conditional_t<async_insert, std::vector<String>, String>>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path)
 {
-    static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
+    static_assert(!async_insert || std::is_same_v<T, std::vector<String>>);
 
     String path;
 
@@ -220,10 +220,10 @@ EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
     }
 }
 
-template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<String>(
+template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<false, String>(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
 
-template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<std::vector<String>>(
+template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<true, std::vector<String>>(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path);
 
 }

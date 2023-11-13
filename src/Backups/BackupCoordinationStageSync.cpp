@@ -1,14 +1,15 @@
 #include <Backups/BackupCoordinationStageSync.h>
 
-#include <base/chrono_io.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/Exception.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Backups/BackupCoordinationStage.h>
+#include <base/chrono_io.h>
+#include <Common/Exception.h>
+#include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {

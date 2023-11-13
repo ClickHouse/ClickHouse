@@ -1,10 +1,11 @@
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/ZooKeeper/KeeperException.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {
@@ -69,7 +70,7 @@ void PartMovesBetweenShardsOrchestrator::syncStateFromZK()
 
     std::vector<Entry> new_entries;
 
-    auto zk = storage.getZooKeeper();
+    auto zk = storage.getFaultyZooKeeper();
 
     Strings task_names = zk->getChildren(entries_znode_path);
     for (auto const & task_name : task_names)
@@ -97,7 +98,7 @@ bool PartMovesBetweenShardsOrchestrator::step()
     if (!storage.is_leader)
         return false;
 
-    auto zk = storage.getZooKeeper();
+    auto zk = storage.getFaultyZooKeeper();
 
     std::optional<Entry> entry_to_process;
 
@@ -127,7 +128,9 @@ bool PartMovesBetweenShardsOrchestrator::step()
 
     try
     {
-        entry_node_holder = zkutil::EphemeralNodeHolder::create(entry_to_process->znode_path + "/lock_holder", *zk, storage.replica_name);
+        /// TODO: Introduce faults
+        entry_node_holder
+            = zkutil::EphemeralNodeHolder::create(entry_to_process->znode_path + "/lock_holder", *zk->getKeeper(), storage.replica_name);
     }
     catch (const Coordination::Exception & e)
     {
@@ -172,7 +175,7 @@ bool PartMovesBetweenShardsOrchestrator::step()
     return true;
 }
 
-PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(Entry entry, zkutil::ZooKeeperPtr zk)
+PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(Entry entry, ZooKeeperWithFaultInjectionPtr zk)
 {
     switch (entry.state.value)
     {
@@ -620,7 +623,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
     UNREACHABLE();
 }
 
-void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil::ZooKeeperPtr zk)
+void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, ZooKeeperWithFaultInjectionPtr zk)
 {
     PinnedPartUUIDs src_pins;
     PinnedPartUUIDs dst_pins;
@@ -664,7 +667,7 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
         LOG_TRACE(log, "Will try to mark move part between shards entry {} ({}) for rollback.",
                   toString(entry.task_uuid), entry.znode_name);
 
-        auto zk = storage.getZooKeeper();
+        auto zk = storage.getFaultyZooKeeper();
 
         // State transition.
         entry.rollback = true;

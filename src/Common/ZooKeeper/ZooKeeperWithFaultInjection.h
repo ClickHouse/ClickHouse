@@ -106,6 +106,7 @@ public:
     explicit ZooKeeperWithFaultInjection(zk::Ptr const & keeper_) : keeper(keeper_) { }
 
     void setKeeper(zk::Ptr const & keeper_) { keeper = keeper_; }
+    zk::Ptr getKeeper() { return keeper; }
     bool isNull() const { return keeper.get() == nullptr; }
     bool expired() { return keeper->expired(); }
 
@@ -122,6 +123,12 @@ public:
         return access("getChildren", path, [&]() { return keeper->getChildren(path, stat, watch, list_request_type); });
     }
 
+    zk::MultiGetChildrenResponse getChildren(
+        const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    {
+        return access("getChildren", !paths.empty() ? paths.front() : "", [&]() { return keeper->getChildren(paths, list_request_type); });
+    }
+
     Coordination::Error tryGetChildren(
         const std::string & path,
         Strings & res,
@@ -132,14 +139,44 @@ public:
         return access("tryGetChildren", path, [&]() { return keeper->tryGetChildren(path, res, stat, watch, list_request_type); });
     }
 
+    zk::MultiTryGetChildrenResponse tryGetChildren(
+        const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    {
+        return access(
+            "tryGetChildren", !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGetChildren(paths, list_request_type); });
+    }
+
+    Coordination::Error tryGetChildrenWatch(
+        const std::string & path,
+        Strings & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallback watch_callback,
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    {
+        return access(
+            "tryGetChildren", path, [&]() { return keeper->tryGetChildrenWatch(path, res, stat, watch_callback, list_request_type); });
+    }
+
+    template <typename CallbackType>
+    Strings getChildrenWatch(
+        const std::string & path,
+        Coordination::Stat * stat,
+        CallbackType watch_callback,
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    {
+        return access("getChildrenWatch", path, [&]() { return keeper->getChildrenWatch(path, stat, watch_callback, list_request_type); });
+    }
+
     zk::FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {})
     {
-        return access("asyncExists", path, [&]() { return keeper->asyncExists(path, watch_callback); });
+        /// TODO: Support injection in promises
+        return keeper->asyncExists(path, watch_callback);
     }
 
     zk::FutureGet asyncTryGet(const std::string & path)
     {
-        return access("asyncTryGet", path, [&]() { return keeper->asyncTryGet(path); });
+        /// TODO: Support injection in promises
+        return keeper->asyncTryGet(path);
     }
 
     bool tryGet(
@@ -150,6 +187,16 @@ public:
         Coordination::Error * code = nullptr)
     {
         return access("tryGet", path, [&]() { return keeper->tryGet(path, res, stat, watch, code); });
+    }
+
+    bool tryGetWatch(
+        const std::string & path,
+        std::string & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallback watch_callback,
+        Coordination::Error * code = nullptr)
+    {
+        return access("tryGetWatch", path, [&]() { return keeper->tryGetWatch(path, res, stat, watch_callback, code); });
     }
 
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
@@ -215,14 +262,35 @@ public:
         return error;
     }
 
+    zk::FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops)
+    {
+        /// TODO: Support injection in promises
+        return keeper->asyncTryMultiNoThrow(ops);
+    }
+
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
         return access("get", path, [&]() { return keeper->get(path, stat, watch); });
     }
 
-    zkutil::ZooKeeper::MultiGetResponse get(const std::vector<std::string> & paths)
+    zk::MultiGetResponse get(const std::vector<std::string> & paths)
     {
         return access("get", !paths.empty() ? paths.front() : "", [&]() { return keeper->get(paths); });
+    }
+
+    zk::MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
+    {
+        return access("tryGet", !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGet(paths); });
+    }
+
+    void set(const String & path, const String & data, int32_t version = -1, Coordination::Stat * stat = nullptr)
+    {
+        return access("set", path, [&]() { return keeper->set(path, data, version, stat); });
+    }
+
+    void remove(const String & path, int32_t version = -1)
+    {
+        return access("remove", path, [&]() { return keeper->remove(path, version); });
     }
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
@@ -313,6 +381,12 @@ public:
         throw zkutil::KeeperException::fromPath(code, path);
     }
 
+    zk::FutureCreate asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode)
+    {
+        /// TODO: Support injection in promises
+        return keeper->asyncTryCreateNoThrow(path, data, mode);
+    }
+
     Coordination::Responses multi(const Coordination::Requests & requests)
     {
         constexpr auto method = "multi";
@@ -331,6 +405,11 @@ public:
         return result;
     }
 
+    void createOrUpdate(const std::string & path, const std::string & data, int32_t mode)
+    {
+        access("createOrUpdate", path, [&]() { return keeper->createOrUpdate(path, data, mode); });
+    }
+
     void createAncestors(const std::string & path)
     {
         access("createAncestors", path, [&]() { return keeper->createAncestors(path); });
@@ -341,9 +420,43 @@ public:
         return access("tryRemove", path, [&]() { return keeper->tryRemove(path, version); });
     }
 
+    zk::FutureRemove asyncTryRemove(const std::string & path, int32_t version = -1)
+    {
+        /// TODO: Support injection in promises
+        return keeper->asyncTryRemove(path, version);
+    }
+
+    zk::FutureRemove asyncTryRemoveNoThrow(const std::string & path, int32_t version = -1)
+    {
+        /// TODO: Support injection in promises
+        return keeper->asyncTryRemoveNoThrow(path, version);
+    }
+
     void removeRecursive(const std::string & path)
     {
         return access("removeRecursive", path, [&]() { return keeper->removeRecursive(path); });
+    }
+
+    void tryRemoveRecursive(const std::string & path)
+    {
+        return access("tryRemoveRecursive", path, [&]() { return keeper->tryRemoveRecursive(path); });
+    }
+
+    void removeChildren(const std::string & path)
+    {
+        return access("removeChildren", path, [&]() { return keeper->removeChildren(path); });
+    }
+
+    bool tryRemoveChildrenRecursive(
+        const std::string & path, bool probably_flat = false, zkutil::RemoveException keep_child = zkutil::RemoveException{})
+    {
+        return access(
+            "tryRemoveChildrenRecursive", path, [&]() { return keeper->tryRemoveChildrenRecursive(path, probably_flat, keep_child); });
+    }
+
+    bool waitForDisappear(const std::string & path, const zk::WaitCondition & condition = {})
+    {
+        return access("waitForDisappear", path, [&]() { return keeper->waitForDisappear(path, condition); });
     }
 
     std::string sync(const std::string & path)
@@ -359,6 +472,14 @@ public:
     void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
     {
         return access("checkExistsAndGetCreateAncestorsOps", path, [&]() { return keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
+    }
+
+    void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value)
+    {
+        return access<>(
+            "deleteEphemeralNodeIfContentMatches",
+            path,
+            [&]() { return keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
     }
 
     void deleteEphemeralNodeIfContentMatchesNoFailureInjection(const std::string & path, const std::string & fast_delete_if_equal_value)

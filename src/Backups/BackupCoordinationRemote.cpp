@@ -5,14 +5,15 @@
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationStage.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/escapeForFileName.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Common/escapeForFileName.h>
 
 
 namespace DB

@@ -1,6 +1,7 @@
+#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 #include <base/types.h>
 #include <base/sort.h>
@@ -114,7 +115,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 
     LOG_DEBUG(storage.log, "Updating strategy picker state");
 
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
     auto all_replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
 
     ::sort(all_replicas.begin(), all_replicas.end());

@@ -1,8 +1,9 @@
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 #include <random>
 #include <unordered_set>
@@ -196,7 +197,7 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
 
 size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
 {
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
     auto storage_settings = storage.getSettings();
 
     Coordination::Stat stat;
@@ -384,9 +385,11 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
 }
 
 
-void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map<String, UInt32> & host_versions_lost_replicas,
-                                                        const std::unordered_map<String, String> & log_pointers_candidate_lost_replicas,
-                                                        size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper)
+void ReplicatedMergeTreeCleanupThread::markLostReplicas(
+    const std::unordered_map<String, UInt32> & host_versions_lost_replicas,
+    const std::unordered_map<String, String> & log_pointers_candidate_lost_replicas,
+    size_t replicas_count,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     Strings candidate_lost_replicas;
     std::vector<Coordination::Requests> requests;
@@ -438,7 +441,7 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 
 size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size, NodeCTimeAndVersionCache & cached_block_stats)
 {
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
 
     std::vector<NodeWithStat> timed_blocks;
     getBlocksSortedByTime(blocks_dir_name, *zookeeper, timed_blocks, cached_block_stats);
@@ -505,7 +508,11 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
 }
 
 
-void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & blocks_dir_name, zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks, NodeCTimeAndVersionCache & cached_block_stats)
+void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(
+    const String & blocks_dir_name,
+    ZooKeeperWithFaultInjection & zookeeper,
+    std::vector<NodeWithStat> & timed_blocks,
+    NodeCTimeAndVersionCache & cached_block_stats)
 {
     timed_blocks.clear();
 
@@ -583,7 +590,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldMutations()
         return 0;
     }
 
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
 
     Coordination::Stat replicas_stat;
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &replicas_stat);

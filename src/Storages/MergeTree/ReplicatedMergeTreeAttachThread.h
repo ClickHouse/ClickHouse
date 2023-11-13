@@ -9,6 +9,9 @@ namespace DB
 
 class StorageReplicatedMergeTree;
 
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
+
 // Attach table to the existing data.
 // Initialize the table by creating all the necessary nodes and do the required checks.
 // Initialization is repeated if an operation fails because of a ZK request or connection loss.
@@ -27,7 +30,7 @@ public:
 
     void setSkipSanityChecks(bool skip_sanity_checks_);
 
-    static void checkHasReplicaMetadataInZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path);
+    static void checkHasReplicaMetadataInZooKeeper(const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & replica_path);
 
 private:
     StorageReplicatedMergeTree & storage;

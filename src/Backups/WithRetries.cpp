@@ -1,5 +1,6 @@
 #include <mutex>
 #include <Backups/WithRetries.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {

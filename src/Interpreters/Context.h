@@ -177,6 +177,9 @@ struct BackgroundTaskSchedulingSettings;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
+
 class AsynchronousInsertQueue;
 
 /// Callback for external tables initializer
@@ -916,6 +919,9 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
+
+    /// Same as getZooKeeper() but returns a keeper that can introduce faults before and after the operation
+    ZooKeeperWithFaultInjectionPtr getFaultyZooKeeper(const String & name, Poco::Logger * logger, bool) const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true

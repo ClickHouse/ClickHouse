@@ -1,7 +1,8 @@
-#include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 #include <unordered_set>
 
@@ -32,7 +33,7 @@ struct AsyncBlockIDsCache<TStorage>::Cache : public std::unordered_set<String>
 template <typename TStorage>
 std::vector<String> AsyncBlockIDsCache<TStorage>::getChildren()
 {
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
 
     auto watch_callback = [last_time = this->last_updatetime.load()
                            , my_update_min_interval = this->update_min_interval

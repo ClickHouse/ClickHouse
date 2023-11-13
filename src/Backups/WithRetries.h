@@ -2,10 +2,12 @@
 
 #include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {
+
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
 /// In backups every request to [Zoo]Keeper should be retryable
 /// and this tiny class encapsulates all the machinery for make it possible -
@@ -14,7 +16,7 @@ namespace DB
 class WithRetries
 {
 public:
-    using FaultyKeeper = Coordination::ZooKeeperWithFaultInjection::Ptr;
+    using FaultyKeeper = ZooKeeperWithFaultInjectionPtr;
     using RenewerCallback = std::function<void(FaultyKeeper &)>;
 
     struct KeeperSettings

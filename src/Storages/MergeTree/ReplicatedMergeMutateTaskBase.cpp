@@ -1,8 +1,9 @@
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 
 namespace DB
@@ -140,7 +141,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
     {
         try
         {
-            storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
+            storage.queue.removeProcessedEntry(storage.getFaultyZooKeeper(), selected_entry->log_entry);
             state = State::SUCCESS;
         }
         catch (...)
@@ -238,7 +239,7 @@ ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTask
         existing_part = storage.getActiveContainingPart(entry.new_part_name);
 
     /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-    if (existing_part && storage.getZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / existing_part->name))
+    if (existing_part && storage.getFaultyZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / existing_part->name))
     {
         LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
 

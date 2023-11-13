@@ -1,13 +1,14 @@
-#include <IO/Operators.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <Interpreters/Context.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Common/randomSeed.h>
 
 
 namespace CurrentMetrics
@@ -92,7 +93,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 bool ReplicatedMergeTreeRestartingThread::runImpl()
 {
-    if (!storage.is_readonly && !storage.getZooKeeper()->expired())
+    if (!storage.is_readonly && !storage.getFaultyZooKeeper()->expired())
         return true;
 
     if (first_time)
@@ -104,7 +105,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     {
         LOG_WARNING(log, "Table was in readonly mode. Will try to activate it.");
     }
-    else if (storage.getZooKeeper()->expired())
+    else if (storage.getFaultyZooKeeper()->expired())
     {
         LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
         partialShutdown();
@@ -160,7 +161,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         removeFailedQuorumParts();
         activateReplica();
 
-        const auto & zookeeper = storage.getZooKeeper();
+        const auto & zookeeper = storage.getFaultyZooKeeper();
         const auto storage_settings = storage.getSettings();
 
         storage.cloneReplicaIfNeeded(zookeeper);
@@ -221,7 +222,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
 void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
 {
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
 
     Strings failed_parts;
     if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != Coordination::Error::ZOK)
@@ -247,7 +248,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
 
 void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
 {
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
 
     String quorum_str;
     if (zookeeper->tryGet(fs::path(storage.zookeeper_path) / "quorum" / "status", quorum_str))
@@ -285,7 +286,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
 
 void ReplicatedMergeTreeRestartingThread::activateReplica()
 {
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
 
     /// How other replicas can access this one.
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
@@ -323,7 +324,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
     /// `current_zookeeper` lives for the lifetime of `replica_is_active_node`,
     ///  since before changing `current_zookeeper`, `replica_is_active_node` object is destroyed in `partialShutdown` method.
-    storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.current_zookeeper);
+    storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.current_zookeeper->getKeeper());
 }
 
 

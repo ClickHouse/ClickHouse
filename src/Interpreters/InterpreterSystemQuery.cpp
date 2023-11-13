@@ -9,6 +9,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -880,7 +881,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             }
         }
 
-        auto zookeeper = getContext()->getZooKeeper();
+        auto zookeeper = getContext()->getFaultyZooKeeper("DropReplica", log, /* is_replica */ false);
 
         bool looks_like_table_path = zookeeper->exists(query.replica_zk_path + "/replicas") ||
                                      zookeeper->exists(query.replica_zk_path + "/dropped");

@@ -1,12 +1,14 @@
 #pragma once
 
-#include <vector>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/CancellationCode.h>
+
+#include <memory>
+#include <vector>
 
 namespace DB
 {
@@ -17,6 +19,8 @@ namespace ErrorCodes
 }
 
 class StorageReplicatedMergeTree;
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
 /**
  * Cross shard part movement workflow orchestration.
@@ -166,10 +170,10 @@ public:
 private:
     void run();
     bool step();
-    Entry stepEntry(Entry entry, zkutil::ZooKeeperPtr zk);
+    Entry stepEntry(Entry entry, ZooKeeperWithFaultInjectionPtr zk);
 
     Entry getEntryByUUID(const UUID & task_uuid);
-    void removePins(const Entry & entry, zkutil::ZooKeeperPtr zk);
+    void removePins(const Entry & entry, ZooKeeperWithFaultInjectionPtr zk);
     void syncStateFromZK();
 
     StorageReplicatedMergeTree & storage;

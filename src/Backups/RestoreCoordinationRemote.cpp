@@ -1,11 +1,12 @@
 #include <Backups/BackupCoordinationRemote.h>
 #include <Backups/BackupCoordinationStage.h>
-#include <Backups/RestoreCoordinationRemote.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Backups/RestoreCoordinationRemote.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
-#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/escapeForFileName.h>
 
 

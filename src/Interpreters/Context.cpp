@@ -83,6 +83,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
@@ -2924,6 +2925,19 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     }
 
     return shared->zookeeper;
+}
+
+ZooKeeperWithFaultInjectionPtr Context::getFaultyZooKeeper(const String & name, Poco::Logger * logger, bool) const
+{
+    zkutil::ZooKeeperPtr keeper = getZooKeeper();
+
+    /// Disable faults until we can introduce retries or different settings per query/operation type
+    return ZooKeeperWithFaultInjection::createInstance(
+        0, // is_backup ? settings.backup_restore_keeper_fault_injection_probability : settings.insert_keeper_fault_injection_probability,
+        0, // is_backup ? settings.backup_restore_keeper_fault_injection_seed : settings.insert_keeper_fault_injection_seed,
+        keeper,
+        name,
+        logger);
 }
 
 namespace

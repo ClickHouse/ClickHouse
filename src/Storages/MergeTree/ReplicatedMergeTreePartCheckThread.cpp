@@ -1,9 +1,10 @@
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
-#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ThreadFuzzer.h>
-#include <Interpreters/Context.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 
 namespace ProfileEvents
@@ -134,7 +135,7 @@ size_t ReplicatedMergeTreePartCheckThread::size() const
 
 bool ReplicatedMergeTreePartCheckThread::searchForMissingPartOnOtherReplicas(const String & part_name) const
 {
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
 
     /// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
     auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
@@ -253,7 +254,7 @@ bool ReplicatedMergeTreePartCheckThread::searchForMissingPartOnOtherReplicas(con
 
 std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLocalPart(const String & part_name)
 {
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
     String part_path = storage.replica_path + "/parts/" + part_name;
 
     /// It's important to check zookeeper first and after that check local storage,
@@ -325,7 +326,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
     }
 
     time_t current_time = time(nullptr);
-    auto zookeeper = storage.getZooKeeper();
+    auto zookeeper = storage.getFaultyZooKeeper();
     auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
 
     auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
@@ -517,7 +518,7 @@ bool ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part
 
     ThreadFuzzer::maybeInjectSleep();
 
-    if (storage.createEmptyPartInsteadOfLost(storage.getZooKeeper(), part_name))
+    if (storage.createEmptyPartInsteadOfLost(part_name))
     {
         /** This situation is possible if on all the replicas where the part was, it deteriorated.
             * For example, a replica that has just written it has power turned off and the data has not been written from cache to disk.

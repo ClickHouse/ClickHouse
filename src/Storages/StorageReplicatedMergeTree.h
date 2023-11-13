@@ -1,11 +1,16 @@
 #pragma once
 
-#include <base/UUID.h>
 #include <atomic>
-#include <pcg_random.hpp>
+#include <Core/BackgroundSchedulePool.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/PartLog.h>
+#include <Parsers/SyncReplicaMode.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/IStorageCluster.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
@@ -27,18 +32,12 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/RenamingRestrictions.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/PartLog.h>
-#include <Common/randomSeed.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/Throttler.h>
-#include <Common/EventNotifier.h>
+#include <base/UUID.h>
 #include <base/defines.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <QueryPipeline/Pipe.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Parsers/SyncReplicaMode.h>
+#include <pcg_random.hpp>
+#include <Common/EventNotifier.h>
+#include <Common/Throttler.h>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -255,14 +254,22 @@ public:
 
     /** Remove a specific replica from zookeeper.
      */
-    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+    static void dropReplica(
+        ZooKeeperWithFaultInjectionPtr zookeeper,
+        const String & zookeeper_path,
+        const String & replica,
+        Poco::Logger * logger,
+        MergeTreeSettingsPtr table_settings = nullptr,
+        std::optional<bool> * has_metadata_out = nullptr);
 
     void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
-    static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
-                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
+    static bool removeTableNodesFromZooKeeper(
+        ZooKeeperWithFaultInjectionPtr zookeeper,
+        const String & zookeeper_path,
+        const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock,
+        Poco::Logger * logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
@@ -338,7 +345,7 @@ public:
         return replicated_sends_throttler;
     }
 
-    bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
+    bool createEmptyPartInsteadOfLost(const String & lost_part_name);
 
     // Return default or custom zookeeper name for table
     const String & getZooKeeperName() const { return zookeeper_name; }
@@ -358,8 +365,15 @@ public:
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
 
-    static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-        const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
+    static bool removeSharedDetachedPart(
+        DiskPtr disk,
+        const String & path,
+        const String & part_name,
+        const String & table_uuid,
+        const String & replica_name,
+        const String & zookeeper_path,
+        const ContextPtr & local_context,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     bool canUseZeroCopyReplication() const;
 
@@ -380,7 +394,7 @@ private:
 
     /// Delete old parts from disk and from ZooKeeper. Returns the number of removed parts
     size_t clearOldPartsAndRemoveFromZK();
-    void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
+    void clearOldPartsAndRemoveFromZKImpl(ZooKeeperWithFaultInjectionPtr zookeeper, DataPartsVector && parts);
 
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;
@@ -406,18 +420,18 @@ private:
 
     using MergeTreeData::MutableDataPartPtr;
 
-    zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
+    ZooKeeperWithFaultInjectionPtr current_zookeeper; /// Use only the methods below.
     mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
 
-    zkutil::ZooKeeperPtr tryGetZooKeeper() const;
-    zkutil::ZooKeeperPtr getZooKeeper() const;
+    ZooKeeperWithFaultInjectionPtr tryGetFaultyZooKeeper() const;
+    ZooKeeperWithFaultInjectionPtr getFaultyZooKeeper() const;
     /// Get connection from global context and reconnect if needed.
     /// NOTE: use it only when table is shut down, in all other cases
     /// use getZooKeeper() because it is managed by restarting thread
     /// which guarantees that we have only one connected object
     /// for table.
-    zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
-    zkutil::ZooKeeperPtr getZooKeeperAndAssertNotReadonly() const;
+    ZooKeeperWithFaultInjectionPtr getFaultyZooKeeperIfTableShutDown() const;
+    ZooKeeperWithFaultInjectionPtr getFaultyZooKeeperAndAssertNotReadonly() const;
     void setZooKeeper();
     String getEndpointName() const;
 
@@ -659,8 +673,8 @@ private:
     void getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
-    void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
-                                  NameSet * parts_should_be_retried = nullptr);
+    void removePartsFromZooKeeper(
+        ZooKeeperWithFaultInjectionPtr & zookeeper, const Strings & part_names, NameSet * parts_should_be_retried = nullptr);
 
     /// Remove parts from ZooKeeper, throw exception if unable to do so after max_retries.
     void removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
@@ -709,13 +723,13 @@ private:
     /** Clone data from another replica.
       * If replica can not be cloned throw Exception.
       */
-    void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
+    void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     /// Repairs metadata of staled replica. Called from cloneReplica(...)
-    void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
+    void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     /// Clone replica if it is lost.
-    void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
+    void cloneReplicaIfNeeded(ZooKeeperWithFaultInjectionPtr zookeeper);
 
 
     ReplicatedMergeTreeQueue::SelectedEntryPtr selectQueueEntry();
@@ -744,7 +758,7 @@ private:
     enum class CreateMergeEntryResult { Ok, MissingPart, LogUpdated, Other };
 
     CreateMergeEntryResult createLogEntryToMergeParts(
-        zkutil::ZooKeeperPtr & zookeeper,
+        ZooKeeperWithFaultInjectionPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
         const UUID & merged_part_uuid,
@@ -770,7 +784,8 @@ private:
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
-    static String findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_);
+    static String
+    findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, ZooKeeperWithFaultInjectionPtr zookeeper_);
 
     bool checkReplicaHavePart(const String & replica, const String & part_name);
     bool checkIfDetachedPartExists(const String & part_name);
@@ -783,7 +798,12 @@ private:
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
-    static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
+    static std::set<MergeTreePartInfo> findReplicaUniqueParts(
+        const String & replica_name_,
+        const String & zookeeper_path_,
+        MergeTreeDataFormatVersion format_version_,
+        ZooKeeperWithFaultInjectionPtr zookeeper_,
+        Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.
@@ -797,7 +817,7 @@ private:
         const String & source_replica_path,
         bool to_detached,
         size_t quorum,
-        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
+        ZooKeeperWithFaultInjectionPtr zookeeper_ = nullptr,
         bool try_fetch_shared = true);
 
     /** Download the specified part from the specified replica.
@@ -830,15 +850,11 @@ private:
     /// Creates new block number if block with such block_id does not exist
     /// If zookeeper_path_prefix specified then allocate block number on this path
     /// (can be used if we want to allocate blocks on other replicas)
-    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
-        const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
-        const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
-
-    template<typename T>
+    template <bool async_insert = false, typename T = std::conditional_t<async_insert, std::vector<String>, String>>
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const T & zookeeper_block_id_path,
+        const T & zookeeper_block_id_path = {},
         const String & zookeeper_path_prefix = "") const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
@@ -880,31 +896,50 @@ private:
     bool existsNodeCached(const ZooKeeperWithFaultInjectionPtr & zookeeper, const std::string & path) const;
 
     /// Cancels INSERTs in the block range by removing ephemeral block numbers
-    void clearLockedBlockNumbersInPartition(zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
+    void clearLockedBlockNumbersInPartition(
+        ZooKeeperWithFaultInjection & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
 
-    void getClearBlocksInPartitionOps(Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
+    void getClearBlocksInPartitionOps(
+        Coordination::Requests & ops,
+        ZooKeeperWithFaultInjection & zookeeper,
+        const String & partition_id,
+        Int64 min_block_num,
+        Int64 max_block_num);
 
-    void getClearBlocksInPartitionOpsImpl(Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num, const String & blocks_dir_name);
+    void getClearBlocksInPartitionOpsImpl(
+        Coordination::Requests & ops,
+        ZooKeeperWithFaultInjection & zookeeper,
+        const String & partition_id,
+        Int64 min_block_num,
+        Int64 max_block_num,
+        const String & blocks_dir_name);
     /// Remove block IDs from `blocks/` in ZooKeeper for the given partition ID in the given block number range.
-    void clearBlocksInPartition(
-        zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
+    void
+    clearBlocksInPartition(ZooKeeperWithFaultInjection & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
 
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
     bool addOpsToDropAllPartsInPartition(
-        zkutil::ZooKeeper & zookeeper, const String & partition_id, bool detach,
-        Coordination::Requests & ops, std::vector<LogEntryPtr> & entries,
+        ZooKeeperWithFaultInjection & zookeeper,
+        const String & partition_id,
+        bool detach,
+        Coordination::Requests & ops,
+        std::vector<LogEntryPtr> & entries,
         std::vector<EphemeralLockInZooKeeper> & delimiting_block_locks,
         std::vector<size_t> & log_entry_ops_idx);
     void dropAllPartsInPartitions(
-        zkutil::ZooKeeper & zookeeper, const Strings & partition_ids, std::vector<LogEntryPtr> & entries, ContextPtr query_context, bool detach);
+        ZooKeeperWithFaultInjection & zookeeper,
+        const Strings & partition_ids,
+        std::vector<LogEntryPtr> & entries,
+        ContextPtr query_context,
+        bool detach);
 
-    LogEntryPtr dropAllPartsInPartition(
-        zkutil::ZooKeeper & zookeeper, const String & partition_id, ContextPtr query_context, bool detach);
+    LogEntryPtr
+    dropAllPartsInPartition(ZooKeeperWithFaultInjection & zookeeper, const String & partition_id, ContextPtr query_context, bool detach);
 
 
-    void dropAllPartitionsImpl(const zkutil::ZooKeeperPtr & zookeeper, bool detach, ContextPtr query_context);
+    void dropAllPartitionsImpl(const ZooKeeperWithFaultInjectionPtr & zookeeper, bool detach, ContextPtr query_context);
 
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr query_context) override;
@@ -941,7 +976,7 @@ private:
     ///
     /// NOTE: don't rely on dropPart if you 100% need to remove non-empty part
     /// and don't use any explicit locking mechanism for merges.
-    bool dropPartImpl(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
+    bool dropPartImpl(ZooKeeperWithFaultInjectionPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
@@ -961,7 +996,7 @@ private:
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
-        const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
+        const MutationCommands & commands, ContextPtr query_context, const ZooKeeperWithFaultInjectionPtr & zookeeper) const;
 
     static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
         const String & part_name, const String & zookeeper_path_old);

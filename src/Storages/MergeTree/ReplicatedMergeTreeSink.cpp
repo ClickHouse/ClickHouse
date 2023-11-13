@@ -165,7 +165,7 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(
     zk_retries_ctl.retryLoop(
         [&]()
         {
-            zookeeper->setKeeper(storage.getZooKeeper());
+            zookeeper->setKeeper(context->getZooKeeper());
 
             /// Stop retries if in shutdown, note that we need to check
             /// shutdown_prepared_called, not shutdown_called, since the table
@@ -261,7 +261,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
         settings.insert_keeper_fault_injection_probability,
         settings.insert_keeper_fault_injection_seed,
-        storage.getZooKeeper(),
+        context->getZooKeeper(),
         "ReplicatedMergeTreeSink::consume",
         log);
 
@@ -583,7 +583,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     retries_ctl.retryLoop([&]()
     {
-        zookeeper->setKeeper(storage.getZooKeeper());
+        zookeeper->setKeeper(storage.getFaultyZooKeeper()->getKeeper());
         if (storage.is_readonly)
         {
             /// stop retries if in shutdown
@@ -623,7 +623,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else if (deduplicate_block)
             block_id_path = storage.zookeeper_path + "/blocks/" + block_id;
-        auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
+        auto block_number_lock = storage.allocateBlockNumber<async_insert>(part->info.partition_id, zookeeper, block_id_path);
         ThreadFuzzer::maybeInjectSleep();
 
         /// Prepare transaction to ZooKeeper
@@ -945,7 +945,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             bool node_exists = false;
             new_retry_controller.retryLoop([&]
             {
-                node_exists = storage.getZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / part->name);
+                node_exists = storage.getFaultyZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / part->name);
             });
 
             if (node_exists)
@@ -1052,7 +1052,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     },
     [&]()
     {
-        zookeeper->setKeeper(storage.getZooKeeper());
+        zookeeper->setKeeper(context->getZooKeeper());
         zookeeper->cleanupEphemeralNodes();
     });
 
@@ -1063,7 +1063,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     {
         retries_ctl.retryLoop([&]()
         {
-            zookeeper->setKeeper(storage.getZooKeeper());
+            zookeeper->setKeeper(context->getZooKeeper());
             if (is_already_existing_part)
             {
                 /// We get duplicate part without fetch
@@ -1095,11 +1095,11 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
     const auto & settings = context->getSettingsRef();
     ZooKeeperRetriesControl retries_ctl("ReplicatedMergeTreeSink::onFinish",log, ZooKeeperRetriesInfo::fromInsertSettings(settings), context->getProcessListElementSafe());
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
-            settings.insert_keeper_fault_injection_probability,
-            settings.insert_keeper_fault_injection_seed,
-            storage.getZooKeeper(),
-            "ReplicatedMergeTreeSink::onFinish",
-            log);
+        settings.insert_keeper_fault_injection_probability,
+        settings.insert_keeper_fault_injection_seed,
+        context->getZooKeeper(),
+        "ReplicatedMergeTreeSink::onFinish",
+        log);
     finishDelayedChunk(zookeeper, retries_ctl);
 }
 
