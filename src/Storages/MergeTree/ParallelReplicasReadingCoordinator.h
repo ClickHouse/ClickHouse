@@ -6,10 +6,10 @@
 
 namespace DB
 {
+struct Progress;
+using ProgressCallback = std::function<void(const Progress & progress)>;
 
 /// The main class to spread mark ranges across replicas dynamically
-/// The reason why it uses pimpl - this header file is included in
-/// multiple other files like Context or RemoteQueryExecutor
 class ParallelReplicasReadingCoordinator
 {
 public:
@@ -27,6 +27,9 @@ public:
     /// "pending" state waiting for the unavailable replica to send the announcement.
     void markReplicaAsUnavailable(size_t replica_number);
 
+    /// needed to report total rows to read
+    void setProgressCallback(ProgressCallback callback);
+
 private:
     void initialize();
 
@@ -35,6 +38,7 @@ private:
     CoordinationMode mode{CoordinationMode::Default};
     std::atomic<bool> initialized{false};
     std::unique_ptr<ImplInterface> pimpl;
+    ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

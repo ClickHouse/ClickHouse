@@ -10,8 +10,6 @@
 #include <vector>
 #include <string_view>
 #include <cstring>
-#include <base/types.h>
-#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -106,7 +104,6 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 namespace
@@ -380,10 +377,7 @@ void TCPHandler::runImpl()
             extractConnectionSettingsFromContext(query_context);
 
             /// Sync timeouts on client and server during current query to avoid dangling queries on server
-            /// NOTE: We use send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
-            ///  because send_timeout is client-side setting which has opposite meaning on the server side.
-            /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
-            state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), receive_timeout, send_timeout);
+            state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), send_timeout, receive_timeout);
 
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
@@ -502,7 +496,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, false, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, QueryFlags{}, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -965,14 +959,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
     {
-        const auto & settings = query_context->getSettingsRef();
-        bool has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
-        if (has_partial_result_setting && !settings.allow_experimental_partial_result)
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
-                "Partial results are not allowed by default, it's an experimental feature. "
-                "Setting 'allow_experimental_partial_result' must be enabled to use 'partial_result_update_duration_ms'");
-
-        PullingAsyncPipelineExecutor executor(pipeline, has_partial_result_setting);
+        PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         Block block;
