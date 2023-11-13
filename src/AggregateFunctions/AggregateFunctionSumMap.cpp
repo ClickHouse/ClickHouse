@@ -222,18 +222,6 @@ public:
                 if (!keepKey(key))
                     continue;
 
-                /// Compatibility with previous versions.
-                if (value.getType() == Field::Types::Decimal32)
-                {
-                    auto source = value.get<DecimalField<Decimal32>>();
-                    value = DecimalField<Decimal128>(source.getValue(), source.getScale());
-                }
-                else if (value.getType() == Field::Types::Decimal64)
-                {
-                    auto source = value.get<DecimalField<Decimal64>>();
-                    value = DecimalField<Decimal128>(source.getValue(), source.getScale());
-                }
-
                 auto [it, inserted] = merged_maps.emplace(key, Array());
 
                 if (inserted)
@@ -288,12 +276,32 @@ public:
         {
             case 0:
             {
-                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
+                serialize = [&](size_t col_idx, const Array & values)
+                {
+                    values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {});
+                };
                 break;
             }
             case 1:
             {
-                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
+                serialize = [&](size_t col_idx, const Array & values)
+                {
+                    Field value = values[col_idx];
+
+                    /// Compatibility with previous versions.
+                    if (value.getType() == Field::Types::Decimal32)
+                    {
+                        auto source = value.get<DecimalField<Decimal32>>();
+                        value = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                    }
+                    else if (value.getType() == Field::Types::Decimal64)
+                    {
+                        auto source = value.get<DecimalField<Decimal64>>();
+                        value = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                    }
+
+                    promoted_values_serializations[col_idx]->serializeBinary(value, buf, {});
+                };
                 break;
             }
             default:
@@ -322,12 +330,34 @@ public:
         {
             case 0:
             {
-                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
+                deserialize = [&](size_t col_idx, Array & values)
+                {
+                    values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {});
+                };
                 break;
             }
             case 1:
             {
-                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
+                deserialize = [&](size_t col_idx, Array & values)
+                {
+                    Field & value = values[col_idx];
+                    promoted_values_serializations[col_idx]->deserializeBinary(value, buf, {});
+
+                    /// Compatibility with previous versions.
+                    if (value.getType() == Field::Types::Decimal128)
+                    {
+                        auto source = value.get<DecimalField<Decimal128>>();
+                        WhichDataType value_type(values_types[col_idx]);
+                        if (value_type.isDecimal32())
+                        {
+                            value = DecimalField<Decimal32>(source.getValue(), source.getScale());
+                        }
+                        else if (value_type.isDecimal64())
+                        {
+                            value = DecimalField<Decimal64>(source.getValue(), source.getScale());
+                        }
+                    }
+                };
                 break;
             }
             default:
