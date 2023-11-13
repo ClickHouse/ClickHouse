@@ -1,7 +1,4 @@
 <clickhouse>
+    <!-- Keep the number of threads consistent across queries in the test -->
     <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
-    <query_log>
-      <database>system</database>
-      <table>query_log</table>
-    </query_log>
 </clickhouse>
