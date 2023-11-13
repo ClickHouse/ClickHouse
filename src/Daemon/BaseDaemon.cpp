@@ -485,10 +485,8 @@ private:
         {
             SentryWriter::onFault(sig, error_message, stack_trace);
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
             /// Advice the user to send it manually.
-            if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
+            if (std::string_view(VERSION_OFFICIAL).contains("official build"))
             {
                 const auto & date_lut = DateLUT::instance();
 
@@ -506,8 +504,6 @@ private:
             {
                 LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
             }
-#pragma clang diagnostic pop
-
         }
 
         /// ClickHouse Keeper does not link to some part of Settings.

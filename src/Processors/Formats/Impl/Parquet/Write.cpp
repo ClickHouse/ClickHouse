@@ -916,7 +916,7 @@ void writeFileFooter(std::vector<parq::RowGroup> row_groups, SchemaElements sche
     meta.row_groups = std::move(row_groups);
     for (auto & r : meta.row_groups)
         meta.num_rows += r.num_rows;
-    meta.__set_created_by(VERSION_NAME " " VERSION_DESCRIBE);
+    meta.__set_created_by(std::string(VERSION_NAME) + " " + VERSION_DESCRIBE);
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {
