@@ -181,7 +181,8 @@ then
     # Clean remote, to not have it stale
     git -C "$PERF_OUTPUT"/ch remote | xargs -n1 git -C "$PERF_OUTPUT"/ch remote remove
     # And clean all tags
-    git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d
+    echo "Deleting $(git -C "$PERF_OUTPUT"/ch tag | wc -l) tags"
+    git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d >/dev/null
     git -C "$PERF_OUTPUT"/ch reset --soft pr
     git -C "$PERF_OUTPUT"/ch log -5
     (
