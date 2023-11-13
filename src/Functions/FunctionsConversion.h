@@ -4159,6 +4159,61 @@ arguments, result_type, input_rows_count); \
         };
     }
 
+    template <typename EnumType>
+    WrapperType createEnumToStringWrapper() const
+    {
+        const char * function_name = cast_name;
+        return [function_name] (
+            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+        {
+            using ColumnEnumType = EnumType::ColumnType;
+
+            const auto & first_col = arguments.front().column.get();
+            const auto & first_type = arguments.front().type.get();
+
+            const ColumnEnumType * enum_col = typeid_cast<const ColumnEnumType *>(first_col);
+            const EnumType * enum_type = typeid_cast<const EnumType *>(first_type);
+
+            if (enum_col && nullable_col && nullable_col->size() != enum_col->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
+
+            if (enum_col && enum_type)
+            {
+                const auto size = enum_col->size();
+                const auto & enum_data = enum_col->getData();
+
+                auto res = res_type->createColumn();
+
+                if (nullable_col)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (!nullable_col->isNullAt(i))
+                        {
+                            const auto & value = enum_type->getNameForValue(enum_data[i]);
+                            res->insertData(value.data, value.size);
+                        }
+                        else
+                            res->insertDefault();
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        const auto & value = enum_type->getNameForValue(enum_data[i]);
+                        res->insertData(value.data, value.size);
+                    }
+                }
+
+                return res;
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
+                    first_col->getName(), function_name);
+        };
+    }
+
     static WrapperType createIdentityWrapper(const DataTypePtr &)
     {
         return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
@@ -4546,7 +4601,12 @@ arguments, result_type, input_rows_count); \
 
             if constexpr (WhichDataType(ToDataType::type_id).isStringOrFixedString())
             {
-                if (from_type->getCustomSerialization())
+                if constexpr (WhichDataType(FromDataType::type_id).isEnum())
+                {
+                    ret = createEnumToStringWrapper<FromDataType>();
+                    return true;
+                }
+                else if (from_type->getCustomSerialization())
                 {
                     ret = [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
                     {
