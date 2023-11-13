@@ -462,7 +462,7 @@ FROM input('size UInt64, file String')
 FORMAT Regexp
 SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
 """
-        binary_sizes_file = temp_path / "binary_sizes.txt"
+        binary_sizes_file = profiles_dir / "binary_sizes.txt"
 
         logging.info(
             "::notice ::Log Uploading binary sizes data, path: %s, size: %s, query: %s",
