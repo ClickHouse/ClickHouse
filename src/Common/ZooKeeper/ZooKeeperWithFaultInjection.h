@@ -168,7 +168,11 @@ public:
             {
                 responses.clear();
                 for (size_t i = 0; i < requests.size(); ++i)
-                    responses.emplace_back(std::make_shared<Coordination::ZooKeeperErrorResponse>());
+                {
+                    auto response = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                    response->error = Coordination::Error::ZOPERATIONTIMEOUT;
+                    responses.emplace_back(std::move(response));
+                }
             });
 
 
