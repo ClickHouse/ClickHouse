@@ -85,7 +85,6 @@ public:
                 if (!Coordination::isHardwareError(e.code))
                     throw;
 
-                total_failures++;
                 setKeeperError(std::current_exception(), e.code, e.message());
             }
             catch (...)
@@ -162,6 +161,7 @@ public:
         keeper_error.message = std::move(message);
         keeper_error.exception = exception;
         user_error = UserError{};
+        total_failures++;
     }
 
     template <typename... Args>
@@ -278,10 +278,11 @@ private:
         {
             LOG_DEBUG(
                 logger,
-                "ZooKeeperRetriesControl: {}: {}: retry_count={} timeout={}ms error={} message={}",
+                "ZooKeeperRetriesControl: {}: {}: retry_count={}/{} timeout={}ms error={} message={}",
                 name,
                 header,
                 current_iteration,
+                retries_info.max_retries,
                 current_backoff_ms,
                 keeper_error.code,
                 keeper_error.message);
@@ -290,10 +291,11 @@ private:
         {
             LOG_DEBUG(
                 logger,
-                "ZooKeeperRetriesControl: {}: {}: retry_count={} timeout={}ms error={} message={}",
+                "ZooKeeperRetriesControl: {}: {}: retry_count={}/{} timeout={}ms error={} message={}",
                 name,
                 header,
                 current_iteration,
+                retries_info.max_retries,
                 current_backoff_ms,
                 user_error.code,
                 user_error.message);

@@ -298,11 +298,6 @@ public:
         return access("exists", path, [&]() { return keeper->exists(path, stat, watch); });
     }
 
-    bool existsNoFailureInjection(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
-    {
-        return access<false, false, false>("exists", path, [&]() { return keeper->exists(path, stat, watch); });
-    }
-
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths)
     {
         return access("exists", !paths.empty() ? paths.front() : "", [&]() { return keeper->exists(paths); });
@@ -477,14 +472,6 @@ public:
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value)
     {
         return access<>(
-            "deleteEphemeralNodeIfContentMatches",
-            path,
-            [&]() { return keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
-    }
-
-    void deleteEphemeralNodeIfContentMatchesNoFailureInjection(const std::string & path, const std::string & fast_delete_if_equal_value)
-    {
-        return access<false, false, false>(
             "deleteEphemeralNodeIfContentMatches",
             path,
             [&]() { return keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
