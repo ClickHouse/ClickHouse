@@ -197,16 +197,16 @@ target_link_libraries(_orc PRIVATE
     ch_contrib::snappy
     ch_contrib::zlib
     ch_contrib::zstd)
-target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
+target_include_directories(_orc SYSTEM BEFORE PUBLIC
+    ${ORC_INCLUDE_DIR}
+    "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include")
 target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_SOURCE_SRC_DIR}
     ${ORC_SOURCE_WRAP_DIR}
     ${ORC_BUILD_SRC_DIR}
     ${ORC_ADDITION_SOURCE_DIR}
-    ${ARROW_SRC_DIR}
-    "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include"
-)
+    ${ARROW_SRC_DIR})
 
 
 # === arrow
