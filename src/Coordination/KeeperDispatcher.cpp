@@ -368,9 +368,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
 
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     String availability_zone;
     try
     {
@@ -462,7 +462,7 @@ void KeeperDispatcher::shutdown()
     try
     {
         {
-            if (keeper_context->shutdown_called.exchange(true))
+            if (!keeper_context || keeper_context->shutdown_called.exchange(true))
                 return;
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");

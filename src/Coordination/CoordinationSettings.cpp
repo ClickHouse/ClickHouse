@@ -1,4 +1,5 @@
 #include <Coordination/CoordinationSettings.h>
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <filesystem>
 #include <Coordination/Defines.h>

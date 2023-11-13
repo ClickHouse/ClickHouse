@@ -4,7 +4,6 @@
 #include "config.h"
 
 #include <chrono>
-#include <filesystem>
 #include <string>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
