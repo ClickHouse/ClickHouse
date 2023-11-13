@@ -7,9 +7,10 @@
 #include <base/getFQDNOrHostName.h>
 #include <unistd.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #include <format>
+
 
 namespace DB
 {

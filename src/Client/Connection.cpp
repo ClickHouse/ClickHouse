@@ -35,7 +35,7 @@
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config.h"
 
 #if USE_SSL

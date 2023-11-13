@@ -6,14 +6,13 @@
 #include <lz4.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <IO/WriteHelpers.h>
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if USE_SNAPPY
 #include <snappy.h>

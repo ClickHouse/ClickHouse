@@ -60,7 +60,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma clang diagnostic ignored "-Wunused-macros"
