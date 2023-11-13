@@ -445,6 +445,24 @@ void addRequestedPathAndFileVirtualsToChunk(
     }
 }
 
+ActionsDAGPtr splitFilterDagForAllowedInputs(const Block & header, const ActionsDAGPtr & filter_dag, ContextPtr context)
+{
+    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
+    for (const auto * input : filter_dag->getInputs())
+        if (header.has(input->result_name))
+            allowed_inputs.insert(input);
+
+    if (allowed_inputs.empty())
+        return {};
+
+    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
+    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
+    if (atoms.empty())
+        return {};
+
+    return ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
+}
+
 }
 
 }

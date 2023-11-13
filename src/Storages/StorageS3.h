@@ -102,9 +102,6 @@ public:
             const std::vector<String> & keys_,
             const String & bucket_,
             const S3Settings::RequestSettings & request_settings_,
-            ASTPtr query,
-            const NamesAndTypesList & virtual_columns,
-            ContextPtr context,
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
 
@@ -399,15 +396,6 @@ private:
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
-
-    static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
-        const Configuration & configuration,
-        bool distributed_processing,
-        ContextPtr local_context,
-        ASTPtr query,
-        const NamesAndTypesList & virtual_columns,
-        KeysWithInfo * read_keys = nullptr,
-        std::function<void(FileProgress)> progress_callback = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const Configuration & configuration,
