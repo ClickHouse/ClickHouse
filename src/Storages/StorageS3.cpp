@@ -128,36 +128,57 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, const Strings & paths)
+static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, const String & bucket, const Strings & keys)
 {
     Block virtual_columns_block;
+    fs::path bucket_path(bucket);
+
+    for (const auto & [column_name, column_type] : virtual_columns)
     {
-        for (const auto & column : virtual_columns)
-            virtual_columns_block.insert({column.type->createColumn(), column.type, column.name});
-
-        virtual_columns_block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-        for (size_t i = 0; i != paths.size(); ++i)
+        if (column_name == "_path")
         {
-            const auto & path = paths[i];
-            if (virtual_columns_block.has("_path"))
-                virtual_columns_block.getByName("_path").column->assumeMutableRef().insert(path);
-
-            if (virtual_columns_block.has("_file"))
+            auto column = column_type->createColumn();
+            for (const auto & key : keys)
+                column->insert((bucket_path / key).string());
+            virtual_columns_block.insert({std::move(column), column_type, column_name});
+        }
+        else if (column_name == "_file")
+        {
+            auto column = column_type->createColumn();
+            for (const auto & key : keys)
             {
-                auto pos = path.find_last_of('/');
-                String file;
+                auto pos = key.find_last_of('/');
                 if (pos != std::string::npos)
-                    file = path.substr(pos + 1);
+                    column->insert(key.substr(pos + 1));
                 else
-                    file = path;
-
-                virtual_columns_block.getByName("_file").column->assumeMutableRef().insert(file);
+                    column->insert(key);
             }
-
-            virtual_columns_block.getByName("_idx").column->assumeMutableRef().insert(i);
+            virtual_columns_block.insert({std::move(column), column_type, column_name});
+        }
+        else if (column_name == "_key")
+        {
+            auto column = column_type->createColumn();
+            for (const auto & key : keys)
+                column->insert(key);
+            virtual_columns_block.insert({std::move(column), column_type, column_name});
+        }
+        else
+        {
+            auto column = column_type->createColumn();
+            column->insertManyDefaults(keys.size());
+            virtual_columns_block.insert({std::move(column), column_type, column_name});
         }
     }
+
+    /// Column _key is mandatory and may not be in virtual_columns list
+    if (!virtual_columns_block.has("_key"))
+    {
+        auto column_type = std::make_shared<DataTypeString>();
+        auto column = column_type->createColumn(); for (const auto & key : keys)
+            column->insert(key);
+        virtual_columns_block.insert({std::move(column), column_type, "_key"});
+    }
+
     return virtual_columns_block;
 }
 
