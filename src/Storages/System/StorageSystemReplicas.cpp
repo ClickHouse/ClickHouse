@@ -28,6 +28,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 /// Allows to "deduplicate" getStatus() requests for the same table: if a request for a table is already in progress
 /// then the new request will return the same future as the previous one.
 class StatusRequestsPool
@@ -61,6 +66,10 @@ public:
     ~StatusRequestsPool()
     {
         thread_pool.wait();
+        /// Cancel unscheduled requests
+        for (auto & request : requests_to_schedule)
+            std::get<2>(request)->set_exception(std::make_exception_ptr(
+                DB::Exception(ErrorCodes::QUERY_WAS_CANCELLED, "StatusRequestsPool is destroyed")));
     }
 
     /// Make a new request or "attach" to an existing one.
