@@ -143,7 +143,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     source += sizeof(T);
 
     /// Again two cases:
-    /// 1) GCD is 0. This is "special" flag which signals what remaining data
+    /// 1) GCD is 0. This is "special" flag which signals that remaining data
     /// left unchanged due to unapplicability of the codec.
     /// 2) GCD is 1. Even if we proceed futher with the loop the resulting data will likely be the same.
     if unlikely(gcd_multiplier == 0 || gcd_multiplier == 1)
