@@ -96,7 +96,7 @@ jobs:
       runner_type: style-checker
       run_command: |
           cd "$REPO_COPY/tests/ci"
-          python3 style_check.py
+          python3 style_check.py --no-push
   CompatibilityCheckX86:
     needs: [BuilderDebRelease]
     uses: ./.github/workflows/reusable_test.yml
