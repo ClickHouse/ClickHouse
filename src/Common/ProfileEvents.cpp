@@ -546,6 +546,10 @@ The server successfully detected this situation and will download merged part fr
     M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
     M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
     \
+    M(BackupsOpenedForRead, "Number of backups opened for reading") \
+    M(BackupsOpenedForWrite, "Number of backups opened for writing") \
+    M(BackupReadMetadataMicroseconds, "Time spent reading backup metadata from .backup file") \
+    M(BackupWriteMetadataMicroseconds, "Time spent writing backup metadata to .backup file") \
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries") \
     M(BackupEntriesCollectorForTablesDataMicroseconds, "Time spent making backup entries for tables data") \
     M(BackupEntriesCollectorRunPostTasksMicroseconds, "Time spent running post tasks after making backup entries") \
