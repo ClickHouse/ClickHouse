@@ -422,7 +422,7 @@ void Client::connect()
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
-        UInt16 port = ConnectionParameters::getPortFromConfig(config());
+        UInt16 port = ConnectionParameters::getPortFromConfig(config(), host);
         hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
 
