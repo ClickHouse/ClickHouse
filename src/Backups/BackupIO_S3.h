@@ -29,9 +29,9 @@ public:
 
 private:
     const S3::URI s3_uri;
-    const std::shared_ptr<S3::Client> client;
-    S3Settings::RequestSettings request_settings;
     const DataSourceDescription data_source_description;
+    S3Settings s3_settings;
+    std::shared_ptr<S3::Client> client;
 };
 
 
@@ -57,10 +57,10 @@ private:
     void removeFilesBatch(const Strings & file_names);
 
     const S3::URI s3_uri;
-    const std::shared_ptr<S3::Client> client;
-    S3Settings::RequestSettings request_settings;
-    std::optional<bool> supports_batch_delete;
     const DataSourceDescription data_source_description;
+    S3Settings s3_settings;
+    std::shared_ptr<S3::Client> client;
+    std::optional<bool> supports_batch_delete;
 };
 
 }

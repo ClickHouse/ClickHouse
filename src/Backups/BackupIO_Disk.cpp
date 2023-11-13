@@ -46,7 +46,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
         {
             /// Use more optimal way.
             LOG_TRACE(log, "Copying file {} from disk {} to disk {}", path_in_backup, disk->getName(), destination_disk->getName());
-            disk->copyFile(root_path / path_in_backup, *destination_disk, destination_path, write_settings);
+            disk->copyFile(root_path / path_in_backup, *destination_disk, destination_path, read_settings, write_settings);
             return; /// copied!
         }
     }
@@ -119,7 +119,7 @@ void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr s
             LOG_TRACE(log, "Copying file {} from disk {} to disk {}", src_path, src_disk->getName(), disk->getName());
             auto dest_file_path = root_path / path_in_backup;
             disk->createDirectories(dest_file_path.parent_path());
-            src_disk->copyFile(src_path, *disk, dest_file_path, write_settings);
+            src_disk->copyFile(src_path, *disk, dest_file_path, read_settings, write_settings);
             return; /// copied!
         }
     }

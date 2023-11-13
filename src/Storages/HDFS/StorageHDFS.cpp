@@ -35,19 +35,24 @@
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <Poco/URI.h>
-#include <re2/re2.h>
-#include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
 
 #include <filesystem>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace fs = std::filesystem;
 
@@ -70,77 +75,57 @@ namespace ErrorCodes
 }
 namespace
 {
-    /// Forward-declared to use in LSWithFoldedRegexpMatching w/o circular dependency.
+    /// Forward-declare to use in expandSelector()
     std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(const String & path_for_ls,
                                                                 const HDFSFSPtr & fs,
                                                                 const String & for_match);
 
-    /*
-     * When `{...}` has any `/`s, it must be processed in a different way:
-     * Basically, a path with globs is processed by LSWithRegexpMatching. In case it detects multi-dir glob {.../..., .../...},
-     * LSWithFoldedRegexpMatching is in charge from now on.
-     * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
-     * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
-     * StorageFile.cpp has the same logic.
-    */
-    std::vector<StorageHDFS::PathWithInfo> LSWithFoldedRegexpMatching(const String & path_for_ls,
-        const HDFSFSPtr & fs,
-        const String & processed_suffix,
-        const String & suffix_with_globs,
-        re2::RE2 & matcher,
-        const size_t max_depth,
-        const size_t next_slash_after_glob_pos)
+    /// Process {a,b,c...} globs separately: don't match it against regex, but generate a,b,c strings instead.
+    std::vector<StorageHDFS::PathWithInfo> expandSelector(const String & path_for_ls,
+                                                          const HDFSFSPtr & fs,
+                                                          const String & for_match)
     {
-        /// We don't need to go all the way in every directory if max_depth is reached
-        /// as it is upper limit of depth by simply counting `/`s in curly braces
-        if (!max_depth)
-            return {};
+        std::vector<size_t> anchor_positions = {};
+        bool opened = false, closed = false;
 
-        HDFSFileInfo ls;
-        ls.file_info = hdfsListDirectory(fs.get(), path_for_ls.data(), &ls.length);
-        if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+        for (std::string::const_iterator it = for_match.begin(); it != for_match.end(); it++)
         {
-            // ignore file not found exception, keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", path_for_ls, String(hdfsGetLastError()));
-        }
-
-        std::vector<StorageHDFS::PathWithInfo> result;
-
-        if (!ls.file_info && ls.length > 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
-
-        for (int i = 0; i < ls.length; ++i)
-        {
-            const String full_path = String(ls.file_info[i].mName);
-            const size_t last_slash = full_path.rfind('/');
-            const String dir_or_file_name = full_path.substr(last_slash);
-            const bool is_directory = ls.file_info[i].mKind == 'D';
-
-            if (re2::RE2::FullMatch(processed_suffix + dir_or_file_name, matcher))
+            if (*it == '{')
             {
-                if (next_slash_after_glob_pos == std::string::npos)
-                {
-                    result.emplace_back(StorageHDFS::PathWithInfo{
-                        String(ls.file_info[i].mName),
-                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)}});
-                }
-                else
-                {
-                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(
-                        fs::path(full_path) / "" , fs, suffix_with_globs.substr(next_slash_after_glob_pos));
-                    std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
-                }
+                anchor_positions.push_back(std::distance(for_match.begin(), it));
+                opened = true;
             }
-            else if (is_directory)
+            else if (*it == '}')
             {
-                std::vector<StorageHDFS::PathWithInfo> result_part = LSWithFoldedRegexpMatching(
-                    fs::path(full_path), fs, processed_suffix + dir_or_file_name,
-                    suffix_with_globs, matcher, max_depth - 1, next_slash_after_glob_pos);
-                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+                anchor_positions.push_back(std::distance(for_match.begin(), it));
+                closed = true;
+                break;
+            }
+            else if (*it == ',')
+            {
+                if (!opened)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Unexpected ''' found in path '{}' at position {}.", for_match, std::distance(for_match.begin(), it));
+                anchor_positions.push_back(std::distance(for_match.begin(), it));
             }
         }
-        return result;
+        if (!opened || !closed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid {{}} glob in path {}.", for_match);
+
+        std::vector<StorageHDFS::PathWithInfo> ret = {};
+
+        std::string common_prefix = for_match.substr(0, anchor_positions[0]);
+        std::string common_suffix = for_match.substr(anchor_positions[anchor_positions.size()-1] + 1);
+        for (size_t i = 1; i < anchor_positions.size(); ++i)
+        {
+            std::string expanded_matcher = common_prefix
+                + for_match.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
+                + common_suffix;
+            std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(path_for_ls, fs, expanded_matcher);
+            ret.insert(ret.end(), result_part.begin(), result_part.end());
+        }
+        return ret;
     }
 
     /* Recursive directory listing with matched paths as a result.
@@ -151,36 +136,25 @@ namespace
         const HDFSFSPtr & fs,
         const String & for_match)
     {
+        /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
+        static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");
+
+        std::string_view for_match_view(for_match);
+        std::string_view matched;
+        if (RE2::FindAndConsume(&for_match_view, enum_or_range, &matched))
+        {
+            std::string buffer(matched);
+            if (buffer.find(',') != std::string::npos)
+                return expandSelector(path_for_ls, fs, for_match);
+        }
+
         const size_t first_glob_pos = for_match.find_first_of("*?{");
-        const bool has_glob = first_glob_pos != std::string::npos;
 
         const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
         const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
         const String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
 
-        size_t slashes_in_glob = 0;
-        const size_t next_slash_after_glob_pos = [&]()
-        {
-            if (!has_glob)
-                return suffix_with_globs.find('/', 1);
-
-            size_t in_curly = 0;
-            for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
-            {
-                if (*it == '{')
-                    ++in_curly;
-                else if (*it == '/')
-                {
-                    if (in_curly)
-                        ++slashes_in_glob;
-                    else
-                        return size_t(std::distance(suffix_with_globs.begin(), it));
-                }
-                else if (*it == '}')
-                    --in_curly;
-            }
-            return std::string::npos;
-        }();
+        const size_t next_slash_after_glob_pos = suffix_with_globs.find('/', 1);
 
         const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
@@ -188,12 +162,6 @@ namespace
         if (!matcher.ok())
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
-
-        if (slashes_in_glob)
-        {
-            return LSWithFoldedRegexpMatching(fs::path(prefix_without_globs), fs, "", suffix_with_globs,
-                                              matcher, slashes_in_glob, next_slash_after_glob_pos);
-        }
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
@@ -225,7 +193,8 @@ namespace
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
                 {
-                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash_after_glob_pos));
+                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs,
+                        suffix_with_globs.substr(next_slash_after_glob_pos));
                     /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                     std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                 }
@@ -256,6 +225,13 @@ namespace
         auto res = LSWithRegexpMatching("/", fs, path_from_uri);
         return res;
     }
+
+    struct HDFSFileInfoDeleter
+    {
+        /// Can have only one entry (see hdfsGetPathInfo())
+        void operator()(hdfsFileInfo * info) { hdfsFreeFileInfo(info, 1); }
+    };
+    using HDFSFileInfoPtr = std::unique_ptr<hdfsFileInfo, HDFSFileInfoDeleter>;
 }
 
 StorageHDFS::StorageHDFS(
@@ -292,7 +268,12 @@ StorageHDFS::StorageHDFS(
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in HDFS storage.
+        if (!columns_.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine HDFS doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -484,7 +465,7 @@ public:
     StorageHDFS::PathWithInfo next()
     {
         String uri;
-        hdfsFileInfo * hdfs_info;
+        HDFSFileInfoPtr hdfs_info;
         do
         {
             size_t current_index = index.fetch_add(1);
@@ -493,7 +474,7 @@ public:
 
             uri = uris[current_index];
             auto path_and_uri = getPathFromUriAndUriWithoutPath(uri);
-            hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
+            hdfs_info.reset(hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str()));
         }
         /// Skip non-existed files.
         while (!hdfs_info && String(hdfsGetLastError()).find("FileNotFoundException") != std::string::npos);
@@ -579,7 +560,7 @@ bool HDFSSource::initialize()
         {
             auto builder = createHDFSBuilder(uri_without_path + "/", getContext()->getGlobalContext()->getConfigRef());
             auto fs = createHDFSFS(builder.get());
-            auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_from_uri.c_str());
+            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_from_uri.c_str()));
             if (hdfs_info)
                 path_with_info.info = StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)};
         }
@@ -620,7 +601,6 @@ bool HDFSSource::initialize()
             max_parsing_threads = 1;
 
         input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, max_parsing_threads);
-        input_format->setQueryInfo(query_info, getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();
@@ -838,9 +818,9 @@ private:
 };
 
 
-bool StorageHDFS::supportsSubsetOfColumns() const
+bool StorageHDFS::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context_);
 }
 
 Pipe StorageHDFS::read(
@@ -878,7 +858,7 @@ Pipe StorageHDFS::read(
         });
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context_), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context_->getSettingsRef().optimize_count_from_files;
 
@@ -1051,7 +1031,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
 
             auto builder = createHDFSBuilder(uri_without_path + "/", ctx->getGlobalContext()->getConfigRef());
             auto fs = createHDFSFS(builder.get());
-            auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_with_info.path.c_str());
+            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_with_info.path.c_str()));
             if (hdfs_info)
                 return hdfs_info->mLastMod;
 

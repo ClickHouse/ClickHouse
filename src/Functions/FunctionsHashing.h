@@ -594,14 +594,14 @@ struct JavaHashImpl
             static_cast<uint32_t>(x) ^ static_cast<uint32_t>(static_cast<uint64_t>(x) >> 32));
     }
 
-    template <class T, T * = nullptr>
+    template <class T>
     requires std::same_as<T, int8_t> || std::same_as<T, int16_t> || std::same_as<T, int32_t>
     static ReturnType apply(T x)
     {
         return x;
     }
 
-    template <class T, T * = nullptr>
+    template <class T>
     requires(!std::same_as<T, int8_t> && !std::same_as<T, int16_t> && !std::same_as<T, int32_t>)
     static ReturnType apply(T x)
     {

@@ -112,6 +112,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
+    , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
 {
 }
@@ -952,5 +953,11 @@ ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context) const
     auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
+
+size_t TableJoin::getMaxMemoryUsage() const
+{
+    return max_memory_usage;
+}
+
 
 }

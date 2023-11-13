@@ -997,6 +997,7 @@ protected:
                 --m_size;
                 buf[place_value].setZero();
                 inserted = false;
+                keyHolderDiscardKey(key_holder);
                 throw;
             }
 
@@ -1273,6 +1274,10 @@ public:
         return !buf[place_value].isZero(*this);
     }
 
+    bool ALWAYS_INLINE contains(const Key & x) const
+    {
+        return has(x);
+    }
 
     void write(DB::WriteBuffer & wb) const
     {

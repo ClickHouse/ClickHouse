@@ -381,6 +381,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATION_QUEUES:
         case Type::STOP_PULLING_REPLICATION_LOG:
         case Type::START_PULLING_REPLICATION_LOG:
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
@@ -449,7 +451,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             break;
         }
-
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+                if (ParserKeyword{"FOR"}.ignore(pos, expected))
+                {
+                    if (ParserKeyword{"Protobuf"}.ignore(pos, expected))
+                        res->schema_cache_format = "Protobuf";
+                    else
+                        return false;
+                }
+                break;
+        }
         case Type::UNFREEZE:
         {
             ASTPtr ast;

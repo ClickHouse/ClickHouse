@@ -610,6 +610,7 @@ namespace
             const String & dest_bucket_,
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
+            const ReadSettings & read_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunner<void> schedule_,
             bool for_disk_s3_)
@@ -619,6 +620,7 @@ namespace
             , offset(src_offset_)
             , size(src_size_)
             , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
+            , read_settings(read_settings_)
         {
         }
 
@@ -639,12 +641,13 @@ namespace
         size_t offset;
         size_t size;
         bool supports_multipart_copy;
+        const ReadSettings read_settings;
 
         CreateReadBuffer getSourceObjectReadBuffer()
         {
             return [&]
             {
-                return std::make_unique<ReadBufferFromS3>(client_ptr, src_bucket, src_key, "", request_settings, Context::getGlobalContextInstance()->getReadSettings());
+                return std::make_unique<ReadBufferFromS3>(client_ptr, src_bucket, src_key, "", request_settings, read_settings);
             };
         }
 
@@ -826,20 +829,21 @@ void copyS3File(
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
+    const ReadSettings & read_settings,
     const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_s3)
 {
     if (settings.allow_native_copy)
     {
-        CopyFileHelper helper{s3_client, s3_client_with_long_timeout, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
+        CopyFileHelper helper{s3_client, s3_client_with_long_timeout, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, read_settings, object_metadata, schedule, for_disk_s3};
         helper.performCopy();
     }
     else
     {
         auto create_read_buffer = [&]
         {
-            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, Context::getGlobalContextInstance()->getReadSettings());
+            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, read_settings);
         };
         copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, s3_client_with_long_timeout, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3);
     }

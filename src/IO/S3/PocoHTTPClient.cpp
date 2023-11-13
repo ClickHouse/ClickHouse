@@ -26,8 +26,15 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <re2/re2.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 #include <boost/algorithm/string.hpp>
 
 static const int SUCCESS_RESPONSE_MIN = 200;
@@ -89,6 +96,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
+        unsigned int s3_retry_attempts_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         const ThrottlerPtr & get_request_throttler_,
@@ -98,6 +106,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
+    , s3_retry_attempts(s3_retry_attempts_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
@@ -267,7 +276,7 @@ void PocoHTTPClient::makeRequestInternal(
 {
     /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
     const auto request_configuration = per_request_configuration();
-    if (http_connection_pool_size && request_configuration.host.empty())
+    if (http_connection_pool_size)
         makeRequestInternalImpl<true>(request, request_configuration, response, readLimiter, writeLimiter);
     else
         makeRequestInternalImpl<false>(request, request_configuration, response, readLimiter, writeLimiter);
@@ -276,7 +285,7 @@ void PocoHTTPClient::makeRequestInternal(
 template <bool pooled>
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
-    const DB::ProxyConfiguration & request_configuration,
+    const DB::ProxyConfiguration & proxy_configuration,
     std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
@@ -331,26 +340,17 @@ void PocoHTTPClient::makeRequestInternalImpl(
             Poco::URI target_uri(uri);
             SessionPtr session;
 
-            if (!request_configuration.host.empty())
+            if (!proxy_configuration.host.empty())
             {
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
-
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit, proxy_configuration);
                 else
-                    session = makeHTTPSession(target_uri, timeouts);
-                bool use_tunnel = request_configuration.protocol == DB::ProxyConfiguration::Protocol::HTTP && target_uri.getScheme() == "https";
-
-                session->setProxy(
-                    request_configuration.host,
-                    request_configuration.port,
-                    DB::ProxyConfiguration::protocolToString(request_configuration.protocol),
-                    use_tunnel
-                );
+                    session = makeHTTPSession(target_uri, timeouts, proxy_configuration);
             }
             else
             {
@@ -511,7 +511,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
                     addMetric(request, S3MetricType::Errors);
                     if (error_report)
-                        error_report(request_configuration);
+                        error_report(proxy_configuration);
 
                 }
 
@@ -529,7 +529,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 {
                     addMetric(request, S3MetricType::Errors);
                     if (status_code >= 500 && error_report)
-                        error_report(request_configuration);
+                        error_report(proxy_configuration);
                 }
                 response->SetResponseBody(response_body_stream, session);
             }

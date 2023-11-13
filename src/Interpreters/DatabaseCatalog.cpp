@@ -61,7 +61,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
-class DatabaseNameHints : public IHints<1, DatabaseNameHints>
+class DatabaseNameHints : public IHints<>
 {
 public:
     explicit DatabaseNameHints(const DatabaseCatalog & database_catalog_)

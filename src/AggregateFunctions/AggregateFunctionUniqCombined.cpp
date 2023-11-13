@@ -114,7 +114,7 @@ namespace
         if (argument_types.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments for aggregate function {}", name);
 
-        switch (precision)
+        switch (precision) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 12:
                 return createAggregateFunctionWithHashType<12>(use_64_bit_hash, argument_types, params);
@@ -143,7 +143,6 @@ namespace
 
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 {
-    using namespace std::placeholders;
     factory.registerFunction("uniqCombined",
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {

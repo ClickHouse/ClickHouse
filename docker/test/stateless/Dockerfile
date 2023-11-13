@@ -40,6 +40,7 @@ RUN apt-get update -y \
             cargo \
             zstd \
             file \
+            jq \
             pv \
             zip \
             p7zip-full \
@@ -87,5 +88,10 @@ RUN npm install -g azurite \
 COPY run.sh /
 COPY setup_minio.sh /
 COPY setup_hdfs_minicluster.sh /
+COPY attach_gdb.lib /
+COPY utils.lib /
+
+# We store stress_tests.lib in stateless image to avoid duplication of this file in stress and upgrade tests
+COPY stress_tests.lib /
 
 CMD ["/bin/bash", "/run.sh"]

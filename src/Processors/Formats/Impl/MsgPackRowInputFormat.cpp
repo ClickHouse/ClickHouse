@@ -245,6 +245,7 @@ static void insertString(IColumn & column, DataTypePtr type, const char * value,
                 insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, value, size);
                 return;
             default:
+                break;
         }
     }
 

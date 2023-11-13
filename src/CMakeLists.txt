@@ -82,11 +82,23 @@ add_subdirectory (Formats)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
+add_headers_and_sources(clickhouse_common_io Common/SSH)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Resource)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
+
+
+add_headers_and_sources(clickhouse_compression Compression)
+add_headers_and_sources(clickhouse_compression Parsers)
+add_headers_and_sources(clickhouse_compression Core)
+#Included these specific files to avoid linking grpc
+add_glob(clickhouse_compression_headers Server/ServerType.h)
+add_glob(clickhouse_compression_sources Server/ServerType.cpp)
+add_headers_and_sources(clickhouse_compression Common/SSH)
+add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
+
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
@@ -103,7 +115,7 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/DataLakes)
-add_headers_and_sources(dbms Storages/MeiliSearch)
+add_headers_and_sources(dbms Storages/DataLakes/Iceberg)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -269,6 +281,7 @@ target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR
 
 if (TARGET ch_contrib::llvm)
     dbms_target_link_libraries (PUBLIC ch_contrib::llvm)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::llvm)
 endif ()
 
 if (TARGET ch_contrib::gwp_asan)
@@ -292,6 +305,18 @@ target_link_libraries (clickhouse_common_io
             common
             ch_contrib::double_conversion
             ch_contrib::dragonbox_to_chars
+            ch_contrib::libdivide
+)
+
+
+target_link_libraries (clickhouse_compression
+        PUBLIC
+            string_utils
+            pcg_random
+            clickhouse_parsers
+        PRIVATE
+            ch_contrib::lz4
+            ch_contrib::roaring
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
@@ -316,7 +341,6 @@ target_link_libraries(clickhouse_common_io
             boost::context
             ch_contrib::cityhash
             ch_contrib::re2
-            ch_contrib::re2_st
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
@@ -330,13 +354,14 @@ if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
 
-if (TARGET ch_contrib::crc32_s390x)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
-endif()
-
 if (TARGET ch_contrib::crc32-vpmsum)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
  endif()
+
+if (TARGET ch_contrib::ssh)
+ target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
+ target_link_libraries(clickhouse_compression PUBLIC ch_contrib::ssh)
+endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
@@ -359,10 +384,12 @@ endif()
 
 if (TARGET ch_contrib::krb5)
     dbms_target_link_libraries(PRIVATE ch_contrib::krb5)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::krb5)
 endif()
 
 if (TARGET ch_contrib::nuraft)
     dbms_target_link_libraries(PUBLIC ch_contrib::nuraft)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::nuraft)
 endif()
 
 dbms_target_link_libraries (
@@ -432,6 +459,7 @@ endif ()
 
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::ldap ch_contrib::lber)
 endif ()
 dbms_target_link_libraries (PUBLIC ch_contrib::sparsehash)
 
@@ -588,8 +616,8 @@ if (ENABLE_TESTS)
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE
-        ch_contrib::gtest_all
         ch_contrib::gmock_all
+        ch_contrib::gtest
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers

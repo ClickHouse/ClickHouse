@@ -322,8 +322,19 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard lock{mutex};
-    auto connection_holder = pool->get();
-    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+
+    std::set<std::string> actual_tables;
+    try
+    {
+        auto connection_holder = pool->get();
+        actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        cleaner_task->scheduleAfter(cleaner_reschedule_ms);
+        return;
+    }
 
     if (cache_tables)
     {

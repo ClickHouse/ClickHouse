@@ -62,6 +62,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -1209,32 +1210,72 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     }
 
     {
+        ActionsDAGPtr actions;
+
+        auto required_columns = prewhere_actions->getRequiredColumns();
+        NameSet prewhere_input_names;
+        for (const auto & col : required_columns)
+            prewhere_input_names.insert(col.name);
+
+        NameSet unused_source_columns;
+
         /// Add empty action with input = {prewhere actions output} + {unused source columns}
         /// Reasons:
         /// 1. Remove remove source columns which are used only in prewhere actions during prewhere actions execution.
         ///    Example: select A prewhere B > 0. B can be removed at prewhere step.
         /// 2. Store side columns which were calculated during prewhere actions execution if they are used.
         ///    Example: select F(A) prewhere F(A) > 0. F(A) can be saved from prewhere step.
+        ///
+        ///    NOTE: this cannot be done for queries with FINAL and PREWHERE over SimpleAggregateFunction,
+        ///          since it can be changed after applying merge algorithm.
+        ///
         /// 3. Check if we can remove filter column at prewhere step. If we can, action will store single REMOVE_COLUMN.
-        ColumnsWithTypeAndName columns = prewhere_actions->getResultColumns();
-        auto required_columns = prewhere_actions->getRequiredColumns();
-        NameSet prewhere_input_names;
-        NameSet unused_source_columns;
-
-        for (const auto & col : required_columns)
-            prewhere_input_names.insert(col.name);
-
-        for (const auto & column : sourceColumns())
+        bool columns_from_prewhere_can_be_reused = true;
+        if (storage() && getSelectQuery()->final())
         {
-            if (!prewhere_input_names.contains(column.name))
+            for (const auto & column : metadata_snapshot->getColumns().getOrdinary())
             {
-                columns.emplace_back(column.type, column.name);
-                unused_source_columns.emplace(column.name);
+                if (!prewhere_input_names.contains(column.name))
+                    continue;
+                if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+                {
+                    columns_from_prewhere_can_be_reused = false;
+                    break;
+                }
             }
         }
 
+        if (!columns_from_prewhere_can_be_reused)
+        {
+            for (const auto & column : sourceColumns())
+            {
+                if (!prewhere_input_names.contains(column.name))
+                {
+                    required_columns.emplace_back(NameAndTypePair{column.name, column.type});
+                    unused_source_columns.emplace(column.name);
+                }
+            }
+
+            actions = std::make_shared<ActionsDAG>(std::move(required_columns));
+        }
+        else
+        {
+            ColumnsWithTypeAndName columns = prewhere_actions->getResultColumns();
+
+            for (const auto & column : sourceColumns())
+            {
+                if (!prewhere_input_names.contains(column.name))
+                {
+                    columns.emplace_back(column.type, column.name);
+                    unused_source_columns.emplace(column.name);
+                }
+            }
+
+            actions = std::make_shared<ActionsDAG>(std::move(columns));
+        }
+
         chain.steps.emplace_back(
-            std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(std::make_shared<ActionsDAG>(std::move(columns))));
+            std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(std::move(actions)));
         chain.steps.back()->additional_input = std::move(unused_source_columns);
         chain.getLastActions();
         chain.addStep();

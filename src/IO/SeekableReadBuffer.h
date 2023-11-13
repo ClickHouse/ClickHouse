@@ -44,6 +44,10 @@ public:
 
     virtual String getInfoForLog() { return ""; }
 
+    /// NOTE: This method should be thread-safe against seek(), since it can be
+    /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
+    /// it first releases the buffer, and then do logging, and so other thread
+    /// can already call seek() which will lead to data-race).
     virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
 
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
@@ -98,6 +102,7 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableRead
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
 
 /// Helper for implementing readBigAt().
-size_t copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, bool * out_cancelled = nullptr);
+/// Updates *out_bytes_copied after each call to the callback, as well as at the end.
+void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
 }

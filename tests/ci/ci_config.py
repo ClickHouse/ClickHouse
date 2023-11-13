@@ -2,20 +2,33 @@
 
 import logging
 
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Literal
+from typing import Callable, Dict, List, Literal, Union
 
 
 @dataclass
 class BuildConfig:
+    name: str
     compiler: str
-    package_type: Literal["deb", "binary"]
+    package_type: Literal["deb", "binary", "fuzzers"]
     additional_pkgs: bool = False
     debug_build: bool = False
     sanitizer: str = ""
     tidy: bool = False
+    sparse_checkout: bool = False
     comment: str = ""
     static_binary_name: str = ""
+
+    def export_env(self, export: bool = False) -> str:
+        def process(field_name: str, field: Union[bool, str]) -> str:
+            if isinstance(field, bool):
+                field = str(field).lower()
+            if export:
+                return f"export BUILD_{field_name.upper()}={repr(field)}"
+            return f"BUILD_{field_name.upper()}={field}"
+
+        return "\n".join(process(k, v) for k, v in self.__dict__.items())
 
 
 @dataclass
@@ -87,49 +100,58 @@ class CiConfig:
 CI_CONFIG = CiConfig(
     build_config={
         "package_release": BuildConfig(
-            compiler="clang-16",
+            name="package_release",
+            compiler="clang-17",
             package_type="deb",
             static_binary_name="amd64",
             additional_pkgs=True,
         ),
         "package_aarch64": BuildConfig(
-            compiler="clang-16-aarch64",
+            name="package_aarch64",
+            compiler="clang-17-aarch64",
             package_type="deb",
             static_binary_name="aarch64",
             additional_pkgs=True,
         ),
         "package_asan": BuildConfig(
-            compiler="clang-16",
+            name="package_asan",
+            compiler="clang-17",
             sanitizer="address",
             package_type="deb",
         ),
         "package_ubsan": BuildConfig(
-            compiler="clang-16",
+            name="package_ubsan",
+            compiler="clang-17",
             sanitizer="undefined",
             package_type="deb",
         ),
         "package_tsan": BuildConfig(
-            compiler="clang-16",
+            name="package_tsan",
+            compiler="clang-17",
             sanitizer="thread",
             package_type="deb",
         ),
         "package_msan": BuildConfig(
-            compiler="clang-16",
+            name="package_msan",
+            compiler="clang-17",
             sanitizer="memory",
             package_type="deb",
         ),
         "package_debug": BuildConfig(
-            compiler="clang-16",
+            name="package_debug",
+            compiler="clang-17",
             debug_build=True,
             package_type="deb",
-            comment="Note: sparse checkout was used",
+            sparse_checkout=True,
         ),
         "binary_release": BuildConfig(
-            compiler="clang-16",
+            name="binary_release",
+            compiler="clang-17",
             package_type="binary",
         ),
         "binary_tidy": BuildConfig(
-            compiler="clang-16",
+            name="binary_tidy",
+            compiler="clang-17",
             debug_build=True,
             package_type="binary",
             static_binary_name="debug-amd64",
@@ -137,50 +159,65 @@ CI_CONFIG = CiConfig(
             comment="clang-tidy is used for static analysis",
         ),
         "binary_darwin": BuildConfig(
-            compiler="clang-16-darwin",
+            name="binary_darwin",
+            compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
+            sparse_checkout=True,
         ),
         "binary_aarch64": BuildConfig(
-            compiler="clang-16-aarch64",
+            name="binary_aarch64",
+            compiler="clang-17-aarch64",
             package_type="binary",
         ),
         "binary_aarch64_v80compat": BuildConfig(
-            compiler="clang-16-aarch64-v80compat",
+            name="binary_aarch64_v80compat",
+            compiler="clang-17-aarch64-v80compat",
             package_type="binary",
             static_binary_name="aarch64v80compat",
             comment="For ARMv8.1 and older",
         ),
         "binary_freebsd": BuildConfig(
-            compiler="clang-16-freebsd",
+            name="binary_freebsd",
+            compiler="clang-17-freebsd",
             package_type="binary",
             static_binary_name="freebsd",
         ),
         "binary_darwin_aarch64": BuildConfig(
-            compiler="clang-16-darwin-aarch64",
+            name="binary_darwin_aarch64",
+            compiler="clang-17-darwin-aarch64",
             package_type="binary",
             static_binary_name="macos-aarch64",
         ),
         "binary_ppc64le": BuildConfig(
-            compiler="clang-16-ppc64le",
+            name="binary_ppc64le",
+            compiler="clang-17-ppc64le",
             package_type="binary",
             static_binary_name="powerpc64le",
         ),
         "binary_amd64_compat": BuildConfig(
-            compiler="clang-16-amd64-compat",
+            name="binary_amd64_compat",
+            compiler="clang-17-amd64-compat",
             package_type="binary",
             static_binary_name="amd64compat",
             comment="SSE2-only build",
         ),
         "binary_riscv64": BuildConfig(
-            compiler="clang-16-riscv64",
+            name="binary_riscv64",
+            compiler="clang-17-riscv64",
             package_type="binary",
             static_binary_name="riscv64",
         ),
         "binary_s390x": BuildConfig(
-            compiler="clang-16-s390x",
+            name="binary_s390x",
+            compiler="clang-17-s390x",
             package_type="binary",
             static_binary_name="s390x",
+        ),
+        "fuzzers": BuildConfig(
+            name="fuzzers",
+            compiler="clang-16",
+            package_type="fuzzers",
         ),
     },
     builds_report_config={
@@ -193,6 +230,7 @@ CI_CONFIG = CiConfig(
             "package_msan",
             "package_debug",
             "binary_release",
+            "fuzzers",
         ],
         "ClickHouse special build check": [
             "binary_tidy",
@@ -277,6 +315,7 @@ CI_CONFIG = CiConfig(
         "SQLancer (debug)": TestConfig("package_debug"),
         "Sqllogic test (release)": TestConfig("package_release"),
         "SQLTest": TestConfig("package_release"),
+        "libFuzzer tests": TestConfig("fuzzers"),
     },
 )
 CI_CONFIG.validate()
@@ -461,3 +500,24 @@ CHECK_DESCRIPTIONS = [
         lambda x: True,
     ),
 ]
+
+
+def main() -> None:
+    parser = ArgumentParser(
+        formatter_class=ArgumentDefaultsHelpFormatter,
+        description="The script provides build config for GITHUB_ENV or shell export",
+    )
+    parser.add_argument("--build-name", help="the build config to export")
+    parser.add_argument(
+        "--export",
+        action="store_true",
+        help="if set, the ENV parameters are provided for shell export",
+    )
+    args = parser.parse_args()
+    build_config = CI_CONFIG.build_config.get(args.build_name)
+    if build_config:
+        print(build_config.export_env(args.export))
+
+
+if __name__ == "__main__":
+    main()

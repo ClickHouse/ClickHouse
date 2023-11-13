@@ -189,7 +189,7 @@ void SerializationNullable::serializeBinary(const IColumn & column, size_t row_n
 
 /// Deserialize value into ColumnNullable.
 /// We need to insert both to nested column and to null byte map, or, in case of exception, to not insert at all.
-template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, ReturnType * = nullptr>
+template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested>
 requires std::same_as<ReturnType, void>
 static ReturnType
 safeDeserialize(IColumn & column, const ISerialization &, CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
@@ -217,7 +217,7 @@ safeDeserialize(IColumn & column, const ISerialization &, CheckForNull && check_
 }
 
 /// Deserialize value into non-nullable column. In case of NULL, insert default value and return false.
-template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, ReturnType * = nullptr>
+template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested>
 requires std::same_as<ReturnType, bool>
 static ReturnType
 safeDeserialize(IColumn & column, const ISerialization &, CheckForNull && check_for_null, DeserializeNested && deserialize_nested)

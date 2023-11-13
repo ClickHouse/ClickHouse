@@ -11,6 +11,8 @@ struct IReadBufferIterator
 {
     virtual ~IReadBufferIterator() = default;
 
+    virtual void setPreviousReadBuffer(std::unique_ptr<ReadBuffer> /* buffer */) {}
+
     virtual std::unique_ptr<ReadBuffer> next() = 0;
 
     virtual std::optional<ColumnsDescription> getCachedColumns() { return std::nullopt; }
@@ -21,7 +23,7 @@ struct IReadBufferIterator
 struct SingleReadBufferIterator : public IReadBufferIterator
 {
 public:
-    SingleReadBufferIterator(std::unique_ptr<ReadBuffer> buf_) : buf(std::move(buf_))
+    explicit SingleReadBufferIterator(std::unique_ptr<ReadBuffer> buf_) : buf(std::move(buf_))
     {
     }
 

@@ -285,7 +285,7 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        if [ "$(rg -c $(basename $test) changed-test-definitions.txt)" -gt 0 ]
+        if rg --quiet "$(basename $test)" changed-test-definitions.txt
         then
           # Run all queries from changed test files to ensure that all new queries will be tested.
           max_queries=0
@@ -394,7 +394,7 @@ do
 done
 
 # for each query run, prepare array of metrics from query log
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
@@ -551,7 +551,7 @@ numactl --cpunodebind=all --membind=all numactl --show
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
 numactl --cpunodebind=all --membind=all parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
 -- a denormalized table of them -- statistics for all metrics for all queries.
 -- The WITH, ARRAY JOIN and CROSS JOIN do not like each other:
@@ -649,7 +649,7 @@ rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.ts
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view query_display_names as select * from
     file('analyze/query-display-names.tsv', TSV,
         'test text, query_index int, query_display_name text')
@@ -950,7 +950,7 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
 for version in {right,left}
 do
     rm -rf data
-    clickhouse-local --query "
+    clickhouse-local --multiquery --query "
 create view query_profiles as
     with 0 as left, 1 as right
     select * from file('analyze/query-profiles.tsv', TSV,
@@ -1120,7 +1120,7 @@ function report_metrics
 rm -rf metrics ||:
 mkdir metrics
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view right_async_metric_log as
     select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
@@ -1180,7 +1180,7 @@ function upload_results
     # Prepare info for the CI checks table.
     rm -f ci-checks.tsv
 
-    clickhouse-local --query "
+    clickhouse-local --multiquery --query "
 create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
 
 create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')

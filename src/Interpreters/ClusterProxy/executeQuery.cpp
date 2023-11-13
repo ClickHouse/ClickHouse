@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/ResizeProcessor.h>
 #include <QueryPipeline/Pipe.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -34,11 +35,11 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
-    const SelectQueryInfo * query_info,
+    ASTPtr additional_filter_ast,
     Poco::Logger * log)
 {
     Settings new_settings = settings;
@@ -47,6 +48,7 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     /// If "secret" (in remote_servers) is not in use,
     /// user on the shard is not the same as the user on the initiator,
     /// hence per-user limits should not be applied.
+    const bool interserver_mode = !cluster.getSecret().empty();
     if (!interserver_mode)
     {
         /// Does not matter on remote servers, because queries are sent under different user.
@@ -115,12 +117,36 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     ///
     /// Here we don't try to analyze setting again. In case if query_info->additional_filter_ast is not empty, some filter was applied.
     /// It's just easier to add this filter for a source table.
-    if (query_info && query_info->additional_filter_ast)
+    if (additional_filter_ast)
     {
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
-        tuple.push_back(queryToString(query_info->additional_filter_ast));
+        tuple.push_back(queryToString(additional_filter_ast));
         new_settings.additional_table_filters.value.push_back(std::move(tuple));
+    }
+
+    /// disable parallel replicas if cluster contains only shards with 1 replica
+    if (context->canUseParallelReplicas())
+    {
+        bool disable_parallel_replicas = true;
+        for (const auto & shard : cluster.getShardsInfo())
+        {
+            if (shard.getAllNodeCount() > 1)
+            {
+                disable_parallel_replicas = false;
+                break;
+            }
+        }
+        if (disable_parallel_replicas)
+            new_settings.allow_experimental_parallel_reading_from_replicas = false;
+    }
+
+    if (settings.max_execution_time_leaf.value > 0)
+    {
+        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
+        /// with 'timeout_overflow_mode_leaf'
+        new_settings.max_execution_time = settings.max_execution_time_leaf;
+        new_settings.timeout_overflow_mode = settings.timeout_overflow_mode_leaf;
     }
 
     auto new_context = Context::createCopy(context);
@@ -174,12 +200,25 @@ void executeQuery(
     std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
-    auto new_context = updateSettingsForCluster(!query_info.getCluster()->getSecret().empty(), context, settings, main_table, &query_info, log);
+    auto cluster = query_info.getCluster();
+    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log);
+    if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
+        && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
+           != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
+    {
+        LOG_TRACE(
+            log,
+            "Parallel reading from replicas is disabled for cluster. There are no shards with more than 1 replica: cluster={}",
+            cluster->getName());
+    }
+
     new_context->increaseDistributedDepth();
 
-    size_t shards = query_info.getCluster()->getShardCount();
-    for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
+    const size_t shards = cluster->getShardCount();
+    for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
     {
+        const auto & shard_info = cluster->getShardsInfo()[i];
+
         ASTPtr query_ast_for_shard = query_ast->clone();
         if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
         {
@@ -209,9 +248,15 @@ void executeQuery(
             }
         }
 
+        // decide for each shard if parallel reading from replicas should be enabled
+        // according to settings and number of replicas declared per shard
+        const auto & addresses = cluster->getShardsAddresses().at(i);
+        bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
+
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
-            new_context, plans, remote_shards, static_cast<UInt32>(shards));
+            new_context, plans, remote_shards, static_cast<UInt32>(shards),
+            parallel_replicas_enabled);
     }
 
     if (!remote_shards.empty())
@@ -235,7 +280,7 @@ void executeQuery(
             log,
             shards,
             query_info.storage_limits,
-            query_info.getCluster()->getName());
+            not_optimized_cluster->getName());
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
@@ -265,11 +310,10 @@ void executeQuery(
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
-    const SelectQueryInfo & query_info,
+    std::shared_ptr<const StorageLimitsList> storage_limits,
     const ClusterPtr & not_optimized_cluster)
 {
     const auto & settings = context->getSettingsRef();
@@ -327,13 +371,12 @@ void executeQueryWithParallelReplicas(
         stream_factory.header,
         stream_factory.processed_stage,
         main_table,
-        table_func_ptr,
         new_context,
         getThrottler(new_context),
         std::move(scalars),
         std::move(external_tables),
         &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-        query_info.storage_limits);
+        std::move(storage_limits));
 
     query_plan.addStep(std::move(read_from_remote));
 }

@@ -80,7 +80,6 @@ RUN python3 -m pip install --no-cache-dir \
     kafka-python \
     kazoo \
     lz4 \
-    meilisearch==0.18.3 \
     minio \
     nats-py \
     protobuf \

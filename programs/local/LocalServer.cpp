@@ -32,6 +32,8 @@
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -319,7 +321,7 @@ static bool checkIfStdinIsRegularFile()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || queries.empty()))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
@@ -461,7 +463,7 @@ try
     if (first_time)
     {
 
-    if (queries_files.empty() && !config().has("query"))
+    if (queries_files.empty() && queries.empty())
     {
         std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode." << "\033[0m" << std::endl;
         std::cerr << "\033[31m" << "You have to provide a query with --query or --queries-file option." << "\033[0m" << std::endl;
@@ -473,7 +475,7 @@ try
 #else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
-            || (!config().has("query") && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
+            || (queries.empty() && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
 #endif
     if (!is_interactive)
     {
@@ -492,6 +494,7 @@ try
     registerFormats();
 
     processConfig();
+    adjustSettings();
     initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     applyCmdSettings(global_context);
@@ -569,20 +572,19 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
-    if (config().has("query") && config().has("queries-file"))
+    if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
-    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
-    if (is_interactive && !delayed_interactive)
-    {
-        if (config().has("multiquery"))
-            is_multiquery = true;
-    }
-    else
+    if (config().has("multiquery"))
+        is_multiquery = true;
+
+    pager = config().getString("pager", "");
+
+    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
+    if (!is_interactive || delayed_interactive)
     {
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
-        is_multiquery = true;
     }
 
     print_stack_trace = config().getBool("stacktrace", false);
@@ -602,7 +604,9 @@ void LocalServer::processConfig()
     {
         auto poco_logs_level = Poco::Logger::parseLevel(level);
         Poco::Logger::root().setLevel(poco_logs_level);
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
+        Poco::Logger::root().setChannel(log);
         logging_initialized = true;
     }
     else if (logging || is_interactive)
@@ -881,6 +885,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         config().setBool("only-system-tables", true);
+    if (options.count("database"))
+        config().setString("default_database", options["database"].as<std::string>());
 
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());
@@ -948,48 +954,66 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
 
 #if defined(FUZZING_MODE)
 
+// linked from programs/main.cpp
+bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv);
+
 std::optional<DB::LocalServer> fuzz_app;
 
 extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 {
-    int & argc = *pargc;
-    char ** argv = *pargv;
+    std::vector<char *> argv(*pargv, *pargv + (*pargc + 1));
+
+    if (!isClickhouseApp("local", argv))
+    {
+        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode, only clickhouse local is available." << "\033[0m" << std::endl;
+        exit(1);
+    }
 
     /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
-    /// clickhouse <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
+    /// clickhouse local <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
 
-    /// Calculate the position of delimiter "--" that separates arguments
-    /// of clickhouse-local and libfuzzer
-    int pos_delim = argc;
-    for (int i = 0; i < argc; ++i)
-    {
-        if (strcmp(argv[i], "--") == 0)
+    char **p = &(*pargv)[1];
+
+    auto it = argv.begin() + 1;
+    for (; *it; ++it)
+        if (strcmp(*it, "--") == 0)
         {
-            pos_delim = i;
+            ++it;
             break;
         }
-    }
+
+    while (*it)
+        if (strncmp(*it, "--", 2) != 0)
+        {
+            *(p++) = *it;
+            it = argv.erase(it);
+        }
+        else
+            ++it;
+
+    *pargc = static_cast<int>(p - &(*pargv)[0]);
+    *p = nullptr;
 
     /// Initialize clickhouse-local app
     fuzz_app.emplace();
-    fuzz_app->init(pos_delim, argv);
+    fuzz_app->init(static_cast<int>(argv.size() - 1), argv.data());
 
-    /// We will leave clickhouse-local specific arguments as is, because libfuzzer will ignore
-    /// all keys starting with --
     return 0;
 }
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-try
 {
-    auto input = String(reinterpret_cast<const char *>(data), size);
-    DB::FunctionGetFuzzerData::update(input);
-    fuzz_app->run();
+    try
+    {
+        auto input = String(reinterpret_cast<const char *>(data), size);
+        DB::FunctionGetFuzzerData::update(input);
+        fuzz_app->run();
+    }
+    catch (...)
+    {
+    }
+
     return 0;
-}
-catch (...)
-{
-    return 1;
 }
 #endif

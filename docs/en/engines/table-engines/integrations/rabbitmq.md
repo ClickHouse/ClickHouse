@@ -13,7 +13,7 @@ This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.c
 - Publish or subscribe to data flows.
 - Process streams as they become available.
 
-## Creating a Table {#table_engine-rabbitmq-creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -28,7 +28,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_exchange_type = 'exchange_type',]
     [rabbitmq_routing_key_list = 'key1,key2,...',]
     [rabbitmq_secure = 0,]
-    [rabbitmq_row_delimiter = 'delimiter_symbol',]
     [rabbitmq_schema = '',]
     [rabbitmq_num_consumers = N,]
     [rabbitmq_num_queues = N,]
@@ -45,7 +44,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_username = '',]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
-    [rabbitmq_max_rows_per_message = 1]
+    [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_handle_error_mode = 'default']
 ```
 
 Required parameters:
@@ -58,7 +58,6 @@ Optional parameters:
 
 - `rabbitmq_exchange_type` – The type of RabbitMQ exchange: `direct`, `fanout`, `topic`, `headers`, `consistent_hash`. Default: `fanout`.
 - `rabbitmq_routing_key_list` – A comma-separated list of routing keys.
-- `rabbitmq_row_delimiter` – Delimiter character, which ends the message. **This setting is deprecated and is no longer used, not left for compatibility reasons.**
 - `rabbitmq_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `rabbitmq_num_consumers` – The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. Default: `1`
 - `rabbitmq_num_queues` – Total number of queues. Increasing this number can significantly improve performance. Default: `1`.
@@ -78,6 +77,7 @@ Optional parameters:
 - `rabbitmq_max_rows_per_message` — The maximum number of rows written in one RabbitMQ message for row-based formats. Default : `1`.
 - `rabbitmq_empty_queue_backoff_start` — A start backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_end` — An end backoff point to reschedule read if the rabbitmq queue is empty.
+- `rabbitmq_handle_error_mode` — How to handle errors for RabbitMQ engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 
 
 
@@ -190,6 +190,13 @@ Example:
 - `_redelivered` - `redelivered` flag of the message.
 - `_message_id` - messageID of the received message; non-empty if was set, when message was published.
 - `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
+
+Additional virtual columns when `kafka_handle_error_mode='stream'`:
+
+- `_raw_message` - Raw message that couldn't be parsed successfully.
+- `_error` - Exception message happened during failed parsing.
+
+Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
 
 ## Data formats support {#data-formats-support}
 

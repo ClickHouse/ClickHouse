@@ -3,13 +3,13 @@
 import logging
 import os
 import shutil
-from hashlib import md5
 from pathlib import Path
 
 import requests  # type: ignore
 
 from build_download_helper import download_build_with_progress, DownloadException
 from compress_files import decompress_fast, compress_fast
+from digest_helper import digest_path
 from env_helper import S3_DOWNLOAD, S3_BUILDS_BUCKET
 from git_helper import git_runner
 from s3_helper import S3Helper
@@ -58,10 +58,9 @@ def get_ccache_if_not_exists(
         download_build_with_progress(url, compressed_cache)
 
         path_to_decompress = path_to_ccache_dir.parent
-        if not path_to_decompress.exists():
-            os.makedirs(path_to_decompress)
+        path_to_decompress.mkdir(parents=True, exist_ok=True)
 
-        if os.path.exists(path_to_ccache_dir):
+        if path_to_ccache_dir.exists():
             shutil.rmtree(path_to_ccache_dir)
             logging.info("Ccache already exists, removing it")
 
@@ -74,7 +73,7 @@ def get_ccache_if_not_exists(
 
     if not cache_found:
         logging.info("ccache not found anywhere, cannot download anything :(")
-        if os.path.exists(path_to_ccache_dir):
+        if path_to_ccache_dir.exists():
             logging.info("But at least we have some local cache")
     else:
         logging.info("ccache downloaded")
@@ -109,7 +108,7 @@ class CargoCache:
         s3_helper: S3Helper,
     ):
         self._cargo_lock_file = Path(git_runner.cwd) / "rust" / "Cargo.lock"
-        self.lock_hash = md5(self._cargo_lock_file.read_bytes()).hexdigest()
+        self.lock_hash = digest_path(self._cargo_lock_file).hexdigest()
         self.directory = directory
         self.archive_name = f"Cargo_cache_{self.lock_hash}.tar.zst"
         self.temp_path = temp_path

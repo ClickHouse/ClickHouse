@@ -30,7 +30,7 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-class TableNameHints : public IHints<1, TableNameHints>
+class TableNameHints : public IHints<>
 {
 public:
     TableNameHints(ConstDatabasePtr database_, ContextPtr context_)

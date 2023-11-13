@@ -158,6 +158,6 @@ void Settings::applyCompatibilitySetting(const String & compatibility_value)
     }
 }
 
-IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS)
 
 }
