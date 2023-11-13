@@ -1,5 +1,6 @@
 #include "SensitiveDataMasker.h"
 
+#include <mutex>
 #include <set>
 #include <string>
 #include <atomic>
@@ -94,9 +95,12 @@ public:
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
 std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
+std::mutex SensitiveDataMasker::instance_mutex;
 
 void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
 {
+    std::lock_guard lock(instance_mutex);
+
     if (!sensitive_data_masker_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
 
@@ -112,6 +116,7 @@ void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensi
 
 SensitiveDataMasker * SensitiveDataMasker::getInstance()
 {
+    std::lock_guard lock(instance_mutex);
     return sensitive_data_masker.get();
 }
 

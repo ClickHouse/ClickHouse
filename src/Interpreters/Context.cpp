@@ -197,7 +197,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
 
-    mutable std::mutex sensitive_data_masker_mutex;
     ConfigurationPtr sensitive_data_masker_config;
 
 #if USE_NURAFT
@@ -3204,8 +3203,6 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
 
 void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
 {
-    std::lock_guard lock(shared->sensitive_data_masker_mutex);
-
     const auto old_config = shared->sensitive_data_masker_config;
     if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
         return;
