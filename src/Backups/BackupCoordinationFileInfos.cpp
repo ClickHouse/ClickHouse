@@ -84,6 +84,10 @@ void BackupCoordinationFileInfos::prepare() const
         for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
         {
             auto & info = *(file_infos_for_all_hosts[i]);
+
+            if (!info.reference_target.empty())
+                continue;
+
             info.data_file_name = info.file_name;
             info.data_file_index = i;
             info.base_size = 0; /// Base backup must not be used while creating a plain backup.
@@ -101,6 +105,10 @@ void BackupCoordinationFileInfos::prepare() const
         for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
         {
             auto & info = *(file_infos_for_all_hosts[i]);
+
+            if (!info.reference_target.empty())
+                continue;
+
             if (info.size == info.base_size)
             {
                 /// A file is either empty or can be get from the base backup as a whole.

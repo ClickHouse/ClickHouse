@@ -114,13 +114,6 @@ private:
     mutable std::optional<BackupCoordinationKeeperMapTables> keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
     std::unordered_set<size_t> TSA_GUARDED_BY(writing_files_mutex) writing_files;
 
-    struct KeeperMapTableInfo
-    {
-        String table_id;
-        String data_path_in_backup;
-    };
-
-
     mutable std::mutex zookeeper_mutex;
     mutable std::mutex replicated_tables_mutex;
     mutable std::mutex replicated_access_mutex;

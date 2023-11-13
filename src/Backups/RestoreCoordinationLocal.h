@@ -42,7 +42,7 @@ public:
 
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
-    bool acquireInsertingDataForKeeperMap(const String & root_zk_path) override;
+    bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) override;
 
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).

@@ -235,9 +235,9 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
     return result;
 }
 
-bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & root_zk_path)
+bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id)
 {
-    bool result = false;
+    bool lock_acquired = false;
     auto holder = with_retries.createRetriesControlHolder("acquireInsertingDataForKeeperMap");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
@@ -246,33 +246,22 @@ bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & 
 
             /// we need to remove leading '/' from root_zk_path
             auto normalized_root_zk_path = std::string_view{root_zk_path}.substr(1);
-            std::string restore_lock_path = fs::path(zookeeper_path) / "keeper_map_tables" / normalized_root_zk_path / "restore_lock";
+            std::string restore_lock_path = fs::path(zookeeper_path) / "keeper_map_tables" / escapeForFileName(normalized_root_zk_path);
             zk->createAncestors(restore_lock_path);
-            result = zk->tryCreate(restore_lock_path, "restorelock", zkutil::CreateMode::Persistent) == Coordination::Error::ZOK;
+            auto code = zk->tryCreate(restore_lock_path, table_unique_id, zkutil::CreateMode::Persistent);
 
-            if (result)
-                return;
-
-            /// there can be an edge case where a path contains `/restore_lock/ in the middle of it
-            /// to differentiate that case from lock we also set the data
-            for (size_t i = 0; i < 1000; ++i)
+            if (code == Coordination::Error::ZOK)
             {
-                Coordination::Stat lock_stat;
-                auto data = zk->get(restore_lock_path, &lock_stat);
-                if (data == "restorelock")
-                    return;
-
-                if (auto set_result = zk->trySet(restore_lock_path, "restorelock", lock_stat.version);
-                    set_result == Coordination::Error::ZOK)
-                {
-                    result = true;
-                    return;
-                }
-                else if (set_result == Coordination::Error::ZNONODE)
-                    throw zkutil::KeeperException::fromPath(set_result, restore_lock_path);
+                lock_acquired = true;
+                return;
             }
+
+            if (code == Coordination::Error::ZNODEEXISTS)
+                lock_acquired = table_unique_id == zk->get(restore_lock_path);
+            else
+                zkutil::KeeperException::fromPath(code, restore_lock_path);
         });
-    return result;
+    return lock_acquired;
 }
 
 void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_query)

@@ -116,6 +116,7 @@ namespace
                 writeBinary(info.base_size, out);
                 writeBinary(info.base_checksum, out);
                 writeBinary(info.encrypted_by_disk, out);
+                writeBinary(info.reference_target, out);
                 /// We don't store `info.data_file_name` and `info.data_file_index` because they're determined automalically
                 /// after reading file infos for all the hosts (see the class BackupCoordinationFileInfos).
             }
@@ -138,6 +139,7 @@ namespace
                 readBinary(info.base_size, in);
                 readBinary(info.base_checksum, in);
                 readBinary(info.encrypted_by_disk, in);
+                readBinary(info.reference_target, in);
             }
             return res;
         }

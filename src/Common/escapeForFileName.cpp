@@ -7,6 +7,11 @@ namespace DB
 
 std::string escapeForFileName(const std::string & s)
 {
+    return escapeForFileName(std::string_view{s});
+}
+
+std::string escapeForFileName(std::string_view s)
+{
     std::string res;
     const char * pos = s.data();
     const char * end = pos + s.size();

@@ -46,7 +46,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
-#include <Backups/BackupEntryFromMemory.h>
+#include <Backups/BackupEntryReference.h>
 #include <Backups/IBackup.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
@@ -643,8 +643,8 @@ NamesAndTypesList StorageKeeperMap::getVirtuals() const
 namespace
 {
 
+/// contains serialized key value pairs for all the data nodes used by this KeeperMap table
 constexpr std::string_view backup_data_filename = "data.bin";
-constexpr std::string_view backup_data_location_filename = "data_location.bin";
 
 class KeeperMapBackup : public IBackupEntriesLazyBatch, boost::noncopyable
 {
@@ -782,8 +782,9 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
             return;
         }
 
-        auto file_path = fs::path(my_data_path_in_backup) / backup_data_location_filename;
-        backup_entries_collector.addBackupEntries({{file_path, std::make_shared<BackupEntryFromMemory>(path_with_data)}});
+        std::string source_path = fs::path(my_data_path_in_backup) / backup_data_filename;
+        std::string target_path = fs::path(path_with_data) / backup_data_filename;
+        backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
     };
 
     backup_entries_collector.addPostTask(post_collecting_task);
@@ -795,7 +796,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
-    if (!restorer.getRestoreCoordination()->acquireInsertingDataForKeeperMap(zk_root_path))
+    auto table_id = toString(getStorageID().uuid); if (!restorer.getRestoreCoordination()->acquireInsertingDataForKeeperMap(zk_root_path, table_id))
     {
         /// Other table is already restoring the data for this Keeper path.
         /// Tables defined on the same path share data
@@ -853,19 +854,7 @@ void StorageKeeperMap::restoreDataImpl(
     String data_file = data_path_in_backup_fs /  backup_data_filename;
 
     if (!backup->fileExists(data_file))
-    {
-        String data_location_file = data_path_in_backup_fs / "data_location.bin";
-        if (!backup->fileExists(data_location_file))
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Files {} or {} in backup are required to restore table", data_file, data_location_file);
-
-        auto in = backup->readFile(data_location_file);
-        readStringUntilEOF(data_file, *in);
-
-        data_file = fs::path(data_file) / backup_data_filename;
-
-        if (!backup->fileExists(data_file))
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);
-    }
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);
 
     /// should we store locally in temp file?
     auto in = backup->readFile(data_file);
