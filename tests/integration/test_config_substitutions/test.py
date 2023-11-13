@@ -32,10 +32,13 @@ node6 = cluster.add_instance(
 )
 node7 = cluster.add_instance(
     "node7",
-    user_configs=["configs/000-config_with_env_subst.xml", "configs/010-env_subst_override.xml"],
+    user_configs=[
+        "configs/000-config_with_env_subst.xml",
+        "configs/010-env_subst_override.xml",
+    ],
     env_variables={"MAX_QUERY_SIZE": "121212"},
     instance_env_variables=True,
-) # overridden with 424242
+)  # overridden with 424242
 
 
 @pytest.fixture(scope="module")
