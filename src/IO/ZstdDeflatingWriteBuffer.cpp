@@ -30,19 +30,14 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
     output = {nullptr, 0, 0};
 }
 
-
 ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
 {
-    finalize();
+    if (cctx)
+        ZSTD_freeCCtx(cctx);
 }
 
-void ZstdDeflatingWriteBuffer::nextImpl()
+void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
 {
-    if (!offset())
-        return;
-
-    ZSTD_EndDirective mode = ZSTD_e_flush;
-
     input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
     input.size = offset();
     input.pos = 0;
@@ -58,12 +53,11 @@ void ZstdDeflatingWriteBuffer::nextImpl()
             output.size = out->buffer().size();
             output.pos = out->offset();
 
-
             size_t compression_result = ZSTD_compressStream2(cctx, &output, &input, mode);
             if (ZSTD_isError(compression_result))
                 throw Exception(
                                 ErrorCodes::ZSTD_ENCODER_FAILED,
-                                "Zstd stream encoding failed: error: '{}'; zstd version: {}",
+                                "ZSTD stream encoding failed: error: '{}'; zstd version: {}",
                                 ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
 
             out->position() = out->buffer().begin() + output.pos;
@@ -82,24 +76,15 @@ void ZstdDeflatingWriteBuffer::nextImpl()
     }
 }
 
+void ZstdDeflatingWriteBuffer::nextImpl()
+{
+    if (offset())
+        flush(ZSTD_e_flush);
+}
+
 void ZstdDeflatingWriteBuffer::finalizeBefore()
 {
-    next();
-
-    out->nextIfAtEnd();
-
-    input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
-    input.size = offset();
-    input.pos = 0;
-
-    output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
-    output.size = out->buffer().size();
-    output.pos = out->offset();
-
-    size_t remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
-    if (ZSTD_isError(remaining))
-        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder end failed: zstd version: {}", ZSTD_VERSION_STRING);
-    out->position() = out->buffer().begin() + output.pos;
+    flush(ZSTD_e_end);
 }
 
 void ZstdDeflatingWriteBuffer::finalizeAfter()
@@ -107,6 +92,7 @@ void ZstdDeflatingWriteBuffer::finalizeAfter()
     try
     {
         size_t err = ZSTD_freeCCtx(cctx);
+        cctx = nullptr;
         /// This is just in case, since it is impossible to get an error by using this wrapper.
         if (unlikely(err))
             throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}",

@@ -37,6 +37,7 @@ public:
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    bool supportsCountRows() const override { return true; }
 };
 
 class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
@@ -64,9 +65,16 @@ public:
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
 
+    void skipRow() override;
+
+    bool checkForSuffix() override;
+
     std::vector<String> readHeaderRow();
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
+
+    bool checkForEndOfRow() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
     bool yieldStrings() const { return yield_strings; }
 private:
@@ -79,7 +87,9 @@ public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypesImpl() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
+
+    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;

@@ -3,6 +3,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
+#include <Common/filesystemHelpers.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
@@ -40,13 +41,32 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         FileCacheSettings file_cache_settings;
         file_cache_settings.loadFromConfig(config, config_prefix);
 
-        auto cache_base_path = config.getString(config_prefix + ".path", fs::path(context->getPath()) / "disks" / name / "cache/");
-        if (!fs::exists(cache_base_path))
-            fs::create_directories(cache_base_path);
+        auto config_fs_caches_dir = context->getFilesystemCachesPath();
+        if (config_fs_caches_dir.empty())
+        {
+            if (fs::path(file_cache_settings.base_path).is_relative())
+                file_cache_settings.base_path = fs::path(context->getPath()) / "caches" / file_cache_settings.base_path;
+        }
+        else
+        {
+            if (fs::path(file_cache_settings.base_path).is_relative())
+                file_cache_settings.base_path = fs::path(config_fs_caches_dir) / file_cache_settings.base_path;
 
+            if (!pathStartsWith(file_cache_settings.base_path, config_fs_caches_dir))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Filesystem cache path {} must lie inside default filesystem cache path `{}`",
+                                file_cache_settings.base_path, config_fs_caches_dir);
+            }
+        }
+
+        auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings);
         auto disk = disk_it->second;
+        if (!dynamic_cast<const DiskObjectStorage *>(disk.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot wrap disk `{}` with cache layer `{}`: cached disk is allowed only on top of object storage",
+                disk_name, name);
 
-        auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings, name);
         auto disk_object_storage = disk->createDiskObjectStorage();
 
         disk_object_storage->wrapWithCache(cache, file_cache_settings, name);

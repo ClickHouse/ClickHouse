@@ -25,8 +25,8 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 
     bool empty() const override { return !has_elems; }
 
-    String index_name;
-    BloomFilterParameters params;
+    const String index_name;
+    const BloomFilterParameters params;
 
     std::vector<BloomFilter> bloom_filters;
     bool has_elems;
@@ -131,7 +131,7 @@ private:
         const Field & value_field,
         RPNElement & out);
 
-    bool getKey(const std::string & key_column_name, size_t & key_column_num);
+    std::optional<size_t> getKeyIndex(const std::string & key_column_name);
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
@@ -161,7 +161,7 @@ public:
     ~MergeTreeIndexFullText() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, ContextPtr context) const override;

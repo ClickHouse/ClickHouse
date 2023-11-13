@@ -2,7 +2,7 @@
     <storage_configuration>
         <disks>
             <local_disk>
-                <type>local</type>
+                <type>local_blob_storage</type>
                 <path>/local_disk/</path>
             </local_disk>
 
@@ -13,7 +13,6 @@
                 <max_size>10M</max_size>
                 <max_file_segment_size>1M</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
-                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
             </tiny_local_cache>
 
             <!-- Used to check free space in `/tiny_local_cache` using `system.disks` -->

@@ -46,7 +46,9 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal) override;
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags) override;
+
+    bool canExecuteReplicatedMetadataAlter() const override;
 
     bool hasReplicationThread() const override { return true; }
 
@@ -54,7 +56,9 @@ public:
 
     String getShardName() const { return shard_name; }
     String getReplicaName() const { return replica_name; }
+    String getReplicaGroupName() const { return replica_group_name; }
     String getFullReplicaName() const;
+    static String getFullReplicaName(const String & shard, const String & replica);
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
     const String & getZooKeeperPath() const { return zookeeper_path; }
@@ -64,7 +68,7 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
     void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
@@ -77,7 +81,9 @@ public:
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
-    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name);
+    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica);
+
+    std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
@@ -99,7 +105,7 @@ private:
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
 
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr);
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr);
 
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
@@ -121,6 +127,7 @@ private:
     String zookeeper_path;
     String shard_name;
     String replica_name;
+    String replica_group_name;
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 
@@ -129,6 +136,7 @@ private:
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;
     std::atomic_bool is_recovering = false;
+    std::atomic_bool ddl_worker_initialized = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     UInt32 max_log_ptr_at_creation = 0;
 

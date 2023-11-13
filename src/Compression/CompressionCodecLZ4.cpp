@@ -13,7 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wold-style-cast"
 
 
 namespace DB
@@ -42,7 +42,6 @@ private:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     mutable LZ4::PerformanceStatistics lz4_stat;
-    ASTPtr codec_desc;
 };
 
 

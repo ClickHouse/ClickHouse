@@ -15,7 +15,7 @@ class BackupEntriesCollector;
 class RestorerFromBackup;
 
 /// Factory for SQLUserDefinedFunctions
-class UserDefinedSQLFunctionFactory : public IHints<1, UserDefinedSQLFunctionFactory>
+class UserDefinedSQLFunctionFactory : public IHints<>
 {
 public:
     static UserDefinedSQLFunctionFactory & instance();

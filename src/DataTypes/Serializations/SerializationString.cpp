@@ -14,6 +14,8 @@
 #include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <base/unit.h>
+
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -157,6 +159,14 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         UInt64 size;
         readVarUInt(size, istr);
+
+        static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
+        if (size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large string size: {}. The maximum is: {}.",
+                size,
+                max_string_size);
 
         offset += size + 1;
         offsets.push_back(offset);
@@ -313,10 +323,11 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 {
     if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
     {
-        String field;
-        readJSONObjectPossiblyInvalid(field, istr);
-        ReadBufferFromString buf(field);
-        read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+        read(column, [&](ColumnString::Chars & data) { readJSONObjectPossiblyInvalid(data, istr); });
+    }
+    else if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
+    {
+        read(column, [&](ColumnString::Chars & data) { readJSONArrayInto(data, istr); });
     }
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
@@ -351,5 +362,13 @@ void SerializationString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
     read(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
 }
 
+void SerializationString::serializeTextMarkdown(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (settings.markdown.escape_special_characters)
+        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+    else
+        serializeTextEscaped(column, row_num, ostr, settings);
+}
 
 }

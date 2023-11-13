@@ -40,6 +40,13 @@ std::string MMapReadBufferFromFile::getFileName() const
 }
 
 
+bool MMapReadBufferFromFile::isRegularLocalFile(size_t * out_view_offset)
+{
+    *out_view_offset = mapped.getOffset();
+    return true;
+}
+
+
 MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, size_t offset, size_t length_)
     : file_name(file_name_)
 {

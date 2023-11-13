@@ -5,7 +5,9 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -18,6 +20,12 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
 
 namespace DB
 {
@@ -52,7 +60,7 @@ void ClusterCopier::init()
     getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
-    task_cluster->random_engine.seed(task_cluster->random_device());
+    task_cluster->random_engine.seed(randomSeed());
     for (auto & task_table : task_cluster->table_tasks)
     {
         task_table.cluster_pull = getContext()->getCluster(task_table.cluster_pull_name);
@@ -192,7 +200,7 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
 {
     /// Fetch partitions list from a shard
     {
-        ThreadPool thread_pool(num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
+        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
         for (const TaskShardPtr & task_shard : task_table.all_shards)
             thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]()
@@ -384,7 +392,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
             auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
-                return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
+                return zkutil::EphemeralNodeHolder::existing(current_worker_path, *zookeeper);
 
             if (code == Coordination::Error::ZBADVERSION)
             {
@@ -601,6 +609,8 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         ss << "ALTER TABLE " << getQuotedTable(original_table) << ((partition_name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") << partition_name;
 
         UInt64 num_shards_drop_partition = executeQueryOnCluster(task_table.cluster_push, ss.str(), task_cluster->settings_push, ClusterExecutionMode::ON_EACH_SHARD);
+        if (num_shards_drop_partition != task_table.cluster_push->getShardCount())
+            return TaskStatus::Error;
 
         LOG_INFO(log, "Drop partition {} in original table {} have been executed successfully on {} shards of {}",
             partition_name, getQuotedTable(original_table), num_shards_drop_partition, task_table.cluster_push->getShardCount());
@@ -1766,7 +1776,7 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context), false, false)));
+            std::make_shared<RemoteQueryExecutor>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context), false, false, /* async_query_sending= */ false)));
     Block block = getBlockWithAllStreamData(std::move(builder));
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }
@@ -2016,7 +2026,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             {
                 connections.emplace_back(std::make_shared<Connection>(
                     node.host_name, node.port, node.default_database,
-                    node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                    node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                     "ClusterCopier", node.compression, node.secure
                 ));
 

@@ -10,10 +10,10 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
 
-#include <Dictionaries//DictionarySource.h>
+#include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace ProfileEvents
@@ -50,8 +50,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     DictionarySourcePtr source_ptr_,
     CacheDictionaryStoragePtr cache_storage_ptr_,
     CacheDictionaryUpdateQueueConfiguration update_queue_configuration_,
-    DictionaryLifetime dict_lifetime_,
-    bool allow_read_expired_keys_)
+    CacheDictionaryConfiguration configuration_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
@@ -63,9 +62,8 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
         {
             update(unit_to_update);
         })
-    , dict_lifetime(dict_lifetime_)
+    , configuration(configuration_)
     , log(&Poco::Logger::get("ExternalDictionaries"))
-    , allow_read_expired_keys(allow_read_expired_keys_)
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
@@ -138,7 +136,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     const Columns & default_values_columns) const
 {
     /**
-    * Flow of getColumsImpl
+    * Flow of getColumnsImpl
     * 1. Get fetch result from storage
     * 2. If all keys are found in storage and not expired
     *   2.1. If storage returns fetched columns in order of keys then result is returned to client.
@@ -209,7 +207,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
     MutableColumns fetched_columns_during_update = request.makeAttributesResultColumns();
 
-    if (not_found_keys_size == 0 && expired_keys_size > 0 && allow_read_expired_keys)
+    if (not_found_keys_size == 0 && expired_keys_size > 0 && configuration.allow_read_expired_keys)
     {
         /// Start async update only if allow read expired keys and all keys are found
         update_queue.tryPushToUpdateQueueOrThrow(update_unit);
@@ -314,7 +312,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
 
         allow_expired_keys_during_aggregation = true;
     }
-    else if (not_found_keys_size == 0 && expired_keys_size > 0 && allow_read_expired_keys)
+    else if (not_found_keys_size == 0 && expired_keys_size > 0 && configuration.allow_read_expired_keys)
     {
         /// Start async update only if allow read expired keys and all keys are found
         update_queue.tryPushToUpdateQueueOrThrow(update_unit);
@@ -549,16 +547,17 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     for (size_t i = 0; i < key_index_to_state_from_storage.size(); ++i)
     {
-        if (key_index_to_state_from_storage[i].isExpired()
-            || key_index_to_state_from_storage[i].isNotFound())
+        if (key_index_to_state_from_storage[i].isExpired() || key_index_to_state_from_storage[i].isNotFound())
         {
-            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                requested_keys_vector.emplace_back(requested_keys[i]);
-            else
-                requested_complex_key_rows.emplace_back(i);
-
             auto requested_key = requested_keys[i];
-            not_found_keys.insert(requested_key);
+            auto [_, inserted] = not_found_keys.insert(requested_key);
+            if (inserted)
+            {
+                if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+                    requested_keys_vector.emplace_back(requested_keys[i]);
+                else
+                    requested_complex_key_rows.emplace_back(i);
+            }
         }
     }
 
@@ -588,7 +587,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
-            PullingPipelineExecutor executor(pipeline);
+            DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
             Block block;
             while (executor.pull(block))
             {

@@ -16,11 +16,12 @@ public:
     std::optional<bool> null_modifier;
     String default_specifier;
     ASTPtr default_expression;
-    bool ephemeral_default;
+    bool ephemeral_default = false;
     ASTPtr comment;
     ASTPtr codec;
     ASTPtr ttl;
     ASTPtr collation;
+    bool primary_key_specifier = false;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 

@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -10,13 +11,13 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
 #include <Storages/NATS/NATSProducer.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <QueryPipeline/Pipe.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -156,7 +157,11 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
+    if (nats_settings->nats_handle_error_mode == StreamingHandleErrorMode::DEFAULT)
+        modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
+    else
+        modified_context->setSetting("input_format_allow_errors_num", Field{0});
+
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});
 
@@ -319,7 +324,7 @@ void StorageNATS::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1);
+        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, nats_settings->nats_handle_error_mode);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -346,14 +351,14 @@ void StorageNATS::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info, local_context);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
 }
 
 
-SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto modified_context = addSettings(local_context);
     std::string subject = modified_context->getSettingsRef().stream_like_engine_insert_queue.changed
@@ -414,7 +419,7 @@ void StorageNATS::startup()
 }
 
 
-void StorageNATS::shutdown()
+void StorageNATS::shutdown(bool /* is_drop */)
 {
     shutdown_called = true;
 
@@ -642,7 +647,7 @@ bool StorageNATS::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         LOG_DEBUG(log, "Current queue size: {}", consumers[0]->queueSize());
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, nats_settings->nats_handle_error_mode);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -711,8 +716,16 @@ void registerStorageNATS(StorageFactory & factory)
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        bool with_named_collection = getExternalDataSourceConfiguration(args.engine_args, *nats_settings, args.getLocalContext());
-        if (!with_named_collection && !args.storage_def->settings)
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        {
+            for (const auto & setting : nats_settings->all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    nats_settings->set(setting_name, named_collection->get<String>(setting_name));
+            }
+        }
+        else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
 
         nats_settings->loadFromQuery(*args.storage_def);
@@ -735,9 +748,17 @@ void registerStorageNATS(StorageFactory & factory)
 
 NamesAndTypesList StorageNATS::getVirtuals() const
 {
-    return NamesAndTypesList{
+    auto virtuals = NamesAndTypesList{
             {"_subject", std::make_shared<DataTypeString>()}
     };
+
+    if (nats_settings->nats_handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        virtuals.push_back({"_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+    }
+
+    return virtuals;
 }
 
 }

@@ -24,6 +24,7 @@ jobs:
         with:
           clear-repository: true
           fetch-depth: 0
+          filter: tree:0
       - name: Jepsen Test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -53,6 +54,7 @@ jobs:
   #       with:
   #         clear-repository: true
   #         fetch-depth: 0
+  #         filter: tree:0
   #     - name: Jepsen Test
   #       run: |
   #         sudo rm -fr "$TEMP_PATH"

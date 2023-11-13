@@ -102,7 +102,7 @@ SETTINGS
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
+:::note Важно
 Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
 :::
 
@@ -211,4 +211,4 @@ ClickHouse может поддерживать учетные данные Kerbe
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
--   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
+-   [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)

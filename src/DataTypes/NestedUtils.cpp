@@ -71,7 +71,7 @@ std::string extractTableName(const std::string & nested_name)
 }
 
 
-Block flatten(const Block & block)
+static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 {
     Block res;
 
@@ -114,7 +114,7 @@ Block flatten(const Block & block)
             else
                 res.insert(elem);
         }
-        else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()))
+        else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()); type_tuple && flatten_named_tuple)
         {
             if (type_tuple->haveExplicitNames())
             {
@@ -143,6 +143,17 @@ Block flatten(const Block & block)
     return res;
 }
 
+Block flatten(const Block & block)
+{
+    return flattenImpl(block, true);
+}
+
+
+Block flattenArrayOfTuples(const Block & block)
+{
+    return flattenImpl(block, false);
+}
+
 namespace
 {
 
@@ -153,7 +164,7 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
     std::unordered_map<String, NamesAndTypesList> nested;
     for (const auto & name_type : names_and_types)
     {
-        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
+        const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
 
         /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
         if (!isNested(name_type.type) && type_arr)
@@ -180,8 +191,11 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     auto nested_types = getSubcolumnsOfNested(names_and_types);
 
     for (const auto & name_type : names_and_types)
-        if (!isArray(name_type.type) || !nested_types.contains(splitName(name_type.name).first))
+    {
+        auto split = splitName(name_type.name);
+        if (!isArray(name_type.type) || split.second.empty() || !nested_types.contains(split.first))
             res.push_back(name_type);
+    }
 
     for (const auto & name_type : nested_types)
         res.emplace_back(name_type.first, name_type.second);

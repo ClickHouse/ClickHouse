@@ -44,6 +44,7 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->ttl = ttl->clone();
         res->children.push_back(res->ttl);
     }
+
     if (collation)
     {
         res->collation = collation->clone();

@@ -78,7 +78,6 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
 {
     ASTPtr inner_query = select_query;
     std::optional<StorageID> dependent_table_storage_id;
-    bool allow_experimental_analyzer = context->getSettingsRef().allow_experimental_analyzer;
 
     while (true)
     {
@@ -100,10 +99,6 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
 
         if (auto db_and_table = getDatabaseAndTable(*inner_select_query, 0))
         {
-            const auto * table_expression = getTableExpression(*inner_select_query, 0);
-            if (allow_experimental_analyzer && table_expression->database_and_table_name->tryGetAlias().empty())
-                table_expression->database_and_table_name->setAlias("__dependent_table");
-
             String select_database_name = db_and_table->database;
             String select_table_name = db_and_table->table;
 
@@ -258,7 +253,7 @@ StorageLiveView::StorageLiveView(
 
 StorageLiveView::~StorageLiveView()
 {
-    shutdown();
+    shutdown(false);
 }
 
 NamesAndTypesList StorageLiveView::getVirtuals() const
@@ -268,7 +263,7 @@ NamesAndTypesList StorageLiveView::getVirtuals() const
     };
 }
 
-void StorageLiveView::checkTableCanBeDropped() const
+void StorageLiveView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     auto table_id = getStorageID();
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
@@ -294,7 +289,7 @@ void StorageLiveView::startup()
         periodic_refresh_task->activate();
 }
 
-void StorageLiveView::shutdown()
+void StorageLiveView::shutdown(bool)
 {
     shutdown_called = true;
 
@@ -483,7 +478,7 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
     });
 
     auto executor = pipeline.execute();
-    executor->execute(pipeline.getNumThreads());
+    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
 }
 
 void StorageLiveView::refresh()
@@ -652,9 +647,9 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     }
     else
     {
-        auto inner_blocks_query = getInnerBlocksQuery();
+        auto inner_blocks_query_ = getInnerBlocksQuery();
         block_context->addExternalTable(getBlocksTableName(), std::move(blocks_storage_table_holder));
-        InterpreterSelectQuery interpreter(inner_blocks_query,
+        InterpreterSelectQuery interpreter(inner_blocks_query_,
             block_context,
             StoragePtr(),
             nullptr,
@@ -686,7 +681,6 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
 bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
 {
     SipHash hash;
-    UInt128 key;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
 
@@ -718,7 +712,7 @@ bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
         new_blocks->push_back(block);
     }
 
-    hash.get128(key);
+    const auto key = hash.get128();
 
     /// Update blocks only if hash keys do not match
     /// NOTE: hash could be different for the same result

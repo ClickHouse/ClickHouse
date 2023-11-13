@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <base/sort.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -130,7 +129,10 @@ public:
         {
             writePODBinary(value[i].first, buf);
             writePODBinary(zero_padding, buf);
-            writePODBinary(value[i].second, buf);
+            if constexpr (std::endian::native == std::endian::little)
+                writePODBinary(value[i].second, buf);
+            else
+                writePODBinary(std::byteswap(value[i].second), buf);
         }
     }
 
@@ -140,7 +142,8 @@ public:
         readVarUInt(size, buf);
 
         if (unlikely(size > AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE);
 
         auto & value = this->data(place).value;
 

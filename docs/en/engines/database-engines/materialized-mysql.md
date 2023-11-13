@@ -6,7 +6,7 @@ sidebar_position: 70
 
 # [experimental] MaterializedMySQL 
 
-:::warning
+:::note
 This is an experimental feature that should not be used in production.
 :::
 
@@ -22,10 +22,10 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 
 **Engine Parameters**
 
--   `host:port` — MySQL server endpoint.
--   `database` — MySQL database name.
--   `user` — MySQL user.
--   `password` — User password.
+- `host:port` — MySQL server endpoint.
+- `database` — MySQL database name.
+- `user` — MySQL user.
+- `password` — User password.
 
 ## Engine Settings
 
@@ -119,7 +119,7 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 
 The data of TIME type in MySQL is converted to microseconds in ClickHouse.
 
-Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
+Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws an exception and stops replication.
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
@@ -190,7 +190,7 @@ These are the schema conversion manipulations you can do with table overrides fo
  * Modify [column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
  * Modify [column compression codec](/docs/en/sql-reference/statements/create/table.md/#codecs).
  * Add [ALIAS columns](/docs/en/sql-reference/statements/create/table.md/#alias).
- * Add [skipping indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-data_skipping-indexes)
+ * Add [skipping indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-data_skipping-indexes). Note that you need to enable `use_skip_indexes_if_final` setting to make them work (MaterializedMySQL is using `SELECT ... FINAL` by default)
  * Add [projections](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#projections). Note that projection optimizations are
    disabled when using `SELECT ... FINAL` (which MaterializedMySQL does by default), so their utility is limited here.
    `INDEX ... TYPE hypothesis` as [described in the v21.12 blog post]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)
@@ -245,7 +245,7 @@ extra care needs to be taken.
 
 You may specify overrides for tables that do not exist yet.
 
-:::warning
+:::important
 It is easy to break replication with table overrides if not used with care. For example:
     
 * If an ALIAS column is added with a table override, and a column with the same name is later added to the source

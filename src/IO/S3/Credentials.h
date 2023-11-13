@@ -3,13 +3,12 @@
 #include "config.h"
 
 #if USE_AWS_S3
+
 #    include <aws/core/client/ClientConfiguration.h>
 #    include <aws/core/internal/AWSHttpResourceClient.h>
 #    include <aws/core/config/AWSProfileConfigLoader.h>
-#    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
-
-#    include <Common/logger_useful.h>
+#    include <aws/core/auth/bearer-token-provider/SSOBearerTokenProvider.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
 
@@ -17,9 +16,12 @@
 namespace DB::S3
 {
 
+inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
+
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
     static constexpr char EC2_SECURITY_CREDENTIALS_RESOURCE[] = "/latest/meta-data/iam/security-credentials";
+    static constexpr char EC2_AVAILABILITY_ZONE_RESOURCE[] = "/latest/meta-data/placement/availability-zone";
     static constexpr char EC2_IMDS_TOKEN_RESOURCE[] = "/latest/api/token";
     static constexpr char EC2_IMDS_TOKEN_HEADER[] = "x-aws-ec2-metadata-token";
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
@@ -48,7 +50,11 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
+    virtual Aws::String getCurrentAvailabilityZone() const;
+
 private:
+    std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
+
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
@@ -97,9 +103,11 @@ class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWS
     /// See STSAssumeRoleWebIdentityCredentialsProvider.
 
 public:
-    explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration);
+    explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
+        DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+
 protected:
     void Reload() override;
 
@@ -114,12 +122,57 @@ private:
     Aws::String token;
     bool initialized = false;
     Poco::Logger * logger;
+    uint64_t expiration_window_seconds;
+};
+
+class SSOCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
+{
+public:
+    SSOCredentialsProvider(DB::S3::PocoHTTPClientConfiguration aws_client_configuration_, uint64_t expiration_window_seconds_);
+
+    Aws::Auth::AWSCredentials GetAWSCredentials() override;
+
+private:
+    Aws::UniquePtr<Aws::Internal::SSOCredentialsClient> client;
+    Aws::Auth::AWSCredentials credentials;
+
+    // Profile description variables
+    Aws::String profile_to_use;
+
+    // The AWS account ID that temporary AWS credentials are resolved for.
+    Aws::String sso_account_id;
+    // The AWS region where the SSO directory for the given sso_start_url is hosted.
+    // This is independent of the general region configuration and MUST NOT be conflated.
+    Aws::String sso_region;
+    // The expiration time of the accessToken.
+    Aws::Utils::DateTime expires_at;
+    // The SSO Token Provider
+    Aws::Auth::SSOBearerTokenProvider bearer_token_provider;
+
+    DB::S3::PocoHTTPClientConfiguration aws_client_configuration;
+    uint64_t expiration_window_seconds;
+    Poco::Logger * logger;
+
+    void Reload() override;
+    void refreshIfExpired();
+    Aws::String loadAccessTokenFile(const Aws::String & sso_access_token_path);
+};
+
+struct CredentialsConfiguration
+{
+    bool use_environment_credentials = false;
+    bool use_insecure_imds_request = false;
+    uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS;
+    bool no_sign_request = false;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request);
+    S3CredentialsProviderChain(
+        const DB::S3::PocoHTTPClientConfiguration & configuration,
+        const Aws::Auth::AWSCredentials & credentials,
+        CredentialsConfiguration credentials_configuration);
 };
 
 }

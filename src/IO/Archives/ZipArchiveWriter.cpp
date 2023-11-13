@@ -191,7 +191,10 @@ namespace
         explicit StreamFromWriteBuffer(std::unique_ptr<WriteBuffer> write_buffer_)
             : write_buffer(std::move(write_buffer_)), start_offset(write_buffer->count()) {}
 
-        ~StreamFromWriteBuffer() { write_buffer->finalize(); }
+        ~StreamFromWriteBuffer()
+        {
+            write_buffer->finalize();
+        }
 
         static int closeFileFunc(void *, void * stream)
         {
@@ -314,7 +317,7 @@ int ZipArchiveWriter::compressionMethodToInt(const String & compression_method_)
 
 String ZipArchiveWriter::intToCompressionMethod(int compression_method_)
 {
-    switch (compression_method_)
+    switch (compression_method_) // NOLINT(bugprone-switch-missing-default-case)
     {
         case MZ_COMPRESS_METHOD_STORE:   return kStore;
         case MZ_COMPRESS_METHOD_DEFLATE: return kDeflate;
@@ -329,7 +332,7 @@ String ZipArchiveWriter::intToCompressionMethod(int compression_method_)
 /// Checks that a passed compression method can be used.
 void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 {
-    switch (compression_method_)
+    switch (compression_method_) // NOLINT(bugprone-switch-missing-default-case)
     {
         case MZ_COMPRESS_METHOD_STORE: [[fallthrough]];
         case MZ_COMPRESS_METHOD_DEFLATE:

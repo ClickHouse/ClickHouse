@@ -65,6 +65,7 @@ void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exceptio
 
 void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
 {
+    LOG_TRACE(log, "Starting MaterializeMySQL tables");
     DatabaseAtomic::startupTables(thread_pool, mode);
 
     if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
@@ -122,6 +123,7 @@ void DatabaseMaterializedMySQL::alterTable(ContextPtr context_, const StorageID 
 
 void DatabaseMaterializedMySQL::drop(ContextPtr context_)
 {
+    LOG_TRACE(log, "Dropping MaterializeMySQL database");
     /// Remove metadata info
     fs::path metadata(getMetadataPath() + "/.metadata");
 

@@ -12,9 +12,10 @@ $CLICKHOUSE_CLIENT -nm -q "
     create table data_fsync_pe (key Int) engine=MergeTree()
     order by key
     settings
-        min_rows_for_wide_part=2,
-        fsync_after_insert=1,
-        fsync_part_directory=1;
+        min_rows_for_wide_part = 2,
+        fsync_after_insert = 1,
+        fsync_part_directory = 1,
+        ratio_of_defaults_for_sparse_serialization = 1;
 "
 
 ret=1
@@ -44,8 +45,8 @@ for i in {1..100}; do
     ")"
 
     # Non retriable errors
-    if [[ $FileSync -ne 7 ]]; then
-        echo "FileSync: $FileSync != 11" >&2
+    if [[ $FileSync -ne 8 ]]; then
+        echo "FileSync: $FileSync != 8" >&2
         exit 2
     fi
     # Check that all files was synced

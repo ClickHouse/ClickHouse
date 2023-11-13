@@ -5,7 +5,7 @@ sidebar_position: 127
 
 # groupBitXor
 
-Applies bitwise `XOR` for series of numbers.
+Applies bit-wise `XOR` for series of numbers.
 
 ``` sql
 groupBitXor(expr)
@@ -13,11 +13,11 @@ groupBitXor(expr)
 
 **Arguments**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` – An expression that results in `UInt*` or `Int*` type.
 
 **Return value**
 
-Value of the `UInt*` type.
+Value of the `UInt*` or `Int*` type.
 
 **Example**
 

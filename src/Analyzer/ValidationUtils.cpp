@@ -17,7 +17,49 @@ namespace ErrorCodes
     extern const int NOT_AN_AGGREGATE;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int ILLEGAL_PREWHERE;
 }
+
+namespace
+{
+
+void validateFilter(const QueryTreeNodePtr & filter_node, std::string_view exception_place_message, const QueryTreeNodePtr & query_node)
+{
+    auto filter_node_result_type = filter_node->getResultType();
+    if (!filter_node_result_type->canBeUsedInBooleanContext())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Invalid type for filter in {}: {}. In query {}",
+            exception_place_message,
+            filter_node_result_type->getName(),
+            query_node->formatASTForErrorMessage());
+}
+
+}
+
+void validateFilters(const QueryTreeNodePtr & query_node)
+{
+    const auto & query_node_typed = query_node->as<QueryNode &>();
+    if (query_node_typed.hasPrewhere())
+    {
+        validateFilter(query_node_typed.getPrewhere(), "PREWHERE", query_node);
+
+        assertNoFunctionNodes(query_node_typed.getPrewhere(),
+            "arrayJoin",
+            ErrorCodes::ILLEGAL_PREWHERE,
+            "ARRAY JOIN",
+            "in PREWHERE");
+    }
+
+    if (query_node_typed.hasWhere())
+        validateFilter(query_node_typed.getWhere(), "WHERE", query_node);
+
+    if (query_node_typed.hasHaving())
+        validateFilter(query_node_typed.getHaving(), "HAVING", query_node);
+}
+
+namespace
+{
 
 class ValidateGroupByColumnsVisitor : public ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsVisitor>
 {
@@ -106,7 +148,9 @@ private:
     const QueryTreeNodePtr & query_node;
 };
 
-void validateAggregates(const QueryTreeNodePtr & query_node, ValidationParams params)
+}
+
+void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidationParams params)
 {
     const auto & query_node_typed = query_node->as<QueryNode &>();
     auto join_tree_node_type = query_node_typed.getJoinTree()->getNodeType();

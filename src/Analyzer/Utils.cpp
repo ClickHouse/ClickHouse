@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
@@ -268,7 +270,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     return result_table_expression;
 }
 
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -297,7 +299,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
             [[fallthrough]];
         case QueryTreeNodeType::JOIN:
         {
-            auto table_expression_tables_in_select_query_ast = table_expression->toAST();
+            auto table_expression_tables_in_select_query_ast = table_expression->toAST(convert_to_ast_options);
             tables_in_select_query_ast->children.reserve(table_expression_tables_in_select_query_ast->children.size());
             for (auto && table_element_ast : table_expression_tables_in_select_query_ast->children)
                 tables_in_select_query_ast->children.push_back(std::move(table_element_ast));
@@ -472,30 +474,6 @@ QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_nod
     return result;
 }
 
-bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier)
-{
-    const IDataType * current_type = compound_type.get();
-
-    for (const auto & identifier_part : nested_identifier)
-    {
-        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
-            current_type = array->getNestedType().get();
-
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(current_type);
-
-        if (!tuple)
-            return false;
-
-        auto position = tuple->tryGetPositionByName(identifier_part);
-        if (!position)
-            return false;
-
-        current_type = tuple->getElements()[*position].get();
-    }
-
-    return true;
-}
-
 namespace
 {
 
@@ -536,6 +514,31 @@ private:
     std::string_view function_name;
     bool has_function = false;
 };
+
+inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_node)
+{
+    Array parameters;
+    for (const auto & param : function_node->getParameters())
+    {
+        auto * constant = param->as<ConstantNode>();
+        parameters.push_back(constant->getValue());
+    }
+
+    const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
+
+    DataTypes argument_types;
+    argument_types.reserve(function_node_argument_nodes.size());
+
+    for (const auto & function_node_argument : function_node_argument_nodes)
+        argument_types.emplace_back(function_node_argument->getResultType());
+
+    AggregateFunctionProperties properties;
+    return AggregateFunctionFactory::instance().get(
+        function_node->getFunctionName(),
+        argument_types,
+        parameters,
+        properties);
+}
 
 }
 
@@ -595,6 +598,65 @@ void replaceColumns(QueryTreeNodePtr & node,
 {
     ReplaceColumnsVisitor visitor(table_expression_node, column_name_to_node);
     visitor.visit(node);
+}
+
+void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
+{
+    if (!function_node->isResolved())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to rerun resolve of unresolved function '{}'", function_node->getFunctionName());
+
+    const auto & name = function_node->getFunctionName();
+    if (function_node->isOrdinaryFunction())
+    {
+        // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
+        if (name == "grouping")
+            return;
+        auto function = FunctionFactory::instance().get(name, context);
+        function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+    }
+    else if (function_node->isAggregateFunction())
+    {
+        if (name == "nothing")
+            return;
+        function_node->resolveAsAggregateFunction(resolveAggregateFunction(function_node));
+    }
+    else if (function_node->isWindowFunction())
+    {
+        function_node->resolveAsWindowFunction(resolveAggregateFunction(function_node));
+    }
+}
+
+namespace
+{
+
+class CollectIdentifiersFullNamesVisitor : public ConstInDepthQueryTreeVisitor<CollectIdentifiersFullNamesVisitor>
+{
+public:
+    explicit CollectIdentifiersFullNamesVisitor(NameSet & used_identifiers_)
+        : used_identifiers(used_identifiers_) { }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        auto * column_node = node->as<IdentifierNode>();
+        if (!column_node)
+            return;
+
+        used_identifiers.insert(column_node->getIdentifier().getFullName());
+    }
+
+    NameSet & used_identifiers;
+};
+
+}
+
+NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
+{
+    NameSet out;
+    CollectIdentifiersFullNamesVisitor visitor(out);
+    visitor.visit(node);
+    return out;
 }
 
 }

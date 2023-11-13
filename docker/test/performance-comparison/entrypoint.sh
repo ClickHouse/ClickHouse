@@ -6,11 +6,7 @@ export CHPC_CHECK_START_TIMESTAMP
 
 S3_URL=${S3_URL:="https://clickhouse-builds.s3.amazonaws.com"}
 BUILD_NAME=${BUILD_NAME:-package_release}
-
-COMMON_BUILD_PREFIX="/clickhouse_build_check"
-if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
-    COMMON_BUILD_PREFIX=""
-fi
+export S3_URL BUILD_NAME
 
 # Sometimes AWS responde with DNS error and it's impossible to retry it with
 # current curl version options.
@@ -66,8 +62,9 @@ function find_reference_sha
         # test all of them.
         unset found
         declare -a urls_to_try=(
-            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
-            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/$BUILD_NAME/performance.tgz"
+            "$S3_URL/PRs/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tgz"
         )
         for path in "${urls_to_try[@]}"
         do
@@ -92,10 +89,15 @@ chmod 777 workspace output
 cd workspace
 
 # Download the package for the version we are going to test.
-if curl_with_retry "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/$BUILD_NAME/performance.tar.zst"
-then
-    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/$BUILD_NAME/performance.tar.zst"
-fi
+# A temporary solution for migrating into PRs directory
+for prefix in "$S3_URL/PRs" "$S3_URL";
+do
+    if curl_with_retry "$prefix/$PR_TO_TEST/$SHA_TO_TEST/$BUILD_NAME/performance.tar.zst"
+    then
+        right_path="$prefix/$PR_TO_TEST/$SHA_TO_TEST/$BUILD_NAME/performance.tar.zst"
+        break
+    fi
+done
 
 mkdir right
 wget -nv -nd -c "$right_path" -O- | tar -C right --no-same-owner --strip-components=1 --zstd --extract --verbose
@@ -128,7 +130,7 @@ then
     git -C right/ch diff --name-only "$base" pr -- :!tests/performance :!docker/test/performance-comparison | tee other-changed-files.txt
 fi
 
-# Set python output encoding so that we can print queries with Russian letters.
+# Set python output encoding so that we can print queries with non-ASCII letters.
 export PYTHONIOENCODING=utf-8
 
 # By default, use the main comparison script from the tested package, so that we
@@ -149,11 +151,7 @@ export PATH
 export REF_PR
 export REF_SHA
 
-# Try to collect some core dumps. I've seen two patterns in Sandbox:
-# 1) |/home/zomb-sandbox/venv/bin/python /home/zomb-sandbox/client/sandbox/bin/coredumper.py %e %p %g %u %s %P %c
-#    Not sure what this script does (puts them to sandbox resources, logs some messages?),
-#    and it's not accessible from inside docker anyway.
-# 2) something like %e.%p.core.dmp. The dump should end up in the workspace directory.
+# Try to collect some core dumps.
 # At least we remove the ulimit and then try to pack some common file names into output.
 ulimit -c unlimited
 cat /proc/sys/kernel/core_pattern

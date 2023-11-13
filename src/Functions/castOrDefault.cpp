@@ -85,7 +85,7 @@ public:
         {
             auto default_value_type = arguments[2].type;
 
-            if (!areTypesEqual(result_type, default_value_type))
+            if (!result_type->equals(*default_value_type))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Default value type should be same as cast type. Expected {}. Actual {}",
@@ -245,7 +245,8 @@ private:
         {
             if (additional_argument_index < arguments.size())
             {
-                time_zone = extractTimeZoneNameFromColumn(*arguments[additional_argument_index].column);
+                time_zone = extractTimeZoneNameFromColumn(arguments[additional_argument_index].column.get(),
+                                                          arguments[additional_argument_index].name);
                 ++additional_argument_index;
             }
         }

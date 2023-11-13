@@ -124,15 +124,18 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 <details markdown="1">
 <summary>已弃用的建表方法</summary>
 
-    :::attention "注意"
-    不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::attention "注意"
+不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::
 
-    CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-    (
-        name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-        name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-        ...
-    ) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+```
 
 **MergeTree() 参数**
 
@@ -192,7 +195,7 @@ ClickHouse 会为每个数据片段创建一个索引文件来存储这些标记
 
 ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键的行。
 
-您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](../../../operations/settings/#allow-nullable-key)，[NULLS_LAST](../../../sql-reference/statements/select/order-by.md/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
+您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](../../../operations/settings/index.md#allow-nullable-key)，[NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
 
 ### 主键的选择 {#zhu-jian-de-xuan-ze}
 
@@ -330,7 +333,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     支持的数据类型：`Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`。
 
-    以下函数会用到这个索引： [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions), [notIn](../../../sql-reference/functions/in-functions), [has](../../../sql-reference/functions/array-functions)
+    以下函数会用到这个索引： [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md)
 
 ``` sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -353,14 +356,14 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith) | ✗           | ✗      | ✔          | ✔          | ✗            |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany) | ✗           | ✗      | ✔          | ✗          | ✗            |
-| [in](../../../sql-reference/functions/in-functions#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notIn](../../../sql-reference/functions/in-functions#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [empty](../../../sql-reference/functions/array-functions#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [notEmpty](../../../sql-reference/functions/array-functions#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [empty](../../../sql-reference/functions/array-functions.md#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | hasToken                                                     | ✗           | ✗      | ✗          | ✔          | ✗            |
 
 常量参数小于 ngram 大小的函数不能使用 `ngrambf_v1` 进行查询优化。
@@ -689,7 +692,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 `default` 存储策略意味着只使用一个卷，这个卷只包含一个在 `<path>` 中定义的磁盘。您可以使用[ALTER TABLE ... MODIFY SETTING]来修改存储策略，新的存储策略应该包含所有以前的磁盘和卷，并使用相同的名称。
 
-可以通过 [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) 设置调整执行后台任务的线程数。
+可以通过 [background_move_pool_size](../../../operations/server-configuration-parameters/settings.md#background_move_pool_size) 设置调整执行后台任务的线程数。
 
 ### 详细说明 {#details}
 
@@ -742,8 +745,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </s3>
     </disks>
@@ -769,8 +770,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 - `single_read_retries` - 读过程中连接丢失后重试次数，默认值为4。
 - `min_bytes_for_seek` - 使用查找操作，而不是顺序读操作的最小字节数，默认值为1000。
 - `metadata_path` - 本地存放S3元数据文件的路径，默认值为`/var/lib/clickhouse/disks/<disk_name>/`
-- `cache_enabled` - 是否允许缓存标记和索引文件。默认值为`true`。
-- `cache_path` - 本地缓存标记和索引文件的路径。默认值为`/var/lib/clickhouse/disks/<disk_name>/cache/`。
 - `skip_access_check` - 如果为`true`，Clickhouse启动时不检查磁盘是否可用。默认为`false`。
 - `server_side_encryption_customer_key_base64` - 如果指定该项的值，请求时会加上为了访问SSE-C加密数据而必须的头信息。
 
@@ -820,4 +819,3 @@ S3磁盘也可以设置冷热存储：
 -    `_part_uuid` - 唯一部分标识符（如果 MergeTree 设置`assign_part_uuids` 已启用）。
 -    `_partition_value` — `partition by` 表达式的值（元组）。
 -    `_sample_factor` - 采样因子（来自请求）。
-

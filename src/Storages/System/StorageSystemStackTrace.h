@@ -2,7 +2,6 @@
 
 #ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
 
-#include <mutex>
 #include <Storages/IStorage.h>
 
 namespace Poco
@@ -38,7 +37,6 @@ public:
     bool isSystemStorage() const override { return true; }
 
 protected:
-    mutable std::mutex mutex;
     Poco::Logger * log;
 };
 

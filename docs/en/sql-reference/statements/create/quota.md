@@ -5,12 +5,13 @@ sidebar_label: QUOTA
 title: "CREATE QUOTA"
 ---
 
-Creates a [quota](../../../operations/access-rights.md#quotas-management) that can be assigned to a user or a role.
+Creates a [quota](../../../guides/sre/user-management/index.md#quotas-management) that can be assigned to a user or a role.
 
 Syntax:
 
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
     [KEYED BY {user_name | ip_address | client_key | client_key,user_name | client_key,ip_address} | NOT KEYED]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
         {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number } [,...] |
@@ -32,7 +33,7 @@ Limit the maximum number of queries for the current user with 123 queries in 15 
 CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
 ```
 
-For the default user limit the maximum execution time with half a second in 30 minutes, and limit the maximum number of queries with 321 and the maximum number of errors with 10 in 5 quaters:
+For the default user limit the maximum execution time with half a second in 30 minutes, and limit the maximum number of queries with 321 and the maximum number of errors with 10 in 5 quarters:
 
 ``` sql
 CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;

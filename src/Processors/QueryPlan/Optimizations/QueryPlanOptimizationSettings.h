@@ -38,6 +38,12 @@ struct QueryPlanOptimizationSettings
     /// If removing redundant distinct steps is enabled
     bool remove_redundant_distinct = true;
 
+    /// If reading from projection can be applied
+    bool optimize_projection = false;
+    bool force_use_projection = false;
+    String force_projection_name;
+    bool optimize_use_implicit_projections = false;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

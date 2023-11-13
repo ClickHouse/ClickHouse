@@ -119,6 +119,10 @@ struct AggregateFunctionUniqCombinedData<String, K, HashValueType> : public Aggr
 {
 };
 
+template <UInt8 K, typename HashValueType>
+struct AggregateFunctionUniqCombinedData<IPv6, K, HashValueType> : public AggregateFunctionUniqCombinedDataWithKey<UInt64 /*always*/, K>
+{
+};
 
 template <typename T, UInt8 K, typename HashValueType>
 class AggregateFunctionUniqCombined final
@@ -141,15 +145,15 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if constexpr (!std::is_same_v<T, String>)
-        {
-            const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
-            this->data(place).set.insert(detail::AggregateFunctionUniqCombinedTraits<T, HashValueType>::hash(value));
-        }
-        else
+        if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
         {
             StringRef value = columns[0]->getDataAt(row_num);
             this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+        }
+        else
+        {
+            const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
+            this->data(place).set.insert(detail::AggregateFunctionUniqCombinedTraits<T, HashValueType>::hash(value));
         }
     }
 

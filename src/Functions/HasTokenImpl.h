@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Common/StringSearcher.h>
 #include <Core/ColumnNumbers.h>
 
 
@@ -9,13 +10,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 /** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
   */
-template <typename Name, typename TokenSearcher, bool negate>
+template <typename Name, typename Searcher, bool negate>
 struct HasTokenImpl
 {
     using ResultType = UInt8;
@@ -44,19 +47,35 @@ struct HasTokenImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        try
+        if (const auto has_separator = std::any_of(pattern.cbegin(), pattern.cend(), isTokenSeparator); has_separator || pattern.empty())
         {
-            /// Parameter `pattern` is supposed to be a literal of letters and/or numbers.
-            /// Otherwise, an exception from the constructor of `TokenSearcher` is thrown.
-            /// If no exception is thrown at that point, then no further error cases may occur.
-            TokenSearcher searcher(pattern.data(), pattern.size(), end - pos);
             if (res_null)
-                std::ranges::fill(res_null->getData(), false);
+            {
+                std::ranges::fill(res, 0);
+                std::ranges::fill(res_null->getData(), true);
+                return;
+            }
+            else if (has_separator)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
+            else if (pattern.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle cannot be empty, because empty string isn't a token");
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected internal state");
+        }
 
-            /// The current index in the array of strings.
-            size_t i = 0;
-            /// We will search for the next occurrence in all rows at once.
-            while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+        size_t pattern_size = pattern.size();
+        Searcher searcher(pattern.data(), pattern_size, end - pos);
+        if (res_null)
+            std::ranges::fill(res_null->getData(), false);
+
+        /// The current index in the array of strings.
+        size_t i = 0;
+        /// We will search for the next occurrence in all rows at once.
+        while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+        {
+            /// The found substring is a token
+            if ((pos == begin || isTokenSeparator(pos[-1]))
+                && (pos + pattern_size == end || isTokenSeparator(pos[pattern_size])))
             {
                 /// Let's determine which index it refers to.
                 while (begin + haystack_offsets[i] <= pos)
@@ -74,21 +93,16 @@ struct HasTokenImpl
                 pos = begin + haystack_offsets[i];
                 ++i;
             }
-
-            /// Tail, in which there can be no substring.
-            if (i < res.size())
-                memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
-        }
-        catch (...)
-        {
-            if (!res_null)
-                throw;
             else
             {
-                std::ranges::fill(res, 0);
-                std::ranges::fill(res_null->getData(), true);
+                /// Not a token. Jump over it.
+                pos += pattern_size;
             }
         }
+
+        /// Tail, in which there can be no substring.
+        if (i < res.size())
+            memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
     }
 
     template <typename... Args>
@@ -114,6 +128,12 @@ struct HasTokenImpl
     static void vectorFixedVector(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
+    }
+
+private:
+    static bool isTokenSeparator(UInt8 c)
+    {
+        return isASCII(c) && !isAlphaNumericASCII(c);
     }
 };
 

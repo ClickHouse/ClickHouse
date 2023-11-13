@@ -3,11 +3,12 @@
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <ctime>
@@ -134,8 +135,7 @@ public:
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
         ContextMutablePtr /*context*/,
-        LoadingStrictnessLevel /*mode*/,
-        bool /* skip_startup_tables */)
+        LoadingStrictnessLevel /*mode*/)
     {
     }
 
@@ -170,7 +170,7 @@ public:
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 
-    StoragePtr getTable(const String & name, ContextPtr context) const;
+    virtual StoragePtr getTable(const String & name, ContextPtr context) const;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -182,6 +182,8 @@ public:
 
     /// Is the database empty.
     virtual bool empty() const = 0;
+
+    virtual bool isReadOnly() const { return false; }
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
@@ -253,6 +255,9 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
     }
+
+    /// Special method for ReplicatedMergeTree and DatabaseReplicated
+    virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
     virtual time_t getObjectMetadataModificationTime(const String & /*name*/) const
@@ -341,7 +346,7 @@ public:
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
 
-    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] bool internal = false) /// NOLINT
+    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags = {}) /// NOLINT
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", getEngineName());
     }
@@ -368,6 +373,7 @@ protected:
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
+using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
 using Databases = std::map<String, DatabasePtr>;
 
 }

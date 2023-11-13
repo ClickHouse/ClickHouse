@@ -71,20 +71,29 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
     return result;
 }
 
-IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
     if (!lock.try_lock_for(acquire_timeout))
-        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
-                        "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), acquire_timeout.count());
+        return {};
 
     if (is_dropped || is_detached)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return lock;
+}
+
+IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+{
+
+    if (auto lock = tryLockForAlter(acquire_timeout); lock == std::nullopt)
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
+                        "Possible deadlock avoided. Client should retry.",
+                        getStorageID().getFullTableName(), acquire_timeout.count());
+    else
+        return std::move(*lock);
 }
 
 
@@ -133,6 +142,13 @@ void IStorage::read(
     size_t num_streams)
 {
     auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+
+    /// parallelize processing if not yet
+    const size_t output_ports = pipe.numOutputPorts();
+    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
+    if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
+        pipe.resize(num_streams);
+
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
 }
 
@@ -152,7 +168,7 @@ void IStorage::readFromPipe(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info.storage_limits);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info, context);
         query_plan.addStep(std::move(read_step));
     }
 }
@@ -195,7 +211,10 @@ void IStorage::checkMutationIsPossible(const MutationCommands & /*commands*/, co
 }
 
 void IStorage::checkAlterPartitionIsPossible(
-    const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
+    const PartitionCommands & /*commands*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr /*context*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
 }
@@ -255,6 +274,16 @@ bool IStorage::isStaticStorage() const
         return true;
     }
     return false;
+}
+
+IStorage::DataValidationTasksPtr IStorage::getCheckTaskList(const CheckTaskFilter &, ContextPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName());
+}
+
+std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* check_task_list */)
+{
+    return {};
 }
 
 void IStorage::adjustCreateQueryForBackup(ASTPtr &) const

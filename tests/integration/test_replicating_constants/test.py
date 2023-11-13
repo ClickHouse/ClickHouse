@@ -11,6 +11,7 @@ node2 = cluster.add_instance(
     image="yandex/clickhouse-server",
     tag="19.1.14",
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

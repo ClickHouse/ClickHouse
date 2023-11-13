@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -136,12 +137,20 @@ Block NativeReader::read()
     {
         readVarUInt(columns, istr);
         readVarUInt(rows, istr);
+
+        if (columns > 1'000'000uz)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many columns in Native format: {}", columns);
+        if (rows > 1'000'000'000'000uz)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Native format: {}", rows);
     }
     else
     {
         columns = index_block_it->num_columns;
         rows = index_block_it->num_rows;
     }
+
+    if (columns == 0 && !header && rows != 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
 
     for (size_t i = 0; i < columns; ++i)
     {
@@ -283,6 +292,9 @@ Block NativeReader::read()
 
         res.swap(tmp_res);
     }
+
+    if (res.rows() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after desirialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
 }

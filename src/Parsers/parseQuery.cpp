@@ -233,10 +233,11 @@ ASTPtr tryParseQuery(
     const std::string & query_description,
     bool allow_multi_statements,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    bool skip_insignificant)
 {
     const char * query_begin = _out_query_end;
-    Tokens tokens(query_begin, all_queries_end, max_query_size);
+    Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth));
 
@@ -261,6 +262,10 @@ ASTPtr tryParseQuery(
     const bool parse_res = parser.parse(token_iterator, res, expected);
     const auto last_token = token_iterator.max();
     _out_query_end = last_token.end;
+
+    /// Also check on the AST level, because the generated AST depth can be greater than the recursion depth of the parser.
+    if (res && max_parser_depth)
+        res->checkDepth(max_parser_depth);
 
     ASTInsertQuery * insert = nullptr;
     if (parse_res)

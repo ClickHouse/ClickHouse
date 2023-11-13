@@ -25,6 +25,8 @@ public:
     {
         IColumn & column;
         DataTypePtr type;
+        bool is_tuple_element;
+        std::optional<size_t> array_size;
         UInt8 * read;
     };
 
@@ -37,7 +39,7 @@ public:
     bool visit_bin(const char * value, size_t size);
     bool visit_boolean(bool value);
     bool start_array(size_t size);
-    bool end_array();
+    bool end_array_item();
     bool visit_nil();
     bool start_map(uint32_t size);
     bool start_map_key();
@@ -73,7 +75,11 @@ private:
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
-    bool readObject();
+    template <typename Parser>
+    bool readObject(Parser & msgpack_parser);
+
+    size_t countRows(size_t max_block_size) override;
+    bool supportsCountRows() const override { return true; }
 
     std::unique_ptr<PeekableReadBuffer> buf;
     MsgPackVisitor visitor;
@@ -89,7 +95,7 @@ public:
 private:
     msgpack::object_handle readObject();
     DataTypePtr getDataType(const msgpack::object & object);
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     UInt64 number_of_columns;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/COW.h>
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -345,6 +345,11 @@ public:
       */
     virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
+    {
+        serializeTextJSON(column, row_num, ostr, settings);
+    }
+
 
     /** Text serialization for putting into the XML format.
       */
@@ -361,8 +366,11 @@ public:
     virtual void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
     virtual void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
+    virtual void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
+
     static String getSubcolumnNameForStream(const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 

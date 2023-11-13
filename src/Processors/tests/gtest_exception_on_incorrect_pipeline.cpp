@@ -29,7 +29,7 @@ TEST(Processors, PortsConnected)
 
     QueryStatusPtr element;
     PipelineExecutor executor(processors, element);
-    executor.execute(1);
+    executor.execute(1, false);
 }
 
 TEST(Processors, PortsNotConnected)
@@ -55,7 +55,7 @@ TEST(Processors, PortsNotConnected)
     {
         QueryStatusPtr element;
         PipelineExecutor executor(processors, element);
-        executor.execute(1);
+        executor.execute(1, false);
         ASSERT_TRUE(false) << "Should have thrown.";
     }
     catch (DB::Exception & e)

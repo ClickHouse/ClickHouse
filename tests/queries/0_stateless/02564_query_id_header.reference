@@ -20,3 +20,7 @@ DROP TABLE t_query_id_header
 < Content-Type: text/plain; charset=UTF-8
 < X-ClickHouse-Query-Id: query_id
 < X-ClickHouse-Timezone: timezone
+BAD SQL
+< Content-Type: text/plain; charset=UTF-8
+< X-ClickHouse-Query-Id: query_id
+< X-ClickHouse-Timezone: timezone

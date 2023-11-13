@@ -27,7 +27,6 @@
 #include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 
@@ -279,6 +278,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     /// Note: it may be > than settings.max_threads, so we should apply this limit again.
     bool will_limit_max_threads = true;
     size_t max_threads = 0;
+    bool concurrency_control = false;
     Pipes pipes;
     QueryPlanResourceHolder resources;
 
@@ -298,6 +298,8 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         /// It may happen if max_distributed_connections > max_threads
         if (pipeline.max_threads > max_threads_limit)
             max_threads_limit = pipeline.max_threads;
+
+        concurrency_control = pipeline.getConcurrencyControl();
     }
 
     QueryPipelineBuilder pipeline;
@@ -308,6 +310,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     {
         pipeline.setMaxThreads(max_threads);
         pipeline.limitMaxThreads(max_threads_limit);
+        pipeline.setConcurrencyControl(concurrency_control);
     }
 
     pipeline.setCollectedProcessors(nullptr);
@@ -492,7 +495,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (delayed_root)
         {
             // Process delayed joined blocks when all JoiningTransform are finished.
-            auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(joined_header);
+            auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(
+                joined_header,
+                [left_header, joined_header, max_block_size, join]()
+                { return join->getNonJoinedBlocks(left_header, joined_header, max_block_size); });
             if (delayed->getInputs().size() != 1 || delayed->getOutputs().size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform should have one input and one output");
 
@@ -570,23 +576,25 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     return left;
 }
 
-void QueryPipelineBuilder::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
+void QueryPipelineBuilder::addCreatingSetsTransform(
+    const Block & res_header,
+    SetAndKeyPtr set_and_key,
+    StoragePtr external_table,
+    const SizeLimits & limits,
+    PreparedSetsCachePtr prepared_sets_cache)
 {
+    dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
             getHeader(),
             res_header,
-            std::move(subquery_for_set),
+            std::move(set_and_key),
+            std::move(external_table),
             limits,
-            context);
+            std::move(prepared_sets_cache));
 
-    InputPort * totals_port = nullptr;
-
-    if (pipe.getTotalsPort())
-        totals_port = transform->addTotalsPort();
-
-    pipe.addTransform(std::move(transform), totals_port, nullptr);
+    pipe.addTransform(std::move(transform));
 }
 
 void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
@@ -621,65 +629,6 @@ void QueryPipelineBuilder::setProgressCallback(ProgressCallback callback)
     progress_callback = callback;
 }
 
-void QueryPipelineBuilder::connectDependencies()
-{
-    /**
-    * This is needed because among all RemoteSources there could be
-    * one or several that don't belong to the parallel replicas reading process.
-    * It could happen for example if we read through distributed table + prefer_localhost_replica=1 + parallel replicas
-    * SELECT * FROM remote('127.0.0.{1,2}', table.merge_tree)
-    * Will generate a local pipeline and a remote source. For local pipeline because of parallel replicas we will create
-    * several processors to read and several remote sources.
-    */
-    std::set<UUID> all_parallel_replicas_groups;
-    for (auto & processor : *pipe.getProcessorsPtr())
-    {
-        if (auto * remote_dependency = typeid_cast<RemoteSource *>(processor.get()); remote_dependency)
-            if (auto uuid = remote_dependency->getParallelReplicasGroupUUID(); uuid != UUIDHelpers::Nil)
-                all_parallel_replicas_groups.insert(uuid);
-        if (auto * merge_tree_dependency = typeid_cast<ReadFromMergeTreeDependencyTransform *>(processor.get()); merge_tree_dependency)
-            if (auto uuid = merge_tree_dependency->getParallelReplicasGroupUUID(); uuid != UUIDHelpers::Nil)
-                all_parallel_replicas_groups.insert(uuid);
-    }
-
-    for (const auto & group_id : all_parallel_replicas_groups)
-    {
-        std::vector<RemoteSource *> input_dependencies;
-        std::vector<ReadFromMergeTreeDependencyTransform *> output_dependencies;
-
-        for (auto & processor : *pipe.getProcessorsPtr())
-        {
-            if (auto * remote_dependency = typeid_cast<RemoteSource *>(processor.get()); remote_dependency)
-                if (auto uuid = remote_dependency->getParallelReplicasGroupUUID(); uuid == group_id)
-                    input_dependencies.emplace_back(remote_dependency);
-            if (auto * merge_tree_dependency = typeid_cast<ReadFromMergeTreeDependencyTransform *>(processor.get()); merge_tree_dependency)
-                if (auto uuid = merge_tree_dependency->getParallelReplicasGroupUUID(); uuid == group_id)
-                    output_dependencies.emplace_back(merge_tree_dependency);
-        }
-
-        if (input_dependencies.empty() || output_dependencies.empty())
-            continue;
-
-        auto input_dependency_iter = input_dependencies.begin();
-        auto output_dependency_iter = output_dependencies.begin();
-        auto scheduler = std::make_shared<ResizeProcessor>(Block{}, input_dependencies.size(), output_dependencies.size());
-
-        for (auto & scheduler_input : scheduler->getInputs())
-        {
-            (*input_dependency_iter)->connectToScheduler(scheduler_input);
-            ++input_dependency_iter;
-        }
-
-        for (auto & scheduler_output : scheduler->getOutputs())
-        {
-            (*output_dependency_iter)->connectToScheduler(scheduler_output);
-            ++output_dependency_iter;
-        }
-
-        pipe.getProcessorsPtr()->emplace_back(std::move(scheduler));
-    }
-}
-
 PipelineExecutorPtr QueryPipelineBuilder::execute()
 {
     if (!isCompleted())
@@ -699,6 +648,7 @@ QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
     QueryPipeline res(std::move(builder.pipe));
     res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());
+    res.setConcurrencyControl(builder.getConcurrencyControl());
     res.setProcessListElement(builder.process_list_element);
     res.setProgressCallback(builder.progress_callback);
     return res;

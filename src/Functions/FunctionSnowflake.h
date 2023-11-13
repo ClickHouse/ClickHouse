@@ -4,8 +4,13 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/DecimalFunctions.h>
+#include <Interpreters/Context.h>
 
 #include <base/arithmeticOverflow.h>
 
@@ -14,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -37,14 +41,15 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
-    bool isVariadic() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isDateTime(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be DateTime", name);
+        FunctionArgumentDescriptors args{
+            {"value", &isDateTime<IDataType>, nullptr, "DateTime"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -52,29 +57,30 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
-        const auto & col = *src.column;
+        const auto & src_column = *src.column;
 
         auto res_column = ColumnInt64::create(input_rows_count);
-        auto & result_data = res_column->getData();
+        auto & res_data = res_column->getData();
 
-        const auto & source_data = typeid_cast<const ColumnUInt32 &>(col).getData();
+        const auto & src_data = typeid_cast<const ColumnUInt32 &>(src_column).getData();
         for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            result_data[i] = (Int64(source_data[i]) * 1000 - snowflake_epoch) << time_shift;
-        }
+            res_data[i] = (Int64(src_data[i]) * 1000 - snowflake_epoch) << time_shift;
 
         return res_column;
     }
 };
 
-
 class FunctionSnowflakeToDateTime : public IFunction
 {
 private:
     const char * name;
+    const bool allow_nonconst_timezone_arguments;
 
 public:
-    explicit FunctionSnowflakeToDateTime(const char * name_) : name(name_) { }
+    explicit FunctionSnowflakeToDateTime(const char * name_, ContextPtr context)
+        : name(name_)
+        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+    {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -84,15 +90,17 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
+        FunctionArgumentDescriptors mandatory_args{
+            {"value", &isInt64<IDataType>, nullptr, "Int64"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"time_zone", &isString<IDataType>, nullptr, "String"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
-        if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be Int64", name);
-
-        std::string timezone;
+        String timezone;
         if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
 
         return std::make_shared<DataTypeDateTime>(timezone);
     }
@@ -100,18 +108,28 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
-        const auto & col = *src.column;
+        const auto & src_column = *src.column;
 
         auto res_column = ColumnUInt32::create(input_rows_count);
-        auto & result_data = res_column->getData();
+        auto & res_data = res_column->getData();
 
-        const auto & source_data = typeid_cast<const ColumnInt64 &>(col).getData();
-
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (const auto * src_column_non_const = typeid_cast<const ColumnInt64 *>(&src_column))
         {
-            result_data[i] = static_cast<UInt32>(
-                ((source_data[i] >> time_shift) + snowflake_epoch) / 1000);
+            const auto & src_data = src_column_non_const->getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = static_cast<UInt32>(
+                    ((src_data[i] >> time_shift) + snowflake_epoch) / 1000);
         }
+        else if (const auto * src_column_const = typeid_cast<const ColumnConst *>(&src_column))
+        {
+            Int64 src_val = src_column_const->getValue<Int64>();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = static_cast<UInt32>(
+                    ((src_val >> time_shift) + snowflake_epoch) / 1000);
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
+
         return res_column;
     }
 };
@@ -127,14 +145,15 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
-    bool isVariadic() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isDateTime64(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be DateTime64", name);
+        FunctionArgumentDescriptors args{
+            {"value", &isDateTime64<IDataType>, nullptr, "DateTime64"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -142,16 +161,21 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
-        const auto & col = *src.column;
 
+        const auto & src_column = *src.column;
         auto res_column = ColumnInt64::create(input_rows_count);
-        auto & result_data = res_column->getData();
+        auto & res_data = res_column->getData();
 
-        const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
+        const auto & src_data = typeid_cast<const ColumnDecimal<DateTime64> &>(src_column).getData();
+
+        /// timestamps in snowflake-ids are millisecond-based, convert input to milliseconds
+        UInt32 src_scale = getDecimalScale(*arguments[0].type);
+        Int64 multiplier_msec = DecimalUtils::scaleMultiplier<DateTime64>(3);
+        Int64 multiplier_src = DecimalUtils::scaleMultiplier<DateTime64>(src_scale);
+        auto factor = multiplier_msec / static_cast<double>(multiplier_src);
+
         for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            result_data[i] = (source_data[i] - snowflake_epoch) << time_shift;
-        }
+            res_data[i] = static_cast<Int64>(src_data[i] * factor - snowflake_epoch) << time_shift;
 
         return res_column;
     }
@@ -162,9 +186,13 @@ class FunctionSnowflakeToDateTime64 : public IFunction
 {
 private:
     const char * name;
+    const bool allow_nonconst_timezone_arguments;
 
 public:
-    explicit FunctionSnowflakeToDateTime64(const char * name_) : name(name_) { }
+    explicit FunctionSnowflakeToDateTime64(const char * name_, ContextPtr context)
+        : name(name_)
+        , allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+    {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -174,15 +202,17 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
+        FunctionArgumentDescriptors mandatory_args{
+            {"value", &isInt64<IDataType>, nullptr, "Int64"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"time_zone", &isString<IDataType>, nullptr, "String"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
-        if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be Int64", name);
-
-        std::string timezone;
+        String timezone;
         if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
 
         return std::make_shared<DataTypeDateTime64>(3, timezone);
     }
@@ -190,17 +220,26 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
-        const auto & col = *src.column;
+        const auto & src_column = *src.column;
 
         auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, 3);
-        auto & result_data = res_column->getData();
+        auto & res_data = res_column->getData();
 
-        const auto & source_data = typeid_cast<const ColumnInt64 &>(col).getData();
-
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (const auto * src_column_non_const = typeid_cast<const ColumnInt64 *>(&src_column))
         {
-            result_data[i] = (source_data[i] >> time_shift) + snowflake_epoch;
+            const auto & src_data = src_column_non_const->getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = (src_data[i] >> time_shift) + snowflake_epoch;
         }
+        else if (const auto * src_column_const = typeid_cast<const ColumnConst *>(&src_column))
+        {
+            Int64 src_val = src_column_const->getValue<Int64>();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = (src_val >> time_shift) + snowflake_epoch;
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
+
         return res_column;
     }
 };

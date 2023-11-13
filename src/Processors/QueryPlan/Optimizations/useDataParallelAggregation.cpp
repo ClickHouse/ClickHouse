@@ -95,7 +95,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     {
         const auto & match = matches.at(node);
         /// Function could be mapped into its argument. In this case .monotonicity != std::nullopt (see matchTrees)
-        if (match.node && match.node->result_name == node->result_name && !match.monotonicity)
+        if (match.node && !match.monotonicity)
             res = irreducible_nodes.contains(match.node);
     }
 
@@ -153,7 +153,12 @@ bool isPartitionKeySuitsGroupByKey(
 
     if (group_by_actions->hasArrayJoin() || group_by_actions->hasStatefulFunctions() || group_by_actions->hasNonDeterministic())
         return false;
-    const auto & gb_key_required_columns = group_by_actions->getRequiredColumnsNames();
+
+    /// We are interested only in calculations required to obtain group by keys (and not aggregate function arguments for example).
+    auto key_nodes = group_by_actions->findInOutpus(aggregating.getParams().keys);
+    auto group_by_key_actions = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/ true);
+
+    const auto & gb_key_required_columns = group_by_key_actions->getRequiredColumnsNames();
 
     const auto & partition_actions = reading.getStorageMetadata()->getPartitionKey().expression->getActionsDAG();
 
@@ -162,9 +167,9 @@ bool isPartitionKeySuitsGroupByKey(
         if (std::ranges::find(gb_key_required_columns, col) == gb_key_required_columns.end())
             return false;
 
-    const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(group_by_actions);
+    const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(group_by_key_actions);
 
-    const auto matches = matchTrees(*group_by_actions, partition_actions);
+    const auto matches = matchTrees(group_by_key_actions->getOutputs(), partition_actions);
 
     return allOutputsDependsOnlyOnAllowedNodes(partition_actions, irreducibe_nodes, matches);
 }
