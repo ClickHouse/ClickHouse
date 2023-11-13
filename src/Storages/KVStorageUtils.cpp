@@ -1,6 +1,7 @@
 #include <Storages/KVStorageUtils.h>
 
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -11,6 +12,9 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
+
+#include <Functions/IFunction.h>
+
 
 namespace DB
 {
