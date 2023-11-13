@@ -189,7 +189,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "ZooKeeperClient" \
            -e "KEEPER_EXCEPTION" \
            -e "DirectoryMonitor" \
-           -e "DistributedInsertQueue" \
            -e "TABLE_IS_READ_ONLY" \
            -e "Code: 1000, e.code() = 111, Connection refused" \
            -e "UNFINISHED" \

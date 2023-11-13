@@ -68,9 +68,7 @@ then
   # Execute all commands
   for file in /build/packages/pre-build/*.sh ;
   do
-    # The script may want to modify environment variables. Why not to allow it to do so?
-    # shellcheck disable=SC1090
-    source "$file"
+    bash "$file"
   done
 else
   echo "There are no subcommands to execute :)"
@@ -126,7 +124,6 @@ fi
 
 mv ./programs/clickhouse* /output || mv ./programs/*_fuzzer /output
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
-[ -x ./programs/self-extracting/clickhouse-stripped ] && mv ./programs/self-extracting/clickhouse-stripped /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 mv ./programs/*.dict ./programs/*.options ./programs/*_seed_corpus.zip /output ||: # libFuzzer oss-fuzz compatible infrastructure
 

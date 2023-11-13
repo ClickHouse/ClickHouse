@@ -302,14 +302,12 @@ public:
     struct LocalPathWithObjectStoragePaths
     {
         std::string local_path;
+        std::string common_prefix_for_objects;
         StoredObjects objects;
 
         LocalPathWithObjectStoragePaths(
-            const std::string & local_path_,
-            StoredObjects && objects_)
-            : local_path(local_path_)
-            , objects(std::move(objects_))
-        {}
+            const std::string & local_path_, const std::string & common_prefix_for_objects_, StoredObjects && objects_)
+            : local_path(local_path_), common_prefix_for_objects(common_prefix_for_objects_), objects(std::move(objects_)) {}
     };
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)

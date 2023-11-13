@@ -183,11 +183,9 @@ private:
     const AccessControl * access_control = nullptr;
     const Params params;
 
-    mutable std::atomic<bool> initialized = false; // can be removed after Bug 5504 is resolved
     mutable std::atomic<bool> user_was_dropped = false;
     mutable std::atomic<Poco::Logger *> trace_log = nullptr;
 
-    mutable std::mutex mutex;
     mutable UserPtr user TSA_GUARDED_BY(mutex);
     mutable String user_name TSA_GUARDED_BY(mutex);
     mutable scope_guard subscription_for_user_change TSA_GUARDED_BY(mutex);
@@ -200,6 +198,8 @@ private:
     mutable std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledQuota> enabled_quota TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledSettings> enabled_settings TSA_GUARDED_BY(mutex);
+
+    mutable std::mutex mutex;
 };
 
 }

@@ -276,7 +276,7 @@ void PocoHTTPClient::makeRequestInternal(
 {
     /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
     const auto request_configuration = per_request_configuration();
-    if (http_connection_pool_size)
+    if (http_connection_pool_size && request_configuration.host.empty())
         makeRequestInternalImpl<true>(request, request_configuration, response, readLimiter, writeLimiter);
     else
         makeRequestInternalImpl<false>(request, request_configuration, response, readLimiter, writeLimiter);
@@ -285,7 +285,7 @@ void PocoHTTPClient::makeRequestInternal(
 template <bool pooled>
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
-    const DB::ProxyConfiguration & proxy_configuration,
+    const DB::ProxyConfiguration & request_configuration,
     std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
@@ -340,17 +340,26 @@ void PocoHTTPClient::makeRequestInternalImpl(
             Poco::URI target_uri(uri);
             SessionPtr session;
 
-            if (!proxy_configuration.host.empty())
+            if (!request_configuration.host.empty())
             {
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
+
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit, proxy_configuration);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(target_uri, timeouts, proxy_configuration);
+                    session = makeHTTPSession(target_uri, timeouts);
+                bool use_tunnel = request_configuration.protocol == DB::ProxyConfiguration::Protocol::HTTP && target_uri.getScheme() == "https";
+
+                session->setProxy(
+                    request_configuration.host,
+                    request_configuration.port,
+                    DB::ProxyConfiguration::protocolToString(request_configuration.protocol),
+                    use_tunnel
+                );
             }
             else
             {
@@ -511,7 +520,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
                     addMetric(request, S3MetricType::Errors);
                     if (error_report)
-                        error_report(proxy_configuration);
+                        error_report(request_configuration);
 
                 }
 
@@ -529,7 +538,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 {
                     addMetric(request, S3MetricType::Errors);
                     if (status_code >= 500 && error_report)
-                        error_report(proxy_configuration);
+                        error_report(request_configuration);
                 }
                 response->SetResponseBody(response_body_stream, session);
             }

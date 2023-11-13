@@ -1413,7 +1413,6 @@ ClickHouse supports the following algorithms of choosing replicas:
 
 - [Random](#load_balancing-random) (by default)
 - [Nearest hostname](#load_balancing-nearest_hostname)
-- [Hostname levenshtein distance](#load_balancing-hostname_levenshtein_distance)
 - [In order](#load_balancing-in_order)
 - [First or random](#load_balancing-first_or_random)
 - [Round robin](#load_balancing-round_robin)
@@ -1444,25 +1443,6 @@ This method might seem primitive, but it does not require external data about ne
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
 We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
-
-### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
-
-``` sql
-load_balancing = hostname_levenshtein_distance
-```
-
-Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
-
-``` text
-example-clickhouse-0-0 ample-clickhouse-0-0
-1
-
-example-clickhouse-0-0 example-clickhouse-1-10
-2
-
-example-clickhouse-0-0 example-clickhouse-12-0
-3
-```
 
 ### In Order {#load_balancing-in_order}
 
@@ -2403,17 +2383,6 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
-## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
-
-Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
-
-Possible values:
-
-   - 0 — Optimization disabled.
-   - 1 — Optimization enabled.
-
-Default value: `0`.
-
 ## optimize_count_from_files {#optimize_count_from_files}
 
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
@@ -2473,7 +2442,7 @@ See also:
 - [distributed_replica_error_cap](#distributed_replica_error_cap)
 - [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
 Base interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
@@ -2483,9 +2452,9 @@ Possible values:
 
 Default value: 100 milliseconds.
 
-## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) setting.
+Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
 
 Possible values:
 
@@ -2493,7 +2462,7 @@ Possible values:
 
 Default value: 30000 milliseconds (30 seconds).
 
-## distributed_background_insert_batch {#distributed_background_insert_batch}
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
 Enables/disables inserted data sending in batches.
 
@@ -2506,13 +2475,13 @@ Possible values:
 
 Default value: 0.
 
-## distributed_background_insert_split_batch_on_failure {#distributed_background_insert_split_batch_on_failure}
+## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
 
 Enables/disables splitting batches on failures.
 
 Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
 
-So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_background_insert_batch` for failed batches).
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
 
 Possible values:
 
@@ -2695,15 +2664,15 @@ Possible values:
 
 Default value: 0.
 
-## distributed_foreground_insert {#distributed_foreground_insert}
+## insert_distributed_sync {#insert_distributed_sync}
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
 
-By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in background mode. When `distributed_foreground_insert=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
 
 Possible values:
 
-- 0 — Data is inserted in background mode.
+- 0 — Data is inserted in asynchronous mode.
 - 1 — Data is inserted in synchronous mode.
 
 Default value: `0`.
@@ -2762,7 +2731,7 @@ Result:
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
-Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
+Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
 
 Possible values:
 
@@ -2772,7 +2741,7 @@ Possible values:
 Default value: `1`.
 
 :::note
-- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for background INSERT.
+- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
 - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
 :::
 
@@ -3307,28 +3276,6 @@ Possible values:
 
 - 1 — The data types in column definitions are set to `Nullable` by default.
 - 0 — The data types in column definitions are set to not `Nullable` by default.
-
-Default value: `0`.
-
-## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
-
-When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Has an effect only when the connection is made through the MySQL wire protocol.
-
-- 0 - Use `BLOB`.
-- 1 - Use `TEXT`.
-
-Default value: `0`.
-
-## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
-
-When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Has an effect only when the connection is made through the MySQL wire protocol.
-
-- 0 - Use `BLOB`.
-- 1 - Use `TEXT`.
 
 Default value: `0`.
 
@@ -3933,27 +3880,6 @@ Possible values:
 
 Default value: `0`.
 
-## force_optimize_projection_name {#force-optimize-projection_name}
-
-If it is set to a non-empty string, check that this projection is used in the query at least once.
-
-Possible values:
-
-- string: name of projection that used in a query
-
-Default value: `''`.
-
-## preferred_optimize_projection_name {#preferred_optimize_projection_name}
-
-If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
-
-
-Possible values:
-
-- string: name of preferred projection
-
-Default value: `''`.
-
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -3965,10 +3891,6 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
-
-:::note
-`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
-:::
 
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
@@ -4168,18 +4090,6 @@ Possible values:
 - 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
-
-## date_time_overflow_behavior {#date_time_overflow_behavior}
-
-Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
-
-Possible values:
-
-- `ignore` — Silently ignore overflows. The result is random.
-- `throw` — Throw an exception in case of conversion overflow.
-- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
-
-Default value: `ignore`.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -4745,6 +4655,18 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 └─────────────────────┴──────────────────────────┘
 ```
 
+## partial_result_update_duration_ms
+
+Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
+
+:::note
+It's an experimental feature. Enable `allow_experimental_partial_result` setting first to use it.
+:::
+
+## max_rows_in_partial_result
+
+Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
+
 ## validate_tcp_client_information {#validate-tcp-client-information}
 
 Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
@@ -4793,29 +4715,3 @@ a	Tuple(
     l Nullable(String)
 )
 ```
-
-## analyze_index_with_space_filling_curves
-
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
-
-## dictionary_use_async_executor {#dictionary_use_async_executor}
-
-Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
-
-You may specify it in `SETTINGS` section of dictionary definition:
-
-```sql
-CREATE DICTIONARY t1_dict ( key String, attr UInt64 )
-PRIMARY KEY key
-SOURCE(CLICKHOUSE(QUERY `SELECT key, attr FROM t1 GROUP BY key`))
-LIFETIME(MIN 0 MAX 3600)
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
-SETTINGS(dictionary_use_async_executor=1, max_threads=8);
-```
-
-## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
-
-When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
-
-Default value: `false`.

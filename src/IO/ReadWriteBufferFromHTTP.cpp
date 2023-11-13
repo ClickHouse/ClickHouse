@@ -251,7 +251,7 @@ ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::ReadWriteBufferFromHTTPBase(
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     std::optional<HTTPFileInfo> file_info_,
-    ProxyConfiguration proxy_config_)
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : SeekableReadBuffer(nullptr, 0)
     , uri {uri_}
     , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -864,7 +864,7 @@ HTTPFileInfo ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::parseFileInfo(con
 
 }
 
-SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, ProxyConfiguration proxy_config_)
+SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : timeouts(timeouts_), proxy_config(proxy_config_) {}
 
 SessionFactory::SessionType SessionFactory::buildNewSession(const Poco::URI & uri)
@@ -887,7 +887,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool use_external_buffer_,
     bool skip_not_found_url_,
     std::optional<HTTPFileInfo> file_info_,
-    ProxyConfiguration proxy_config_)
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : Parent(
         std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts, proxy_config_)),
         uri_,

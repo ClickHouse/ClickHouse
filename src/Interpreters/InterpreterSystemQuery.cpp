@@ -17,10 +17,12 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
@@ -55,15 +57,12 @@
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ThreadFuzzer.h>
 #include <csignal>
 #include <algorithm>
 #include <unistd.h>
-
-#if USE_PROTOBUF
-#include <Formats/ProtobufSchemas.h>
-#endif
 
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
@@ -466,20 +465,6 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             break;
         }
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
-            std::unordered_set<String> caches_to_drop;
-            if (query.schema_cache_format.empty())
-                caches_to_drop = {"Protobuf"};
-            else
-                caches_to_drop = {query.schema_cache_format};
-#if USE_PROTOBUF
-            if (caches_to_drop.contains("Protobuf"))
-                ProtobufSchemas::instance().clear();
-#endif
-            break;
-        }
         case Type::RELOAD_DICTIONARY:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
@@ -725,11 +710,6 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
 
-    SCOPE_EXIT({
-        if (table)
-            table->is_being_restarted = false;
-    });
-    table->is_being_restarted = true;
     table->flushAndShutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
@@ -747,7 +727,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true, false);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -1102,7 +1082,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
 #endif

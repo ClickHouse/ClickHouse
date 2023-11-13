@@ -494,6 +494,8 @@ class ClickhouseIntegrationTestsRunner:
             if test not in main_counters["PASSED"]:
                 if test in main_counters["FAILED"]:
                     main_counters["FAILED"].remove(test)
+                if test in main_counters["ERROR"]:
+                    main_counters["ERROR"].remove(test)
                 if test in main_counters["BROKEN"]:
                     main_counters["BROKEN"].remove(test)
 
@@ -506,6 +508,7 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 if test in main_counters["PASSED"]:
                     main_counters["PASSED"].remove(test)
+                    continue
                 if test not in broken_tests:
                     if test not in main_counters[state]:
                         main_counters[state].append(test)

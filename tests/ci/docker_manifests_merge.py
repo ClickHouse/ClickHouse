@@ -197,8 +197,8 @@ def enrich_images(changed_images: Dict[str, str]) -> None:
         WITH {commit_shas:Array(String)} AS commit_shas,
              {images:Array(String)} AS images
         SELECT
-            splitByChar(':', test_name)[1] AS image_name,
-            argMax(splitByChar(':', test_name)[2], check_start_time) AS tag
+            substring(test_name, 1, position(test_name, ':') -1) AS image_name,
+            argMax(commit_sha, check_start_time) AS commit_sha
         FROM checks
             WHERE
                 check_name == 'Push multi-arch images to Dockerhub'
@@ -209,10 +209,7 @@ def enrich_images(changed_images: Dict[str, str]) -> None:
         """
 
     batch_count = 0
-    # We use always publicly available DB here intentionally
-    ch_helper = ClickHouseHelper(
-        "https://play.clickhouse.com", {"X-ClickHouse-User": "play"}
-    )
+    ch_helper = ClickHouseHelper()
 
     while (
         batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0
@@ -232,12 +229,15 @@ def enrich_images(changed_images: Dict[str, str]) -> None:
             "Found images for commits %s..%s:\n %s",
             commit_shas[0],
             commit_shas[-1],
-            "\n ".join(f"{im['image_name']}:{im['tag']}" for im in result),
+            "\n ".join(f"{im['image_name']}:{im['commit_sha']}" for im in result),
         )
 
         for row in result:
             image_name = row["image_name"]
-            changed_images[image_name] = row["tag"]
+            commit_sha = row["commit_sha"]
+            # As we only get the SHAs of merge commits from master, the PR number will be always 0
+            tag = f"0-{commit_sha}"
+            changed_images[image_name] = tag
             images_to_find_tags_for.remove(image_name)
 
         batch_count += 1

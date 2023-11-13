@@ -37,7 +37,7 @@ friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & object_key_prefix_,
+        const String & object_storage_root_path_,
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
@@ -224,7 +224,7 @@ private:
     String getReadResourceName() const;
     String getWriteResourceName() const;
 
-    const String object_key_prefix;
+    const String object_storage_root_path;
     Poco::Logger * log;
 
     MetadataStoragePtr metadata_storage;

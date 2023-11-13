@@ -141,7 +141,6 @@ public:
     Block read();
 
     String getPath() const;
-    size_t getSize() const;
 
     Block getHeader() const { return header; }
 

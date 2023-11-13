@@ -6,7 +6,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Poco/Logger.h>
-#include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 #include "libaccel_config.h"
 #include <Common/MemorySanitizer.h>
@@ -30,7 +29,7 @@ DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 
 DeflateQplJobHWPool::DeflateQplJobHWPool()
     : max_hw_jobs(0)
-    , random_engine(randomSeed())
+    , random_engine(std::random_device()())
 {
     Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
     const char * qpl_version = qpl_get_library_version();

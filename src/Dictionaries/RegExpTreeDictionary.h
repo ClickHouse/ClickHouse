@@ -40,7 +40,6 @@ public:
     {
         bool require_nonempty;
         DictionaryLifetime lifetime;
-        bool use_async_executor = false;
     };
 
     const std::string name = "RegExpTree";

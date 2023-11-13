@@ -134,6 +134,7 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) co
         / CacheMetadata::getFileNameForFileSegment(file_segment.offset(), file_segment.getKind());
 }
 
+
 CacheMetadata::CacheMetadata(const std::string & path_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
@@ -167,16 +168,10 @@ String CacheMetadata::getPathForKey(const Key & key) const
     return fs::path(path) / key_str.substr(0, 3) / key_str;
 }
 
-CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
+CacheMetadataGuard::Lock CacheMetadata::lockMetadata() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
     return guard.lock();
-}
-
-CacheMetadata::MetadataBucket & CacheMetadata::getMetadataBucket(const Key & key)
-{
-    const auto bucket = key.key % buckets_num;
-    return metadata_buckets[bucket];
 }
 
 LockedKeyPtr CacheMetadata::lockKeyMetadata(
@@ -225,11 +220,10 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     KeyNotFoundPolicy key_not_found_policy,
     bool is_initial_load)
 {
-    auto & bucket = getMetadataBucket(key);
-    auto lock = bucket.lock();
+    auto lock = lockMetadata();
 
-    auto it = bucket.find(key);
-    if (it == bucket.end())
+    auto it = find(key);
+    if (it == end())
     {
         if (key_not_found_policy == KeyNotFoundPolicy::THROW)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
@@ -238,7 +232,7 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
         else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
             return nullptr;
 
-        it = bucket.emplace(
+        it = emplace(
             key, std::make_shared<KeyMetadata>(
                 key, getPathForKey(key), cleanup_queue, download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
     }
@@ -246,66 +240,52 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     return it->second;
 }
 
-bool CacheMetadata::isEmpty() const
-{
-    for (const auto & bucket : metadata_buckets)
-        if (!bucket.empty())
-            return false;
-    return true;
-}
-
 void CacheMetadata::iterate(IterateFunc && func)
 {
-    for (auto & bucket : metadata_buckets)
+    auto lock = lockMetadata();
+    for (auto & [key, key_metadata] : *this)
     {
-        auto lk = bucket.lock();
-        for (auto & [key, key_metadata] : bucket)
+        auto locked_key = key_metadata->lockNoStateCheck();
+        const auto key_state = locked_key->getKeyState();
+
+        if (key_state == KeyMetadata::KeyState::ACTIVE)
         {
-            auto locked_key = key_metadata->lockNoStateCheck();
-            const auto key_state = locked_key->getKeyState();
-
-            if (key_state == KeyMetadata::KeyState::ACTIVE)
-            {
-                func(*locked_key);
-                continue;
-            }
-            else if (key_state == KeyMetadata::KeyState::REMOVING)
-                continue;
-
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Cannot lock key {}: key does not exist", key_metadata->key);
+            func(*locked_key);
+            continue;
         }
+        else if (key_state == KeyMetadata::KeyState::REMOVING)
+            continue;
+
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot lock key {}: key does not exist", key_metadata->key);
     }
 }
 
 void CacheMetadata::removeAllKeys(bool if_releasable)
 {
-    for (auto & bucket : metadata_buckets)
+    auto lock = lockMetadata();
+    for (auto it = begin(); it != end();)
     {
-        auto lock = bucket.lock();
-        for (auto it = bucket.begin(); it != bucket.end();)
+        auto locked_key = it->second->lockNoStateCheck();
+        if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
         {
-            auto locked_key = it->second->lockNoStateCheck();
-            if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
+            bool removed_all = locked_key->removeAllFileSegments(if_releasable);
+            if (removed_all)
             {
-                bool removed_all = locked_key->removeAllFileSegments(if_releasable);
-                if (removed_all)
-                {
-                    it = removeEmptyKey(bucket, it, *locked_key, lock);
-                    continue;
-                }
+                it = removeEmptyKey(it, *locked_key, lock);
+                continue;
             }
-            ++it;
         }
+        ++it;
     }
 }
 
 void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasable)
 {
-    auto & bucket = getMetadataBucket(key);
-    auto lock = bucket.lock();
-    auto it = bucket.find(key);
-    if (it == bucket.end())
+    auto metadata_lock = lockMetadata();
+
+    auto it = find(key);
+    if (it == end())
     {
         if (if_exists)
             return;
@@ -325,23 +305,18 @@ void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasabl
 
     bool removed_all = locked_key->removeAllFileSegments(if_releasable);
     if (removed_all)
-        removeEmptyKey(bucket, it, *locked_key, lock);
+        removeEmptyKey(it, *locked_key, metadata_lock);
 }
 
-CacheMetadata::MetadataBucket::iterator
-CacheMetadata::removeEmptyKey(
-    MetadataBucket & bucket,
-    MetadataBucket::iterator it,
-    LockedKey & locked_key,
-    const CacheMetadataGuard::Lock &)
+CacheMetadata::iterator CacheMetadata::removeEmptyKey(iterator it, LockedKey & locked_key, const CacheMetadataGuard::Lock &)
 {
     const auto & key = locked_key.getKey();
 
-    if (!locked_key.empty())
+    if (!it->second->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove non-empty key: {}", key);
 
     locked_key.markAsRemoved();
-    auto next_it = bucket.erase(it);
+    auto next_it = erase(it);
 
     LOG_DEBUG(log, "Key {} is removed from metadata", key);
 
@@ -437,18 +412,16 @@ void CacheMetadata::cleanupThreadFunc()
 
         try
         {
+            auto lock = lockMetadata();
 
-            auto & bucket = getMetadataBucket(key);
-            auto lock = bucket.lock();
-
-            auto it = bucket.find(key);
-            if (it == bucket.end())
+            auto it = find(key);
+            if (it == end())
                 continue;
 
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::REMOVING)
             {
-                removeEmptyKey(bucket, it, *locked_key, lock);
+                removeEmptyKey(it, *locked_key, lock);
             }
         }
         catch (...)

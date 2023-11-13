@@ -27,6 +27,7 @@ void ZooKeeperResponse::write(WriteBuffer & out) const
     if (error == Error::ZOK)
         writeImpl(buf);
     Coordination::write(buf.str(), out);
+    out.next();
 }
 
 std::string ZooKeeperRequest::toString() const
@@ -48,6 +49,7 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
     Coordination::write(getOpNum(), buf);
     writeImpl(buf);
     Coordination::write(buf.str(), out);
+    out.next();
 }
 
 void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const

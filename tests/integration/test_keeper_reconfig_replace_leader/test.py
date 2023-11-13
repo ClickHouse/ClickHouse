@@ -83,8 +83,7 @@ def test_reconfig_replace_leader(started_cluster):
     assert "node3" in config
     assert "node4" not in config
 
-    # additional 20s wait before removing leader
-    ku.wait_configs_equal(config, zk2, timeout=50)
+    ku.wait_configs_equal(config, zk2)
 
     node4.start_clickhouse()
     config = zk2.reconfig(joining="server.4=node4:9234", leaving=None, new_members=None)
