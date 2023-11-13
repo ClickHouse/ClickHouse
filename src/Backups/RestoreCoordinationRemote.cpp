@@ -274,7 +274,7 @@ void RestoreCoordinationRemote::removeAllNodes()
         [&, &zk = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zk);
-            zk->removeRecursive(zookeeper_path);
+            zk->tryRemoveRecursive(zookeeper_path);
         });
 }
 

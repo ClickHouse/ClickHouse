@@ -248,7 +248,7 @@ void BackupCoordinationRemote::removeAllNodes()
         /// at `zookeeper_path` which might cause such hosts to stop with exception "ZNONODE". Or such hosts might still do some useless part
         /// of their backup work before that. Anyway in this case backup won't be finalized (because only an initiator can do that).
         with_retries.renewZooKeeper(zk);
-        zk->removeRecursive(zookeeper_path);
+        zk->tryRemoveRecursive(zookeeper_path);
     });
 }
 
