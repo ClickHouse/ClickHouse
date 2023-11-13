@@ -21,9 +21,9 @@ backup database ${CLICKHOUSE_DATABASE} on cluster test_shard_localhost to Disk('
 " | grep -o "BACKUP_CREATED"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
-drop database ${CLICKHOUSE_DATABASE};
+drop table mv;
 set allow_deprecated_database_ordinary=1;
-restore database ${CLICKHOUSE_DATABASE} on cluster test_shard_localhost from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
+restore table ${CLICKHOUSE_DATABASE}.mv on cluster test_shard_localhost from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
 " | grep -o "RESTORED"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
@@ -44,7 +44,7 @@ backup database ${CLICKHOUSE_DATABASE} on cluster test_shard_localhost to Disk('
 " | grep -o "BACKUP_CREATED"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
-drop database ${CLICKHOUSE_DATABASE};
+drop table mv;
 set allow_deprecated_database_ordinary=1;
-restore database ${CLICKHOUSE_DATABASE} on cluster test_shard_localhost from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}2');
+restore table ${CLICKHOUSE_DATABASE}.mv on cluster test_shard_localhost from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}2');
 " | grep -o "RESTORED"
