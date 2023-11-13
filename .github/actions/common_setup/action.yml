@@ -19,6 +19,8 @@ runs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/${{inputs.job_type}}
           REPO_COPY=${{runner.temp}}/${{inputs.job_type}}/git-repo-copy
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
           if [ -z "${{env.GITHUB_JOB_OVERRIDDEN}}" ] && [ "true" == "${{inputs.nested_job}}" ]; then
             echo "The GITHUB_JOB_OVERRIDDEN ENV is unset, and must be set for the nested jobs"
