@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Tests for the backupview utility.
+# Tests for the clickhouse_backupview utility.
 # Use pytest ./test.py to run.
 
 import pytest
@@ -8,13 +8,12 @@ import pytest
 import os.path
 import sys
 import tempfile
-import pathlib
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 backupview_dir = os.path.abspath(os.path.join(script_dir, ".."))
 if backupview_dir not in sys.path:
     sys.path.append(backupview_dir)
-from backupview import open_backup, FileInfo, ExtractionInfo
+from clickhouse_backupview import open_backup, S3, FileInfo
 
 
 def calculate_num_files(dir):

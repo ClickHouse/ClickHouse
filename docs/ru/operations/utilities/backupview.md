@@ -1,7 +1,9 @@
 ---
 slug: /en/operations/utilities/backupview
-title: backupview
+title: clickhouse_backupview
 ---
+
+# clickhouse_backupview {#clickhouse_backupview}
 
 Модуль на Питоне для анализа бэкапов, созданных командой [BACKUP](https://clickhouse.com/docs/ru/operations/backup)
 Главная идея этого модуля была в том, чтобы позволить извлечение информации из бэкапа без выполнения команды RESTORE.
@@ -15,7 +17,7 @@ title: backupview
 ## Пример:
 
 ```python
-from backupview import open_backup, S3
+from clickhouse_backupview import open_backup, S3, FileInfo
 
 # Открыть бэкап. Можно также использовать локальный путь:
 # backup = open_backup("/backups/my_backup_1/")

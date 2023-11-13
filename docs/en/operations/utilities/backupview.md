@@ -1,9 +1,11 @@
 ---
 slug: /en/operations/utilities/backupview
-title: backupview
+title: clickhouse_backupview
 ---
 
-Python module to help analyzing backups made by the [BACKUP command](https://clickhouse.com/docs/en/operations/backup)
+# clickhouse_backupview {#clickhouse_backupview}
+
+Python module to help analyzing backups made by the [BACKUP](https://clickhouse.com/docs/en/operations/backup) command.
 The main motivation was to allows getting some information from a backup without actually restoring it.
 
 This module provides functions to
@@ -15,7 +17,7 @@ This module provides functions to
 ## Example:
 
 ```python
-from backupview import open_backup, FileInfo, S3
+from clickhouse_backupview import open_backup, S3, FileInfo
 
 # Open a backup. We could also use a local path:
 # backup = open_backup("/backups/my_backup_1/")
