@@ -96,7 +96,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     /// 1) GCD is 0. It may happen if there are some zeros in the source data.
     /// We cannot apply this codec anymore. So let's copy the source data to the destination.
     /// 2) GCD is 1. It means that we can do nothing (except copying source data) and the result will be the same.
-    if unlikely(gcd_divider == 0)
+    if unlikely(gcd_divider == 0 || gcd_divider == 1)
     {
         memcpy(dest, source, source_size);
         return;
