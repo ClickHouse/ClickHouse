@@ -459,8 +459,8 @@ FORMAT JSONCompactEachRow"""
 )
 SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', file, size
 FROM input('size UInt64, file String')
-FORMAT Regexp
 SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
+FORMAT Regexp
 """
         binary_sizes_file = profiles_dir / "binary_sizes.txt"
 
