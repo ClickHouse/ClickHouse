@@ -3,7 +3,6 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/Exception.h>
-#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
 
