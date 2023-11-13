@@ -203,7 +203,7 @@ public:
         if (enable_range_mode && (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID || m_value_ids.size() > range_max - range_min + 1))
         {
             size_t alloc_size = 0;
-            if (__builtin_add_overflow(sizeof(UInt64), pad_left + pad_right, &alloc_size))
+            if (__builtin_add_overflow(sizeof(UInt64) * (range_max - range_min + 1), pad_left + pad_right, &alloc_size))
                 throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
             /// need to pad the address.
             auto * range_values_ptr = pool.alloc(alloc_size) + pad_left;
