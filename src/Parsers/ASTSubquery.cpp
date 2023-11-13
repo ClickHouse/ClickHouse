@@ -51,11 +51,11 @@ void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, Format
     settings.ostr << nl_or_nothing << indent_str << ")";
 }
 
-void ASTSubquery::updateTreeHashImpl(SipHash & hash_state) const
+void ASTSubquery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     if (!cte_name.empty())
         hash_state.update(cte_name);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 String ASTSubquery::getAliasOrColumnName() const

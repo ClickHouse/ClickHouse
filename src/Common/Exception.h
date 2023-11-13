@@ -19,7 +19,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-void abortOnFailedAssertion(const String & description);
+[[noreturn]] void abortOnFailedAssertion(const String & description);
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;

@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 #include "Coordination/KeeperConstants.h"
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -42,7 +43,7 @@ public:
     }
 
 private:
-    std::mt19937_64 rndgen;
+    pcg64_fast rndgen;
     std::bernoulli_distribution distribution;
 };
 
