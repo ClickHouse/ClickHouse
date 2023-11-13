@@ -82,7 +82,14 @@ def test_single_node_broken_log(started_cluster):
         node1_conn.close()
 
         node1.stop_clickhouse()
-        node1.exec_in_container(["truncate", "-s", "-50", "/var/lib/clickhouse/coordination/log/changelog_1_100000.bin"])
+        node1.exec_in_container(
+            [
+                "truncate",
+                "-s",
+                "-50",
+                "/var/lib/clickhouse/coordination/log/changelog_1_100000.bin",
+            ]
+        )
         node1.start_clickhouse()
         keeper_utils.wait_until_connected(cluster, node1)
 
@@ -100,9 +107,18 @@ def test_single_node_broken_log(started_cluster):
         verify_nodes(node3_conn)
         assert node3_conn.get("/test_broken_log_final_node")[0] == b"somedata1"
 
-        assert node1.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"]) == "changelog_1_100000.bin\nchangelog_14_100013.bin\n"
-        assert node2.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"]) == "changelog_1_100000.bin\n"
-        assert node3.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"]) == "changelog_1_100000.bin\n"
+        assert (
+            node1.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"])
+            == "changelog_1_100000.bin\nchangelog_14_100013.bin\n"
+        )
+        assert (
+            node2.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"])
+            == "changelog_1_100000.bin\n"
+        )
+        assert (
+            node3.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"])
+            == "changelog_1_100000.bin\n"
+        )
     finally:
         try:
             for zk_conn in [node1_conn, node2_conn, node3_conn]:
@@ -110,4 +126,3 @@ def test_single_node_broken_log(started_cluster):
                 zk_conn.close()
         except:
             pass
-
