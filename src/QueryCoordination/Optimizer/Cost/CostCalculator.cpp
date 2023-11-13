@@ -50,6 +50,8 @@ Cost CostCalculator::visit(MergingAggregatedStep &)
 {
     const auto & input = input_statistics.front();
     Cost cost(input.getDataSize(), statistics.getDataSize());
+    if (child_props[0].distribution.type == Distribution::Hashed)
+        cost.dividedBy(node_count);
     return cost;
 }
 
@@ -183,8 +185,8 @@ Cost CostCalculator::visit(UnionStep & step)
 Cost CostCalculator::visit(ExchangeDataStep & step)
 {
     /// ExchangeDataStep is a source step which has no input.
-    auto & input = statistics;
-    auto & distribution_type = step.getDistribution().type;
+    const auto & input = statistics;
+    auto distribution_type = step.getDistribution().type;
 
     Cost cost(input.getDataSize(), 0.0, input.getDataSize());
 

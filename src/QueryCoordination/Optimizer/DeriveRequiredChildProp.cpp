@@ -111,7 +111,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(MergingAggregatedStep & s
         PhysicalProperties hashed_prop;
         hashed_prop.distribution.type = Distribution::Hashed;
         hashed_prop.distribution.keys = step.getParams().keys;
-        hashed_prop.distribution.distribution_by_buket_num = true;
+        hashed_prop.distribution.distributed_by_bucket_num = true;
         required_child_prop.push_back(hashed_prop);
     }
 

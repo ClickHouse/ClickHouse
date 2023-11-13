@@ -68,10 +68,11 @@ public:
 private:
     /// Output statistics of step
     const Statistics & statistics;
+
     /// Input statistics of step
     const std::vector<Statistics> & input_statistics;
 
-    /// Child steps physical properties(distribution)
+    /// Required children steps physical properties(distribution)
     [[maybe_unused]] const ChildrenProp & child_props;
 
     /// Query context

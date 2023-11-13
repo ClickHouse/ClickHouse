@@ -22,7 +22,7 @@ struct Distribution
 
     Type type;
     Names keys; /// keys for Hashed
-    bool distribution_by_buket_num = false;
+    bool distributed_by_bucket_num = false;
 };
 
 struct SortProp

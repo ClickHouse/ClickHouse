@@ -57,7 +57,7 @@ bool PhysicalProperties::operator==(const PhysicalProperties & other) const
     if (other.distribution.keys.size() != distribution.keys.size())
         return false;
 
-    if (other.distribution.distribution_by_buket_num != distribution.distribution_by_buket_num)
+    if (other.distribution.distributed_by_bucket_num != distribution.distributed_by_bucket_num)
         return false;
 
     for (const auto & key : distribution.keys)
@@ -96,7 +96,7 @@ bool PhysicalProperties::satisfyDistribution(const PhysicalProperties & required
     if (required.distribution.type == Distribution::Any)
         return true;
 
-    if (required.distribution.distribution_by_buket_num != distribution.distribution_by_buket_num)
+    if (required.distribution.distributed_by_bucket_num != distribution.distributed_by_bucket_num)
         return false;
 
     for (const auto & key : distribution.keys)

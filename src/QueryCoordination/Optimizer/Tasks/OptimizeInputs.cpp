@@ -36,7 +36,7 @@ void OptimizeInputs::execute()
     if (!frame)
         frame = std::make_unique<Frame>(group_node, task_context->getQueryContext());
 
-    LOG_TRACE(log, "It's upper bound cost: {}", task_context->getUpperBoundCost().toString());
+    LOG_TRACE(log, "upper bound cost: {}", task_context->getUpperBoundCost().toString());
 
     /// every alternative prop, required to child
     for (; frame->prop_idx < static_cast<Int32>(frame->alternative_child_prop.size()); ++frame->prop_idx)
@@ -47,10 +47,8 @@ void OptimizeInputs::execute()
         {
             CostCalculator cost_calc(group.getStatistics(), task_context->getQueryContext(), children_statistics, required_child_props);
             frame->local_cost = group_node->accept(cost_calc);
-
-            LOG_TRACE(log, "It's local cost: {}", frame->local_cost.toString());
-
             frame->total_cost = frame->local_cost;
+            LOG_TRACE(log, "local cost: {}", frame->local_cost.toString());
         }
 
         const auto & child_groups = group_node->getChildren();
@@ -76,7 +74,7 @@ void OptimizeInputs::execute()
             }
             frame->total_cost += best_node->second.cost;
 
-            if (frame->total_cost >= task_context->getUpperBoundCost()) /// this task no solution
+            if (frame->total_cost >= task_context->getUpperBoundCost()) /// this problem has no solution
                 break;
 
             frame->actual_children_prop.emplace_back(best_node->first);
@@ -102,8 +100,7 @@ void OptimizeInputs::execute()
                     children_prop_desc[children_prop_desc.size() - 1] = ']';
                 LOG_DEBUG(
                     log,
-                    "GroupNode {} update best for property {} to {}, cost: {}",
-                    group_node->getDescription(),
+                    "Group node update best for property {} to {}, children cost: {}",
                     output_prop.toString(),
                     children_prop_desc,
                     child_cost.toString());
@@ -113,8 +110,7 @@ void OptimizeInputs::execute()
             {
                 LOG_DEBUG(
                     log,
-                    "{} update best for property {} to {}, total cost: {}",
-                    group.getDescription(),
+                    "Group update best for property {} to {}, total cost: {}",
                     output_prop.toString(),
                     group_node->getDescription(),
                     frame->total_cost.toString());
@@ -145,15 +141,15 @@ void OptimizeInputs::execute()
 
 void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperties & required_prop)
 {
-    if (!(required_prop.distribution.type == Distribution::Type::Hashed && required_prop.distribution.distribution_by_buket_num))
+    if (!(required_prop.distribution.type == Distribution::Type::Hashed && required_prop.distribution.distributed_by_bucket_num))
         return;
 
     auto * aggregate_step = typeid_cast<AggregatingStep *>(group_node->getStep().get());
     if (!aggregate_step || !aggregate_step->isPreliminaryAgg())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Required distribution by buket num, but is not preliminary AggregatingStep");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Required distribution by bucket num, but is not preliminary AggregatingStep");
 
-    /// distribution type is Hashed and use distribution_by_buket_num need enforce two level aggregate.
-    /// Prevent different nodes from using different aggregation policies, the hash causes the data to be incorrect.
+    /// Distribution type is Hashed and use distributed_by_bucket_num need enforce two level aggregate.
+    /// Prevent different nodes from using different aggregation policies which causes the data to be incorrect.
     LOG_TRACE(log, "Enforce two level aggregate");
     aggregate_step->enforceTwoLevelAgg();
 }
@@ -203,7 +199,9 @@ Cost OptimizeInputs::enforceGroupNode(const PhysicalProperties & required_prop, 
     auto child_cost = group.getCostByProp(output_prop);
 
     CostCalculator cost_calc(group.getStatistics(), task_context->getQueryContext());
-    Cost total_cost = group_enforce_node->accept(cost_calc) + child_cost;
+    auto cost = group_enforce_node->accept(cost_calc);
+    Cost total_cost = cost + child_cost;
+    LOG_TRACE(log, "Enforcing ExchangeData with cost {} and now total cost is {}", cost.toString(), total_cost.toString());
 
     DeriveOutputProp output_prop_visitor(group_enforce_node, required_prop, {output_prop}, task_context->getQueryContext());
 

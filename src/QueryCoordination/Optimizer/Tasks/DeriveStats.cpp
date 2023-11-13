@@ -1,6 +1,5 @@
-#include <memory>
+#include <Common/logger_useful.h>
 #include <QueryCoordination/Optimizer/Group.h>
-#include <QueryCoordination/Optimizer/GroupNode.h>
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 #include <QueryCoordination/Optimizer/Tasks/DeriveStats.h>
 #include "QueryCoordination/Optimizer/Statistics/DeriveStatistics.h"
@@ -47,17 +46,20 @@ void DeriveStats::deriveStats()
     StatisticsList child_statistics;
     for (auto * child_group : group_node->getChildren())
     {
-        Statistics stat = child_group->getStatistics();
-        child_statistics.emplace_back(stat);
+        Statistics stats = child_group->getStatistics();
+        child_statistics.emplace_back(stats);
     }
 
     DeriveStatistics visitor(child_statistics, getQueryContext());
-    Statistics stat = group_node->accept(visitor);
+    Statistics stats = group_node->accept(visitor);
 
+    auto * log = &Poco::Logger::get(
+        "DeriveStats group(" + std::to_string(task_context->getCurrentGroup().getId()) + ") group node(" + group_node->getStep()->getName() + ")");
+    LOG_TRACE(log, "got {:.2g}", stats.getOutputRowSize());
+
+    task_context->getCurrentGroup().setStatistics(stats);
+    task_context->getCurrentGroup().setStatsDerived();
     group_node->setStatsDerived();
-
-    /// TODO update group statistics
-    task_context->getCurrentGroup().setStatistics(stat);
 }
 
 OptimizeTaskPtr DeriveStats::clone(bool need_derive_child_)

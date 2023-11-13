@@ -181,15 +181,19 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     Float64 selectivity;
     const auto & aggregate_keys = step.getParams().keys;
 
-    if (statistics.hasUnknownColumn())
+    if (aggregate_keys.empty())
     {
-        /// Estimate by multiplying some coefficient
-        selectivity = 0.1; /// TODO add to settings
+        selectivity = 0.0;
+    }
+    else if (statistics.hasUnknownColumn())
+    {
+        /// Estimate by multiplying a coefficient
+        selectivity = 0.001; /// TODO add to settings
         for (size_t i = 1; i < aggregate_keys.size(); i++)
         {
-            if (selectivity * 1.1 > 1.0)
+            if (selectivity * 1.001 > 1.0)
                 break;
-            selectivity *= 1.1; /// TODO add to settings
+            selectivity *= 1.001; /// TODO add to settings
         }
     }
     else
@@ -217,7 +221,44 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     /// The selectivity calculated is global, but for the first stage,
     /// the output row count is larger than the final stage.
     if (step.isPreliminaryAgg())
-        selectivity *= node_count;
+    {
+        /// Final selectivity calculation formula:
+        ///     selectivity *= node_count * coefficient.
+        /// First we assume data is evenly distributed into shards and all shards has full
+        /// cardinality of data set. But in practice a shard may have only partial of cardinality,
+        /// so we multiply a coefficient.
+
+//        /// The coefficient is effected by selectivity, because
+//        /// the lower of the selectivity the more chance of shard has full cardinality.
+//        /// The coefficient is calculated based on a mapping of selectivity and coefficients
+//        /// which the value is from practice.
+//        static std::vector<std::pair<Float64, Float64>> mapping
+//            = {{0.0, 0.0}, {0.001, 0.1}, {0.01, 0.2}, {0.1, 0.5}, {0.5, 0.7}, {1.0, 1.0}};
+//        auto get_coefficient = [](Float64 selectivity_)
+//        {
+//            if (selectivity_ <= mapping.front().first)
+//                return mapping.front().second;
+//
+//            if (selectivity_ >= mapping.back().first)
+//                return mapping.back().second;
+//
+//            for (size_t i = 0; i < mapping.size() - 1; i++)
+//            {
+//                if (selectivity_ >= mapping[i].first && selectivity_ < mapping[i + 1].first)
+//                {
+//                    Float64 x1 = mapping[i].first;
+//                    Float64 y1 = mapping[i].second;
+//                    Float64 x2 = mapping[i + 1].first;
+//                    Float64 y2 = mapping[i + 1].second;
+//                    Float64 coefficient = y1 + (y2 - y1) * (selectivity_ - x1) / (x2 - x1);
+//                    return coefficient;
+//                }
+//            }
+//            return 0.0; // Default coefficient if there are no valid mappings
+//        };
+//        selectivity = selectivity * node_count * get_coefficient(selectivity);
+        selectivity = selectivity * node_count * 0.5;
+    }
 
     if (selectivity > 1.0)
         selectivity = 1.0;
@@ -228,9 +269,9 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     statistics.adjustStatistics();
 
     /// 4. update aggregating column data type
-    for (auto & aggregate : step.getParams().aggregates)
+    for (const auto & aggregate : step.getParams().aggregates)
     {
-        auto * output_column = step.getOutputStream().header.findByName(aggregate.column_name);
+        const auto * output_column = step.getOutputStream().header.findByName(aggregate.column_name);
 
         /// Input stream of aggregating step may has 0 header column, such as: 'select count() from t'.
         if (!statistics.containsColumnStatistics(aggregate.column_name))
@@ -252,12 +293,8 @@ Statistics DeriveStatistics::visit(MergingAggregatedStep & step)
     Statistics statistics = input_statistics.front().clone();
     Float64 row_count;
 
-    if (step.getParams().keys_size == 0 || !step.isFinal())
-        /// Merging aggregate will run on 1 shard
-        row_count = statistics.getOutputRowSize();
-    else
-        /// Merging aggregate will run on all shards
-        row_count = statistics.getOutputRowSize() / node_count;
+    /// The secondary stage of aggregating
+    row_count = statistics.getOutputRowSize() / node_count / 0.5;
 
     statistics.setOutputRowSize(row_count);
     return statistics;
