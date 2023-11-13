@@ -1,10 +1,7 @@
-#pragma once
-
-#include <Core/Types.h>
-#include <Core/DecimalFunctions.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Core/Types.h>
 #include <Functions/FunctionHelpers.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
@@ -14,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
+
 namespace DB
 {
 
@@ -22,6 +20,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 }
+
+namespace
+{
 
 class FunctionToDecimalString : public IFunction
 {
@@ -258,5 +259,21 @@ private:
         return result_col;
     }
 };
+
+}
+
+REGISTER_FUNCTION(ToDecimalString)
+{
+    factory.registerFunction<FunctionToDecimalString>(
+        FunctionDocumentation{
+            .description=R"(
+Returns string representation of a number. First argument is the number of any numeric type,
+second argument is the desired number of digits in fractional part. Returns String.
+
+        )",
+            .examples{{"toDecimalString", "SELECT toDecimalString(2.1456,2)", ""}},
+            .categories{"String"}
+        }, FunctionFactory::CaseInsensitive);
+}
 
 }
