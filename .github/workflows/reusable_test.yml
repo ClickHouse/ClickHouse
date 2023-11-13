@@ -44,7 +44,9 @@ env:
 
 jobs:
   PrepareStrategy:
-    if: ${{inputs.batches > 0}}  # batches < 1 is misconfiguration
+    # batches < 1 is misconfiguration,
+    # and we need this step only for batches > 1
+    if: ${{ inputs.batches > 1 }}
     runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       batches: ${{steps.batches.outputs.batches}}
@@ -55,6 +57,11 @@ jobs:
           batches_output=$(python3 -c 'import json; print(json.dumps(list(range(${{inputs.batches}}))))')
           echo "batches=${batches_output}" >> "$GITHUB_OUTPUT"
   Test:
+    # If PrepareStrategy is skipped for batches == 1,
+    # we still need to launch the test.
+    # `! failure()` is mandatory here to launch on skipped Job
+    # `&& !cancelled()` to allow the be cancelable
+    if: ${{ ( !failure() && !cancelled() ) && inputs.batches > 0 }}
     # Do not add `-0` to the end, if there's only one batch
     name: ${{inputs.test_name}}${{ inputs.batches > 1 && format('-{0}',matrix.batch) || '' }}
     env:
@@ -64,7 +71,10 @@ jobs:
     strategy:
       fail-fast: false  # we always wait for entire matrix
       matrix:
-        batch: ${{ fromJson(needs.PrepareStrategy.outputs.batches) }}
+        # if PrepareStrategy does not have batches, we use 0
+        batch: ${{ needs.PrepareStrategy.outputs.batches
+          && fromJson(needs.PrepareStrategy.outputs.batches)
+          || fromJson('[0]')}}
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
