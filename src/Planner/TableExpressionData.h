@@ -280,16 +280,6 @@ public:
         filter_actions = std::move(filter_actions_value);
     }
 
-    const ActionsDAGPtr & getArrayJoinExpressionActions() const
-    {
-        return array_join_actions;
-    }
-
-    void setArrayJoinExpressionActions(ActionsDAGPtr array_join_actions_value)
-    {
-        array_join_actions = std::move(array_join_actions_value);
-    }
-
 private:
     void addColumnImpl(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
@@ -313,9 +303,6 @@ private:
 
     /// Valid for table, table function, array join, query, union nodes
     ColumnIdentifierToColumnName column_identifier_to_column_name;
-
-    /// Valid for array join
-    ActionsDAGPtr array_join_actions;
 
     /// Valid for table, table function
     ActionsDAGPtr filter_actions;

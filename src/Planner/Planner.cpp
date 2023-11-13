@@ -1399,9 +1399,6 @@ void Planner::buildPlanForQueryNode()
 
         if (table_expression_data.getRowLevelFilterActions())
             result_actions_to_execute.push_back(table_expression_data.getRowLevelFilterActions());
-
-        if (table_expression_data.getArrayJoinExpressionActions())
-            result_actions_to_execute.push_back(table_expression_data.getArrayJoinExpressionActions());
     }
 
     if (query_processing_info.isIntermediateStage())
