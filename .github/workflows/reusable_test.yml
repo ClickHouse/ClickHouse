@@ -40,6 +40,8 @@ name: Testing workflow
         required: false
 
 env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
   CHECK_NAME: ${{inputs.test_name}}
 
 jobs:

@@ -1,6 +1,10 @@
 ### For the pure soul wishes to move it to another place
 # https://github.com/orgs/community/discussions/9050
 
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 name: Build ClickHouse
 'on':
   workflow_call:
