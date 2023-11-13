@@ -1230,42 +1230,6 @@ Result:
 < Σ >
 ```
 
-## decodeHTMLComponent
-
-Un-escapes substrings with special meaning in HTML. For example: `&hbar;` `&gt;` `&diamondsuit;` `&heartsuit;` `&lt;` etc.
-
-This function also replaces numeric character references with Unicode characters. Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
-
-**Syntax**
-
-``` sql
-decodeHTMComponent(x)
-```
-
-**Arguments**
-
-- `x` — An input string. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
-- The un-escaped string.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-``` sql
-SELECT decodeHTMLComponent(''CH');
-SELECT decodeHMLComponent('I&heartsuit;ClickHouse');
-```
-
-Result:
-
-```result
-'CH'
-I♥ClickHouse'
-```
-
 ## extractTextFromHTML
 
 This function extracts plain text from HTML or XHTML.
@@ -1370,86 +1334,6 @@ Result:
 │ A240             │
 └──────────────────┘
 ```
-
-## byteHammingDistance
-
-Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
-
-**Syntax**
-
-```sql
-byteHammingDistance(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT byteHammingDistance('karolin', 'kathrin');
-```
-
-Result:
-
-``` text
-┌─byteHammingDistance('karolin', 'kathrin')─┐
-│                                         3 │
-└───────────────────────────────────────────┘
-```
-
-Alias: mismatches
-
-## stringJaccardIndex
-
-Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
-
-**Syntax**
-
-```sql
-stringJaccardIndex(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT stringJaccardIndex('clickhouse', 'mouse');
-```
-
-Result:
-
-``` text
-┌─stringJaccardIndex('clickhouse', 'mouse')─┐
-│                                       0.4 │
-└───────────────────────────────────────────┘
-```
-
-## stringJaccardIndexUTF8
-
-Like [stringJaccardIndex](#stringJaccardIndex) but for UTF8-encoded strings.
-
-## editDistance
-
-Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
-
-**Syntax**
-
-```sql
-editDistance(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT editDistance('clickhouse', 'mouse');
-```
-
-Result:
-
-``` text
-┌─editDistance('clickhouse', 'mouse')─┐
-│                                   6 │
-└─────────────────────────────────────┘
-```
-
-Alias: levenshteinDistance
 
 ## initcap
 

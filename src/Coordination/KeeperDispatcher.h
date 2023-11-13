@@ -39,6 +39,8 @@ private:
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
 
+    std::atomic<bool> shutdown_called{false};
+
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
     /// The first map is subscription map for normal responses like
@@ -100,12 +102,10 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
+    void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
     std::mutex read_request_queue_mutex;
-
-    std::atomic<uint64_t> our_last_committed_log_idx = 0;
 
     /// queue of read requests that can be processed after a request with specific session ID and XID is committed
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorage::RequestsForSessions>> read_request_queue;
@@ -235,12 +235,6 @@ public:
     bool requestLeader()
     {
         return server->requestLeader();
-    }
-
-    /// Yield leadership and become follower.
-    void yieldLeadership()
-    {
-        return server->yieldLeadership();
     }
 
     void recalculateStorageStats()

@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
-#include <Storages/BlockNumberColumn.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -40,7 +39,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
+
 
 namespace DB
 {
@@ -56,7 +55,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int THERE_IS_NO_COLUMN;
 }
-
 
 namespace
 {
@@ -305,11 +303,6 @@ bool MutationsInterpreter::Source::hasProjection(const String & name) const
     return part && part->hasProjection(name);
 }
 
-bool MutationsInterpreter::Source::isCompactPart() const
-{
-    return part && part->getType() == MergeTreeDataPartType::Compact;
-}
-
 static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
 {
     auto all_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
@@ -423,12 +416,6 @@ static void validateUpdateColumns(
             found = true;
         }
 
-        /// Dont allow to override value of block number virtual column
-        if (!found && column_name == BlockNumberColumn::name)
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
-        }
-
         if (!found)
         {
             for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
@@ -524,8 +511,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
-            if (!available_columns_set.contains(name) && name != LightweightDeleteDescription::FILTER_COLUMN.name
-                && name != BlockNumberColumn::name)
+            if (!available_columns_set.contains(name) && name != LightweightDeleteDescription::FILTER_COLUMN.name)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                     "Column {} is updated but not requested to read", name);
 
@@ -568,8 +554,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (settings.recalculate_dependencies_of_updated_columns)
         dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
 
-    bool need_rebuild_indexes = false;
-    bool need_rebuild_projections = false;
+    bool has_alter_delete = false;
     std::vector<String> read_columns;
 
     /// First, break a sequence of commands into stages.
@@ -590,9 +575,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 predicate = makeASTFunction("isZeroOrNull", predicate);
 
             stages.back().filters.push_back(predicate);
-            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
-            need_rebuild_indexes = true;
-            need_rebuild_projections = true;
+            has_alter_delete = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -630,8 +613,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                     type = physical_column->type;
                 else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
                     type = LightweightDeleteDescription::FILTER_COLUMN.type;
-                else if (column == BlockNumberColumn::name)
-                    type = BlockNumberColumn::type;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
 
@@ -696,11 +677,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
             }
-
-            /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
-            /// the part granularity, so we need to rebuild indexes
-            if (source.isCompactPart() && source.getMergeTreeData() && source.getMergeTreeData()->getSettings()->index_granularity_bytes > 0)
-                need_rebuild_indexes = true;
         }
         else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
         {
@@ -906,7 +882,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (!source.hasSecondaryIndex(index.name))
             continue;
 
-        if (need_rebuild_indexes)
+        if (has_alter_delete)
         {
             materialized_indices.insert(index.name);
             continue;
@@ -927,7 +903,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (!source.hasProjection(projection.name))
             continue;
 
-        if (need_rebuild_projections)
+        if (has_alter_delete)
         {
             materialized_projections.insert(projection.name);
             continue;
@@ -1007,6 +983,10 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         auto syntax_result = TreeRewriter(context).analyze(
             all_asts, all_columns, source.getStorage(), storage_snapshot,
             false, true, execute_scalar_subqueries);
+
+        if (execute_scalar_subqueries && context->hasQueryContext())
+            for (const auto & it : syntax_result->getScalars())
+                context->getQueryContext()->addScalar(it.first, it.second);
 
         stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
 
@@ -1106,18 +1086,6 @@ struct VirtualColumns
                 column.name = std::move(columns_to_read[i]);
 
                 virtuals.emplace_back(ColumnAndPosition{.column = std::move(column), .position = i});
-            }
-            else if (columns_to_read[i] == BlockNumberColumn::name)
-            {
-                if (!part->getColumns().contains(BlockNumberColumn::name))
-                {
-                    ColumnWithTypeAndName block_number_column;
-                    block_number_column.type = BlockNumberColumn::type;
-                    block_number_column.column = block_number_column.type->createColumnConst(0, part->info.min_block);
-                    block_number_column.name = std::move(columns_to_read[i]);
-
-                    virtuals.emplace_back(ColumnAndPosition{.column = std::move(block_number_column), .position = i});
-                }
             }
         }
 

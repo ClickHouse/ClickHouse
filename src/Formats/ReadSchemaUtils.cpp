@@ -5,7 +5,6 @@
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
 #include <IO/WithFileName.h>
-#include <IO/WithFileSize.h>
 
 
 namespace DB
@@ -83,20 +82,10 @@ try
             bool is_eof = false;
             try
             {
-                read_buffer_iterator.setPreviousReadBuffer(std::move(buf));
                 buf = read_buffer_iterator.next();
                 if (!buf)
                     break;
-
-                /// We just want to check for eof, but eof() can be pretty expensive.
-                /// So we use getFileSize() when available, which has better worst case.
-                /// (For remote files, typically eof() would read 1 MB from S3, which may be much
-                ///  more than what the schema reader and even data reader will read).
-                auto size = tryGetFileSizeFromReadBuffer(*buf);
-                if (size.has_value())
-                    is_eof = *size == 0;
-                else
-                    is_eof = buf->eof();
+                is_eof = buf->eof();
             }
             catch (Exception & e)
             {

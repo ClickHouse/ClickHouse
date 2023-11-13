@@ -33,11 +33,9 @@ public:
     const JoinPtr & getJoin() const { return join; }
     bool allowPushDownToRight() const;
 
-    bool canUpdateInputStream() const override { return true; }
+    void updateInputStream(const DataStream & new_input_stream_, size_t idx);
 
 private:
-    void updateOutputStream() override;
-
     JoinPtr join;
     size_t max_block_size;
     size_t max_streams;

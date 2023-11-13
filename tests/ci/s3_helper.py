@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import hashlib
 import logging
 import re
 import shutil
@@ -19,6 +20,15 @@ from env_helper import (
     S3_DOWNLOAD,
 )
 from compress_files import compress_file_fast
+
+
+def _md5(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    logging.debug("MD5 for %s is %s", fname, hash_md5.hexdigest())
+    return hash_md5.hexdigest()
 
 
 def _flatten_list(lst):

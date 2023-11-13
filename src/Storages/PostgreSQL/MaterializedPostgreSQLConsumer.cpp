@@ -236,7 +236,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 
     auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
-        switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
+        switch (identifier)
         {
             case 'n': /// NULL
             {
@@ -391,7 +391,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             auto proccess_identifier = [&](Int8 identifier) -> bool
             {
                 bool read_next = true;
-                switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
+                switch (identifier)
                 {
                     /// Only if changed column(s) are part of replica identity index (or primary keys if they are used instead).
                     /// In this case, first comes a tuple with old replica identity indexes and all other values will come as
@@ -566,7 +566,6 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
 void MaterializedPostgreSQLConsumer::syncTables()
 {
-    size_t synced_tables = 0;
     while (!tables_to_sync.empty())
     {
         auto table_name = *tables_to_sync.begin();
@@ -597,7 +596,6 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
                 CompletedPipelineExecutor executor(io.pipeline);
                 executor.execute();
-                ++synced_tables;
             }
         }
         catch (...)
@@ -610,8 +608,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
         tables_to_sync.erase(tables_to_sync.begin());
     }
 
-    LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})",
-              synced_tables, current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
+    LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
 
     updateLsn();
 }

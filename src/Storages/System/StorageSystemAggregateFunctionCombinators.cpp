@@ -1,4 +1,4 @@
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 
 namespace DB

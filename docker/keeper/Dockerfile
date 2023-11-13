@@ -34,7 +34,8 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="23.10.3.5"
+ARG REPOSITORY="https://s3.amazonaws.com/clickhouse-builds/22.4/31c367d3cd3aefd316778601ff6565119fe36682/package_release"
+ARG VERSION="23.7.5.30"
 ARG PACKAGES="clickhouse-keeper"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
