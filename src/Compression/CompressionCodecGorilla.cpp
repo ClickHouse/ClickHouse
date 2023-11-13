@@ -364,7 +364,7 @@ uint8_t CompressionCodecGorilla::getMethodByte() const
 
 void CompressionCodecGorilla::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(data_bytes_size);
 }
 

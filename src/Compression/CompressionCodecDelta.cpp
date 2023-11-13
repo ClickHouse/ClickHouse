@@ -56,7 +56,7 @@ uint8_t CompressionCodecDelta::getMethodByte() const
 
 void CompressionCodecDelta::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 namespace

@@ -85,7 +85,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     SipHash siphash;
 
     siphash.update(data_kind);
-    query->updateTreeHash(siphash);
+    query->updateTreeHash(siphash, /*ignore_aliases=*/ true);
 
     if (user_id)
     {
