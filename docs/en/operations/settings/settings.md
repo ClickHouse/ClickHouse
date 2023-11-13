@@ -1657,14 +1657,14 @@ Possible values:
 
 Default value: `1`.
 
-## query_cache_non_deterministic_function_handling {#query-cache-nondeterministic-function-handling}
+## query_cache_nondeterministic_function_handling {#query-cache-nondeterministic-function-handling}
 
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
 
-- `'throw'` - Throw an exception.
-- `'save'` - Cache the query result even if it is non-deterministic.
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
 - `'ignore'` - Don't cache the query result and don't throw an exception.
 
 Default value: `throw`.

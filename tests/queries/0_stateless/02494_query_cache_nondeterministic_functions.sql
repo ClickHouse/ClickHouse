@@ -1,5 +1,5 @@
--- Tag no-parallel: Messes with internal cache
 -- Tags: no-parallel
+-- Tag no-parallel: Messes with internal cache
 
 SYSTEM DROP QUERY CACHE;
 
