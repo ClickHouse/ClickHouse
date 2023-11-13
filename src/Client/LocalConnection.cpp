@@ -251,10 +251,12 @@ void LocalConnection::finishQuery()
     else if (state->pushing_async_executor)
     {
         state->pushing_async_executor->finish();
+        state->pushing_async_executor.reset();
     }
     else if (state->pushing_executor)
     {
         state->pushing_executor->finish();
+        state->pushing_executor.reset();
     }
 
     state->io.onFinish();
