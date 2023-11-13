@@ -82,7 +82,7 @@ public:
      *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
       */
     using Hash = CityHash_v1_0_2::uint128;
-    Hash getTreeHash(bool ignore_aliases = true) const;
+    Hash getTreeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases = true) const;
     virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
 
