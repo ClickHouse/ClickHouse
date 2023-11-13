@@ -2,6 +2,7 @@
 #include "Poco/Logger.h"
 #include "Common/Stopwatch.h"
 #include "Core/BackgroundSchedulePool.h"
+#include "Disks/ObjectStorages/VFSTransactionLog.h"
 #include "base/types.h"
 
 namespace zkutil
@@ -29,14 +30,11 @@ private:
     const String log_name;
     Poco::Logger const * const log;
     BackgroundSchedulePool::TaskHolder task;
-
     std::unique_ptr<zkutil::ZooKeeperLock> zookeeper_lock;
-
     UInt64 sleep_ms;
 
-    std::atomic<UInt64> prev_cleanup_timestamp_ms = 0;
-    AtomicStopwatch wakeup_check_timer;
-
     void run();
+
+    void populateSnapshot(VFSSnapshot& snapshot, const String& snapshot_name);
 };
 }
