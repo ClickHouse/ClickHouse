@@ -9,7 +9,7 @@
 namespace DB
 {
 
-void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
+void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state) const
 {
     for (const auto & change : changes)
     {
@@ -62,16 +62,6 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
         formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
         format.ostr << " = " << value;
     }
-}
-
-void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
-{
-    Hash hash = getTreeHash();
-
-    writeCString("__settings_", ostr);
-    writeText(hash.low64, ostr);
-    ostr.write('_');
-    writeText(hash.high64, ostr);
 }
 
 }

@@ -6,7 +6,6 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledSettings.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
@@ -26,17 +25,10 @@
 #include <IO/Operators.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <re2/re2.h>
 #include <filesystem>
 #include <mutex>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -84,13 +76,11 @@ public:
         auto x = cache.get(params);
         if (x)
         {
-            if ((*x)->getUserID() && !(*x)->tryGetUser())
-                cache.remove(params); /// The user has been dropped while it was in the cache.
-            else
+            if ((*x)->tryGetUser())
                 return *x;
+            /// No user, probably the user has been dropped while it was in the cache.
+            cache.remove(params);
         }
-
-        /// TODO: There is no need to keep the `ContextAccessCache::mutex` locked while we're calculating access rights.
         auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
         cache.add(params, res);
@@ -281,10 +271,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
-    setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256_password"));
     setPasswordComplexityRulesFromConfig(config_);
-
-    setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
@@ -425,7 +412,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         String type = key_in_user_directories;
         if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
             type.resize(bracket_pos);
-        if ((type == "users.xml") || (type == "users_config"))
+        if ((type == "users_xml") || (type == "users_config"))
             type = UsersConfigAccessStorage::STORAGE_TYPE;
         else if ((type == "local") || (type == "local_directory"))
             type = DiskAccessStorage::STORAGE_TYPE;
@@ -535,14 +522,12 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
     return changes_notifier->subscribeForChanges(ids, handler);
 }
 
-bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+std::optional<UUID> AccessControl::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists))
-    {
+    auto id = MultipleAccessStorage::insertImpl(entity, replace_if_exists, throw_if_exists);
+    if (id)
         changes_notifier->sendNotifications();
-        return true;
-    }
-    return false;
+    return id;
 }
 
 bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
@@ -567,7 +552,7 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
+UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
     try
     {
@@ -668,27 +653,6 @@ bool AccessControl::isPlaintextPasswordAllowed() const
     return allow_plaintext_password;
 }
 
-void AccessControl::setDefaultPasswordTypeFromConfig(const String & type_)
-{
-    for (auto check_type : collections::range(AuthenticationType::MAX))
-    {
-        const auto & info = AuthenticationTypeInfo::get(check_type);
-
-        if (type_ == info.name && info.is_password)
-        {
-            default_password_type = check_type;
-            return;
-        }
-    }
-
-    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown password type in 'default_password_type' in config");
-}
-
-AuthenticationType AccessControl::getDefaultPasswordType() const
-{
-    return default_password_type;
-}
-
 void AccessControl::setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)
 {
     password_rules->setPasswordComplexityRulesFromConfig(config_);
@@ -709,19 +673,33 @@ std::vector<std::pair<String, String>> AccessControl::getPasswordComplexityRules
     return password_rules->getPasswordComplexityRules();
 }
 
-void AccessControl::setBcryptWorkfactor(int workfactor_)
-{
-    if (workfactor_ < 4)
-        bcrypt_workfactor = 4;
-    else if (workfactor_ > 31)
-        bcrypt_workfactor = 31;
-    else
-        bcrypt_workfactor = workfactor_;
-}
 
-int AccessControl::getBcryptWorkfactor() const
+std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
+    const UUID & user_id,
+    const std::vector<UUID> & current_roles,
+    bool use_default_roles,
+    const Settings & settings,
+    const String & current_database,
+    const ClientInfo & client_info) const
 {
-    return bcrypt_workfactor;
+    ContextAccessParams params;
+    params.user_id = user_id;
+    params.current_roles.insert(current_roles.begin(), current_roles.end());
+    params.use_default_roles = use_default_roles;
+    params.current_database = current_database;
+    params.readonly = settings.readonly;
+    params.allow_ddl = settings.allow_ddl;
+    params.allow_introspection = settings.allow_introspection_functions;
+    params.interface = client_info.interface;
+    params.http_method = client_info.http_method;
+    params.address = client_info.current_address.host();
+    params.quota_key = client_info.quota_key;
+
+    /// Extract the last entry from comma separated list of X-Forwarded-For addresses.
+    /// Only the last proxy can be trusted (if any).
+    params.forwarded_address = client_info.getLastForwardedFor();
+
+    return getContextAccess(params);
 }
 
 
@@ -736,14 +714,6 @@ std::shared_ptr<const EnabledRoles> AccessControl::getEnabledRoles(
     const std::vector<UUID> & current_roles_with_admin_option) const
 {
     return role_cache->getEnabledRoles(current_roles, current_roles_with_admin_option);
-}
-
-
-std::shared_ptr<const EnabledRolesInfo> AccessControl::getEnabledRolesInfo(
-    const std::vector<UUID> & current_roles,
-    const std::vector<UUID> & current_roles_with_admin_option) const
-{
-    return getEnabledRoles(current_roles, current_roles_with_admin_option)->getRolesInfo();
 }
 
 
@@ -788,15 +758,6 @@ std::shared_ptr<const EnabledSettings> AccessControl::getEnabledSettings(
     const SettingsProfileElements & settings_from_enabled_roles) const
 {
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
-}
-
-std::shared_ptr<const SettingsProfilesInfo> AccessControl::getEnabledSettingsInfo(
-    const UUID & user_id,
-    const SettingsProfileElements & settings_from_user,
-    const boost::container::flat_set<UUID> & enabled_roles,
-    const SettingsProfileElements & settings_from_enabled_roles) const
-{
-    return getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles)->getInfo();
 }
 
 std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInfo(const UUID & profile_id)

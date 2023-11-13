@@ -20,7 +20,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_normalize_count_variants)
             return;

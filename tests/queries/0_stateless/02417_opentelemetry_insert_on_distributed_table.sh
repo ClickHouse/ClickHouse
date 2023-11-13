@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, distributed, long
+# Tags: no-fasttest, distributed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,21 +8,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # This function takes 4 arguments:
 # $1 - OpenTelemetry Trace Id
-# $2 - value of distributed_foreground_insert
+# $2 - value of insert_distributed_sync
 # $3 - value of prefer_localhost_replica
 # $4 - a String that helps to debug
 function insert()
 {
-    echo "INSERT INTO ${CLICKHOUSE_DATABASE}.dist_opentelemetry SETTINGS distributed_foreground_insert=$2, prefer_localhost_replica=$3 VALUES(1),(2)" |
+    echo "INSERT INTO ${CLICKHOUSE_DATABASE}.dist_opentelemetry SETTINGS insert_distributed_sync=$2, prefer_localhost_replica=$3 VALUES(1),(2)" |
         ${CLICKHOUSE_CURL} \
             -X POST \
             -H "traceparent: 00-$1-5150000000000515-01" \
             -H "tracestate: $4" \
             "${CLICKHOUSE_URL}" \
             --data @-
-
-    # disable probabilistic tracing to avoid stealing the trace context
-    ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=0 -q "SYSTEM FLUSH DISTRIBUTED ${CLICKHOUSE_DATABASE}.dist_opentelemetry"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH DISTRIBUTED ${CLICKHOUSE_DATABASE}.dist_opentelemetry"
 }
 
 function check_span()
@@ -47,7 +45,7 @@ ${CLICKHOUSE_CLIENT} -nq "
 
 #
 # $1 - OpenTelemetry Trace Id
-# $2 - value of distributed_foreground_insert
+# $2 - value of insert_distributed_sync
 function check_span_kind()
 {
 ${CLICKHOUSE_CLIENT} -nq "
@@ -71,8 +69,6 @@ DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 
 CREATE TABLE ${CLICKHOUSE_DATABASE}.dist_opentelemetry  (key UInt64) Engine=Distributed('test_cluster_two_shards_localhost', ${CLICKHOUSE_DATABASE}, local_opentelemetry, key % 2);
 CREATE TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry (key UInt64) Engine=MergeTree ORDER BY key;
-
-SYSTEM STOP DISTRIBUTED SENDS ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
 "
 
 #

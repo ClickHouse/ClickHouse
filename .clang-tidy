@@ -5,9 +5,6 @@
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 
-# TODO: Once clang(-tidy) 17 is the minimum, we can convert this list to YAML
-# See https://releases.llvm.org/17.0.1/tools/clang/tools/extra/docs/ReleaseNotes.html#improvements-to-clang-tidy
-
 # TODO Let clang-tidy check headers in further directories
 #      --> HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
 HeaderFilterRegex: '^.*/(base)/.*(h|hpp)$'
@@ -26,7 +23,7 @@ Checks: '*,
     -bugprone-implicit-widening-of-multiplication-result,
     -bugprone-narrowing-conversions,
     -bugprone-not-null-terminated-result,
-    -bugprone-reserved-identifier, # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
+    -bugprone-reserved-identifier,
     -bugprone-unchecked-optional-access,
 
     -cert-dcl16-c,
@@ -38,9 +35,38 @@ Checks: '*,
     -cert-oop54-cpp,
     -cert-oop57-cpp,
 
-    -clang-analyzer-unix.Malloc,
+    -clang-analyzer-optin.performance.Padding,
+    -clang-analyzer-optin.portability.UnixAPI,
+    -clang-analyzer-security.insecureAPI.bzero,
+    -clang-analyzer-security.insecureAPI.strcpy,
 
-    -cppcoreguidelines-*, # impractical in a codebase as large as ClickHouse, also slow
+    -cppcoreguidelines-avoid-c-arrays,
+    -cppcoreguidelines-avoid-const-or-ref-data-members,
+    -cppcoreguidelines-avoid-do-while,
+    -cppcoreguidelines-avoid-goto,
+    -cppcoreguidelines-avoid-magic-numbers,
+    -cppcoreguidelines-avoid-non-const-global-variables,
+    -cppcoreguidelines-explicit-virtual-functions,
+    -cppcoreguidelines-init-variables,
+    -cppcoreguidelines-interfaces-global-init,
+    -cppcoreguidelines-macro-usage,
+    -cppcoreguidelines-narrowing-conversions,
+    -cppcoreguidelines-no-malloc,
+    -cppcoreguidelines-non-private-member-variables-in-classes,
+    -cppcoreguidelines-owning-memory,
+    -cppcoreguidelines-prefer-member-initializer,
+    -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+    -cppcoreguidelines-pro-bounds-constant-array-index,
+    -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+    -cppcoreguidelines-pro-type-const-cast,
+    -cppcoreguidelines-pro-type-cstyle-cast,
+    -cppcoreguidelines-pro-type-member-init,
+    -cppcoreguidelines-pro-type-reinterpret-cast,
+    -cppcoreguidelines-pro-type-static-cast-downcast,
+    -cppcoreguidelines-pro-type-union-access,
+    -cppcoreguidelines-pro-type-vararg,
+    -cppcoreguidelines-slicing,
+    -cppcoreguidelines-special-member-functions,
 
     -darwin-*,
 
@@ -52,6 +78,7 @@ Checks: '*,
     -google-readability-function-size,
     -google-readability-namespace-comments,
     -google-readability-todo,
+    -google-upgrade-googletest-case,
 
     -hicpp-avoid-c-arrays,
     -hicpp-avoid-goto,
@@ -81,11 +108,8 @@ Checks: '*,
     -openmp-*,
 
     -misc-const-correctness,
-    -misc-include-cleaner, # useful but far too many occurrences
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
-    -misc-confusable-identifiers, # useful but slooow
-    -misc-use-anonymous-namespace,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
@@ -101,19 +125,17 @@ Checks: '*,
 
     -performance-inefficient-string-concatenation,
     -performance-no-int-to-ptr,
-    -performance-avoid-endl,
     -performance-unnecessary-value-param,
 
     -portability-simd-intrinsics,
 
-    -readability-avoid-unconditional-preprocessor-if,
     -readability-braces-around-statements,
     -readability-convert-member-functions-to-static,
     -readability-else-after-return,
     -readability-function-cognitive-complexity,
     -readability-function-size,
     -readability-identifier-length,
-    -readability-identifier-naming, # useful but too slow
+    -readability-identifier-naming,
     -readability-implicit-bool-conversion,
     -readability-isolate-declaration,
     -readability-magic-numbers,
@@ -125,17 +147,23 @@ Checks: '*,
     -readability-uppercase-literal-suffix,
     -readability-use-anyofallof,
 
-    -zircon-*,
+    -zirkon-*,
+
+    -misc-*, # temporarily disabled due to being too slow
+    # also disable checks in other categories which are aliases of checks in misc-*:
+    # https://releases.llvm.org/15.0.0/tools/clang/tools/extra/docs/clang-tidy/checks/list.html
+    -cert-dcl54-cpp,                                            # alias of misc-new-delete-overloads
+    -hicpp-new-delete-operators,                                # alias of misc-new-delete-overloads
+    -cert-fio38-c,                                              # alias of misc-non-copyable-objects
+    -cert-dcl03-c,                                              # alias of misc-static-assert
+    -hicpp-static-assert,                                       # alias of misc-static-assert
+    -cert-err09-cpp,                                            # alias of misc-throw-by-value-catch-by-reference
+    -cert-err61-cpp,                                            # alias of misc-throw-by-value-catch-by-reference
+    -cppcoreguidelines-c-copy-assignment-signature,             # alias of misc-unconventional-assign-operator
+    -cppcoreguidelines-non-private-member-variables-in-classes, # alias of misc-non-private-member-variables-in-classes
 '
 
 WarningsAsErrors: '*'
-
-ExtraArgs:
-# clang-tidy 17 started to complain (for unknown reasons) that various pragmas are unknown ("clang-diagnostic-unknown-pragmas").
-# This is technically a compiler error, not a clang-tidy error. We could litter the code base with more pragmas that suppress
-# this error but it is better to pass the following flag to the compiler:
-- '-Wno-unknown-pragmas'
-- '-Wno-unused-command-line-argument' # similar issue
 
 CheckOptions:
   readability-identifier-naming.ClassCase: CamelCase
@@ -152,10 +180,11 @@ CheckOptions:
   readability-identifier-naming.ParameterPackCase: lower_case
   readability-identifier-naming.StructCase: CamelCase
   readability-identifier-naming.TemplateTemplateParameterCase: CamelCase
-  readability-identifier-naming.TemplateParameterCase: lower_case
+  readability-identifier-naming.TemplateUsingCase: lower_case
   readability-identifier-naming.TypeTemplateParameterCase: CamelCase
   readability-identifier-naming.TypedefCase: CamelCase
   readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.UsingCase: CamelCase
   modernize-loop-convert.UseCxx20ReverseRanges: false
   performance-move-const-arg.CheckTriviallyCopyableMove: false
   # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097

@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -51,9 +50,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
-                if (stream_name)
-                    ++stream_counts[*stream_name];
+                ++stream_counts[ISerialization::getFileNameForStream(column.name, substream_path)];
             });
     }
 
@@ -67,13 +64,12 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, checksums);
-
+            String stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
             /// Delete files if they are no longer shared with another column.
-            if (stream_name && --stream_counts[*stream_name] == 0)
+            if (--stream_counts[stream_name] == 0)
             {
-                remove_files.emplace(*stream_name + ".bin");
-                remove_files.emplace(*stream_name + mrk_extension);
+                remove_files.emplace(stream_name + ".bin");
+                remove_files.emplace(stream_name + mrk_extension);
             }
         };
 

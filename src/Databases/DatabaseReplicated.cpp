@@ -30,13 +30,10 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
-#include <Storages/StorageKeeperMap.h>
-#include <Storages/AlterCommands.h>
 
 namespace DB
 {
@@ -116,18 +113,11 @@ DatabaseReplicated::DatabaseReplicated(
 
     if (!db_settings.collection_name.value.empty())
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
-
-    replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
-}
-
-String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
-{
-    return shard + '|' + replica;
 }
 
 String DatabaseReplicated::getFullReplicaName() const
 {
-    return getFullReplicaName(shard_name, replica_name);
+    return shard_name + '|' + replica_name;
 }
 
 std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String & name)
@@ -177,7 +167,6 @@ void DatabaseReplicated::setCluster(ClusterPtr && new_cluster)
 
 ClusterPtr DatabaseReplicated::getClusterImpl() const
 {
-    Strings unfiltered_hosts;
     Strings hosts;
     Strings host_ids;
 
@@ -189,25 +178,11 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     {
         host_ids.resize(0);
         Coordination::Stat stat;
-        unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
-        if (unfiltered_hosts.empty())
+        hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
+        if (hosts.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No replicas of database {} found. "
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
-
-        hosts.clear();
-        std::vector<String> paths;
-        for (const auto & host : unfiltered_hosts)
-            paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-        auto replica_groups = zookeeper->tryGet(paths);
-
-        for (size_t i = 0; i < paths.size(); ++i)
-        {
-            if (replica_groups[i].data == replica_group_name)
-                hosts.push_back(unfiltered_hosts[i]);
-        }
-
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
@@ -236,13 +211,10 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
                                                                  "because replicas are created or removed concurrently");
 
-    LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
-              fmt::join(unfiltered_hosts, ", "), fmt::join(hosts, ", "), fmt::join(host_ids, ", "));
-
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
     String current_shard = parseFullReplicaName(hosts.front()).first;
-    std::vector<std::vector<DatabaseReplicaInfo>> shards;
+    std::vector<Strings> shards;
     shards.emplace_back();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
@@ -258,65 +230,25 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
             if (!shards.back().empty())
                 shards.emplace_back();
         }
-        String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
+        shards.back().emplace_back(unescapeForFileName(host_port));
     }
 
-    UInt16 default_port;
-    if (cluster_auth_info.cluster_secure_connection)
-        default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
-    else
-        default_port = getContext()->getTCPPort();
+    UInt16 default_port = getContext()->getTCPPort();
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-    ClusterConnectionParameters params{
+    return std::make_shared<Cluster>(
+        getContext()->getSettingsRef(),
+        shards,
         cluster_auth_info.cluster_username,
         cluster_auth_info.cluster_password,
         default_port,
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
-        Priority{1},
+        /*priority=*/1,
         TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
-        cluster_auth_info.cluster_secret};
-
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
-}
-
-std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
-{
-    Strings paths;
-    const auto & addresses_with_failover = cluster_->getShardsAddresses();
-    const auto & shards_info = cluster_->getShardsInfo();
-    for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
-    {
-        for (const auto & replica : addresses_with_failover[shard_index])
-        {
-            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
-            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
-        }
-    }
-
-    try
-    {
-        auto current_zookeeper = getZooKeeper();
-        auto res = current_zookeeper->exists(paths);
-
-        std::vector<UInt8> statuses;
-        statuses.resize(paths.size());
-
-        for (size_t i = 0; i < res.size(); ++i)
-            if (res[i].error == Coordination::Error::ZOK)
-                statuses[i] = 1;
-
-        return statuses;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-        return {};
-    }
+        cluster_auth_info.cluster_secret);
 }
 
 
@@ -332,7 +264,6 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco:
     cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");
     cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
-
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
 {
@@ -372,21 +303,6 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                     ErrorCodes::REPLICA_ALREADY_EXISTS,
                     "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
-            }
-
-            /// Check that replica_group_name in ZooKeeper matches the local one and change it if necessary.
-            String zk_replica_group_name;
-            if (!current_zookeeper->tryGet(replica_path + "/replica_group", zk_replica_group_name))
-            {
-                /// Replica groups were introduced in 23.10, so the node might not exist
-                current_zookeeper->create(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent);
-                if (!replica_group_name.empty())
-                    createEmptyLogEntry(current_zookeeper);
-            }
-            else if (zk_replica_group_name != replica_group_name)
-            {
-                current_zookeeper->set(replica_path + "/replica_group", replica_group_name, -1);
-                createEmptyLogEntry(current_zookeeper);
             }
         }
         else if (is_create_query)
@@ -506,17 +422,14 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     {
         Coordination::Stat stat;
         String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
-
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/digest", "0", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent));
         /// In addition to creating the replica nodes, we record the max_log_ptr at the instant where
         /// we declared ourself as an existing replica. We'll need this during recoverLostReplica to
         /// notify other nodes that issued new queries while this node was recovering.
         ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version));
-
         Coordination::Responses responses;
         const auto code = current_zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZOK)
@@ -538,10 +451,11 @@ void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, Lo
     tryConnectToZooKeeperAndInitDatabase(mode);
 }
 
-void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+void DatabaseReplicated::loadStoredObjects(
+    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
 {
     beforeLoadingMetadata(local_context, mode);
-    DatabaseAtomic::loadStoredObjects(local_context, mode);
+    DatabaseAtomic::loadStoredObjects(local_context, mode, skip_startup_tables);
 }
 
 UInt64 DatabaseReplicated::getMetadataHash(const String & table_name) const
@@ -567,7 +481,6 @@ void DatabaseReplicated::startupTables(ThreadPool & thread_pool, LoadingStrictne
 
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
-    ddl_worker_initialized = true;
 }
 
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
@@ -628,8 +541,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
-            bool replicated_table = create->storage && create->storage->engine &&
-                (startsWith(create->storage->engine->name, "Replicated") || startsWith(create->storage->engine->name, "Shared"));
+            bool replicated_table = create->storage && create->storage->engine && startsWith(create->storage->engine->name, "Replicated");
             if (!replicated_table || !create->storage->engine->arguments)
                 return;
 
@@ -647,7 +559,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                     args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
                     args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
                 }
-                catch (...) // NOLINT(bugprone-empty-catch)
+                catch (...)
                 {
                 }
             }
@@ -710,7 +622,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         for (const auto & command : query_alter->command_list->children)
         {
-            if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand&>().type))
+            if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
         }
     }
@@ -726,7 +638,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     }
 }
 
-BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags)
+BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal)
 {
 
     if (query_context->getCurrentTransaction() && query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
@@ -735,7 +647,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
 
-    if (!flags.internal && (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY))
+    if (!internal && (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
     checkQueryValid(query, query_context);
@@ -746,33 +658,16 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.initiator = ddl_worker->getCommonHostID();
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
-    entry.is_backup_restore = flags.distributed_backup_restore;
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
-    Strings hosts_to_wait;
-    Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-
-    std::vector<String> paths;
-    for (const auto & host : unfiltered_hosts)
-        paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-    auto replica_groups = getZooKeeper()->tryGet(paths);
-
-    for (size_t i = 0; i < paths.size(); ++i)
-    {
-        if (replica_groups[i].data == replica_group_name)
-            hosts_to_wait.push_back(unfiltered_hosts[i]);
-    }
-
-    return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
+    Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+    return getDistributedDDLStatus(node_path, entry, query_context, hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
 {
-    bool looks_like_replicated = metadata.find("Replicated") != std::string::npos;
-    bool looks_like_shared = metadata.find("Shared") != std::string::npos;
-    bool looks_like_merge_tree = metadata.find("MergeTree") != std::string::npos;
-    if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
+    bool looks_like_replicated = metadata.find("ReplicatedMergeTree") != std::string::npos;
+    if (!looks_like_replicated)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
@@ -782,14 +677,13 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
-    if (!(startsWith(create.storage->engine->name, "Replicated") || startsWith(create.storage->engine->name, "Shared"))
-        || !endsWith(create.storage->engine->name, "MergeTree"))
+    if (!startsWith(create.storage->engine->name, "Replicated") || !endsWith(create.storage->engine->name, "MergeTree"))
         return UUIDHelpers::Nil;
     chassert(create.uuid != UUIDHelpers::Nil);
     return create.uuid;
 }
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr)
 {
     is_recovering = true;
     SCOPE_EXIT({ is_recovering = false; });
@@ -875,36 +769,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
-        query_context->setQueryKindReplicatedDatabaseInternal();
+        query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        query_context->getClientInfo().is_replicated_database_internal = true;
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId("");
-
-        /// We will execute some CREATE queries for recovery (not ATTACH queries),
-        /// so we need to allow experimental features that can be used in a CREATE query
-        query_context->setSetting("allow_experimental_inverted_index", 1);
-        query_context->setSetting("allow_experimental_codecs", 1);
-        query_context->setSetting("allow_experimental_live_view", 1);
-        query_context->setSetting("allow_experimental_window_view", 1);
-        query_context->setSetting("allow_experimental_funnel_functions", 1);
-        query_context->setSetting("allow_experimental_nlp_functions", 1);
-        query_context->setSetting("allow_experimental_hash_functions", 1);
-        query_context->setSetting("allow_experimental_object_type", 1);
-        query_context->setSetting("allow_experimental_annoy_index", 1);
-        query_context->setSetting("allow_experimental_usearch_index", 1);
-        query_context->setSetting("allow_experimental_bigint_types", 1);
-        query_context->setSetting("allow_experimental_window_functions", 1);
-        query_context->setSetting("allow_experimental_geo_types", 1);
-        query_context->setSetting("allow_experimental_map_type", 1);
-
-        query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
-        query_context->setSetting("allow_suspicious_fixed_string_types", 1);
-        query_context->setSetting("allow_suspicious_indices", 1);
-        query_context->setSetting("allow_suspicious_codecs", 1);
-        query_context->setSetting("allow_hyperscan", 1);
-        query_context->setSetting("allow_simdjson", 1);
-        query_context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
-
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
         return query_context;
@@ -924,14 +792,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
         query_context->setSetting("allow_deprecated_database_ordinary", 1);
-        executeQuery(query, query_context, QueryFlags{ .internal = true });
+        executeQuery(query, query_context, true);
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
         /// if zookeeper_path contains {uuid} macro. Replicated database do not recreate replicated tables on recovery,
         /// so it's ok to save UUID of replicated table.
         query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Atomic", backQuoteIfNeed(to_db_name_replicated));
         query_context = Context::createCopy(getContext());
-        executeQuery(query, query_context, QueryFlags{ .internal = true });
+        executeQuery(query, query_context, true);
     }
 
     size_t moved_tables = 0;
@@ -1072,7 +940,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         const auto & create_query_string = metadata_it->second;
         if (isTableExist(table_name, getContext()))
         {
-            assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+            assert(create_query_string == readMetadataFile(table_name));
             continue;
         }
 
@@ -1173,14 +1041,12 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 }
 
 void DatabaseReplicated::dropReplica(
-    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica)
+    DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name)
 {
     assert(!database || database_zookeeper_path == database->zookeeper_path);
 
-    String full_replica_name = shard.empty() ? replica : getFullReplicaName(shard, replica);
-
     if (full_replica_name.find('/') != std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name: {}", full_replica_name);
 
     auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
 
@@ -1243,7 +1109,6 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     stopReplication();
-    ddl_worker_initialized = false;
     ddl_worker = nullptr;
     DatabaseAtomic::shutdown();
 }
@@ -1269,7 +1134,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
-    if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
+    if (txn && !txn->isCreateOrReplaceQuery())
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
@@ -1323,7 +1188,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
         new_digest -= DB::getMetadataHash(to_table_name, statement_to);
         new_digest += DB::getMetadataHash(table_name, statement_to);
     }
-    if (txn && !is_recovering)
+    if (txn)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
@@ -1349,7 +1214,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest += DB::getMetadataHash(query.getTable(), statement);
-    if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
+    if (txn && !txn->isCreateOrReplaceQuery())
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
@@ -1362,7 +1227,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
@@ -1373,22 +1238,12 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_id.table_name);
     new_digest += DB::getMetadataHash(table_id.table_name, statement);
-    if (txn && !is_recovering)
+    if (txn)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
     assert(checkDigestValid(query_context));
-}
-
-
-bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
-{
-    /// ReplicatedMergeTree may call commitAlterTable from its background threads when executing ALTER_METADATA entries.
-    /// It may update the metadata digest (both locally and in ZooKeeper)
-    /// before DatabaseReplicatedDDLWorker::initializeReplication() has finished.
-    /// We should not update metadata until the database is initialized.
-    return ddl_worker_initialized && ddl_worker->isCurrentlyActive();
 }
 
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)
@@ -1406,7 +1261,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
-    if (txn && !is_recovering)
+    if (txn)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::detachTablePermanently(local_context, table_name);
@@ -1430,7 +1285,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     if (attach)
     {
         new_digest += getMetadataHash(table_name);
-        if (txn && !is_recovering)
+        if (txn)
             txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
     }
 
@@ -1532,74 +1387,16 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (query_context->getClientInfo().is_replicated_database_internal)
         return false;
 
-    /// we never replicate KeeperMap operations for some types of queries because it doesn't make sense
-    const auto is_keeper_map_table = [&](const ASTPtr & ast)
-    {
-        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
-
-        return table->as<StorageKeeperMap>() != nullptr;
-    };
-
-    const auto is_replicated_table = [&](const ASTPtr & ast)
-    {
-        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
-
-        return table->supportsReplication();
-    };
-
-    const auto has_many_shards = [&]()
-    {
-        /// If there is only 1 shard then there is no need to replicate some queries.
-        auto current_cluster = tryGetCluster();
-        return
-            !current_cluster || /// Couldn't get the cluster, so we don't know how many shards there are.
-            current_cluster->getShardsInfo().size() > 1;
-    };
-
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
-        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || is_keeper_map_table(query_ptr) || alter->isFreezeAlter())
-            return false;
-
-        if (has_many_shards() || !is_replicated_table(query_ptr))
-            return true;
-
-        try
-        {
-            /// Metadata alter should go through database
-            for (const auto & child : alter->command_list->children)
-                if (AlterCommand::parse(child->as<ASTAlterCommand>()))
-                    return true;
-
-            /// It's ALTER PARTITION or mutation, doesn't involve database
-            return false;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-
-        return true;
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
     }
 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
     {
-        if (drop->table.get())
-            return drop->kind != ASTDropQuery::Truncate || !is_keeper_map_table(query_ptr);
-
-        return false;
-    }
-
-    if (query_ptr->as<const ASTDeleteQuery>() != nullptr)
-    {
-        if (is_keeper_map_table(query_ptr))
-            return false;
-
-        return has_many_shards() || !is_replicated_table(query_ptr);
+        return drop->table.get();
     }
 
     return true;

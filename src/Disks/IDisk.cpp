@@ -1,12 +1,15 @@
 #include "IDisk.h"
+#include "Disks/Executor.h"
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Poco/Logger.h>
-#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerUUID.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/FakeDiskTransaction.h>
 
 namespace DB
@@ -24,16 +27,26 @@ bool IDisk::isDirectoryEmpty(const String & path) const
     return !iterateDirectory(path)->isValid();
 }
 
-void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings) /// NOLINT
+void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path, const WriteSettings & settings) /// NOLINT
 {
     LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
               getName(), getPath(), from_file_path, to_disk.getName(), to_disk.getPath(), to_file_path);
 
-    auto in = readFile(from_file_path, read_settings);
-    auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+    auto in = readFile(from_file_path);
+    auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
     copyData(*in, *out);
     out->finalize();
 }
+
+void IDisk::writeFileUsingCustomWriteObject(
+    const String &, WriteMode, std::function<size_t(const StoredObject &, WriteMode, const std::optional<ObjectAttributes> &)>)
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Method `writeFileUsingCustomWriteObject()` is not implemented for disk: {}",
+        getDataSourceDescription().type);
+}
+
 
 DiskTransactionPtr IDisk::createTransaction()
 {
@@ -52,61 +65,21 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
     }
 }
 
-std::unique_ptr<ReadBufferFromFileBase> IDisk::readEncryptedFile(const String &, const ReadSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-std::unique_ptr<WriteBufferFromFileBase> IDisk::writeEncryptedFile(const String &, size_t, WriteMode, const WriteSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-size_t IDisk::getEncryptedFileSize(const String &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-size_t IDisk::getEncryptedFileSize(size_t) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-UInt128 IDisk::getEncryptedFileIV(const String &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
 
 using ResultsCollector = std::vector<std::future<void>>;
 
-void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, ThreadPool & pool, ResultsCollector & results, bool copy_root_dir, const ReadSettings & read_settings, const WriteSettings & write_settings)
+void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, Executor & exec, ResultsCollector & results, bool copy_root_dir, const WriteSettings & settings)
 {
     if (from_disk.isFile(from_path))
     {
-        auto promise = std::make_shared<std::promise<void>>();
-        auto future = promise->get_future();
-
-        pool.scheduleOrThrowOnError(
-            [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, promise, thread_group = CurrentThread::getGroup()]()
+        auto result = exec.execute(
+            [&from_disk, from_path, &to_disk, to_path, &settings]()
             {
-                try
-                {
-                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
-                    if (thread_group)
-                        CurrentThread::attachToGroup(thread_group);
-
-                    from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), read_settings, write_settings);
-                    promise->set_value();
-                }
-                catch (...)
-                {
-                    promise->set_exception(std::current_exception());
-                }
+                setThreadName("DiskCopier");
+                from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), settings);
             });
 
-        results.push_back(std::move(future));
+        results.push_back(std::move(result));
     }
     else
     {
@@ -119,33 +92,40 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
         }
 
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest, pool, results, true, read_settings, write_settings);
+            asyncCopy(from_disk, it->path(), to_disk, dest, exec, results, true, settings);
     }
 }
 
-void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir, const ReadSettings & read_settings, WriteSettings write_settings)
+void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir)
 {
+    auto & exec = to_disk->getExecutor();
     ResultsCollector results;
 
+    WriteSettings settings;
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
-    write_settings.s3_allow_parallel_part_upload = false;
+    settings.s3_allow_parallel_part_upload = false;
 
-    asyncCopy(*this, from_path, *to_disk, to_path, copying_thread_pool, results, copy_root_dir, read_settings, write_settings);
+    asyncCopy(*this, from_path, *to_disk, to_path, exec, results, copy_root_dir, settings);
 
     for (auto & result : results)
         result.wait();
     for (auto & result : results)
-        result.get();   /// May rethrow an exception
+        result.get();
+}
+
+void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+{
+    copyThroughBuffers(from_path, to_disk, to_path, true);
 }
 
 
-void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir, const ReadSettings & read_settings, const WriteSettings & write_settings)
+void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
 {
     if (!to_disk->exists(to_dir))
         to_disk->createDirectories(to_dir);
 
-    copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir= */ false, read_settings, write_settings);
+    copyThroughBuffers(from_dir, to_disk, to_dir, false);
 }
 
 void IDisk::truncateFile(const String &, size_t)
@@ -196,12 +176,12 @@ try
         try
         {
             file->write(payload.data(), payload.size());
-            file->finalize();
         }
         catch (...)
         {
             /// Log current exception, because finalize() can throw a different exception.
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            file->finalize();
             throw;
         }
     }
@@ -239,11 +219,6 @@ catch (Exception & e)
 {
     e.addMessage(fmt::format("While checking access for disk {}", name));
     throw;
-}
-
-void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)
-{
-    copying_thread_pool.setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
 }
 
 }

@@ -44,6 +44,7 @@ void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check)
         auto [_, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
         auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri);
+        uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
 
         DiskPtr disk = std::make_shared<DiskObjectStorage>(
@@ -52,9 +53,8 @@ void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check)
             "DiskHDFS",
             std::move(metadata_storage),
             std::move(hdfs_storage),
-            config,
-            config_prefix);
-
+            /* send_metadata = */ false,
+            copy_thread_pool_size);
         disk->startup(context, skip_access_check);
 
         return disk;

@@ -101,12 +101,6 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     out.close();
     err.close();
 
-    for (auto & [_, fd] : write_fds)
-        fd.close();
-
-    for (auto & [_, fd] : read_fds)
-        fd.close();
-
     return waitForPid(pid, timeout_in_seconds);
 }
 
@@ -266,7 +260,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Co
 
     std::vector<char *> argv(arguments.size() + 2);
     std::vector<char> argv_data(argv_sum_size);
-    WriteBufferFromPointer writer(argv_data.data(), argv_sum_size);
+    WriteBuffer writer(argv_data.data(), argv_sum_size);
 
     argv[0] = writer.position();
     writer.write(path.data(), path.size() + 1);
@@ -276,8 +270,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Co
         argv[i + 1] = writer.position();
         writer.write(arguments[i].data(), arguments[i].size() + 1);
     }
-
-    writer.finalize();
 
     argv[arguments.size() + 1] = nullptr;
 
@@ -292,12 +284,6 @@ int ShellCommand::tryWait()
     in.close();
     out.close();
     err.close();
-
-    for (auto & [_, fd] : write_fds)
-        fd.close();
-
-    for (auto & [_, fd] : read_fds)
-        fd.close();
 
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 

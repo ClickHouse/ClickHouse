@@ -10,8 +10,6 @@
 #include <libnuraft/nuraft.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ThreadPool.h>
-#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -60,7 +58,6 @@ struct ChangelogFileDescription
     uint64_t to_log_index;
     std::string extension;
 
-    DiskPtr disk;
     std::string path;
 
     bool deleted = false;
@@ -82,11 +79,6 @@ struct LogFileSettings
     uint64_t overallocate_size = 0;
 };
 
-struct FlushSettings
-{
-    uint64_t max_flush_batch_size = 1000;
-};
-
 /// Simplest changelog with files rotation.
 /// No compression, no metadata, just entries with headers one by one.
 /// Able to read broken files/entries and discard them. Not thread safe.
@@ -94,10 +86,9 @@ class Changelog
 {
 public:
     Changelog(
+        const std::string & changelogs_dir_,
         Poco::Logger * log_,
-        LogFileSettings log_file_settings,
-        FlushSettings flush_settings,
-        KeeperContextPtr keeper_context_);
+        LogFileSettings log_file_settings);
 
     Changelog(Changelog &&) = delete;
 
@@ -160,9 +151,6 @@ private:
     /// Pack log_entry into changelog record
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
-    DiskPtr getDisk() const;
-    DiskPtr getLatestLogDisk() const;
-
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
 
@@ -180,7 +168,8 @@ private:
     /// Clean useless log files in a background thread
     void cleanLogThread();
 
-    const String changelogs_detached_dir;
+    const std::filesystem::path changelogs_dir;
+    const std::filesystem::path changelogs_detached_dir;
     const uint64_t rotate_interval;
     Poco::Logger * log;
 
@@ -195,7 +184,7 @@ private:
     uint64_t max_log_id = 0;
     /// For compaction, queue of delete not used logs
     /// 128 is enough, even if log is not removed, it's not a problem
-    ConcurrentBoundedQueue<std::pair<std::string, DiskPtr>> log_files_to_delete_queue{128};
+    ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
     ThreadFromGlobalPool clean_log_thread;
 
     struct AppendLog
@@ -232,10 +221,6 @@ private:
     uint64_t last_durable_idx{0};
 
     nuraft::wptr<nuraft::raft_server> raft_server;
-
-    KeeperContextPtr keeper_context;
-
-    const FlushSettings flush_settings;
 
     bool initialized = false;
 };

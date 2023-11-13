@@ -63,11 +63,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    NameSet checksums_to_remove;
-    writer->fillChecksums(checksums, checksums_to_remove);
-
-    for (const auto & filename : checksums_to_remove)
-        all_checksums.files.erase(filename);
+    writer->fillChecksums(checksums);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -84,10 +80,12 @@ MergedColumnOnlyOutputStream::fillChecksums(
     for (const String & removed_file : removed_files)
     {
         new_part->getDataPartStorage().removeFileIfExists(removed_file);
-        all_checksums.files.erase(removed_file);
+
+        if (all_checksums.files.contains(removed_file))
+            all_checksums.files.erase(removed_file);
     }
 
-    new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+    new_part->setColumns(columns, serialization_infos);
     return checksums;
 }
 

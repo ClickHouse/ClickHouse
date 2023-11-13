@@ -1,16 +1,8 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
-#include <filesystem>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
 #include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#include <filesystem>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
@@ -29,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int HDFS_ERROR;
+    extern const int NETWORK_ERROR;
     #if USE_KRB5
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int KERBEROS_ERROR;
@@ -46,8 +38,8 @@ HDFSFileInfo::~HDFSFileInfo()
 }
 
 
-void HDFSBuilderWrapper::loadFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const String & prefix, [[maybe_unused]] bool isUser)
+void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
+    const String & prefix, bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
@@ -127,7 +119,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
-        throw Exception(ErrorCodes::HDFS_ERROR, "Unable to create builder to connect to HDFS: {} {}",
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Unable to create builder to connect to HDFS: {} {}",
             uri.toString(), String(hdfsGetLastError()));
 
     hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
@@ -153,7 +145,10 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         hdfsBuilderSetNameNodePort(builder.get(), port);
     }
 
-    builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
+    if (config.has(std::string(CONFIG_PREFIX)))
+    {
+        builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
+    }
 
     if (!user.empty())
     {
@@ -178,7 +173,7 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 {
     HDFSFSPtr fs(hdfsBuilderConnect(builder));
     if (fs == nullptr)
-        throw Exception(ErrorCodes::HDFS_ERROR, "Unable to connect to HDFS: {}", String(hdfsGetLastError()));
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Unable to connect to HDFS: {}", String(hdfsGetLastError()));
 
     return fs;
 }
