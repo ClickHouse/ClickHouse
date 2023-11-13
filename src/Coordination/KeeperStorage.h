@@ -104,7 +104,6 @@ public:
         bool operator==(const AuthID & other) const { return scheme == other.scheme && id == other.id; }
     };
 
-    // using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionIDs = std::unordered_set<int64_t>;
@@ -449,10 +448,19 @@ public:
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_version) { container.enableSnapshotMode(up_to_version); }
+    void enableSnapshotMode(size_t up_to_version)
+    {
+        /// TODO: remove garbage log.
+        LOG_DEBUG(&Poco::Logger::get("KeeperStorage"), "enable snapshot mode {}", up_to_version);
+        container.enableSnapshotMode(up_to_version);
+    }
 
     /// Turn off snapshot mode.
-    void disableSnapshotMode() { container.disableSnapshotMode(); }
+    void disableSnapshotMode()
+    {
+        LOG_DEBUG(&Poco::Logger::get("KeeperStorage"), "disable snapshot mode");
+        container.disableSnapshotMode();
+    }
 
     Container::const_iterator getSnapshotIteratorBegin() const { return container.begin(); }
 

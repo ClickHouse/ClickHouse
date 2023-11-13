@@ -98,8 +98,7 @@ struct SnapshotFileInfo
     DiskPtr disk;
 };
 
-/// TODO(hanfei): use
-using KeeperStorageSnapshotPtr = std::unique_ptr<std::variant<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
+using KeeperStorageSnapshotPtr = std::variant<std::unique_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
 using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&)>;
 
 /// Class responsible for snapshots serialization and deserialization. Each snapshot

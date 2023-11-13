@@ -190,10 +190,11 @@ void deserializeKeeperStorageFromSnapshot(Storage & storage, const std::string &
     LOG_INFO(log, "Finished, snapshot ZXID {}", storage.zxid);
 }
 
+namespace fs = std::filesystem;
+
 template<typename Storage>
 void deserializeKeeperStorageFromSnapshotsDir(Storage & storage, const std::string & path, Poco::Logger * log)
 {
-    namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_snapshots;
     for (const auto & p : fs::directory_iterator(path))
     {
@@ -563,7 +564,6 @@ void deserializeLogAndApplyToStorage(Storage & storage, const std::string & log_
 template<typename Storage>
 void deserializeLogsAndApplyToStorage(Storage & storage, const std::string & path, Poco::Logger * log)
 {
-    namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_logs;
     for (const auto & p : fs::directory_iterator(path))
     {

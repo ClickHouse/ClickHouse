@@ -579,43 +579,43 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     CreateSnapshotTask snapshot_task;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
         std::lock_guard lock(storage_and_responses_lock);
-        snapshot_task.snapshot = std::make_unique<std::variant<KeeperStorageSnapshot<Storage>>>(KeeperStorageSnapshot<Storage>(storage.get(), snapshot_meta_copy, getClusterConfig()));
+        snapshot_task.snapshot = std::make_unique<KeeperStorageSnapshot<Storage>>(KeeperStorageSnapshot<Storage>(storage.get(), snapshot_meta_copy, getClusterConfig()));
     }
 
     /// create snapshot task for background execution (in snapshot thread)
     snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot_)
     {
-        auto && snapshot = std::get<KeeperStorageSnapshot<Storage>>(*snapshot_);
         nuraft::ptr<std::exception> exception(nullptr);
         bool ret = true;
         try
         {
+            auto && snapshot = std::get<std::unique_ptr<KeeperStorageSnapshot<Storage>>>(std::move(snapshot_));
             { /// Read storage data without locks and create snapshot
                 std::lock_guard lock(snapshots_lock);
 
-                if (latest_snapshot_meta && snapshot.snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
+                if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
                 {
                     LOG_INFO(
                         log,
                         "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
                         "created",
-                        snapshot.snapshot_meta->get_last_log_idx(),
+                        snapshot->snapshot_meta->get_last_log_idx(),
                         latest_snapshot_meta->get_last_log_idx());
                 }
                 else
                 {
-                    latest_snapshot_meta = snapshot.snapshot_meta;
+                    latest_snapshot_meta = snapshot->snapshot_meta;
                     /// we rely on the fact that the snapshot disk cannot be changed during runtime
                     if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
                     {
-                        auto snapshot_info = snapshot_manager.serializeSnapshotToDisk(snapshot);
+                        auto snapshot_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
                         latest_snapshot_info = std::move(snapshot_info);
                         latest_snapshot_buf = nullptr;
                     }
                     else
                     {
-                        auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(snapshot);
-                        auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot.snapshot_meta->get_last_log_idx());
+                        auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
+                        auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
                         latest_snapshot_info = std::move(snapshot_info);
                         latest_snapshot_buf = std::move(snapshot_buf);
                     }
@@ -632,7 +632,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                 /// Turn off "snapshot mode" and clear outdate part of storage state
                 storage->clearGarbageAfterSnapshot();
                 LOG_TRACE(log, "Cleared garbage after snapshot");
-                snapshot_.reset();
+                snapshot.reset();
             }
         }
         catch (...)
