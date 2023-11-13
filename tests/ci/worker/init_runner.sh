@@ -104,7 +104,7 @@ check_proceed_spot_termination() {
             if [ -n "$runner_pid" ]; then
                 # Kill the runner to not allow it cancelling the job
                 # shellcheck disable=SC2046
-                kill -9 $(list_children "$runner_pid")
+                kill -9 "$runner_pid" $(list_children "$runner_pid")
             fi
             sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
             terminate_and_exit
