@@ -161,7 +161,10 @@ public:
 
 REGISTER_FUNCTION(SeriesPeriodDetectFFT)
 {
-    factory.registerFunction<FunctionSeriesPeriodDetectFFT>();
+    factory.registerFunction<FunctionSeriesPeriodDetectFFT>(FunctionDocumentation{
+        .description = R"(
+Detects period in time series data using FFT.)",
+        .categories{"Time series analysis"}});
 }
 }
 #endif
