@@ -92,6 +92,7 @@ def test_unexpected_uncommitted_merge():
         == "all_0_0_0\nall_1_1_0\nall_2_2_0\n"
     )
 
+
 def test_unexpected_uncommitted_mutation():
     node.query(
         """
@@ -101,14 +102,16 @@ def test_unexpected_uncommitted_mutation():
 
     node.query("INSERT INTO broken_table0 SELECT number from numbers(10)")
 
-    node.query("ALTER TABLE broken_table0 UPDATE key = key * 10 WHERE 1 SETTINGS mutations_sync=1")
+    node.query(
+        "ALTER TABLE broken_table0 UPDATE key = key * 10 WHERE 1 SETTINGS mutations_sync=1"
+    )
 
     assert node.query("SELECT sum(key) FROM broken_table0") == "450\n"
     assert (
-            node.query(
-                "SELECT name FROM system.parts where table = 'broken_table0' and active"
-            )
-            == "all_0_0_0_1\n"
+        node.query(
+            "SELECT name FROM system.parts where table = 'broken_table0' and active"
+        )
+        == "all_0_0_0_1\n"
     )
 
     remove_part_from_zookeeper("/tables/broken0/replicas/1", "all_0_0_0_1")
@@ -122,8 +125,8 @@ def test_unexpected_uncommitted_mutation():
     sum_key = node.query("SELECT sum(key) FROM broken_table0")
     assert sum_key == "46\n" or sum_key == "451\n"
     assert "all_0_0_0_1" in node.query(
-                "SELECT name FROM system.detached_parts where table = 'broken_table0'"
-            )
+        "SELECT name FROM system.detached_parts where table = 'broken_table0'"
+    )
 
 
 def test_corrupted_random_part():
