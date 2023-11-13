@@ -496,7 +496,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, false, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, QueryFlags{}, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
