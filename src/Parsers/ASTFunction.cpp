@@ -599,11 +599,11 @@ ASTPtr ASTFunction::clone() const
 }
 
 
-void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
+void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 template <typename Container>

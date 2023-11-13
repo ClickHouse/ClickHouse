@@ -377,10 +377,7 @@ void TCPHandler::runImpl()
             extractConnectionSettingsFromContext(query_context);
 
             /// Sync timeouts on client and server during current query to avoid dangling queries on server
-            /// NOTE: We use send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
-            ///  because send_timeout is client-side setting which has opposite meaning on the server side.
-            /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
-            state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), receive_timeout, send_timeout);
+            state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), send_timeout, receive_timeout);
 
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
@@ -499,7 +496,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, false, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, QueryFlags{}, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();

@@ -110,6 +110,7 @@ def started_cluster():
                 "configs/defaultS3.xml",
                 "configs/named_collections.xml",
                 "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
             ],
         )
         cluster.add_instance(
@@ -117,7 +118,11 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
-            main_configs=["configs/defaultS3.xml", "configs/named_collections.xml"],
+            main_configs=[
+                "configs/defaultS3.xml",
+                "configs/named_collections.xml",
+                "configs/s3queue_log.xml",
+            ],
         )
 
         logging.info("Starting cluster...")
@@ -159,7 +164,6 @@ def generate_random_files(
         values_csv = (
             "\n".join((",".join(map(str, row)) for row in rand_values)) + "\n"
         ).encode()
-        print(f"File {filename}, content: {rand_values}")
         put_s3_file_content(started_cluster, filename, values_csv)
     return total_values
 
@@ -621,7 +625,8 @@ def test_multiple_tables_meta_mismatch(started_cluster):
     )
 
 
-@pytest.mark.parametrize("mode", AVAILABLE_MODES)
+# TODO: Update the modes for this test to include "ordered" once PR #55795 is finished.
+@pytest.mark.parametrize("mode", ["unordered"])
 def test_multiple_tables_streaming_sync(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"multiple_tables_streaming_sync_{mode}"
@@ -660,6 +665,17 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
         ) == files_to_generate:
             break
         time.sleep(1)
+
+    if (
+        get_count(f"{dst_table_name}_1")
+        + get_count(f"{dst_table_name}_2")
+        + get_count(f"{dst_table_name}_3")
+    ) != files_to_generate:
+        info = node.query(
+            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+        )
+        logging.debug(info)
+        assert False
 
     res1 = [
         list(map(int, l.split()))
@@ -730,6 +746,15 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         ) == files_to_generate:
             break
         time.sleep(1)
+
+    if (
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+    ) != files_to_generate:
+        info = node.query(
+            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+        )
+        logging.debug(info)
+        assert False
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
@@ -863,3 +888,33 @@ def test_max_set_size(started_cluster):
     time.sleep(10)
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
     assert res1 == [total_values[1]]
+
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_drop"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 300
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 5,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
+    )
+    create_mv(node, table_name, dst_table_name)
+    node.wait_for_log_line(f"Reading from file: test_drop_data")
+    node.query(f"DROP TABLE {table_name} SYNC")
+    assert node.contains_in_log(
+        f"StorageS3Queue ({table_name}): Table is being dropped"
+    )
