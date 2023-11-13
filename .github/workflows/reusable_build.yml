@@ -71,4 +71,5 @@ jobs:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Clean
+        if: always()
         uses: ./.github/actions/clean

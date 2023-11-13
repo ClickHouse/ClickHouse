@@ -97,4 +97,5 @@ jobs:
       - name: Run test
         run: ${{inputs.run_command}}
       - name: Clean
+        if: always()
         uses: ./.github/actions/clean
