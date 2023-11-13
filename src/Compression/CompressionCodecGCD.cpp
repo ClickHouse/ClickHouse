@@ -145,7 +145,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     /// Again two cases:
     /// 1) GCD is 0. This is "special" flag which signals that remaining data
     /// left unchanged due to unapplicability of the codec.
-    /// 2) GCD is 1. Even if we proceed futher with the loop the resulting data will likely be the same.
+    /// 2) GCD is 1. Even if we proceed further with the loop the resulting data will likely be the same.
     if unlikely(gcd_multiplier == 0 || gcd_multiplier == 1)
     {
         /// Subtraction is safe, because we checked that source_size >= sizeof(T)
