@@ -25,8 +25,6 @@ namespace ErrorCodes
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
-constexpr auto MIN_BACKGROUND_CHECK_BACKOFF_TIMEOUT_MS = std::chrono::milliseconds{100};
-constexpr auto MAX_BACKGROUND_CHECK_BACKOFF_TIMEOUT_MS = std::chrono::milliseconds{10 * 60 * 1000}; // 10 minutes
 
 ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
@@ -34,8 +32,8 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
-    constexpr auto last_background_check_duration = std::chrono::milliseconds{0};
-    enqueueBackgroundPartCheck(last_background_check_duration);
+    const auto delay_between_checks = delayBetweenChecks();
+    enqueueBackgroundPartCheck(delay_between_checks);
 }
 
 ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
@@ -73,7 +71,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     task->schedule();
 }
 
-void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck(std::chrono::milliseconds last_check_duration)
+void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck(std::chrono::milliseconds delay_between_checks)
 {
     auto background_part_check_time_to_total_time_ratio = storage.getSettings()->background_part_check_time_to_total_time_ratio;
     if (background_part_check_time_to_total_time_ratio == .0f)
@@ -96,12 +94,7 @@ void ReplicatedMergeTreePartCheckThread::enqueueBackgroundPartCheck(std::chrono:
             next_check_after_ms = milliseconds{static_cast<size_t>(total_time_relative_to_last_check_duration - last_check_duration.count())};
     }
 
-    const auto background_part_check_delay_seconds = seconds{storage.getSettings()->background_part_check_delay_seconds};
-    next_check_after_ms = std::max(next_check_after_ms, duration_cast<milliseconds>(background_part_check_delay_seconds));
-
-    /// safe guard, apply backoff timeout
-    if (!next_check_after_ms.count())
-        next_check_after_ms = updateBackgroundCheckBackoffTimeout();
+    next_check_after_ms = std::max(next_check_after_ms, delay_between_checks);
 
     LOG_TRACE(log, "Enqueueing background check after {}ms", next_check_after_ms.count());
 
@@ -615,14 +608,14 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
     MergeTreeDataPartPtr part;
     int retries = 3;
     auto checked_part = last_checked_part;
-    while(!part && retries--)
+    while (!part && retries--)
     {
         {
             auto parts_lock = storage.lockParts();
             auto active_parts = storage.getDataPartsStateRange(MergeTreeDataPartState::Active);
             if (active_parts.empty())
             {
-                LOG_DEBUG(log, "Background part check: no active parts");
+                LOG_TRACE(log, "Background part check: no active parts");
                 return nullptr;
             }
 
@@ -637,7 +630,7 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
 
                 part = *(active_parts.advance_begin(i).begin());
 
-                LOG_DEBUG(log, "Background part check: first part to check {}", part->name);
+                LOG_TRACE(log, "Background part check: first part to check {}", part->name);
             }
             else
             {
@@ -671,6 +664,9 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
 
 std::chrono::milliseconds ReplicatedMergeTreePartCheckThread::updateBackgroundCheckBackoffTimeout()
 {
+    constexpr auto MIN_BACKGROUND_CHECK_BACKOFF_TIMEOUT_MS = std::chrono::milliseconds{100};
+    constexpr auto MAX_BACKGROUND_CHECK_BACKOFF_TIMEOUT_MS = std::chrono::milliseconds{10 * 60 * 1000}; // 10 minutes
+
     auto backoff_timeout_ms = background_check_backoff_timeout_ms;
     if (backoff_timeout_ms.count())
     {
@@ -685,41 +681,44 @@ std::chrono::milliseconds ReplicatedMergeTreePartCheckThread::updateBackgroundCh
     return background_check_backoff_timeout_ms;
 }
 
+std::chrono::milliseconds ReplicatedMergeTreePartCheckThread::delayBetweenChecks()
+{
+    /// backoff timeout is used to avoid overscheduling in case there is not parts to check and background_part_check_delay_seconds is small
+    using namespace std::chrono;
+    const auto background_part_check_delay_ms
+        = duration_cast<milliseconds>(seconds{storage.getSettings()->background_part_check_delay_seconds});
+    const auto backoff_timeout_ms = updateBackgroundCheckBackoffTimeout();
+    return std::max(background_part_check_delay_ms, backoff_timeout_ms);
+}
+
 void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
 {
     using namespace std::chrono;
     auto part_to_check = choosePartForBackgroundCheck();
     if (!part_to_check)
     {
-        /// if there is no part to check, use backoff timeout to avoid overscheduling
-        /// Examples, - empty table / table with few parts and background_part_check_delay_seconds setting is set to 0 (for testing purpose)
-        const auto backoff_timeout_ms = updateBackgroundCheckBackoffTimeout();
-
-        auto background_part_check_delay_ms
-            = duration_cast<milliseconds>(seconds{storage.getSettings()->background_part_check_delay_seconds});
-        background_part_check_delay_ms = std::max(background_part_check_delay_ms, backoff_timeout_ms);
-
-        enqueueBackgroundPartCheck(background_part_check_delay_ms);
+        const auto delay_between_checks = delayBetweenChecks();
+        enqueueBackgroundPartCheck(delay_between_checks);
         return;
     }
+
     /// reset backoff timeout, there is a part to check
     background_check_backoff_timeout_ms = milliseconds{0};
 
-    milliseconds check_duration_ms{MIN_BACKGROUND_CHECK_BACKOFF_TIMEOUT_MS};
     try
     {
         auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
 
-        LOG_DEBUG(log, "Background part check: going to check part {}", part_to_check->name);
+        LOG_TRACE(log, "Background part check: going to check part {}", part_to_check->name);
 
         last_checked_part = part_to_check->info;
         auto check_start = steady_clock::now();
         auto result = checkActivePart(part_to_check);
-        check_duration_ms = duration_cast<milliseconds>(steady_clock::now() - check_start);
+        auto check_duration_ms = duration_cast<milliseconds>(steady_clock::now() - check_start);
 
         part_to_check->last_check_time = steady_clock::now();
 
-        LOG_DEBUG(log, "Background part check took {} ms", check_duration_ms.count());
+        LOG_TRACE(log, "Background part check took {} ms", check_duration_ms.count());
 
         if (result.status.success)
         {
@@ -752,7 +751,8 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    enqueueBackgroundPartCheck(check_duration_ms);
+    const auto delay_between_checks = delayBetweenChecks();
+    enqueueBackgroundPartCheck(delay_between_checks);
 }
 
 

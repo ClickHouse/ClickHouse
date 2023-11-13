@@ -123,12 +123,14 @@ private:
     std::mt19937_64 gen;
     MergeTreePartInfo last_checked_part;
     std::chrono::milliseconds background_check_backoff_timeout_ms{0};
+    std::chrono::milliseconds last_check_duration{0};
 
     MergeTreeDataPartPtr choosePartForBackgroundCheck();
     void doBackgroundPartCheck();
-    void enqueueBackgroundPartCheck(std::chrono::milliseconds last_check_duration);
+    void enqueueBackgroundPartCheck(std::chrono::milliseconds delay_between_checks);
     ReplicatedCheckResult checkActivePart(MergeTreeDataPartPtr part);
     std::chrono::milliseconds updateBackgroundCheckBackoffTimeout();
+    std::chrono::milliseconds delayBetweenChecks();
 };
 
 }
