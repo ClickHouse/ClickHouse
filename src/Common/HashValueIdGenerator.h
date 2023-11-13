@@ -211,7 +211,7 @@ public:
                 /// need to pad the address.
                 auto * range_values_ptr = pool.alloc(alloc_size) + pad_left;
                 UInt64 value_id = i - range_min + is_nullable;
-                memcpy(range_values_ptr, reinterpret_cast<const UInt8 *>(value_id), sizeof(UInt64));
+                memcpy(range_values_ptr, reinterpret_cast<const UInt8 *>(&value_id), sizeof(UInt64));
                 StringRef raw_value(range_values_ptr, row_bytes);
                 emplaceValueId(raw_value, i);
             }
