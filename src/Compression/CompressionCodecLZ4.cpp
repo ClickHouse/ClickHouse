@@ -78,7 +78,7 @@ uint8_t CompressionCodecLZ4::getMethodByte() const
 
 void CompressionCodecLZ4::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
