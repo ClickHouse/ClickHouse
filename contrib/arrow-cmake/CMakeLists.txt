@@ -109,7 +109,6 @@ set (ORC_CXX_HAS_CSTDINT 1)
 set (ORC_CXX_HAS_THREAD_LOCAL 1)
 
 include(orc_check.cmake)
-configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in" "${ORC_BUILD_INCLUDE_DIR}/orc/orc-config.hh")
 configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
 
 
@@ -198,7 +197,9 @@ target_link_libraries(_orc PRIVATE
     ch_contrib::snappy
     ch_contrib::zlib
     ch_contrib::zstd)
-target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
+target_include_directories(_orc SYSTEM BEFORE PUBLIC
+    ${ORC_INCLUDE_DIR}
+    "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include")
 target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_SOURCE_SRC_DIR}
@@ -211,8 +212,6 @@ target_include_directories(_orc SYSTEM PRIVATE
 # === arrow
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
-
-configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_BINARY_DIR}/cpp/src/arrow/util/config.h")
 
 # arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 set(ARROW_SRCS
@@ -450,7 +449,7 @@ target_link_libraries(_arrow PUBLIC _orc)
 add_dependencies(_arrow protoc)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
+target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 
 target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})

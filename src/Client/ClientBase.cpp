@@ -77,7 +77,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config.h"
 
 namespace fs = std::filesystem;
