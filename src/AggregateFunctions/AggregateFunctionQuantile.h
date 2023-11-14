@@ -151,7 +151,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        if constexpr (has_accuracy_parameter)
+        if constexpr (is_quantile_gk)
             new (place) Data(accuracy);
         else if constexpr (is_quantile_ddsketch)
             new (place) Data(relative_accuracy);

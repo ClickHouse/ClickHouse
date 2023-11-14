@@ -26,7 +26,7 @@ public:
 
         if (relative_accuracy <= 0 || relative_accuracy >= 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative accuracy must be between 0 and 1.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative accuracy must be between 0 and 1 but is {}", relative_accuracy);
         }
 
         Float64 gamma_mantissa = 2 * relative_accuracy / (1 - relative_accuracy);
