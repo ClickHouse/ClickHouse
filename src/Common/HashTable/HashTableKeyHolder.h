@@ -199,7 +199,12 @@ inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::
     if (a.state_ref && a.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && b.state_ref
         && a.state_ref->state == b.state_ref->state)
     {
-        return a.state_ref->value_id == b.state_ref->value_id;
+        auto res = a.state_ref->value_id == b.state_ref->value_id;
+        if (res)
+            assert(a.serialized_keys == b.serialized_keys);
+        else
+            assert(a.serialized_keys != b.serialized_keys);
+        return res;
     }
     return a.serialized_keys == b.serialized_keys;
 }
