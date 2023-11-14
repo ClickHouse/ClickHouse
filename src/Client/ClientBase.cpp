@@ -2290,12 +2290,6 @@ bool ClientBase::processQueryText(const String & text)
         return true;
     }
 
-    if (query_fuzzer_runs)
-    {
-        processWithFuzzing(text);
-        return true;
-    }
-
     return executeMultiQuery(text);
 }
 
@@ -2608,10 +2602,7 @@ void ClientBase::runNonInteractive()
         ReadBufferFromFileDescriptor in(STDIN_FILENO);
         String text;
         readStringUntilEOF(text, in);
-        if (query_fuzzer_runs)
-            processWithFuzzing(text);
-        else
-            processQueryText(text);
+        processQueryText(text);
     }
 }
 

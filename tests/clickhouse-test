@@ -475,12 +475,17 @@ def colored(text, args, color=None, on_color=None, attrs=None):
     else:
         return text
 
+def test_fuzzing_start(test_name):
+    padding_size = (shutil.get_terminal_size((72, 72))[0] - len(test_name))
+    left_padding = padding_size // 2
+    return "-" * left_padding + test_name + "-" * (padding_size - left_padding) + "\n"
 
 class TestStatus(enum.Enum):
     FAIL = "FAIL"
     UNKNOWN = "UNKNOWN"
     OK = "OK"
     SKIPPED = "SKIPPED"
+    FUZZED = "FUZZED"
 
 
 class FailureReason(enum.Enum):
@@ -851,7 +856,7 @@ class TestCase:
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
 
-        file_suffix = f".{os.getpid()}" if is_concurrent and args.test_runs > 1 else ""
+        file_suffix = f".{os.getpid()}" if is_concurrent and (args.test_runs > 1 or args.fuzz) else ""
         self.reference_file = self.get_reference_file(suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
@@ -978,9 +983,13 @@ class TestCase:
         return None
 
     def process_result_impl(
-        self, proc, stdout: str, stderr: str, debug_log: str, total_time: float
+        self, proc, stdout: str, stderr: str, debug_log: str, total_time: float, fuzz: bool
     ):
         description = ""
+
+        if fuzz:
+            description += "\n" + stdout
+            return TestResult(self.name, TestStatus.FUZZED, None, total_time, description)
 
         debug_log = trim_for_log(debug_log)
 
@@ -1191,7 +1200,7 @@ class TestCase:
         )
 
     def run_single_test(
-        self, server_logs_level, client_options
+        self, server_logs_level, client_options, fuzz
     ) -> Tuple[Optional[Popen], str, str, str, float]:
         args = self.testcase_args
         client = args.testcase_client
@@ -1221,9 +1230,12 @@ class TestCase:
             "secure": "--secure" if args.secure else "",
         }
 
-        # >> append to stderr (but not stdout since it is not used there),
-        # because there are also output of per test database creation
-        pattern = "{test} > {stdout} 2> {stderr}"
+        if fuzz:
+            pattern = "{test} > {stdout} 2>&1"
+        else:
+            # >> append to stderr (but not stdout since it is not used there),
+            # because there are also output of per test database creation
+            pattern = "{test} > {stdout} 2> {stderr}"
 
         if self.ext == ".sql":
             pattern = (
@@ -1300,17 +1312,17 @@ class TestCase:
             )
             client_options = self.add_random_settings(client_options)
             proc, stdout, stderr, debug_log, total_time = self.run_single_test(
-                server_logs_level, client_options
+                server_logs_level, client_options, args.fuzz
             )
 
             result = self.process_result_impl(
-                proc, stdout, stderr, debug_log, total_time
+                proc, stdout, stderr, debug_log, total_time, args.fuzz
             )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
             # to avoid breaking CSV parser
             result.description = result.description.replace("\0", "")
 
-            if result.status == TestStatus.FAIL:
+            if args.fuzz or result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 
             self._cleanup(result.status == TestStatus.OK)
@@ -1558,6 +1570,14 @@ class TestSuite:
         self.all_tests: List[str] = self.get_tests_list(
             self.tests_in_suite_key_func, filter_func
         )
+
+        if args.fuzz and args.extreme_fuzz_tests:
+            extreme_fuzz_tests = list(self.get_selected_tests(lambda x: True, args.extreme_fuzz_tests))
+            new_all_tests = list()
+            for test in self.all_tests:
+                new_all_tests += extreme_fuzz_tests + [test]
+            self.all_tests = new_all_tests
+
         self.all_tags: Dict[str, Set[str]] = self.read_test_tags(
             self.suite_path, self.all_tests
         )
@@ -1565,7 +1585,7 @@ class TestSuite:
         self.sequential_tests = []
         self.parallel_tests = []
         for test_name in self.all_tests:
-            if self.is_sequential_test(test_name):
+            if not args.fuzz and self.is_sequential_test(test_name):
                 self.sequential_tests.append(test_name)
             else:
                 self.parallel_tests.append(test_name)
@@ -1587,12 +1607,12 @@ class TestSuite:
         Return list of tests file names to run
         """
 
-        all_tests = list(self.get_selected_tests(filter_func))
+        all_tests = list(self.get_selected_tests(filter_func, self.args.test))
         all_tests = all_tests * self.args.test_runs
         all_tests.sort(key=sort_key)
         return all_tests
 
-    def get_selected_tests(self, filter_func):
+    def get_selected_tests(self, filter_func, test_patterns):
         """
         Find all files with tests, filter, render templates
         """
@@ -1609,8 +1629,8 @@ class TestSuite:
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
                 continue
-            if self.args.test and not any(
-                re.search(pattern, test_name) for pattern in self.args.test
+            if test_patterns and not any(
+                re.search(pattern, test_name) for pattern in test_patterns
             ):
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
@@ -1713,6 +1733,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
     skipped_total = 0
     failures_total = 0
     failures_chain = 0
+    fuzzed_total = 0
     start_time = datetime.now()
 
     is_concurrent = multiprocessing.current_process().name != "MainProcess"
@@ -1722,7 +1743,10 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
     if num_tests > 0:
         about = "about " if is_concurrent else ""
         proc_name = multiprocessing.current_process().name
-        print(f"\nRunning {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
+        if args.fuzz:
+            print(f"\nFuzzing {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
+        else:
+            print(f"\nRunning {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
 
     while True:
         if is_concurrent:
@@ -1751,19 +1775,26 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             test_cace_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
             if not is_concurrent:
                 sys.stdout.flush()
-                sys.stdout.write(f"{test_cace_name:72}")
+                if args.fuzz:
+                    sys.stdout.write(test_fuzzing_start(test_cace_name[:-2]))
+                else:
+                    sys.stdout.write(f"{test_cace_name:72}")
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
                 sys.stdout.flush()
             else:
-                description = f"{test_cace_name:72}"
+                if args.fuzz:
+                    description = test_fuzzing_start(test_cace_name[:-2])
+                else:
+                    description = f"{test_cace_name:72}"
 
             while True:
                 test_result = test_case.run(
                     args, test_suite, client_options, server_logs_level
                 )
-                test_result = test_case.process_result(test_result, MESSAGES)
+                if not args.fuzz:
+                    test_result = test_case.process_result(test_result, MESSAGES)
                 if not test_result.need_retry:
                     break
                 restarted_tests.append(test_result)
@@ -1771,7 +1802,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             # First print the description, than invoke the check result logic
             description += test_result.description
 
-            if description and not description.endswith("\n"):
+            if description and not description.endswith("\n") or args.fuzz:
                 description += "\n"
 
             sys.stdout.write(description)
@@ -1788,6 +1819,8 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
                     stop_tests()
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
+            elif test_result.status == TestStatus.FUZZED:
+                fuzzed_total += 1
 
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
@@ -1798,7 +1831,18 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             stop_tests()
             break
 
-    if failures_total > 0:
+    if args.fuzz:
+        print(
+            colored(
+                f"\nFuzzed {fuzzed_total} tests."
+                f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
+                f" ({multiprocessing.current_process().name}).",
+                args,
+                "green",
+                attrs=["bold"],
+            )
+        )
+    elif failures_total > 0:
         print(
             colored(
                 f"\nHaving {failures_total} errors! {passed_total} tests passed."
@@ -1811,7 +1855,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             )
         )
         exit_code.value = 1
-    else:
+    elif fuzzed_total > 0:
         print(
             colored(
                 f"\n{passed_total} tests passed. {skipped_total} tests skipped."
@@ -2431,9 +2475,12 @@ def find_clickhouse_command(binary, command):
 
 
 def get_additional_client_options(args):
+    all_options = []
     if args.client_option:
-        return " ".join("--" + option for option in args.client_option)
-    return ""
+        all_options += args.client_option
+    if args.fuzz:
+        all_options += [f"query-fuzzer-runs={args.query_fuzzer_runs}", f"create-query-fuzzer-runs={args.query_fuzzer_runs}"]
+    return " ".join("--" + option for option in all_options)
 
 
 def get_additional_client_options_url(args):
@@ -2691,6 +2738,34 @@ def parse_args():
         help="Do not include tests that are not supported with parallel replicas feature",
     )
 
+    parser.add_argument(
+        "--fuzz",
+        action="store_true",
+        default=False,
+        help="Run tests with AST fuzzer",
+    )
+
+    parser.add_argument(
+        "--extreme-fuzz-tests",
+        nargs="+",
+        default="",
+        help="The list of tests to fuzz in more extreme way",
+    )
+
+    parser.add_argument(
+        "--query-fuzzer-runs",
+        default=1000,
+        type=int,
+        help="query-fuzzer-runs argument for clickhouse-client in fuzz mode",
+    )
+
+    parser.add_argument(
+        "--create-query-fuzzer-runs",
+        default=50,
+        type=int,
+        help="create-query-fuzzer-runs argument for clickhouse-client in fuzz mode",
+    )
+
     return parser.parse_args()
 
 
@@ -2813,7 +2888,7 @@ if __name__ == "__main__":
     if args.upgrade_check:
         args.client += " --fake-drop"
 
-    if args.client_option or args.secure:
+    if args.client_option or args.secure or args.fuzz:
         # Set options for client
         if "CLICKHOUSE_CLIENT_OPT" in os.environ:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " "
