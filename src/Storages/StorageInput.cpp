@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_)
