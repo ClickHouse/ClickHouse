@@ -1952,7 +1952,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         subquery_context->setSetting("use_structure_from_insertion_table_in_table_functions", false);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, options);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
 
         auto io = interpreter->execute();
 
@@ -4896,6 +4896,25 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
+            /// Replace storage with values storage of insertion block
+            if (StoragePtr storage = scope.context->getViewSource())
+            {
+                if (auto * query_node = in_second_argument->as<QueryNode>())
+                {
+                    auto table_expression = extractLeftTableExpression(query_node->getJoinTree());
+                    if (auto * query_table_node = table_expression->as<TableNode>())
+                    {
+                        if (query_table_node->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
+                        {
+                            auto replacement_table_expression = std::make_shared<TableNode>(storage, scope.context);
+                            if (std::optional<TableExpressionModifiers> table_expression_modifiers = query_table_node->getTableExpressionModifiers())
+                                replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
+                            in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression));
+                        }
+                    }
+                }
+            }
+
             resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
         }
     }
