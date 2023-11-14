@@ -324,38 +324,61 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        bool first_argument_is_date = false;
+        bool value_is_date = false;
         auto check_first_argument = [&]
         {
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            const DataTypePtr & type_arg1 = arguments[0].type;
+            if (!isDate(type_arg1) && !isDateTime(type_arg1) && !isDateTime64(type_arg1))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                    "Should be a date or a date with time", arguments[0].type->getName(), getName());
-            first_argument_is_date = isDate(arguments[0].type);
+                    "Should be a date or a date with time", type_arg1->getName(), getName());
+            value_is_date = isDate(type_arg1);
         };
 
         const DataTypeInterval * interval_type = nullptr;
-        bool result_type_is_date = false;
-        bool result_type_is_datetime = false;
-        auto check_interval_argument = [&]
+        enum class ResultType
         {
-            interval_type = checkAndGetDataType<DataTypeInterval>(arguments[1].type.get());
+            Date,
+            DateTime,
+            DateTime64
+        };
+        ResultType result_type;
+        auto check_second_argument = [&]
+        {
+            const DataTypePtr & type_arg2 = arguments[1].type;
+            interval_type = checkAndGetDataType<DataTypeInterval>(type_arg2.get());
             if (!interval_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                    "Should be an interval of time", arguments[1].type->getName(), getName());
-            result_type_is_date = (interval_type->getKind() == IntervalKind::Year)
-                || (interval_type->getKind() == IntervalKind::Quarter) || (interval_type->getKind() == IntervalKind::Month)
-                || (interval_type->getKind() == IntervalKind::Week);
-            result_type_is_datetime = (interval_type->getKind() == IntervalKind::Day) || (interval_type->getKind() == IntervalKind::Hour)
-                || (interval_type->getKind() == IntervalKind::Minute) || (interval_type->getKind() == IntervalKind::Second);
+                    "Should be an interval of time", type_arg2->getName(), getName());
+            switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
+            {
+                case IntervalKind::Nanosecond:
+                case IntervalKind::Microsecond:
+                case IntervalKind::Millisecond:
+                    result_type = ResultType::DateTime64;
+                    break;
+                case IntervalKind::Second:
+                case IntervalKind::Minute:
+                case IntervalKind::Hour:
+                case IntervalKind::Day:
+                    result_type = ResultType::DateTime;
+                    break;
+                case IntervalKind::Week:
+                case IntervalKind::Month:
+                case IntervalKind::Quarter:
+                case IntervalKind::Year:
+                    result_type = ResultType::Date;
+                    break;
+            }
         };
 
-        auto check_timezone_argument = [&]
+        auto check_third_argument = [&]
         {
-            if (!WhichDataType(arguments[2].type).isString())
+            const DataTypePtr & type_arg3 = arguments[2].type;
+            if (!isString(type_arg3))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
                     "This argument is optional and must be a constant string with timezone name",
-                    arguments[2].type->getName(), getName());
-            if (first_argument_is_date && result_type_is_date)
+                    type_arg3->getName(), getName());
+            if (value_is_date && result_type == ResultType::Date)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "The timezone argument of function {} with interval type {} is allowed only when the 1st argument "
                     "has the type DateTime or DateTime64",
@@ -365,13 +388,13 @@ public:
         if (arguments.size() == 2)
         {
             check_first_argument();
-            check_interval_argument();
+            check_second_argument();
         }
         else if (arguments.size() == 3)
         {
             check_first_argument();
-            check_interval_argument();
-            check_timezone_argument();
+            check_second_argument();
+            check_third_argument();
         }
         else
         {
@@ -380,24 +403,27 @@ public:
                 getName(), arguments.size());
         }
 
-        if (result_type_is_date)
-            return std::make_shared<DataTypeDate>();
-        else if (result_type_is_datetime)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
-        else
+        switch (result_type)
         {
-            auto scale = 0;
+            case ResultType::Date:
+                return std::make_shared<DataTypeDate>();
+            case ResultType::DateTime:
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            case ResultType::DateTime64:
+            {
+                UInt32 scale = 0;
+                if (interval_type->getKind() == IntervalKind::Nanosecond)
+                    scale = 9;
+                else if (interval_type->getKind() == IntervalKind::Microsecond)
+                    scale = 6;
+                else if (interval_type->getKind() == IntervalKind::Millisecond)
+                    scale = 3;
 
-            if (interval_type->getKind() == IntervalKind::Nanosecond)
-                scale = 9;
-            else if (interval_type->getKind() == IntervalKind::Microsecond)
-                scale = 6;
-            else if (interval_type->getKind() == IntervalKind::Millisecond)
-                scale = 3;
-
-            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            }
         }
 
+        std::unreachable();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -426,34 +452,34 @@ private:
     ColumnPtr dispatchForColumns(
         const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone) const
     {
-        const auto & from_datatype = *time_column.type.get();
-        const auto which_type = WhichDataType(from_datatype);
+        const auto & time_column_type = *time_column.type.get();
+        const auto & time_column_col = *time_column.column.get();
 
-        if (which_type.isDateTime64())
+        if (isDateTime64(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column.column.get());
-            auto scale = assert_cast<const DataTypeDateTime64 &>(from_datatype).getScale();
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column_col);
+            auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime64&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone, scale);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone, scale);
         }
-        if (which_type.isDateTime())
+        else if (isDateTime(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }
-        if (which_type.isDate())
+        else if (isDate(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDate&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }
-        if (which_type.isDate32())
+        else if (isDate32(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDate32>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate32>(time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDate32&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDate32 &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
             "Must contain dates or dates with time", getName());
@@ -502,7 +528,7 @@ private:
                 return execute<FromDataType, DataTypeDate, IntervalKind::Year>(from, time_column, num_units, result_type, time_zone, scale);
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 
     template <typename FromDataType, typename ToDataType, IntervalKind::Kind unit, typename ColumnType>
@@ -515,7 +541,7 @@ private:
         size_t size = time_data.size();
 
         auto result_col = result_type->createColumn();
-        auto *col_to = assert_cast<ToColumnType *>(result_col.get());
+        auto * col_to = assert_cast<ToColumnType *>(result_col.get());
         auto & result_data = col_to->getData();
         result_data.resize(size);
 
