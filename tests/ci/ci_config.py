@@ -50,21 +50,27 @@ class CiConfig:
 
     def validate(self) -> None:
         errors = []
-        # All build configs must belong to build_report_config
-        for build_name in self.build_config.keys():
+        for name, build_config in self.build_config.items():
             build_in_reports = False
             for report_config in self.builds_report_config.values():
-                if build_name in report_config:
+                if name in report_config:
                     build_in_reports = True
                     break
+            # All build configs must belong to build_report_config
             if not build_in_reports:
+                logging.error("Build name %s does not belong to build reports", name)
+                errors.append(f"Build name {name} does not belong to build reports")
+            # The name should be the same as build_config.name
+            if not build_config.name == name:
                 logging.error(
-                    "Build name %s does not belong to build reports", build_name
+                    "Build name '%s' does not match the config 'name' value '%s'",
+                    name,
+                    build_config.name,
                 )
                 errors.append(
-                    f"Build name {build_name} does not belong to build reports"
+                    f"Build name {name} does not match 'name' value '{build_config.name}'"
                 )
-        # And otherwise
+        # All build_report_config values should be in build_config.keys()
         for build_report_name, build_names in self.builds_report_config.items():
             missed_names = [
                 name for name in build_names if name not in self.build_config.keys()
@@ -216,7 +222,7 @@ CI_CONFIG = CiConfig(
         ),
         "fuzzers": BuildConfig(
             name="fuzzers",
-            compiler="clang-16",
+            compiler="clang-17",
             package_type="fuzzers",
         ),
     },

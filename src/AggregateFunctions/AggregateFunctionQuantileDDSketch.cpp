@@ -19,8 +19,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value, bool float_return> using FuncQuantileDDSketch = AggregateFunctionQuantile<Value, QuantileDDSketch<Value>, NameQuantileDDSketch, false, std::conditional_t<float_return, Float64, void>, false>;
-template <typename Value, bool float_return> using FuncQuantilesDDSketch = AggregateFunctionQuantile<Value, QuantileDDSketch<Value>, NameQuantilesDDSketch, false, std::conditional_t<float_return, Float64, void>, true>;
+template <typename Value, bool float_return> using FuncQuantileDDSketch = AggregateFunctionQuantile<Value, QuantileDDSketch<Value>, NameQuantileDDSketch, false, std::conditional_t<float_return, Float64, void>, false, true>;
+template <typename Value, bool float_return> using FuncQuantilesDDSketch = AggregateFunctionQuantile<Value, QuantileDDSketch<Value>, NameQuantilesDDSketch, false, std::conditional_t<float_return, Float64, void>, true, true>;
 
 
 template <template <typename, bool> class Function>

@@ -1159,7 +1159,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// So we don't allow to do it for now.
             if (command.data_type)
             {
-                const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
+                const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
                 bool new_type_has_object = command.data_type->hasDynamicSubcolumns();
