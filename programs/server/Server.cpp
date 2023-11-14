@@ -1691,7 +1691,7 @@ try
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
-        database_catalog.startupBackgroundCleanup();
+        database_catalog.startupBackgroundTasks();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.

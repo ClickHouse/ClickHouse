@@ -1875,4 +1875,19 @@ void registerStorageDistributed(StorageFactory & factory)
     });
 }
 
+bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
+{
+    if (!data_volume)
+        return true;
+
+    for (auto & disk : data_volume->getDisks())
+    {
+        if (new_added_disks.contains(disk->getName()))
+        {
+            initializeDirectoryQueuesForDisk(disk);
+        }
+    }
+
+    return true;
+}
 }

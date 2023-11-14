@@ -3768,6 +3768,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 {
     {
         std::lock_guard lock(shared->storage_policies_mutex);
+        Strings disks_to_reinit;
         if (shared->merge_tree_disk_selector)
             shared->merge_tree_disk_selector
                 = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
@@ -3777,13 +3778,19 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
             try
             {
                 shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
-                    config, "storage_configuration.policies", shared->merge_tree_disk_selector);
+                    config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
             }
             catch (Exception & e)
             {
                 LOG_ERROR(
                     shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
             }
+        }
+
+        if (!disks_to_reinit.empty())
+        {
+            LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
+            DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
         }
     }
 
@@ -3792,6 +3799,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         if (shared->storage_s3_settings)
             shared->storage_s3_settings->loadFromConfig("s3", config, getSettingsRef());
     }
+
 }
 
 
