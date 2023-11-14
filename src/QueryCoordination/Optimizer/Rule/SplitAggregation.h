@@ -8,7 +8,7 @@ namespace DB
 class SplitAggregation final : public Rule
 {
 public:
-    SplitAggregation();
+    SplitAggregation(size_t id_);
 
     std::vector<SubQueryPlan> transform(SubQueryPlan & sub_plan, ContextPtr context) override;
 };

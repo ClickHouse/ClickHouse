@@ -15,6 +15,9 @@ ApplyRule::ApplyRule(GroupNodePtr group_node_, RulePtr rule_, TaskContextPtr tas
 
 void ApplyRule::execute()
 {
+    if (group_node->hasApplied(rule->getRuleId()))
+        return;
+
     Binder binder(rule->getPattern(), group_node);
     const auto & bind_sub_plans = binder.bind();
 
@@ -31,6 +34,7 @@ void ApplyRule::execute()
             pushTask(std::make_unique<OptimizeNode>(added_node, task_context));
         }
     }
+    group_node->setApplied(rule->getRuleId());
 }
 
 String ApplyRule::getDescription()

@@ -4,6 +4,7 @@
 #include <QueryCoordination/Optimizer/Cost/Cost.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryCoordination/Optimizer/PlanStepVisitor.h>
+#include <QueryCoordination/Optimizer/Rule/RuleSet.h>
 
 namespace DB
 {
@@ -60,6 +61,10 @@ public:
     void setStatsDerived();
     bool hasStatsDerived() const;
 
+    bool hasApplied(size_t rule_id) const;
+
+    void setApplied(size_t rule_id);
+
     template <class Visitor>
     typename Visitor::ResultType accept(Visitor & visitor)
     {
@@ -80,6 +85,8 @@ private:
     AlternativeChildrenProp required_children_prop;
 
     bool stats_derived;
+
+    std::bitset<CostBasedOptimizer::RULES_SIZE> rule_masks;
 };
 
 using GroupNodePtr = std::shared_ptr<GroupNode>;

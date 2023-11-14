@@ -6,7 +6,7 @@
 namespace DB
 {
 
-SplitLimit::SplitLimit()
+SplitLimit::SplitLimit(size_t id_) : Rule(id_)
 {
     pattern.setStepType(Limit);
     pattern.addChildren({Pattern(PatternAny)});

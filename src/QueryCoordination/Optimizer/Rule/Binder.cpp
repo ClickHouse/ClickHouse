@@ -59,9 +59,6 @@ generateSubQueryPlanWithChildren(GroupNodePtr group_node_, std::vector<std::vect
 
 std::vector<SubQueryPlanPtr> Binder::extractGroupNode(const Pattern & pattern_, GroupNodePtr group_node_)
 {
-    if (pattern_.getStepType() != group_node_->getStep()->stepType())
-        return {};
-
     if (pattern_.getStepType() == StepType::PatternAny)
     {
         SubQueryPlanPtr sub_plan = std::make_shared<SubQueryPlan>();
@@ -69,6 +66,9 @@ std::vector<SubQueryPlanPtr> Binder::extractGroupNode(const Pattern & pattern_, 
         sub_plan->addStep(child_step);
         return {sub_plan};
     }
+
+    if (pattern_.getStepType() != group_node_->getStep()->stepType())
+        return {};
 
     const auto & child_pattern = pattern_.getChildren();
     const auto & child_group = group_node_->getChildren();

@@ -9,14 +9,17 @@ namespace DB
 class Rule
 {
 public:
-    Rule() = default;
+    Rule(size_t id_) : id(id_) {}
     virtual ~Rule() = default;
 
     virtual std::vector<SubQueryPlan> transform(SubQueryPlan & sub_plan, ContextPtr context) = 0;
 
+    size_t getRuleId() const;
+
     const Pattern & getPattern() const;
 
 protected:
+    size_t id;
     Pattern pattern;
 };
 

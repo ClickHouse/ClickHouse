@@ -8,7 +8,7 @@ namespace DB
 class SplitTopN final : public Rule
 {
 public:
-    SplitTopN();
+    SplitTopN(size_t id_);
 
     std::vector<SubQueryPlan> transform(SubQueryPlan & sub_plan, ContextPtr context) override;
 };

@@ -8,7 +8,7 @@
 namespace DB
 {
 
-SplitAggregation::SplitAggregation()
+SplitAggregation::SplitAggregation(size_t id_) : Rule(id_)
 {
     pattern.setStepType(Agg);
     pattern.addChildren({Pattern(PatternAny)});

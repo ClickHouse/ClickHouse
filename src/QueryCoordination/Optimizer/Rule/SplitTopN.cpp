@@ -5,7 +5,7 @@
 namespace DB
 {
 
-SplitTopN::SplitTopN()
+SplitTopN::SplitTopN(size_t id_) : Rule(id_)
 {
     pattern.setStepType(TopN);
     pattern.addChildren({Pattern(PatternAny)});

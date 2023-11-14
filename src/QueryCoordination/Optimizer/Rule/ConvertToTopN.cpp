@@ -6,7 +6,7 @@
 namespace DB
 {
 
-ConvertToTopN::ConvertToTopN()
+ConvertToTopN::ConvertToTopN(size_t id_) : Rule(id_)
 {
     pattern.setStepType(Limit);
     Pattern child_pattern(Sort);

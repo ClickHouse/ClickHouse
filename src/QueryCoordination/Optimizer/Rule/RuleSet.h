@@ -15,14 +15,16 @@ namespace DB
 namespace CostBasedOptimizer
 {
 
+static constexpr size_t RULES_SIZE = 5;
+
 inline const auto & getRules()
 {
     static const std::vector<RulePtr> rules = {
-        {std::make_shared<SplitAggregation>()},
-        {std::make_shared<ConvertToTopN>()},
-        {std::make_shared<SplitLimit>()},
-        {std::make_shared<SplitSort>()},
-        {std::make_shared<SplitTopN>()},
+        {std::make_shared<SplitAggregation>(0)},
+        {std::make_shared<ConvertToTopN>(1)},
+        {std::make_shared<SplitLimit>(2)},
+        {std::make_shared<SplitSort>(3)},
+        {std::make_shared<SplitTopN>(4)},
     };
 
     return rules;

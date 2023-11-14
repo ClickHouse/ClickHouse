@@ -6,7 +6,7 @@
 namespace DB
 {
 
-SplitSort::SplitSort()
+SplitSort::SplitSort(size_t id_) : Rule(id_)
 {
     pattern.setStepType(Sort);
     pattern.addChildren({Pattern(PatternAny)});

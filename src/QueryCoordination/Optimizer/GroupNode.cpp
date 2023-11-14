@@ -98,6 +98,16 @@ bool GroupNode::hasStatsDerived() const
     return stats_derived;
 }
 
+bool GroupNode::hasApplied(size_t rule_id) const
+{
+    return rule_masks.test(rule_id);
+}
+
+void GroupNode::setApplied(size_t rule_id)
+{
+    rule_masks.set(rule_id);
+}
+
 String GroupNode::getDescription() const
 {
     String res;
