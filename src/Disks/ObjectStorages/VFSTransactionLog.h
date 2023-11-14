@@ -21,7 +21,7 @@ struct VFSTransactionLogItem
     String object_storage_path;
 
     String serialize() const;
-    void deserialize(std::string_view str);
+    VFSTransactionLogItem& deserialize(std::string_view str);
 };
 
 // For every object in objects, add a Keeper log entry create request with corresponding type to ops
@@ -32,10 +32,22 @@ void getStoredObjectsVFSLogOps( //NOLINT
 
 struct VFSSnapshot
 {
-    size_t end_logpointer{0};
+    using ObsoleteObjects = std::vector<VFSTransactionLogItem>;
+
     std::unordered_map<String /*object_storage_path*/, size_t /*links*/> items;
 
-    void add(const VFSTransactionLogItem & item);
-    String serializeItems() const;
+    ObsoleteObjects update(const std::vector<VFSTransactionLogItem> & logs);
+    VFSSnapshot& deserialize(std::string_view str);
+    String serialize() const;
 };
 }
+
+template<>
+struct fmt::formatter<DB::VFSTransactionLogItem>
+{
+    constexpr auto parse(auto& ctx) { return ctx.begin(); }
+    constexpr auto format(const DB::VFSTransactionLogItem& item, auto& ctx)
+    {
+        return fmt::format_to(ctx.out(), "LogItem({})", item.serialize());
+    }
+};
