@@ -20,7 +20,6 @@ endif()
 set(protobuf_source_dir "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf")
 set(protobuf_binary_dir "${ClickHouse_BINARY_DIR}/contrib/google-protobuf")
 
-
 add_definitions(-DGOOGLE_PROTOBUF_CMAKE_BUILD)
 
 add_definitions(-DHAVE_PTHREAD)
@@ -340,6 +339,8 @@ else ()
 
         # This is quite ugly but I cannot make dependencies work propery.
 
+        set(abseil_source_dir "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
+
         execute_process(
             COMMAND mkdir -p ${PROTOC_BUILD_DIR}
             COMMAND_ECHO STDOUT)
@@ -354,6 +355,8 @@ else ()
                 "-Dprotobuf_BUILD_CONFORMANCE=0"
                 "-Dprotobuf_BUILD_EXAMPLES=0"
                 "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
+                "-DABSL_ROOT_DIR=${abseil_source_dir}"
+                "-DABSL_ENABLE_INSTALL=0"
                 "${protobuf_source_dir}/cmake"
             WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
             COMMAND_ECHO STDOUT)
