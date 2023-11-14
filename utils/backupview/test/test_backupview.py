@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Tests for the clickhouse_backupview utility.
-# Use pytest ./test.py to run.
+# Use pytest ./test_backupview.py to run.
 
 import pytest
 
@@ -36,7 +36,7 @@ def calculate_total_size(dir):
 # Actual tests
 
 
-def test_backup_1():
+def test_backupview_1():
     with open_backup(os.path.join(script_dir, "test_backup_1.zip")) as b:
         assert b.get_subdirs("/") == ["shards"]
         assert b.dir_exists("/shards")
