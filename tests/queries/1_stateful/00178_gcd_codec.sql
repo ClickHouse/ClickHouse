@@ -7,7 +7,7 @@ CREATE TABLE hits_gcd (`WatchID` UInt64 CODEC (GCD,LZ4), `JavaEnable` UInt8 CODE
         SAMPLE BY intHash32(UserID);
 
 
-INSERT INTO hits_gcd SELECT * FROM hits;
+INSERT INTO hits_gcd SELECT * FROM test.hits;
 SELECT * FROM hits_gcd FORMAT Null;
 
 DROP TABLE IF EXISTS hits_gcd;
