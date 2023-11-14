@@ -9,7 +9,9 @@ namespace DB
 {
 String VFSTransactionLogItem::serialize() const
 {
-    return fmt::format("{} {}", type, object_storage_path);
+    if (type == Type::CreateInode)
+        return fmt::format("{} {} {} {}", type, remote_path, local_path, bytes_size);
+    return fmt::format("{} {}", type, remote_path);
 }
 
 VFSTransactionLogItem & VFSTransactionLogItem::deserialize(std::string_view str)
@@ -17,19 +19,30 @@ VFSTransactionLogItem & VFSTransactionLogItem::deserialize(std::string_view str)
     // TODO myrrc proper checking
     std::vector<std::string_view> parts;
     splitInto<' '>(parts, str);
+
+    if (parts.size() == 4)
+    {
+        type = Type::CreateInode;
+        remote_path = parts[1];
+        local_path = parts[2];
+        bytes_size = parseFromString<size_t>(parts[3]);
+        return *this;
+    }
+
     chassert(parts.size() == 2);
     type = *magic_enum::enum_cast<Type>(parts[0]);
-    object_storage_path = parts[1];
+    remote_path = parts[1];
     return *this;
 }
 
 void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type, const StoredObjects & objects, Coordination::Requests & ops)
 {
-    // TODO myrrc for CreateInode we should store and propagate more information
-    // so that object storage along with log should be self-contained
     for (const StoredObject & object : objects)
-        ops.emplace_back(zkutil::makeCreateRequest(
-            VFS_LOG_ITEM, VFSTransactionLogItem{type, object.remote_path}.serialize(), zkutil::CreateMode::PersistentSequential));
+    {
+        VFSTransactionLogItem item = static_cast<const VFSTransactionLogItem &>(object);
+        item.type = type;
+        ops.emplace_back(zkutil::makeCreateRequest(VFS_LOG_ITEM, item.serialize(), zkutil::CreateMode::PersistentSequential));
+    }
 }
 
 VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactionLogItem> & logs)
@@ -37,26 +50,26 @@ VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactio
     using enum VFSTransactionLogItem::Type;
     ObsoleteObjects out;
 
-    for (const auto & item : logs)
+    for (const VFSTransactionLogItem & item : logs)
         switch (item.type)
         {
             case CreateInode: {
-                chassert(!items.contains(item.object_storage_path));
-                items.emplace(item.object_storage_path, 0);
+                chassert(!items.contains(item.remote_path));
+                items.emplace(item.remote_path, ObjectWithRefcount{0, item});
                 break;
             }
             case Link: {
-                auto it = items.find(item.object_storage_path);
+                auto it = items.find(item.remote_path);
                 chassert(it != items.end());
-                ++it->second;
+                ++it->second.first;
                 break;
             }
             case Unlink: {
-                auto it = items.find(item.object_storage_path);
+                auto it = items.find(item.remote_path);
                 chassert(it != items.end());
-                if (--it->second == 0)
+                if (--it->second.first == 0)
                 {
-                    out.emplace_back(VFSTransactionLogItem{VFSTransactionLogItem::Type::Unlink, it->first});
+                    out.emplace_back(it->second.second);
                     items.erase(it);
                 }
                 break;
@@ -68,17 +81,24 @@ VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactio
 
 VFSSnapshot & VFSSnapshot::deserialize(std::string_view str)
 {
-    // TODO myrrc proper checking
-    std::vector<std::string_view> parts;
-    splitInto<'\n'>(parts, str);
+    // TODO myrrc proper checking and proper code
+    std::vector<std::string_view> objects;
+    splitInto<'\n'>(objects, str);
 
-    for (std::string_view part : parts)
+    for (std::string_view object : objects)
     {
-        std::vector<std::string_view> item_parts;
-        splitInto<' '>(item_parts, part);
-        chassert(item_parts.size() == 2);
-        const size_t links = parseFromString<size_t>(item_parts[1]);
-        items.emplace(item_parts[0], links);
+        std::vector<std::string> object_parts;
+        splitInto<' '>(object_parts, object);
+        chassert(object_parts.size() == 4);
+        const size_t links = parseFromString<size_t>(object_parts[0]);
+        items.emplace(
+            object_parts[2],
+            ObjectWithRefcount{
+                links,
+                StoredObject(
+                    /*remote_path*/ object_parts[2],
+                    /*bytes_size*/ parseFromString<size_t>(object_parts[3]),
+                    /*local_path*/ object_parts[1])});
     }
 
     return *this;
@@ -87,8 +107,13 @@ VFSSnapshot & VFSSnapshot::deserialize(std::string_view str)
 String VFSSnapshot::serialize() const
 {
     String out;
-    for (const auto & [path, links] : items)
-        out += fmt::format("{} {}\n", path, links);
+    for (const auto & [_, object_with_refcount] : items)
+        out += fmt::format(
+            "{} {} {} {}\n",
+            object_with_refcount.first,
+            object_with_refcount.second.local_path,
+            object_with_refcount.second.remote_path,
+            object_with_refcount.second.bytes_size);
     return out;
 }
 }

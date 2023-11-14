@@ -1,8 +1,9 @@
 #include "ObjectStorageVFSGCThread.h"
-#include <ranges>
 #include "Common/ZooKeeper/ZooKeeperLock.h"
 #include "Disks/ObjectStorages/DiskObjectStorageVFS.h"
 #include "Interpreters/Context.h"
+
+static constexpr auto VFS_SNAPSHOT_PREFIX = "vfs_snapshot_";
 
 namespace DB
 {
@@ -28,73 +29,82 @@ void ObjectStorageVFSGCThread::run()
     }
 
     LOG_DEBUG(log, "Acquired GC lock");
-    VFSSnapshot snapshot;
 
     const auto [start_str, end_str] = std::ranges::minmax(storage.zookeeper->getChildren(VFS_LOG_BASE_NODE));
-    const size_t start_logpointer = parseFromString<size_t>(start_str);
-    const size_t end_logpointer = parseFromString<size_t>(end_str);
+    const size_t start_logpointer = start_str.empty() ? 0 : parseFromString<size_t>(start_str);
+    const size_t end_logpointer = end_str.empty() ? 0 : parseFromString<size_t>(end_str);
 
-    if (start_logpointer > 0)
-        snapshot = loadSnapshot(start_logpointer - 1);
+    auto [snapshot, obsolete_objects] = getSnapshotWithLogEntries(start_logpointer, end_logpointer);
 
-    VFSSnapshot::ObsoleteObjects obsolete_objects = populateSnapshotWithLogEntries(snapshot, start_logpointer, end_logpointer);
-    writeSnapshot(std::move(snapshot), end_logpointer);
+    const String snapshot_name = fmt::format("{}{}", VFS_SNAPSHOT_PREFIX, end_logpointer);
+    writeSnapshot(std::move(snapshot), snapshot_name);
 
-    // TODO myrrc we should remove previous snapshot from object storage after writing current one.
-    // smth like obsolete_objects.emplace_back(last_snapshot_name);
-
-    removeObjectsFromObjectStorage(std::move(obsolete_objects));
+    removeObjectsFromObjectStorage(obsolete_objects);
     removeLogEntries(start_logpointer, end_logpointer);
 
     zookeeper_lock->unlock();
     task->scheduleAfter(sleep_ms);
 }
 
-VFSSnapshot ObjectStorageVFSGCThread::loadSnapshot(size_t end_logpointer)
+VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer)
 {
-    // TODO myrrc this file metadata is surely not present on local filesystem
-    const String filename = fmt::format("vfs_snapshot_{}", end_logpointer);
-    auto buf = storage.readFile(filename, {}, std::nullopt, std::nullopt);
-    String snapshot_str;
-    readStringUntilEOF(snapshot_str, *buf);
-    return VFSSnapshot{}.deserialize(snapshot_str);
-}
+    if (start_logpointer == 0)
+        return {};
 
-VFSSnapshot::ObsoleteObjects
-ObjectStorageVFSGCThread::populateSnapshotWithLogEntries(VFSSnapshot & snapshot, size_t start_logpointer, size_t end_logpointer)
-{
-    VFSSnapshot::ObsoleteObjects out;
+    /// Precondition: when we write a snapshot on a previous replica, the snapshot writing operation is
+    /// put in log, so when we process next batch, we can get the snapshot remote path from log. Then we
+    /// construct a StoredObject and read directly from it.
+
+    VFSSnapshotWithObsoleteObjects out;
 
     Coordination::Requests ops;
     for (size_t i = start_logpointer; i <= end_logpointer; ++i)
         ops.emplace_back(zkutil::makeGetRequest(fmt::format("{}{}", VFS_LOG_ITEM, i)));
 
     std::vector<VFSTransactionLogItem> logs;
+    std::optional<String> previous_snapshot_remote_path;
 
     for (const auto & item : storage.zookeeper->multi(ops))
-        logs.emplace_back(VFSTransactionLogItem{}.deserialize(dynamic_cast<const Coordination::GetResponse &>(*item).data));
+    {
+        auto log_item = VFSTransactionLogItem{}.deserialize(dynamic_cast<const Coordination::GetResponse &>(*item).data);
 
-    return snapshot.update(logs);
+        if (log_item.type == VFSTransactionLogItem::Type::CreateInode //NOLINT
+            && log_item.local_path.starts_with(VFS_SNAPSHOT_PREFIX))
+            previous_snapshot_remote_path.emplace(log_item.remote_path);
+
+        logs.emplace_back(std::move(log_item));
+    }
+
+    const StoredObject previous_snapshot{*previous_snapshot_remote_path};
+    auto snapshot_buf = storage.readObject(previous_snapshot);
+    String snapshot_str;
+    readStringUntilEOF(snapshot_str, *snapshot_buf);
+
+    out.snapshot = VFSSnapshot{}.deserialize(snapshot_str);
+    out.obsolete_objects = out.snapshot.update(logs);
+    out.obsolete_objects.emplace_back(previous_snapshot);
+
+    return out;
 }
 
-void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, size_t end_logpointer)
+void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name)
 {
-    const String filename = fmt::format("vfs_snapshot_{}", end_logpointer);
-    auto buf = storage.writeFile(filename, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+    LOG_DEBUG(log, "Writing snapshot {}", snapshot_name);
+
+    auto buf = storage.writeFile(snapshot_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
     writeString(snapshot.serialize(), *buf);
     buf->finalize();
 }
 
-void ObjectStorageVFSGCThread::removeObjectsFromObjectStorage(VFSSnapshot::ObsoleteObjects && items)
+void ObjectStorageVFSGCThread::removeObjectsFromObjectStorage(const VFSSnapshot::ObsoleteObjects & objects)
 {
-    LOG_INFO(log, "Removing objects {} from storage", fmt::join(items, ", "));
-    // TODO myrrc remove file by having only remote path (without having metadata)
-    //for (const auto& item : items)
-    //storage.removeFile();
+    LOG_DEBUG(log, "Removing objects {} from storage", fmt::join(objects, ", "));
+    storage.removeObjects(objects);
 }
 
 void ObjectStorageVFSGCThread::removeLogEntries(size_t start_logpointer, size_t end_logpointer)
 {
+    LOG_DEBUG(log, "Removing logpointers {}-{}", start_logpointer, end_logpointer);
     Coordination::Requests ops;
     for (size_t i = start_logpointer; i <= end_logpointer; ++i)
         ops.emplace_back(zkutil::makeRemoveRequest(fmt::format("{}{}", VFS_LOG_ITEM, i), -1));

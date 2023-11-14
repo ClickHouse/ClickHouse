@@ -35,11 +35,12 @@ private:
 
     void run();
 
-    VFSSnapshot loadSnapshot(size_t end_logpointer);
+    // Given a pair of log pointers, load a snapshot before start_logpointer and apply [start_logpointer;
+    // end_logpointer] updates to it
+    VFSSnapshotWithObsoleteObjects getSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
 
-    VFSSnapshot::ObsoleteObjects populateSnapshotWithLogEntries(VFSSnapshot & snapshot, size_t start_logpointer, size_t end_logpointer);
-    void writeSnapshot(VFSSnapshot && snapshot, size_t end_logpointer);
-    void removeObjectsFromObjectStorage(VFSSnapshot::ObsoleteObjects && items);
+    void writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name);
+    void removeObjectsFromObjectStorage(const VFSSnapshot::ObsoleteObjects & objects);
     void removeLogEntries(size_t start_logpointer, size_t end_logpointer);
 };
 }

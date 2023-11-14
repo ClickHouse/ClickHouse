@@ -65,4 +65,14 @@ DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageVFSTransaction>(*object_storage, *metadata_storage, zookeeper);
 }
+
+std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageVFS::readObject(const StoredObject& object)
+{
+    return object_storage->readObject(object);
+}
+
+void DiskObjectStorageVFS::removeObjects(const StoredObjects & objects)
+{
+    object_storage->removeObjects(objects);
+}
 }
