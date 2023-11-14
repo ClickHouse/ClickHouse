@@ -217,6 +217,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
                 .max_sec = config.getUInt(config_name + "." + key + ".max"),
             };
         }
+        else if (key == "use_compression")
+        {
+            use_compression = config.getBool(config_name + "." + key);
+        }
         else if (key == "fdb_cluster")
         {
             fdb_cluster = config.getString(config_name + "." + key);

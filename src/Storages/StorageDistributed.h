@@ -137,7 +137,7 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void initializeFromDisk();
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
     void flushAndPrepareForShutdown() override;
     void drop() override;
 
@@ -171,7 +171,7 @@ private:
 
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
-    /// Used for the INSERT into Distributed in case of insert_distributed_sync==1, from DistributedSink.
+    /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
     DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
 
@@ -250,7 +250,7 @@ private:
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
 
-    ActionBlocker monitors_blocker;
+    ActionBlocker async_insert_blocker;
 
     String relative_data_path;
 
@@ -266,7 +266,7 @@ private:
 
     struct ClusterNodeData
     {
-        std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_monitor;
+        std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
         ConnectionPoolPtr connection_pool;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;

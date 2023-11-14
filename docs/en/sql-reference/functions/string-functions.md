@@ -1371,6 +1371,86 @@ Result:
 └──────────────────┘
 ```
 
+## byteHammingDistance
+
+Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+byteHammingDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT byteHammingDistance('karolin', 'kathrin');
+```
+
+Result:
+
+``` text
+┌─byteHammingDistance('karolin', 'kathrin')─┐
+│                                         3 │
+└───────────────────────────────────────────┘
+```
+
+Alias: mismatches
+
+## stringJaccardIndex
+
+Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
+
+**Syntax**
+
+```sql
+stringJaccardIndex(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT stringJaccardIndex('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─stringJaccardIndex('clickhouse', 'mouse')─┐
+│                                       0.4 │
+└───────────────────────────────────────────┘
+```
+
+## stringJaccardIndexUTF8
+
+Like [stringJaccardIndex](#stringJaccardIndex) but for UTF8-encoded strings.
+
+## editDistance
+
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+editDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT editDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─editDistance('clickhouse', 'mouse')─┐
+│                                   6 │
+└─────────────────────────────────────┘
+```
+
+Alias: levenshteinDistance
+
 ## initcap
 
 Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.

@@ -44,6 +44,7 @@ struct ZooKeeperArgs
     double recv_sleep_probability = 0.0;
     UInt64 send_sleep_ms = 0;
     UInt64 recv_sleep_ms = 0;
+    bool use_compression = false;
     String fdb_cluster;
     String fdb_prefix;
 

@@ -17,7 +17,7 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/sort.h>
@@ -984,20 +984,31 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     time_t whole = 0;
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
 
     if (!is_empty)
     {
-        try
+        if constexpr (throw_exception)
         {
-            readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
+            try
+            {
+                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
+            }
+            catch (const DB::ParsingException &)
+            {
+                if (buf.eof() || *buf.position() != '.')
+                    throw;
+            }
         }
-        catch (const DB::ParsingException & exception)
+        else
         {
-            if (buf.eof() || *buf.position() != '.')
-                throw exception;
+            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
+            if (!ok && (buf.eof() || *buf.position() != '.'))
+                return ReturnType(false);
         }
     }
 

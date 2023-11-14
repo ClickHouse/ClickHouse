@@ -99,7 +99,7 @@
 #include <unordered_set>
 
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_LINUX)
 #    include <cstdlib>
@@ -532,6 +532,16 @@ static void sanityChecks(Server & server)
         const char * filename = "/proc/sys/kernel/threads-max";
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/proc/sys/kernel/task_delayacct";
+        if (readNumber(filename) == 0)
+            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {

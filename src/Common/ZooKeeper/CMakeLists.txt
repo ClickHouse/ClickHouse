@@ -9,6 +9,7 @@ add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} $
 target_compile_definitions (clickhouse_common_zookeeper PRIVATE -DZOOKEEPER_LOG)
 set(COMMON_LIBS 
     clickhouse_common_io
+    clickhouse_compression
     common
     string_utils
 )
@@ -18,14 +19,14 @@ if(ENABLE_FDB)
     add_definitions(-DENABLE_FDB)
 endif()
 
-target_link_libraries(clickhouse_common_zookeeper
+target_link_libraries (clickhouse_common_zookeeper
     PUBLIC
         ${COMMON_LIBS}
 )
 
 # for examples -- no logging (to avoid extra dependencies)
 add_library(clickhouse_common_zookeeper_no_log ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources})
-target_link_libraries(clickhouse_common_zookeeper_no_log
+target_link_libraries (clickhouse_common_zookeeper_no_log
     PUBLIC
         ${COMMON_LIBS}
 )

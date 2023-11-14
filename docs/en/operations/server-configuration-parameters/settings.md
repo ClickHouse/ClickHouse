@@ -214,7 +214,7 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 1024
+Default: 10
 
 
 ## index_mark_cache_policy
@@ -2427,12 +2427,14 @@ This section contains the following parameters:
   * hostname_levenshtein_distance - just like nearest_hostname, but it compares hostname in a levenshtein distance manner.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
+- `use_compression` — If set to true, enables compression in Keeper protocol.
 - implementation - Specifies the implementation of IKeeper. It indicates what ClickHouse actually interacts with. Optional.
   * zookeeper - interacts with a ZooKeeper cluster. Default setting.
   * fdbkeeper - interacts with a [FoundationDB](https://apple.github.io/foundationdb/index.html) cluster.
   * testkeeper - interacts with local disk. For testing only.
 - `fdb_prefix` - To prevent multiple ClickHouse instances from conflicting, specifies a common prefix for keys stored by ClickHouse in FoundationDB. Optional.
 - `fdb_cluster` - Specifies the FoundationDB cluster configuration file. Only meaningful when `implementation` is `fdbkeeper`.
+
 
 **Example configuration**
 
@@ -2780,3 +2782,7 @@ Proxy settings are determined in the following order:
 ClickHouse will check the highest priority resolver type for the request protocol. If it is not defined,
 it will check the next highest priority resolver type, until it reaches the environment resolver.
 This also allows a mix of resolver types can be used.
+
+### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
