@@ -74,9 +74,6 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
-  Codebrowser:
-    needs: [DockerHubPush]
-    uses: ./.github/workflows/woboq.yml
   SonarCloud:
     runs-on: [self-hosted, builder]
     env:
