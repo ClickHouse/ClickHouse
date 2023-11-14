@@ -32,11 +32,12 @@ namespace
 
 float convertFloat16ToFloat32(uint16_t float16_value)
 {
-    if (float16_value == 0000000000000000)
-        return float(0);
     uint16_t sign = (float16_value >> 15) & 0x1;
     uint16_t exponent = (float16_value >> 10) & 0x1F;
     uint16_t fraction = float16_value & 0x3FF;
+
+    if (exponent == 0 && fraction == 0)
+        return float(sign << 31);
 
     // Handling special cases for exponent
     if (exponent == 0x1F)
