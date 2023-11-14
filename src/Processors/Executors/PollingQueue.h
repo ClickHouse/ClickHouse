@@ -44,7 +44,7 @@ public:
     /// Wait for any descriptor. If no descriptors in queue, blocks.
     /// Returns ptr which was inserted into queue or nullptr if finished was called.
     /// Lock is unlocked during waiting.
-    TaskData wait(std::unique_lock<std::mutex> & lock);
+    TaskData wait(std::unique_lock<std::mutex> & lock, int timeout = -1);
 
     /// Interrupt waiting.
     void finish();

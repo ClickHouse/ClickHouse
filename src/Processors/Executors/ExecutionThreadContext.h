@@ -43,6 +43,9 @@ public:
     const bool profile_processors;
     const bool trace_processors;
 
+    constexpr static size_t max_consequintely_scheduled_local_tasks = 128;
+    size_t num_consequintely_scheduled_local_tasks = 0;
+
     void wait(std::atomic_bool & finished);
     void wakeUp();
 
