@@ -35,7 +35,7 @@
 
 #include "Core/Defines.h"
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config_tools.h"
 
 

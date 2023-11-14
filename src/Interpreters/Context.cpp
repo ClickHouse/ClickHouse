@@ -1644,7 +1644,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             return res;
         }
     }
-    auto hash = table_expression->getTreeHash();
+    auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     auto key = toString(hash);
     StoragePtr & res = table_function_results[key];
     if (!res)
@@ -1804,7 +1804,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         ///
         ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
         ///
-        auto new_hash = table_expression->getTreeHash();
+        auto new_hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
         if (hash != new_hash)
         {
             key = toString(new_hash);
@@ -1816,7 +1816,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
 {
-    const auto hash = table_expression->getTreeHash();
+    const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     const auto key = toString(hash);
     StoragePtr & res = table_function_results[key];
 

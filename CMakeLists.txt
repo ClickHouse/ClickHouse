@@ -554,6 +554,13 @@ if (ENABLE_RUST)
     endif()
 endif()
 
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND NOT SANITIZE AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
+    set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
+else ()
+    set(CHECK_LARGE_OBJECT_SIZES_DEFAULT OFF)
+endif ()
+option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files after build." ${CHECK_LARGE_OBJECT_SIZES_DEFAULT})
+
 add_subdirectory (base)
 add_subdirectory (src)
 add_subdirectory (programs)

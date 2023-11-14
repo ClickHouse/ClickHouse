@@ -164,11 +164,11 @@ public:
             return 0;
 
         SipHash hash;
-        hash.update(select.tables()->getTreeHash());
+        hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/ true));
         if (const auto where = select.where())
-            hash.update(where->getTreeHash());
+            hash.update(where->getTreeHash(/*ignore_aliases=*/ true));
         if (const auto group_by = select.groupBy())
-            hash.update(group_by->getTreeHash());
+            hash.update(group_by->getTreeHash(/*ignore_aliases=*/ true));
         return hash.get64();
     }
 
