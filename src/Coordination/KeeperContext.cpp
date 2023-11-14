@@ -39,8 +39,9 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     if (config.hasProperty("keeper_server.availability_zone"))
     {
-        auto keeper_az = config.getString("keeper_server.availability_zone.value");
-        if (config.getBool("keeper_server.availability_zone.enable_auto_detection_on_cloud", false))
+        auto keeper_az = config.getString("keeper_server.availability_zone.value", "");
+        const auto auto_detect_for_cloud = config.getBool("keeper_server.availability_zone.enable_auto_detection_on_cloud", false);
+        if (keeper_az.empty() && auto_detect_for_cloud)
         {
             try
             {
@@ -54,7 +55,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
         if (!keeper_az.empty())
         {
             system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
-            LOG_INFO(&Poco::Logger::get("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'.'. ", keeper_az);
+            LOG_INFO(&Poco::Logger::get("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'", keeper_az);
         }
     }
 

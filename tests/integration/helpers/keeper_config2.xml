@@ -14,6 +14,7 @@
         <server_id>2</server_id>
         <availability_zone>
             <value>az-zoo2</value>
+            <enable_auto_detection_on_cloud>1</enable_auto_detection_on_cloud>
         </availability_zone>
 
         <coordination_settings>

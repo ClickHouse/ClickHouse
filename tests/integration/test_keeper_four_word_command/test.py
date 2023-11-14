@@ -183,8 +183,8 @@ def test_cmd_mntr(started_cluster):
         # contains:
         #   10 nodes created by test
         #   3 nodes created by clickhouse "/clickhouse/task_queue/ddl"
-        #   1 root node, 4 keeper system nodes
-        assert int(result["zk_znode_count"]) == 15
+        #   1 root node, 3 keeper system nodes
+        assert int(result["zk_znode_count"]) == 14
         assert int(result["zk_watch_count"]) == 2
         assert int(result["zk_ephemerals_count"]) == 2
         assert int(result["zk_approximate_data_size"]) > 0
@@ -333,7 +333,7 @@ def test_cmd_srvr(started_cluster):
         assert int(result["Connections"]) == 1
         assert int(result["Zxid"], 16) > 10
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "15"
+        assert result["Node count"] == "14"
 
     finally:
         destroy_zk_client(zk)
@@ -373,7 +373,7 @@ def test_cmd_stat(started_cluster):
         assert int(result["Connections"]) == 1
         assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "15"
+        assert result["Node count"] == "14"
 
         # filter connection statistics
         cons = [n for n in data.split("\n") if "=" in n]

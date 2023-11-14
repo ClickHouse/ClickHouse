@@ -65,7 +65,7 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
 }
 
 const char SSO_CREDENTIALS_PROVIDER_LOG_TAG[] = "SSOCredentialsProvider";
-const int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 5;
+const int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
 
 }
 
@@ -241,11 +241,11 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException()
 {
     Poco::URI uri(getAWSMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
+    session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
 
     Poco::Net::HTTPResponse response;
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
     session.sendRequest(request);
-    session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
 
     std::istream & rs = session.receiveResponse(response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
@@ -287,17 +287,17 @@ String getRunningAvailabilityZoneImpl()
         auto aws_az = AWSEC2MetadataClient::getAvailabilityZoneOrException();
         return aws_az;
     }
-    catch (const DB::Exception & aws_ex)
+    catch (const std::exception & aws_ex)
     {
         try
         {
             auto gcp_zone = getGCPAvailabilityZoneOrException();
             return gcp_zone;
         }
-        catch (const DB::Exception & gcp_ex)
+        catch (const std::exception & gcp_ex)
         {
             throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex.displayText(), gcp_ex.displayText());
+                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex.what(), gcp_ex.what());
         }
     }
 }
