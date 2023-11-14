@@ -64,7 +64,6 @@ private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static constexpr bool is_quantile_gk = std::is_same_v<Data, QuantileGK<Value>>;
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDDSketch<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
@@ -91,30 +90,6 @@ public:
     {
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
-
-        if constexpr (is_quantile_gk)
-        {
-            if (params.empty())
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one param", getName());
-
-            const auto & accuracy_field = params[0];
-            if (!isInt64OrUInt64FieldType(accuracy_field.getType()))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires accuracy parameter with integer type", getName());
-
-            if (accuracy_field.getType() == Field::Types::Int64)
-                accuracy = accuracy_field.get<Int64>();
-            else
-                accuracy = accuracy_field.get<UInt64>();
-
-            if (accuracy <= 0)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Aggregate function {} requires accuracy parameter with positive value but is {}",
-                    getName(),
-                    accuracy);
-        }
 
         if constexpr (is_quantile_ddsketch)
         {
@@ -145,16 +120,39 @@ public:
                     getName(),
                     relative_accuracy);
         }
+        else if constexpr (has_accuracy_parameter)
+        {
+            if (params.empty())
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one param", getName());
+
+            const auto & accuracy_field = params[0];
+            if (!isInt64OrUInt64FieldType(accuracy_field.getType()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires accuracy parameter with integer type", getName());
+
+            if (accuracy_field.getType() == Field::Types::Int64)
+                accuracy = accuracy_field.get<Int64>();
+            else
+                accuracy = accuracy_field.get<UInt64>();
+
+            if (accuracy <= 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires accuracy parameter with positive value but is {}",
+                    getName(),
+                    accuracy);
+        }
     }
 
     String getName() const override { return Name::name; }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        if constexpr (is_quantile_gk)
-            new (place) Data(accuracy);
-        else if constexpr (is_quantile_ddsketch)
+        if constexpr (is_quantile_ddsketch)
             new (place) Data(relative_accuracy);
+        else if constexpr (has_accuracy_parameter)
+            new (place) Data(accuracy);
         else
             new (place) Data;
     }
@@ -184,10 +182,10 @@ public:
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
-        if constexpr (is_quantile_gk)
-            params = {accuracy, 1};
-        else if constexpr (is_quantile_ddsketch)
+        if constexpr (is_quantile_ddsketch)
             params = {relative_accuracy, 1};
+        else if constexpr (has_accuracy_parameter)
+            params = {accuracy, 1};
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(
