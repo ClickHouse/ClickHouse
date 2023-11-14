@@ -104,7 +104,7 @@ public:
 
     static constexpr wide::integer<Bits, Signed> min() noexcept
     {
-        if (is_same_v<Signed, signed>)
+        if constexpr (is_same_v<Signed, signed>)
         {
             using T = wide::integer<Bits, signed>;
             T res{};
