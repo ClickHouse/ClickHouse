@@ -326,7 +326,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 table_join->setStorageJoin(storage_join);
             }
 
-            if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict && try_use_direct_join)
+            auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
+            if (storage_dict && try_use_direct_join && storage_dict->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
             {
                 FunctionDictHelper dictionary_helper(context);
 
