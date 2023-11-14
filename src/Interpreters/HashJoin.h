@@ -173,7 +173,6 @@ public:
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
     bool isFilled() const override { return from_storage_join; }
-    String descriptionForPlan() const override { return "HashJoin"; }
 
     JoinPipelineType pipelineType() const override
     {

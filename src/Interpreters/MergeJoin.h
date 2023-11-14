@@ -34,7 +34,6 @@ public:
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
     /// Has to be called only after setTotals()/mergeRightBlocks()
     bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
-    String descriptionForPlan() const override { return "PartialMergeJoin"; }
 
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
