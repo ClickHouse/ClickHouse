@@ -170,9 +170,9 @@ private:
 
     struct AliasData
     {
-        String name;
-        DataTypePtr type;
-        ASTPtr expression;
+        String name;       /// "size" in  "size String Alias formatReadableSize(size_bytes)"
+        DataTypePtr type;  /// String in "size String Alias formatReadableSize(size_bytes)", or something different came from query
+        ASTPtr expression; /// formatReadableSize(size_bytes) in "size String Alias formatReadableSize(size_bytes)"
     };
 
     using Aliases = std::vector<AliasData>;
@@ -184,6 +184,9 @@ private:
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot);
 
+    /// Populates AliasData structures for further processing
+    ///   using types from result query if possible
+    /// and removes alias columns from real_column_names
     void processAliases(
         Names & real_column_names,
         const StorageWithLockAndName & storage_with_lock,

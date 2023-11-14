@@ -634,6 +634,8 @@ void ReadFromMerge::processAliases(
                         storage_metadata_snapshot->getColumns().getAll(), context);
                     column_expr = setAlias(column_expr, column);
 
+                    /// use storage type for transient columns that are not represented in result
+                    ///  e.g. for columns that needed to evaluate row policy
                     auto type = sample_block.has(column) ? sample_block.getByName(column).type : column_description.type;
 
                     aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
