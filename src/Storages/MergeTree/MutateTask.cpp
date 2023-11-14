@@ -513,7 +513,9 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     {
         bool need_recalculate =
             materialized_projections.contains(projection.name)
-            || (!is_full_part_storage && source_part->hasProjection(projection.name));
+            || (!is_full_part_storage
+                && (source_part->hasProjection(projection.name)
+                    || source_part->hasBrokenProjection(projection.name)));
 
         if (need_recalculate)
             projections_to_recalc.insert(&projection);
@@ -1367,7 +1369,9 @@ private:
 
             bool need_recalculate =
                 ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
+                || (!is_full_part_storage
+                    && (ctx->source_part->hasProjection(projection.name)
+                        || ctx->source_part->hasBrokenProjection(projection.name)));
 
             if (need_recalculate)
             {

@@ -5737,7 +5737,7 @@ MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & afforda
 }
 
 MergeTreeData::ProjectionPartsVector
-MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
+MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, bool fill_states) const
 {
     auto lock = lockParts();
     ProjectionPartsVector res;
@@ -5749,14 +5749,20 @@ MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & a
             res.data_parts.push_back(part);
             for (const auto & [_, projection_part] : part->getProjectionParts())
                 res.projection_parts.push_back(projection_part);
+            for (const auto & [_, projection_part] : part->getBrokenProjectionParts())
+                res.broken_projection_parts.push_back(projection_part);
         }
     }
 
-    if (out_states != nullptr)
+    if (fill_states)
     {
-        out_states->resize(res.projection_parts.size());
+        res.projection_parts_states.resize(res.projection_parts.size());
         for (size_t i = 0; i < res.projection_parts.size(); ++i)
-            (*out_states)[i] = res.projection_parts[i]->getParentPart()->getState();
+            (res.projection_parts_states)[i] = res.projection_parts[i]->getParentPart()->getState();
+
+        res.broken_projection_parts_states.resize(res.broken_projection_parts.size());
+        for (size_t i = 0; i < res.broken_projection_parts.size(); ++i)
+            (res.broken_projection_parts_states)[i] = res.broken_projection_parts[i]->getParentPart()->getState();
     }
 
     return res;
@@ -5809,7 +5815,7 @@ bool MergeTreeData::supportsLightweightDelete() const
     return true;
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(bool fill_states) const
 {
     ProjectionPartsVector res;
     auto lock = lockParts();
@@ -5820,11 +5826,15 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
             res.projection_parts.push_back(projection_part);
     }
 
-    if (out_states != nullptr)
+    if (fill_states)
     {
-        out_states->resize(res.projection_parts.size());
+        res.projection_parts_states.resize(res.projection_parts.size());
         for (size_t i = 0; i < res.projection_parts.size(); ++i)
-            (*out_states)[i] = res.projection_parts[i]->getParentPart()->getState();
+            (res.projection_parts_states)[i] = res.projection_parts[i]->getParentPart()->getState();
+
+        res.broken_projection_parts_states.resize(res.broken_projection_parts.size());
+        for (size_t i = 0; i < res.broken_projection_parts.size(); ++i)
+            (res.broken_projection_parts_states)[i] = res.broken_projection_parts[i]->getParentPart()->getState();
     }
     return res;
 }

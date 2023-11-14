@@ -255,6 +255,12 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
+    /// If it is a projection part, it can be broken sometimes.
+    mutable std::atomic<bool> is_broken {false};
+    mutable std::string exception;
+    mutable int exception_code = 0;
+    mutable std::mutex broken_projections_mutex;
+
     /// Indicates that the part was marked Outdated by PartCheckThread because the part was not committed to ZooKeeper
     mutable bool is_unexpected_local_part = false;
 
@@ -405,11 +411,19 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
+    const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getBrokenProjectionParts() const { return broken_projection_parts; }
+
     MergeTreeDataPartBuilder getProjectionPartBuilder(const String & projection_name, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
+    void addBrokenProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> projection_part, const String & message, int code);
+
+    void markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const;
+
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
+
+    bool hasBrokenProjection(const String & projection_name) const;
 
     void loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded = false);
 
@@ -564,7 +578,8 @@ protected:
     const IMergeTreeDataPart * parent_part;
     String parent_part_name;
 
-    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+    mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+    mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> broken_projection_parts;
 
     mutable PartMetadataManagerPtr metadata_manager;
 
@@ -677,6 +692,8 @@ private:
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
+
+    void setBrokenReason(const String & message, int code);
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

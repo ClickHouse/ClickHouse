@@ -468,8 +468,13 @@ public:
 
     struct ProjectionPartsVector
     {
-        DataPartsVector projection_parts;
         DataPartsVector data_parts;
+
+        DataPartsVector projection_parts;
+        DataPartStateVector projection_parts_states;
+
+        DataPartsVector broken_projection_parts;
+        DataPartStateVector broken_projection_parts_states;
     };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
@@ -484,7 +489,7 @@ public:
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+        const DataPartStates & affordable_states, bool fill_states = false) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)
@@ -496,7 +501,7 @@ public:
     size_t getTotalMarksCount() const;
 
     /// Same as above but only returns projection parts
-    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
+    ProjectionPartsVector getAllProjectionPartsVector(bool fill_states = false) const;
 
     /// Returns parts in Active state
     DataParts getDataPartsForInternalUsage() const;

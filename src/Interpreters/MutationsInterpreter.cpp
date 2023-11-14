@@ -305,6 +305,11 @@ bool MutationsInterpreter::Source::hasProjection(const String & name) const
     return part && part->hasProjection(name);
 }
 
+bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) const
+{
+    return part && part->hasBrokenProjection(name);
+}
+
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -920,6 +925,15 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (changed)
             materialized_indices.insert(index.name);
+    }
+
+    /// Always rebuild broken projections.
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (!source.hasBrokenProjection(projection.name))
+            continue;
+
+        materialized_projections.insert(projection.name);
     }
 
     for (const auto & projection : metadata_snapshot->getProjections())

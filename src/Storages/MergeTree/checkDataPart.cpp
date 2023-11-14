@@ -111,7 +111,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     const NameSet & files_without_checksums,
     const ReadSettings & read_settings,
     bool require_checksums,
-    std::function<bool()> is_cancelled)
+    std::function<bool()> is_cancelled,
+    bool & is_broken_projection,
+    bool throw_on_broken_projection)
 {
     /** Responsibility:
       * - read list of columns from columns.txt;
@@ -120,6 +122,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
       */
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
+    Poco::Logger * log = &Poco::Logger::get("checkDataPart");
 
     NamesAndTypesList columns_txt;
 
@@ -269,23 +272,68 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
-    for (const auto & [name, projection] : data_part->getProjectionParts())
+    auto check_projection = [&](const String & name, std::shared_ptr<IMergeTreeDataPart> projection)
     {
-        if (is_cancelled())
-            return {};
-
         auto projection_file = name + ".proj";
-        auto projection_checksums = checkDataPart(
-            projection, *data_part_storage.getProjection(projection_file),
-            projection->getColumns(), projection->getType(),
-            projection->getFileNamesWithoutChecksums(),
-            read_settings, require_checksums, is_cancelled);
+        if (!throw_on_broken_projection && projection->is_broken)
+        {
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
+            return;
+        }
+
+        IMergeTreeDataPart::Checksums projection_checksums;
+        try
+        {
+            bool noop;
+            projection_checksums = checkDataPart(
+                projection, *data_part_storage.getProjection(projection_file),
+                projection->getColumns(), projection->getType(),
+                projection->getFileNamesWithoutChecksums(),
+                read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
+        }
+        catch (...)
+        {
+            if (isRetryableException(std::current_exception()))
+                throw;
+
+            LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
+
+            if (!data_part->hasBrokenProjection(name))
+                data_part->markProjectionPartAsBroken(name, getCurrentExceptionMessage(false), getCurrentExceptionCode());
+
+            is_broken_projection = true;
+            if (throw_on_broken_projection)
+                throw;
+
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
+            return;
+        }
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
             projection_checksums.getTotalSizeOnDisk(),
             projection_checksums.getTotalChecksumUInt128());
 
         projections_on_disk.erase(projection_file);
+    };
+
+    auto broken_projection_parts = data_part->getBrokenProjectionParts(); /// Iterate over copy
+    for (const auto & [name, projection] : broken_projection_parts)
+    {
+        if (is_cancelled())
+            return {};
+        else
+            check_projection(name, projection);
+    }
+
+    auto projection_parts = data_part->getProjectionParts(); /// Iterate over copy
+    for (const auto & [name, projection] : projection_parts)
+    {
+        if (is_cancelled())
+            return {};
+        else
+            check_projection(name, projection);
     }
 
     if (require_checksums && !projections_on_disk.empty())
@@ -315,7 +363,9 @@ IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & 
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
-    std::function<bool()> is_cancelled)
+    bool & is_broken_projection,
+    std::function<bool()> is_cancelled,
+    bool throw_on_broken_projection)
 {
     if (auto part_in_memory = asInMemoryPart(data_part))
         return checkDataPartInMemory(part_in_memory);
@@ -357,7 +407,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
             data_part->getFileNamesWithoutChecksums(),
             read_settings,
             require_checksums,
-            is_cancelled);
+            is_cancelled,
+            is_broken_projection,
+            throw_on_broken_projection);
     };
 
     try
@@ -371,7 +423,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
             data_part->getFileNamesWithoutChecksums(),
             read_settings,
             require_checksums,
-            is_cancelled);
+            is_cancelled,
+            is_broken_projection,
+            throw_on_broken_projection);
     }
     catch (...)
     {
