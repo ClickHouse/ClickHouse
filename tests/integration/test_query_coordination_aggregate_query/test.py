@@ -96,7 +96,20 @@ def test_aggregate_query(started_cluster):
     node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
     node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table1")
 
-    r = node1.query("EXPLAIN SELECT id,any(val) FROM distributed_table GROUP BY id ORDER BY id SETTINGS allow_experimental_query_coordination = 1")
+    node1.query("analyze table local_table")
+    node1.query("analyze table local_table1")
+    node2.query("analyze table local_table")
+    node2.query("analyze table local_table1")
+    node3.query("analyze table local_table")
+    node3.query("analyze table local_table1")
+    node4.query("analyze table local_table")
+    node4.query("analyze table local_table1")
+    node5.query("analyze table local_table")
+    node5.query("analyze table local_table1")
+    node6.query("analyze table local_table")
+    node6.query("analyze table local_table1")
+
+    r = node1.query("EXPLAIN SELECT id,any(val) FROM distributed_table GROUP BY id LIMIT 2 SETTINGS allow_experimental_query_coordination = 1, statistics_agg_full_cardinality_coefficient=0.01, group_by_two_level_threshold=100, group_by_two_level_threshold_bytes=1000")
 
     r = node1.query("EXPLAIN pipeline SELECT id,any(val) FROM distributed_table GROUP BY id ORDER BY id SETTINGS allow_experimental_query_coordination = 1")
 
