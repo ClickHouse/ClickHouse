@@ -125,9 +125,7 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
                      rabbitmq_row_delimiter = '\\n',
                      rabbitmq_secure = {};
         """.format(
-            rabbitmq_cluster.rabbitmq_host,
-            port,
-            secure
+            rabbitmq_cluster.rabbitmq_host, port, secure
         )
     )
 
