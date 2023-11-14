@@ -1331,6 +1331,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     if (checkPartsImpl(skip_sanity_checks))
         return;
 
+    /// We failed to check parts in an optimistic way, and now we need all the parts including Outdated parts to check them correctly.
     waitForOutdatedPartsToBeLoaded();
 
     if (checkPartsImpl(skip_sanity_checks))
@@ -1435,6 +1436,8 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
             continue;
         }
 
+        /// We have uncovered unexpected parts, and we are not sure if we can restore them or not.
+        /// So we have to exit, load all Outdated parts, and check again.
         {
             std::lock_guard lock(outdated_data_parts_mutex);
             if (!outdated_data_parts_loading_finished)
