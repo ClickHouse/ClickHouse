@@ -1,4 +1,43 @@
 #!/usr/bin/env bash
+
+cat > /dev/null << 'EOF'
+The following content is embedded into the s3 object via the script
+deploy-runner-init.sh {staging,production}
+with additional helping information
+
+In the `user data` you should define as the following
+with appropriate <ENVIRONMENT> as 'staging' or 'production':
+
+### COPY AFTER
+Content-Type: multipart/mixed; boundary="//"
+MIME-Version: 1.0
+
+--//
+Content-Type: text/cloud-config; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="cloud-config.txt"
+
+#cloud-config
+cloud_final_modules:
+- [scripts-user, always]
+
+--//
+Content-Type: text/x-shellscript; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="userdata.txt"
+
+#!/bin/bash
+aws s3 cp s3://github-runners-data/cloud-init/<ENVIRONMENT>.sh /tmp/cloud-init.sh
+chmod 0700 /tmp/cloud-init.sh
+exec bash /tmp/cloud-init.sh
+--//
+### COPY BEFORE
+EOF
+
+# THE SCRIPT START
+
 set -uo pipefail
 
 ####################################
