@@ -65,7 +65,7 @@ std::shared_ptr<TopNStep> TopNStep::makePreliminary(bool exact_rows_before_limit
 
     auto pre_topn = std::make_shared<TopNStep>(pre_sort, pre_limit);
     pre_topn->phase = TopNStep::Phase::Preliminary;
-    setStepDescription("Preliminary");
+    pre_topn->setStepDescription("Preliminary");
     return pre_topn;
 }
 
@@ -89,7 +89,7 @@ std::shared_ptr<TopNStep> TopNStep::makeFinal(const DataStream & input_stream, s
 
     auto final_topn = std::make_shared<TopNStep>(merging_sorted, final_limit);
     final_topn->phase = TopNStep::Phase::Final;
-    setStepDescription("Final");
+    final_topn->setStepDescription("Final");
     return final_topn;
 }
 

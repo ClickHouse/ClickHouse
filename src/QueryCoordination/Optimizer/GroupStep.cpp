@@ -11,6 +11,7 @@ extern const int NOT_IMPLEMENTED;
 GroupStep::GroupStep(DataStream output_stream_, Group & group_) : group(group_)
 {
     output_stream = std::move(output_stream_);
+    setStepDescription("Group (" + std::to_string(group.getId()) + ")");
 }
 
 String GroupStep::getName() const
