@@ -477,11 +477,6 @@ private:
         if (i < n)
         {
             auto remained = n - i;
-            for (size_t j = 0; j < remained; ++j)
-            {
-                str_lens[j] = offsets[i + j] - prev_offset;
-                prev_offset = offsets[i + j];
-            }
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
             TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, remained, str_lens);
             computeValueIdForString(char_pos, str_lens, remained, tmp_value_ids, null_map_pos);

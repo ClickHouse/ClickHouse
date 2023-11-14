@@ -861,6 +861,7 @@ struct HashMethodKeysAdaptive
     {
         if (aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
+            /*
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
             {
@@ -876,6 +877,7 @@ struct HashMethodKeysAdaptive
                     return *key_holder;
             }
 #endif
+            */
             return getKeyHolderFromCacheValues(row);
         }
         else
