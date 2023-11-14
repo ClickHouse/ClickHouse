@@ -26,6 +26,8 @@ TopNStep::TopNStep(QueryPlanStepPtr sorting_step_, QueryPlanStepPtr limit_step_)
     output_stream = limit_step->getOutputStream();
     output_stream->sort_description = sorting_step->getOutputStream().sort_description;
     output_stream->sort_scope = sorting_step->getOutputStream().sort_scope;
+
+    setStepDescription("One stage TopN");
 }
 
 void TopNStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -63,7 +65,7 @@ std::shared_ptr<TopNStep> TopNStep::makePreliminary(bool exact_rows_before_limit
 
     auto pre_topn = std::make_shared<TopNStep>(pre_sort, pre_limit);
     pre_topn->phase = TopNStep::Phase::Preliminary;
-    step_description = "Preliminary";
+    setStepDescription("Preliminary");
     return pre_topn;
 }
 
@@ -87,7 +89,7 @@ std::shared_ptr<TopNStep> TopNStep::makeFinal(const DataStream & input_stream, s
 
     auto final_topn = std::make_shared<TopNStep>(merging_sorted, final_limit);
     final_topn->phase = TopNStep::Phase::Final;
-    step_description = "Final";
+    setStepDescription("Final");
     return final_topn;
 }
 

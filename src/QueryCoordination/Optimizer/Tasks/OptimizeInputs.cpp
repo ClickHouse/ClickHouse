@@ -45,7 +45,7 @@ void OptimizeInputs::execute()
 
         if (frame->newAlternativeCalc())
         {
-            CostCalculator cost_calc(group.getStatistics(), task_context->getQueryContext(), children_statistics, required_child_props);
+            CostCalculator cost_calc(group.getStatistics(), task_context, children_statistics, required_child_props);
             frame->local_cost = group_node->accept(cost_calc);
             frame->total_cost = frame->local_cost;
             LOG_TRACE(log, "local cost: {}", frame->local_cost.toString());
@@ -198,7 +198,7 @@ Cost OptimizeInputs::enforceGroupNode(const PhysicalProperties & required_prop, 
 
     auto child_cost = group.getCostByProp(output_prop);
 
-    CostCalculator cost_calc(group.getStatistics(), task_context->getQueryContext());
+    CostCalculator cost_calc(group.getStatistics(), task_context);
     auto cost = group_enforce_node->accept(cost_calc);
     Cost total_cost = cost + child_cost;
     LOG_TRACE(log, "Enforcing ExchangeData with cost {} and now total cost is {}", cost.toString(), total_cost.toString());

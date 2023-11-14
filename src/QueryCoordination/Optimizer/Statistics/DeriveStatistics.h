@@ -3,6 +3,7 @@
 #include <Interpreters/Cluster.h>
 #include <QueryCoordination/Optimizer/PlanStepVisitor.h>
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
+#include <QueryCoordination/Optimizer/Statistics/StatisticsSettings.h>
 
 namespace DB
 {
@@ -13,7 +14,10 @@ public:
     using Base = PlanStepVisitor<Statistics>;
 
     explicit DeriveStatistics(const StatisticsList & input_statistics_, ContextPtr context_)
-        : input_statistics(input_statistics_), context(context_), log(&Poco::Logger::get("DeriveStatistics"))
+        : input_statistics(input_statistics_)
+        , context(context_)
+        , stats_settings(StatisticsSettings::fromContext(context_))
+        , log(&Poco::Logger::get("DeriveStatistics"))
     {
         auto query_coordination_info = context->getQueryCoordinationMetaInfo();
         auto cluster = context->getCluster(query_coordination_info.cluster_name);
@@ -55,8 +59,11 @@ private:
     /// Query context
     ContextPtr context;
 
-    /// node count which participating the query.
+    /// Node count which participating the query.
     size_t node_count;
+
+    /// Settings for statistics
+    StatisticsSettings stats_settings;
 
     Poco::Logger * log;
 };

@@ -180,20 +180,22 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     /// 2. calculate selectivity
     Float64 selectivity;
     const auto & aggregate_keys = step.getParams().keys;
-
     if (aggregate_keys.empty())
     {
         selectivity = 0.0;
     }
     else if (statistics.hasUnknownColumn())
     {
+        auto first_key_coefficient = stats_settings.statistics_agg_unknown_column_first_key_coefficient;
+        auto rest_key_coefficient = stats_settings.statistics_agg_unknown_column_first_key_coefficient;
+
         /// Estimate by multiplying a coefficient
-        selectivity = 0.001; /// TODO add to settings
+        selectivity = first_key_coefficient;
         for (size_t i = 1; i < aggregate_keys.size(); i++)
         {
-            if (selectivity * 1.001 > 1.0)
+            if (selectivity * rest_key_coefficient > 1.0)
                 break;
-            selectivity *= 1.001; /// TODO add to settings
+            selectivity *= rest_key_coefficient;
         }
     }
     else
@@ -257,7 +259,8 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
 //            return 0.0; // Default coefficient if there are no valid mappings
 //        };
 //        selectivity = selectivity * node_count * get_coefficient(selectivity);
-        selectivity = selectivity * node_count * 0.5;
+        auto coefficient = stats_settings.statistics_agg_full_cardinality_coefficient;
+        selectivity = selectivity * node_count * coefficient;
     }
 
     if (selectivity > 1.0)
@@ -294,7 +297,8 @@ Statistics DeriveStatistics::visit(MergingAggregatedStep & step)
     Float64 row_count;
 
     /// The secondary stage of aggregating
-    row_count = statistics.getOutputRowSize() / node_count / 0.5;
+    auto coefficient = stats_settings.statistics_agg_full_cardinality_coefficient;
+    row_count = statistics.getOutputRowSize() / node_count / coefficient;
 
     statistics.setOutputRowSize(row_count);
     return statistics;
@@ -333,8 +337,8 @@ Statistics DeriveStatistics::visit(CreatingSetsStep & step)
 
     /// Calculate output row count
     Float64 row_count = 0.0;
-    for (size_t i = 0; i < input_statistics.size(); i++)
-        row_count += input_statistics[i].getOutputRowSize(); /// TODO handle different cases.
+    for (const auto & input_statistic : input_statistics)
+        row_count += input_statistic.getOutputRowSize(); /// TODO handle different cases.
 
     statistics.setOutputRowSize(std::max(1.0, row_count));
     return statistics;
@@ -401,7 +405,7 @@ Statistics DeriveStatistics::visit(UnionStep & step)
 
     /// init by the first input
     auto first_input_columns = step.getInputStreams()[0].header.getNames();
-    auto & first_stats = input_statistics[0];
+    const auto & first_stats = input_statistics[0];
 
     for (size_t i = 0; i < output_columns.size(); i++)
     {

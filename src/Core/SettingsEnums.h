@@ -244,4 +244,13 @@ DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
+enum class CBOStepExecutionMode
+{
+    ONE_STAGE,
+    TWO_STAGE,
+    DETERMINED_BY_OPTIMIZER
+};
+
+DECLARE_SETTING_ENUM(CBOStepExecutionMode)
+
 }

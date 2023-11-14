@@ -33,25 +33,41 @@ Cost CostCalculator::visit(AggregatingStep & step)
 
     /// Single stage aggregating
     if (!step.isPreliminaryAgg())
-    {
-        Cost cost(input.getDataSize(), statistics.getDataSize());
-        return cost;
-    }
+        if (cbo_settings.cbo_aggregating_mode == CBOStepExecutionMode::TWO_STAGE)
+            return Cost::infinite();
+        else
+            return Cost(input.getDataSize(), statistics.getDataSize());
     /// Two stage aggregating, first stage
+    else if (cbo_settings.cbo_aggregating_mode == CBOStepExecutionMode::ONE_STAGE)
+        return Cost::infinite();
     else
-    {
-        Cost cost(input.getDataSize(), statistics.getDataSize());
-        return cost;
-    }
+        return Cost(input.getDataSize(), statistics.getDataSize());
 }
 
 /// Two stage aggregating, second stage
-Cost CostCalculator::visit(MergingAggregatedStep &)
+Cost CostCalculator::visit(MergingAggregatedStep & step)
 {
     const auto & input = input_statistics.front();
     Cost cost(input.getDataSize(), statistics.getDataSize());
     if (child_props[0].distribution.type == Distribution::Hashed)
         cost.dividedBy(node_count);
+
+    /// Uniq and uniqExact function in merging stage takes long time than one stage agg in some data quantities.
+    /// So here we add a coefficient to use one stage aggregating.
+    bool has_uniq_or_uniq_exact{};
+    for (const auto & aggregate : step.getParams().aggregates)
+    {
+        if (aggregate.function->getName() == "uniq" || aggregate.function->getName() == "uniqExact")
+        {
+            has_uniq_or_uniq_exact = true;
+            break;
+        }
+    }
+    if (has_uniq_or_uniq_exact)
+    {
+        auto coefficient = cost_settings.cost_merge_agg_uniq_calculation_weight;
+        cost.multiplyBy(static_cast<size_t>(coefficient));
+    }
     return cost;
 }
 
@@ -68,15 +84,19 @@ Cost CostCalculator::visit(FilterStep &)
 Cost CostCalculator::visit(SortingStep & step)
 {
     const auto & input = input_statistics.front();
+    auto weight = cost_settings.cost_pre_sorting_operation_weight;
 
     /// Two stage sorting, first stage
     if (step.getPhase() == SortingStep::Phase::Preliminary)
     {
+        if (cbo_settings.cbo_sorting_mode == CBOStepExecutionMode::ONE_STAGE)
+            return Cost::infinite();
+
         /// cpu_cost: n * log2(n)
-        auto cpu_coefficient = log2(input.getOutputRowSize());
+        auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
         Cost cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
 
-        /// sorting in all shards
+        /// sorting in all shards TODO if sorting node is only one.
         cost.dividedBy(node_count);
         return cost;
     }
@@ -88,15 +108,44 @@ Cost CostCalculator::visit(SortingStep & step)
     /// Single stage sorting
     else
     {
-        auto cpu_coefficient = log2(input.getOutputRowSize());
+        if (cbo_settings.cbo_sorting_mode == CBOStepExecutionMode::TWO_STAGE)
+            return Cost::infinite();
+
+        auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
         return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
 }
 
-Cost CostCalculator::visit(LimitStep &)
+Cost CostCalculator::visit(LimitStep & step)
 {
     const auto & input = input_statistics.front();
-    return Cost(input.getDataSize());
+
+    /// Two stage limiting, first stage
+    if (step.getPhase() == LimitStep::Phase::Preliminary)
+    {
+        if (cbo_settings.cbo_limiting_mode == CBOStepExecutionMode::ONE_STAGE)
+            return Cost::infinite();
+
+        /// cpu_cost
+        Cost cost(input.getDataSize());
+
+        /// sorting in all shards
+        cost.dividedBy(node_count);
+        return cost;
+    }
+    /// Two stage limiting, second stage
+    else if (step.getPhase() == LimitStep::Phase::Final)
+    {
+        return Cost(input.getDataSize(), input.getDataSize());
+    }
+    /// Single stage limiting
+    else
+    {
+        if (cbo_settings.cbo_limiting_mode == CBOStepExecutionMode::TWO_STAGE)
+            return Cost::infinite();
+        else
+            return Cost(input.getDataSize());
+    }
 }
 
 /// Now only hash join
@@ -227,24 +276,34 @@ Cost CostCalculator::visit(TotalsHavingStep & step)
 Cost CostCalculator::visit(TopNStep & step)
 {
     const auto & input = input_statistics.front();
+    auto weight = cost_settings.cost_pre_sorting_operation_weight;
+
+    /// Two stage TopN, first stage
     if (step.getPhase() == TopNStep::Phase::Preliminary)
     {
-        /// cpu_cost: n * log2(n)
-        auto cpu_coefficient = log2(input.getOutputRowSize());
+        if (cbo_settings.cbo_topn_mode == CBOStepExecutionMode::ONE_STAGE)
+            return Cost::infinite();
+
+        /// cpu_cost
+        auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
         Cost cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
 
         /// sorting in all shards
         cost.dividedBy(node_count);
         return cost;
     }
+    /// Two stage TopN, second stage
     else if (step.getPhase() == TopNStep::Phase::Final)
     {
         return Cost(input.getDataSize(), input.getDataSize());
     }
-    /// Single stage sorting
+    /// Single stage TopN
     else
     {
-        auto cpu_coefficient = log2(input.getOutputRowSize());
+        if (cbo_settings.cbo_topn_mode == CBOStepExecutionMode::TWO_STAGE)
+            return Cost::infinite();
+
+        auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
         return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
 }

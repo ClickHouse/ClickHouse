@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Interpreters/Context_fwd.h>
+#include <QueryCoordination/Optimizer/CBOSettings.h>
 
 namespace DB
 {
@@ -19,7 +19,9 @@ public:
 
     Memo & getMemo();
 
-    ContextPtr getQueryContext();
+    ContextPtr getQueryContext() const;
+
+    const CBOSettings & getCBOSettings() const;
 
     void pushTask(OptimizeTaskPtr task);
 
@@ -28,6 +30,7 @@ private:
     Scheduler & scheduler;
 
     ContextPtr query_context;
+    CBOSettings cbo_settings;
 };
 
 using OptimizeContextPtr = std::shared_ptr<OptimizeContext>;
