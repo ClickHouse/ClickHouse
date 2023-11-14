@@ -15,7 +15,7 @@ from commit_status_helper import (
     post_commit_status,
 )
 from docker_pull_helper import get_image_with_version
-from env_helper import TEMP_PATH, REPO_COPY
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -55,6 +55,8 @@ def main():
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
+    reports_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
 
     pr_info = PRInfo(need_changed_files=True)
@@ -79,7 +81,7 @@ def main():
     elif args.force:
         logging.info("Check the docs because of force flag")
 
-    docker_image = get_image_with_version(temp_path, "clickhouse/docs-builder")
+    docker_image = get_image_with_version(reports_path, "clickhouse/docs-builder")
 
     test_output = temp_path / "docs_check_log"
     test_output.mkdir(parents=True, exist_ok=True)
