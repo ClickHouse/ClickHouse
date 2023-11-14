@@ -94,6 +94,22 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
 {
     if (auto * union_node = query_or_union_node->as<UnionNode>())
     {
+        auto union_node_mode = union_node->getUnionMode();
+        bool is_distinct = union_node_mode == SelectUnionMode::UNION_DISTINCT ||
+            union_node_mode == SelectUnionMode::INTERSECT_DISTINCT ||
+            union_node_mode == SelectUnionMode::EXCEPT_DISTINCT;
+
+        if (is_distinct)
+        {
+            auto union_projection_columns = union_node->computeProjectionColumns();
+            size_t union_projection_columns_size = union_projection_columns.size();
+
+            for (size_t i = 0; i < union_projection_columns_size; ++i)
+                used_projection_columns_indexes.insert(i);
+
+            return;
+        }
+
         for (auto & query_node : union_node->getQueries().getNodes())
             updateUsedProjectionIndexes(query_node, used_projection_columns_indexes);
         return;
@@ -106,7 +122,7 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
     for (size_t i = 0; i < projection_nodes_size; ++i)
     {
         const auto & projection_node = projection_nodes[i];
-        if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) && hasFunctionNode(projection_node, "arrayJoin"))
+        if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) || hasFunctionNode(projection_node, "arrayJoin"))
             used_projection_columns_indexes.insert(i);
     }
 }
