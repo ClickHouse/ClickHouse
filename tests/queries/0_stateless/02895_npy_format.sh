@@ -58,3 +58,5 @@ $CLICKHOUSE_LOCAL -q "select * from file('$CURDIR/data_npy/one_dim_unicode.npy',
 $CLICKHOUSE_LOCAL -q "select * from file('$CURDIR/data_npy/complex.npy')" 2>&1 | grep -c "BAD_ARGUMENTS"
 
 $CLICKHOUSE_LOCAL -q "select * from file('$CURDIR/data_npy/float_16.npy')"
+
+$CLICKHOUSE_LOCAL -q "select * from file('$CURDIR/data_npy/npy_inf_nan_null.npy')"

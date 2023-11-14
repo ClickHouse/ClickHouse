@@ -32,6 +32,8 @@ namespace
 
 float convertFloat16ToFloat32(uint16_t float16_value)
 {
+    if (float16_value == 0000000000000000)
+        return float(0);
     uint16_t sign = (float16_value >> 15) & 0x1;
     uint16_t exponent = (float16_value >> 10) & 0x1F;
     uint16_t fraction = float16_value & 0x3FF;
@@ -298,26 +300,25 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params par
 }
 
 template <typename ColumnValue, typename DataValue>
-void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness, bool isFloat16)
+void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness)
 {
-    if (!isFloat16)
-    {
-        DataValue value;
-        if (endianness == NumpyDataType::Endianness::BIG)
-            readBinaryBigEndian(value, *in);
-        else
-            readBinaryLittleEndian(value, *in);
-        assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue((static_cast<ColumnValue>(value)));
-    }
+    DataValue value;
+    if (endianness == NumpyDataType::Endianness::BIG)
+        readBinaryBigEndian(value, *in);
     else
-    {
-        uint16_t value;
-        if (endianness == NumpyDataType::Endianness::BIG)
-            readBinaryBigEndian(value, *in);
-        else
-            readBinaryLittleEndian(value, *in);
-        assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue(static_cast<ColumnValue>(convertFloat16ToFloat32(value)));
-    }
+        readBinaryLittleEndian(value, *in);
+    assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue((static_cast<ColumnValue>(value)));
+}
+
+template <typename ColumnValue>
+void NpyRowInputFormat::readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness)
+{
+    uint16_t value;
+    if (endianness == NumpyDataType::Endianness::BIG)
+        readBinaryBigEndian(value, *in);
+    else
+        readBinaryLittleEndian(value, *in);
+    assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue(static_cast<ColumnValue>(convertFloat16ToFloat32(value)));
 }
 
 template <typename T>
@@ -344,7 +345,7 @@ void NpyRowInputFormat::readAndInsertFloat(IColumn * column, const DataTypePtr &
 {
     switch (npy_type.getTypeIndex())
     {
-        case NumpyDataTypeIndex::Float16: readBinaryValueAndInsert<T, Float32>(column->getPtr(), npy_type.getEndianness(), true); break;
+        case NumpyDataTypeIndex::Float16: readBinaryValueAndInsertFloat16<T>(column->getPtr(), npy_type.getEndianness()); break;
         case NumpyDataTypeIndex::Float32: readBinaryValueAndInsert<T, Float32>(column->getPtr(), npy_type.getEndianness()); break;
         case NumpyDataTypeIndex::Float64: readBinaryValueAndInsert<T, Float64>(column->getPtr(), npy_type.getEndianness()); break;
         default:

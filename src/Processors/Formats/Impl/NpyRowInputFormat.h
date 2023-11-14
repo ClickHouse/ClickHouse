@@ -43,7 +43,10 @@ private:
     void readAndInsertString(MutableColumnPtr column, const DataTypePtr & data_type, const NumpyDataType & npy_type, bool is_fixed);
 
     template <typename ColumnValue, typename DataValue>
-    void readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness, bool isFloat16 = false);
+    void readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness);
+
+    template <typename ColumnValue>
+    void readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness);
 
     void readRows(MutableColumns & columns);
 
