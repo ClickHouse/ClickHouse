@@ -31,10 +31,9 @@ void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
 {
     std::lock_guard lock(zookeeper_mutex);
 
-    if (!zookeeper || zookeeper->expired())
+    if (my_faulty_zookeeper->isNull() || my_faulty_zookeeper->expired())
     {
-        zookeeper = get_zookeeper();
-        my_faulty_zookeeper->setKeeper(zookeeper);
+        my_faulty_zookeeper->setKeeper(get_zookeeper());
 
         try
         {
@@ -56,11 +55,7 @@ WithRetries::FaultyKeeper WithRetries::getFaultyZooKeeper() const
     /// The reason is that ZooKeeperWithFaultInjection may reset the underlying pointer and there could be a race condition
     /// when the same object is used from multiple threads.
     auto faulty_zookeeper = ZooKeeperWithFaultInjection::createInstance(
-        settings.keeper_fault_injection_probability,
-        settings.keeper_fault_injection_seed,
-        zookeeper,
-        log->name(),
-        log);
+        settings.keeper_fault_injection_probability, settings.keeper_fault_injection_seed, get_zookeeper(), log->name(), log);
 
     return faulty_zookeeper;
 }

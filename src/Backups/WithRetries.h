@@ -87,7 +87,6 @@ private:
 
     /// This is needed only to protect zookeeper object
     mutable std::mutex zookeeper_mutex;
-    mutable zkutil::ZooKeeperPtr zookeeper;
 };
 
 }
