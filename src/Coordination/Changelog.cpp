@@ -14,6 +14,7 @@
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include "IO/CompressionMethod.h"
 #include <libnuraft/log_val_type.hxx>
 
 
@@ -476,6 +477,9 @@ struct ChangelogReadResult
 
     /// last offset we were able to read from log
     off_t last_position;
+
+    /// Whether the changelog file was written using compression
+    bool compressed_log;
     bool error;
 };
 
@@ -484,7 +488,7 @@ class ChangelogReader
 public:
     explicit ChangelogReader(DiskPtr disk_, const std::string & filepath_) : disk(disk_), filepath(filepath_)
     {
-        auto compression_method = chooseCompressionMethod(filepath, "");
+        compression_method = chooseCompressionMethod(filepath, "");
         auto read_buffer_from_file = disk->readFile(filepath);
         read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
@@ -493,6 +497,7 @@ public:
     ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, Poco::Logger * log)
     {
         ChangelogReadResult result{};
+        result.compressed_log = compression_method != CompressionMethod::None;
         try
         {
             while (!read_buf->eof())
@@ -583,6 +588,7 @@ public:
 private:
     DiskPtr disk;
     std::string filepath;
+    CompressionMethod compression_method;
     std::unique_ptr<ReadBuffer> read_buf;
 };
 
@@ -590,6 +596,7 @@ Changelog::Changelog(
     Poco::Logger * log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
+    , compress_logs(log_file_settings.compress_logs)
     , log(log_)
     , write_operations(std::numeric_limits<size_t>::max())
     , append_completion_queue(std::numeric_limits<size_t>::max())
@@ -830,7 +837,8 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             existing_changelogs.erase(last_log_read_result->log_start_index);
             std::erase_if(logs, [last_log_read_result](const auto & item) { return item.first >= last_log_read_result->log_start_index; });
         }
-        else
+        /// don't mix compressed and uncompressed writes
+        else if (compress_logs == last_log_read_result->compressed_log)
         {
             initWriter(description);
         }

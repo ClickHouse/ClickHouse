@@ -182,6 +182,7 @@ private:
 
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
+    const bool compress_logs;
     Poco::Logger * log;
 
     std::mutex writer_mutex;
