@@ -59,6 +59,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 
     return name == other.name
         && type->equals(*other.type)
+        && type->getName() == other.type->getName()
         && default_desc == other.default_desc
         && comment == other.comment
         && ast_to_str(codec) == ast_to_str(other.codec)
