@@ -9,7 +9,7 @@ system stop merges rmt2;
 
 -- Part ids are non-deterministic in case of insert retries
 insert into rmt1 SETTINGS keeper_fault_injection_probability = 0 values (1);
-insert into rmt1 SETTINGS keeper_fault_injection_probability = 0values (2);
+insert into rmt1 SETTINGS keeper_fault_injection_probability = 0 values (2);
 system sync replica rmt2 pull;  -- does not wait
 select type, new_part_name from system.replication_queue where database=currentDatabase() and table='rmt2' order by new_part_name;
 select 1, n, _part from rmt1 order by n;

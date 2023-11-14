@@ -18,6 +18,7 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r2(x UInt32) ENGINE Replicate
              prefer_fetch_merged_part_size_threshold=0"
 
 ${CLICKHOUSE_CLIENT} -n --query="
+    SET keeper_fault_injection_probability=0;
     INSERT INTO fetches_r1 VALUES (1);
     INSERT INTO fetches_r1 VALUES (2);
     INSERT INTO fetches_r1 VALUES (3)"
