@@ -1102,6 +1102,102 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
 }
 
+TEST_F(CoordinationTest, ChangelogTestMixedLogTypes)
+{
+    ChangelogDirTest test("./logs");
+    setLogDirectory("./logs");
+
+    std::vector<std::string> changelog_files;
+
+    const auto verify_changelog_files = [&]
+    {
+        for (const auto & log_file : changelog_files)
+            EXPECT_TRUE(fs::exists(log_file)) << "File " << log_file << " not found";
+    };
+
+    size_t last_term = 0;
+    size_t log_size = 0;
+
+    const auto append_log = [&](auto & changelog, const std::string & data, uint64_t term)
+    {
+        last_term = term;
+        ++log_size;
+        auto entry = getLogEntry(data, last_term);
+        changelog.append(entry);
+    };
+
+    const auto verify_log_content = [&](const auto & changelog)
+    {
+        EXPECT_EQ(changelog.size(), log_size);
+        EXPECT_EQ(changelog.last_entry()->get_term(), last_term);
+    };
+
+    {
+        SCOPED_TRACE("Initial uncompressed log");
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
+            DB::FlushSettings(),
+            keeper_context);
+        changelog.init(1, 0);
+
+        for (size_t i = 0; i < 35; ++i)
+            append_log(changelog, std::to_string(i) + "_hello_world", (i+ 44) * 10);
+
+        changelog.end_of_append_batch(0, 0);
+
+        waitDurableLogs(changelog);
+        changelog_files.push_back("./logs/changelog_1_20.bin");
+        changelog_files.push_back("./logs/changelog_21_40.bin");
+        verify_changelog_files();
+
+        verify_log_content(changelog);
+    }
+
+    {
+        SCOPED_TRACE("Compressed log");
+        DB::KeeperLogStore changelog_compressed(
+            DB::LogFileSettings{.force_sync = true, .compress_logs = true, .rotate_interval = 20},
+            DB::FlushSettings(),
+            keeper_context);
+        changelog_compressed.init(1, 0);
+
+        verify_changelog_files();
+        verify_log_content(changelog_compressed);
+
+        append_log(changelog_compressed, "hello_world", 7777);
+        changelog_compressed.end_of_append_batch(0, 0);
+
+        waitDurableLogs(changelog_compressed);
+
+        verify_log_content(changelog_compressed);
+
+        changelog_files.push_back("./logs/changelog_36_55.bin.zstd");
+        verify_changelog_files();
+    }
+
+    {
+        SCOPED_TRACE("Final uncompressed log");
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
+            DB::FlushSettings(),
+            keeper_context);
+        changelog.init(1, 0);
+
+        verify_changelog_files();
+        verify_log_content(changelog);
+
+        append_log(changelog, "hello_world", 7778);
+        changelog.end_of_append_batch(0, 0);
+
+        waitDurableLogs(changelog);
+
+        verify_log_content(changelog);
+
+        changelog_files.push_back("./logs/changelog_37_56.bin");
+        verify_changelog_files();
+    }
+}
+
 TEST_P(CoordinationTest, ChangelogTestLostFiles)
 {
     auto params = GetParam();
