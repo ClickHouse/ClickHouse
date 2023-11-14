@@ -433,14 +433,13 @@ Chunk DDLQueryStatusSource::generate()
              config_ref.getUInt64("distributed_ddl_keeper_max_backoff_ms", 5000)},
             context->getProcessListElementSafe());
 
-        retries_ctl.retryLoop(
-            [&]()
-            {
-                auto zookeeper = context->getZooKeeper();
-                node_exists = zookeeper->exists(node_path);
-                tmp_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait);
-                tmp_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
-            });
+        retries_ctl.retryLoop([&]()
+        {
+            auto zookeeper = context->getZooKeeper();
+            node_exists = zookeeper->exists(node_path);
+            tmp_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait);
+            tmp_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
+        });
 
         if (!node_exists)
         {

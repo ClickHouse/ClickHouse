@@ -36,8 +36,6 @@ void backupUserDefinedSQLObjects(
         backup_entries.emplace_back(
             escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_object_query)));
 
-    /// We don't need to control keeper faults or retries here because UserDefinedSQLObjectsLoaderFromZooKeeper
-    /// does not access keeper to provide isReplicated or getReplicationID
     auto context = backup_entries_collector.getContext();
     const auto & loader = context->getUserDefinedSQLObjectsLoader();
 

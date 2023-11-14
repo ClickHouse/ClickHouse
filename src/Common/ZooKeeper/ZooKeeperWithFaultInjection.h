@@ -154,7 +154,7 @@ public:
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
         return access(
-            "tryGetChildren", path, [&]() { return keeper->tryGetChildrenWatch(path, res, stat, watch_callback, list_request_type); });
+            "tryGetChildrenWatch", path, [&]() { return keeper->tryGetChildrenWatch(path, res, stat, watch_callback, list_request_type); });
     }
 
     template <typename CallbackType>
