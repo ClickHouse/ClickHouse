@@ -579,7 +579,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     CreateSnapshotTask snapshot_task;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
         std::lock_guard lock(storage_and_responses_lock);
-        snapshot_task.snapshot = std::make_unique<KeeperStorageSnapshot<Storage>>(KeeperStorageSnapshot<Storage>(storage.get(), snapshot_meta_copy, getClusterConfig()));
+        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(storage.get(), snapshot_meta_copy, getClusterConfig());
     }
 
     /// create snapshot task for background execution (in snapshot thread)
@@ -589,7 +589,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
         bool ret = true;
         try
         {
-            auto && snapshot = std::get<std::unique_ptr<KeeperStorageSnapshot<Storage>>>(std::move(snapshot_));
+            auto && snapshot = std::get<std::shared_ptr<KeeperStorageSnapshot<Storage>>>(std::move(snapshot_));
             { /// Read storage data without locks and create snapshot
                 std::lock_guard lock(snapshots_lock);
 
