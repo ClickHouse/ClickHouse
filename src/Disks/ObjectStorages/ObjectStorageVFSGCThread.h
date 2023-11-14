@@ -20,9 +20,9 @@ class ObjectStorageVFSGCThread
 {
 public:
     ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context);
+    ~ObjectStorageVFSGCThread();
 
     void start() { task->activateAndSchedule(); }
-    void wakeup() { task->schedule(); }
     void stop() { task->deactivate(); }
 
 private:

@@ -1,4 +1,5 @@
 #include "DiskObjectStorageVFS.h"
+#include "ObjectStorageVFSGCThread.h"
 #include "DiskObjectStorageVFSTransaction.h"
 #include "Interpreters/Context.h"
 
@@ -26,6 +27,8 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     zookeeper->createAncestors(VFS_LOG_ITEM);
 }
 
+DiskObjectStorageVFS::~DiskObjectStorageVFS() = default;
+
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
 {
     const auto config_prefix = "storage_configuration.disks." + name;
@@ -38,6 +41,19 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
         Context::getGlobalContextInstance()->getConfigRef(),
         config_prefix,
         zookeeper);
+}
+
+void DiskObjectStorageVFS::startupImpl(ContextPtr context)
+{
+    DiskObjectStorage::startupImpl(context);
+    gc_thread = std::make_unique<ObjectStorageVFSGCThread>(*this, context);
+    gc_thread->start();
+}
+
+void DiskObjectStorageVFS::shutdown()
+{
+    DiskObjectStorage::shutdown();
+    gc_thread->stop();
 }
 
 String DiskObjectStorageVFS::getStructure() const

@@ -16,6 +16,8 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
     task = context->getSchedulePool().createTask(log_name, [this] { run(); });
 }
 
+ObjectStorageVFSGCThread::~ObjectStorageVFSGCThread() = default;
+
 void ObjectStorageVFSGCThread::run()
 {
     if (!zookeeper_lock->tryLock())
@@ -26,18 +28,16 @@ void ObjectStorageVFSGCThread::run()
     }
 
     LOG_DEBUG(log, "Acquired GC lock");
-    zkutil::ZooKeeper & zookeeper = *storage.zookeeper;
-
     VFSSnapshot snapshot;
 
-    const auto [start_str, end_str] = std::ranges::minmax(zookeeper.getChildren(VFS_LOG_BASE_NODE));
+    const auto [start_str, end_str] = std::ranges::minmax(storage.zookeeper->getChildren(VFS_LOG_BASE_NODE));
     const size_t start_logpointer = parseFromString<size_t>(start_str);
     const size_t end_logpointer = parseFromString<size_t>(end_str);
 
     if (start_logpointer > 0)
         snapshot = loadSnapshot(start_logpointer - 1);
 
-    ObsoleteObjects obsolete_objects = populateSnapshotWithLogEntries(snapshot, start_logpointer, end_logpointer);
+    VFSSnapshot::ObsoleteObjects obsolete_objects = populateSnapshotWithLogEntries(snapshot, start_logpointer, end_logpointer);
     writeSnapshot(std::move(snapshot), end_logpointer);
 
     // TODO myrrc we should remove previous snapshot from object storage after writing current one.
