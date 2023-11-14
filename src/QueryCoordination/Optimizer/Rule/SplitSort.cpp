@@ -29,12 +29,14 @@ std::vector<SubQueryPlan> SplitSort::transform(SubQueryPlan & sub_plan, ContextP
 
     auto pre_sort = sorting_step->clone();
     pre_sort->setPhase(SortingStep::Phase::Preliminary);
+    pre_sort->setStepDescription("Preliminary");
 
     const auto max_block_size = context->getSettingsRef().max_block_size;
     const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
     auto merging_sorted = std::make_unique<SortingStep>(
         pre_sort->getOutputStream(), sorting_step->getSortDescription(), max_block_size, sorting_step->getLimit(), exact_rows_before_limit);
     merging_sorted->setPhase(SortingStep::Phase::Final);
+    merging_sorted->setStepDescription("Final");
 
     SubQueryPlan res_sub_plan;
     res_sub_plan.addStep(child_step);

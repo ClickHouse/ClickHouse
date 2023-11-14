@@ -39,7 +39,7 @@ void ApplyRule::execute()
 
 String ApplyRule::getDescription()
 {
-    return "ApplyRule (" + group_node->getStep()->getName() + ")";
+    return "ApplyRule (" + group_node->getStep()->getName() + "( " + group_node->getStep()->getStepDescription() + " )" + ")";
 }
 
 }

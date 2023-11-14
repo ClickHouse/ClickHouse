@@ -24,12 +24,19 @@ std::vector<SubQueryPlan> ConvertToTopN::transform(SubQueryPlan & sub_plan, Cont
     if (limit_step->getPhase() != LimitStep::Phase::Unknown)
         return {};
 
+    auto * sorting_step = typeid_cast<SortingStep *>(sub_plan.getRootNode()->children[0]->step.get());
+
+    if (!sorting_step)
+        return {};
+
+    if (sorting_step->getPhase() != SortingStep::Phase::Unknown)
+        return {};
+
     auto group_step = sub_plan.getRootNode()->children[0]->children[0]->step;
     if (!typeid_cast<GroupStep *>(group_step.get()))
         return {};
 
-    auto sorting_step = sub_plan.getRootNode()->children[0]->step;
-    auto topn = std::make_shared<TopNStep>(sorting_step, sub_plan.getRootNode()->step);
+    auto topn = std::make_shared<TopNStep>(sub_plan.getRootNode()->children[0]->step, sub_plan.getRootNode()->step);
 
     SubQueryPlan res_sub_plan;
     res_sub_plan.addStep(group_step);

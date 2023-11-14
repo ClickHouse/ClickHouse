@@ -12,7 +12,7 @@
 namespace DB
 {
 
-namespace CostBasedOptimizer
+namespace CostBasedOptimizerRules
 {
 
 static constexpr size_t RULES_SIZE = 5;

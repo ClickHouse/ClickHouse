@@ -21,14 +21,13 @@ void generateAllCases(
     GroupNodePtr group_node_,
     size_t children_index,
     std::vector<std::vector<SubQueryPlanPtr>> & children_candidate_lists,
-    std::vector<SubQueryPlanPtr> & children_select_list,
+    std::vector<SubQueryPlanPtr> children_select_list,
     std::vector<SubQueryPlanPtr> & results)
 {
     if (children_index >= children_candidate_lists.size())
     {
         SubQueryPlanPtr result = std::make_shared<SubQueryPlan>();
         result->unitePlans(group_node_->getStep(), children_select_list);
-        children_select_list.resize(children_select_list.size() - 1);
         results.emplace_back(result);
         return;
     }
@@ -36,6 +35,7 @@ void generateAllCases(
     {
         children_select_list.emplace_back(children_candidate_lists[children_index][i]);
         generateAllCases(group_node_, children_index + 1, children_candidate_lists, children_select_list, results);
+        children_select_list.resize(children_select_list.size() - 1);
     }
 }
 
@@ -59,14 +59,6 @@ generateSubQueryPlanWithChildren(GroupNodePtr group_node_, std::vector<std::vect
 
 std::vector<SubQueryPlanPtr> Binder::extractGroupNode(const Pattern & pattern_, GroupNodePtr group_node_)
 {
-    if (pattern_.getStepType() == StepType::PatternAny)
-    {
-        SubQueryPlanPtr sub_plan = std::make_shared<SubQueryPlan>();
-        auto child_step = std::make_shared<GroupStep>(group_node_->getStep()->getOutputStream(), group_node_->getGroup());
-        sub_plan->addStep(child_step);
-        return {sub_plan};
-    }
-
     if (pattern_.getStepType() != group_node_->getStep()->stepType())
         return {};
 
@@ -79,8 +71,18 @@ std::vector<SubQueryPlanPtr> Binder::extractGroupNode(const Pattern & pattern_, 
     std::vector<std::vector<SubQueryPlanPtr>> children_candidate_lists;
     for (size_t i = 0; i < child_pattern.size(); ++i)
     {
-        auto candidate_list = extractGroup(child_pattern[i], *child_group[i]);
-        children_candidate_lists.emplace_back(std::move(candidate_list));
+        if (child_pattern[i].getStepType() == StepType::PatternAny)
+        {
+            SubQueryPlanPtr sub_plan = std::make_shared<SubQueryPlan>();
+            auto child_step = std::make_shared<GroupStep>(child_group[i]->getOneGroupNode()->getStep()->getOutputStream(), *child_group[i]);
+            sub_plan->addStep(child_step);
+            children_candidate_lists.push_back({sub_plan});
+        }
+        else
+        {
+            auto candidate_list = extractGroup(child_pattern[i], *child_group[i]);
+            children_candidate_lists.emplace_back(std::move(candidate_list));
+        }
     }
 
     return generateSubQueryPlanWithChildren(group_node_, children_candidate_lists);

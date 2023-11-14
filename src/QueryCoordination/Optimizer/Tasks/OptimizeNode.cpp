@@ -18,7 +18,7 @@ void OptimizeNode::execute()
     pushTask(std::make_unique<DeriveStats>(group_node, true, task_context));
 
     /// Apply all transformations.
-    const auto & rules = CostBasedOptimizer::getRules();
+    const auto & rules = CostBasedOptimizerRules::getRules();
 
     for (const auto & rule : rules)
         pushTask(std::make_unique<ApplyRule>(group_node, rule, task_context));

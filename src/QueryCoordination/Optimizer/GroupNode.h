@@ -86,7 +86,7 @@ private:
 
     bool stats_derived;
 
-    std::bitset<CostBasedOptimizer::RULES_SIZE> rule_masks;
+    std::bitset<CostBasedOptimizerRules::RULES_SIZE> rule_masks;
 };
 
 using GroupNodePtr = std::shared_ptr<GroupNode>;
