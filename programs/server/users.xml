@@ -86,6 +86,13 @@
 
             <!-- User can create other users and grant rights to them. -->
             <!-- <access_management>1</access_management> -->
+
+            <!-- User permissions can be granted here -->
+            <!--
+            <grants>
+                <query>GRANT ALL ON *.*</query>
+            </grants>
+            -->
         </default>
     </users>
 

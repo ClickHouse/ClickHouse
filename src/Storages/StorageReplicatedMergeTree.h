@@ -139,7 +139,7 @@ public:
     /// In shutdown we completely terminate table -- remove
     /// is_active node and interserver handler. Also optionally
     /// wait until other replicas will download some parts from our replica.
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     ~StorageReplicatedMergeTree() override;
 

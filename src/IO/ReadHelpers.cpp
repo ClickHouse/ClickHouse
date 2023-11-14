@@ -835,7 +835,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             /// Check for single '\r' not followed by '\n'
             /// We should not stop in this case.
-            if (*buf.position() == '\r')
+            if (*buf.position() == '\r' && !settings.allow_cr_end_of_line)
             {
                 ++buf.position();
                 if (!buf.eof() && *buf.position() != '\n')
