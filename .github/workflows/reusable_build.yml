@@ -1,6 +1,10 @@
 ### For the pure soul wishes to move it to another place
 # https://github.com/orgs/community/discussions/9050
 
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 name: Build ClickHouse
 'on':
   workflow_call:
@@ -25,6 +29,8 @@ name: Build ClickHouse
 jobs:
   Build:
     name: Build-${{inputs.build_name}}
+    env:
+      GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
     steps:
       - name: Check out repository code
@@ -37,8 +43,6 @@ jobs:
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          IMAGES_PATH=${{runner.temp}}/images_path
-          GITHUB_JOB_OVERRIDDEN=Build-${{inputs.build_name}}
           ${{inputs.additional_envs}}
           EOF
           python3 "$GITHUB_WORKSPACE"/tests/ci/ci_config.py --build-name "${{inputs.build_name}}" >> "$GITHUB_ENV"
@@ -71,4 +75,5 @@ jobs:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Clean
+        if: always()
         uses: ./.github/actions/clean
