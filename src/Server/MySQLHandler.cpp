@@ -378,7 +378,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
             }
         };
 
-        executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, format_settings);
+        executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
 
         if (!with_output)
             packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, affected_rows, 0, 0), true);

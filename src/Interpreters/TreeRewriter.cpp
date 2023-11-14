@@ -1299,7 +1299,24 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze, select_options.is_create_parameterized_view);
+    Scalars scalars;
+    Scalars local_scalars;
+    executeScalarSubqueries(
+        query,
+        getContext(),
+        subquery_depth,
+        scalars,
+        local_scalars,
+        select_options.only_analyze,
+        select_options.is_create_parameterized_view);
+
+    /// Save scalar sub queries's results in the query context
+    /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
+    if (!select_options.only_analyze && getContext()->hasQueryContext())
+    {
+        for (const auto & it : scalars)
+            getContext()->getQueryContext()->addScalar(it.first, it.second);
+    }
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
@@ -1415,7 +1432,17 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext(), is_create_parameterized_view);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries, is_create_parameterized_view);
+    Scalars scalars;
+    Scalars local_scalars;
+    executeScalarSubqueries(query, getContext(), 0, scalars, local_scalars, !execute_scalar_subqueries, is_create_parameterized_view);
+
+    /// Save scalar sub queries's results in the query context
+    /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
+    if (execute_scalar_subqueries && getContext()->hasQueryContext())
+    {
+        for (const auto & it : scalars)
+            getContext()->getQueryContext()->addScalar(it.first, it.second);
+    }
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);

@@ -605,7 +605,7 @@ The first argument can also be specified as [String](../data-types/string.md) in
 
 **Returned value**
 
-- The day of the month (1 - 31) of the given date/time
+- The day of the week (1-7), depending on the chosen mode, of the given date/time
 
 **Example**
 
@@ -1557,10 +1557,10 @@ Returns for a given date, the number of days passed since [1 January 0000](https
 toDaysSinceYearZero(date[, time_zone])
 ```
 
-Aliases: `TO_DAYS`
-
+Alias: `TO_DAYS`
 
 **Arguments**
+
 - `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
@@ -1583,6 +1583,56 @@ Result:
 │                                     713569 │
 └────────────────────────────────────────────┘
 ```
+
+**See Also**
+
+- [fromDaysSinceYearZero](#fromDaysSinceYearZero)
+
+## fromDaysSinceYearZero
+
+Returns for a given number of days passed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero) the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar). The calculation is the same as in MySQL's [`FROM_DAYS()`](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_from-days) function.
+
+The result is undefined if it cannot be represented within the bounds of the [Date](../../sql-reference/data-types/date.md) type.
+
+**Syntax**
+
+``` sql
+fromDaysSinceYearZero(days)
+```
+
+Alias: `FROM_DAYS`
+
+**Arguments**
+
+- `days` — The number of days passed since year zero.
+
+**Returned value**
+
+The date corresponding to the number of days passed since year zero.
+
+Type: [Date](../../sql-reference/data-types/date.md).
+
+**Example**
+
+``` sql
+SELECT fromDaysSinceYearZero(739136), fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')));
+```
+
+Result:
+
+``` text
+┌─fromDaysSinceYearZero(739136)─┬─fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')))─┐
+│                    2023-09-08 │                                                       2023-09-08 │
+└───────────────────────────────┴──────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [toDaysSinceYearZero](#toDaysSinceYearZero)
+
+## fromDaysSinceYearZero32
+
+Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../../sql-reference/data-types/date32.md).
 
 ## age
 
@@ -2016,7 +2066,7 @@ Result:
 
 ## addDate
 
-Adds the time interval or date interval to the provided date or date with time.
+Adds the time interval to the provided date, date with time or String-encoded date / date with time.
 
 If the addition results in a value outside the bounds of the data type, the result is undefined.
 
@@ -2028,7 +2078,7 @@ addDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), or [String](../../sql-reference/data-types/string.md)
 - `interval` — Interval to add. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
@@ -2059,7 +2109,7 @@ Alias: `ADDDATE`
 
 ## subDate
 
-Subtracts the time interval or date interval from the provided date or date with time.
+Subtracts the time interval from the provided date, date with time or String-encoded date / date with time.
 
 If the subtraction results in a value outside the bounds of the data type, the result is undefined.
 
@@ -2071,7 +2121,7 @@ subDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), or [String](../../sql-reference/data-types/string.md)
 - `interval` — Interval to subtract. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
@@ -2716,9 +2766,11 @@ Result:
 
 ## fromUnixTimestamp
 
-Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
+This function converts a Unix timestamp to a calendar date and a time of a day. 
 
-fromUnixTimestamp uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+It can be called in two ways:
+
+When given a single argument of type [Integer](../../sql-reference/data-types/int-uint.md), it returns a value of type [DateTime](../../sql-reference/data-types/datetime.md), i.e. behaves like [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime).
 
 Alias: `FROM_UNIXTIME`.
 
@@ -2736,13 +2788,15 @@ Result:
 └──────────────────────────────┘
 ```
 
-When there are two or three arguments, the first an [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md), the second a constant format string and the third an optional constant time zone string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
+When given two or three arguments where the first argument is a value of type [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [String](../../sql-reference/data-types/string.md#string), i.e. it behaves like [formatDateTime](#formatdatetime). In this case, [MySQL's datetime format style](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format) is used.
 
-For example:
+**Example:**
 
 ```sql
 SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 ```
+
+Result:
 
 ```text
 ┌─DateTime────────────┐
@@ -2756,19 +2810,20 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 
 ## fromUnixTimestampInJodaSyntax
 
-Similar to fromUnixTimestamp, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
+Same as [fromUnixTimestamp](#fromUnixTimestamp) but when called in the second way (two or three arguments), the formatting is performed using [Joda style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL style.
 
 **Example:**
 
 ``` sql
-SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
+SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') AS DateTime;
 ```
 
 Result:
+
 ```
-┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')────┐
-│ 2022-11-30 10:41:12                                                        │
-└────────────────────────────────────────────────────────────────────────────┘
+┌─DateTime────────────┐
+│ 2009-02-11 06:42:23 │
+└─────────────────────┘
 ```
 
 ## toModifiedJulianDay

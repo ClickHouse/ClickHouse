@@ -45,6 +45,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -101,6 +102,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -645,10 +647,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
     ContextMutablePtr context,
-    bool internal,
+    QueryFlags flags,
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
 {
+    const bool internal = flags.internal;
+
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
     /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
@@ -1084,6 +1088,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
                 }
 
+                if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
+                    create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+
                 {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
                     if (OpenTelemetry::CurrentContext().isTraceEnabled())
@@ -1130,6 +1137,29 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 }
             }
+        }
+        // Here we check if our our projections contain force_optimize_projection_name
+        if (!settings.force_optimize_projection_name.value.empty())
+        {
+            bool found = false;
+            std::set<std::string> projections = context->getQueryAccessInfo().projections;
+
+            for (const auto &projection : projections)
+            {
+                // projection value has structure like: <db_name>.<table_name>.<projection_name>
+                // We need to get only the projection name
+                size_t last_dot_pos = projection.find_last_of('.');
+                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
+                if (settings.force_optimize_projection_name.value == projection_name)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
+                                settings.force_optimize_projection_name.value);
         }
 
         if (process_list_entry)
@@ -1233,13 +1263,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
-    bool internal,
+    QueryFlags flags,
     QueryProcessingStage::Enum stage)
 {
     ASTPtr ast;
     BlockIO res;
 
-    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
+    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -1260,6 +1290,7 @@ void executeQuery(
     bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
+    QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format)
 {
@@ -1348,7 +1379,7 @@ void executeQuery(
 
     try
     {
-        std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+        std::tie(ast, streams) = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr);
     }
     catch (...)
     {

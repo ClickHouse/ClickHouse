@@ -59,6 +59,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
+    format_settings.csv.allow_cr_end_of_line = settings.input_format_csv_allow_cr_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
@@ -227,6 +228,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.native.allow_types_conversion = settings.input_format_native_allow_types_conversion;
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
     format_settings.client_protocol_version = context->getClientProtocolVersion();
+    format_settings.date_time_overflow_behavior = settings.date_time_overflow_behavior;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
