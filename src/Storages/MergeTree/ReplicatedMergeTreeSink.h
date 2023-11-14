@@ -3,8 +3,8 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <base/types.h>
+#include <Common/ZooKeeper/KeeperRetriesController.h>
 
 
 namespace Poco { class Logger; }
@@ -85,13 +85,13 @@ private:
 
     /// Checks active replicas.
     /// Returns total number of replicas.
-    size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper, ZooKeeperRetriesControl & zk_retries_ctl);
+    size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper, KeeperRetriesControl & zk_retries_ctl);
 
     /// Rename temporary part and commit to ZooKeeper.
     /// Returns a list of conflicting async blocks and true if the whole parts was deduplicated
     std::pair<std::vector<String>, bool> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        ZooKeeperRetriesControl & zk_retries_ctl,
+        KeeperRetriesControl & zk_retries_ctl,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
         size_t replicas_num,
@@ -138,7 +138,7 @@ private:
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
-    void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper, ZooKeeperRetriesControl & zk_retries_ctl);
+    void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper, KeeperRetriesControl & zk_retries_ctl);
 };
 
 using ReplicatedMergeTreeSinkWithAsyncDeduplicate = ReplicatedMergeTreeSinkImpl<true>;

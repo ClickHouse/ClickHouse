@@ -5,6 +5,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 
+#include <memory>
+
 namespace DB
 {
 
@@ -13,25 +15,25 @@ namespace ErrorCodes
     extern const int OK;
 }
 
-struct ZooKeeperRetriesInfo
+struct KeeperRetriesInfo
 {
-    ZooKeeperRetriesInfo() = delete;
-    ZooKeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+    KeeperRetriesInfo() = delete;
+    KeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
         : max_retries(max_retries_), initial_backoff_ms(std::min(initial_backoff_ms_, max_backoff_ms_)), max_backoff_ms(max_backoff_ms_)
     {
     }
 
-    static ZooKeeperRetriesInfo fromBackupRestoreSettings(const Settings & settings)
+    static KeeperRetriesInfo fromBackupRestoreSettings(const Settings & settings)
     {
-        return ZooKeeperRetriesInfo{
+        return KeeperRetriesInfo{
             settings.backup_restore_keeper_max_retries,
             settings.backup_restore_keeper_retry_initial_backoff_ms,
             settings.backup_restore_keeper_retry_max_backoff_ms};
     }
 
-    static ZooKeeperRetriesInfo fromInsertSettings(const Settings & settings)
+    static KeeperRetriesInfo fromInsertSettings(const Settings & settings)
     {
-        return ZooKeeperRetriesInfo{
+        return KeeperRetriesInfo{
             settings.insert_keeper_max_retries,
             settings.insert_keeper_retry_initial_backoff_ms,
             settings.insert_keeper_retry_max_backoff_ms};
@@ -42,10 +44,10 @@ struct ZooKeeperRetriesInfo
     const UInt64 max_backoff_ms;
 };
 
-class ZooKeeperRetriesControl
+class KeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, Poco::Logger * logger_, ZooKeeperRetriesInfo retries_info_, QueryStatusPtr elem)
+    KeeperRetriesControl(std::string name_, Poco::Logger * logger_, KeeperRetriesInfo retries_info_, QueryStatusPtr elem)
         : name(std::move(name_)), logger(logger_), retries_info(std::move(retries_info_)), process_list_element(elem)
     {
     }
@@ -61,7 +63,7 @@ public:
     /// 1. throw KeeperException exception:
     ///     in such case, retries are done only on hardware keeper errors
     ///     because non-hardware error codes are semantically not really errors, just a response
-    /// 2. set an error code in the ZooKeeperRetriesControl object (setUserError/setKeeperError)
+    /// 2. set an error code in the KeeperRetriesControl object (setUserError/setKeeperError)
     ///     The idea is that if the caller has some semantics on top of non-hardware keeper errors,
     ///     then it can provide feedback to retries controller via user errors
     ///
@@ -117,7 +119,7 @@ public:
     void setUserError(std::exception_ptr exception, int code, std::string message)
     {
         if (logger)
-            LOG_TRACE(logger, "ZooKeeperRetriesControl: {}: setUserError: error={} message={}", name, code, message);
+            LOG_TRACE(logger, "KeeperRetriesControl: {}: setUserError: error={} message={}", name, code, message);
 
         /// if current iteration is already failed, keep initial error
         if (!iteration_succeeded)
@@ -151,7 +153,7 @@ public:
     void setKeeperError(std::exception_ptr exception, Coordination::Error code, std::string message)
     {
         if (logger)
-            LOG_TRACE(logger, "ZooKeeperRetriesControl: {}: setKeeperError: error={} message={}", name, code, message);
+            LOG_TRACE(logger, "KeeperRetriesControl: {}: setKeeperError: error={} message={}", name, code, message);
 
         /// if current iteration is already failed, keep initial error
         if (!iteration_succeeded)
@@ -279,7 +281,7 @@ private:
         {
             LOG_DEBUG(
                 logger,
-                "ZooKeeperRetriesControl: {}: {}: retry_count={}/{} timeout={}ms error={} message={}",
+                "KeeperRetriesControl: {}: {}: retry_count={}/{} timeout={}ms error={} message={}",
                 name,
                 header,
                 current_iteration,
@@ -293,7 +295,7 @@ private:
 
     std::string name;
     Poco::Logger * logger = nullptr;
-    ZooKeeperRetriesInfo retries_info;
+    KeeperRetriesInfo retries_info;
     UInt64 total_failures = 0;
     UserError user_error;
     KeeperError keeper_error;
@@ -306,5 +308,7 @@ private:
     UInt64 current_iteration = 0;
     UInt64 current_backoff_ms = 0;
 };
+
+using KeeperRetriesControlPtr = std::shared_ptr<KeeperRetriesControl>;
 
 }

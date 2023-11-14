@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/KeeperRetriesController.h>
 
 namespace DB
 {
@@ -42,19 +42,19 @@ public:
         }
     };
 
-    /// For simplicity a separate ZooKeeperRetriesInfo and a faulty [Zoo]Keeper client
+    /// For simplicity a separate KeeperRetriesInfo and a faulty Keeper client
     /// are stored in one place.
     /// This helps to avoid writing too much boilerplate each time we need to
     /// execute some operation (a set of requests) over [Zoo]Keeper with retries.
-    /// Why ZooKeeperRetriesInfo is separate for each operation?
+    /// Why KeeperRetriesInfo is separate for each operation?
     /// The reason is that backup usually takes long time to finish and it makes no sense
     /// to limit the overall number of retries (for example 1000) for the whole backup
     /// and have a continuously growing backoff.
     class RetriesControlHolder
     {
     public:
-        ZooKeeperRetriesInfo info;
-        ZooKeeperRetriesControl retries_ctl;
+        KeeperRetriesInfo info;
+        KeeperRetriesControl retries_ctl;
         FaultyKeeper faulty_zookeeper;
 
     private:
@@ -83,7 +83,7 @@ private:
     /// it could lead just to a failed backup which could possibly be successful
     /// if there were a little bit more retries.
     RenewerCallback callback;
-    ZooKeeperRetriesInfo global_zookeeper_retries_info;
+    KeeperRetriesInfo global_zookeeper_retries_info;
 
     /// This is needed only to protect zookeeper object
     mutable std::mutex zookeeper_mutex;

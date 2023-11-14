@@ -105,7 +105,7 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
     , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
     , log(&Poco::Logger::get("BackupEntriesCollector"))
-    , global_zookeeper_retries_info(ZooKeeperRetriesInfo::fromBackupRestoreSettings(context->getSettingsRef()))
+    , global_zookeeper_retries_info(KeeperRetriesInfo::fromBackupRestoreSettings(context->getSettingsRef()))
     , threadpool(threadpool_)
 {
 }
@@ -569,7 +569,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     try
     {
         /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
-        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, global_zookeeper_retries_info, context->getProcessListElementSafe());
+        KeeperRetriesControl retries_ctl("getTablesForBackup", log, global_zookeeper_retries_info, context->getProcessListElementSafe());
         retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)

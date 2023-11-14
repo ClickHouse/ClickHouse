@@ -1,14 +1,14 @@
 #pragma once
 
+#include <filesystem>
+#include <queue>
 #include <Backups/BackupSettings.h>
-#include <Databases/DDLRenamingVisitor.h>
 #include <Core/QualifiedTableName.h>
+#include <Databases/DDLRenamingVisitor.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
-#include <filesystem>
-#include <queue>
+#include <Common/ZooKeeper/KeeperRetriesController.h>
 
 
 namespace DB
@@ -44,7 +44,7 @@ public:
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
-    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
+    const KeeperRetriesInfo & getKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
 
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
@@ -125,7 +125,7 @@ private:
     Poco::Logger * log;
     /// Unfortunately we can use ZooKeeper for collecting information for backup
     /// and we need to retry...
-    ZooKeeperRetriesInfo global_zookeeper_retries_info;
+    KeeperRetriesInfo global_zookeeper_retries_info;
 
     Strings all_hosts;
     DDLRenamingMap renaming_map;

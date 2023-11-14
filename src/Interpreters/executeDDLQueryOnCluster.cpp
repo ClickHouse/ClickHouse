@@ -425,7 +425,7 @@ Chunk DDLQueryStatusSource::generate()
         Strings tmp_active_hosts;
 
         const auto & config_ref = Context::getGlobalContextInstance()->getConfigRef();
-        auto retries_ctl = ZooKeeperRetriesControl(
+        auto retries_ctl = KeeperRetriesControl(
             "executeDDLQueryOnCluster",
             &Poco::Logger::get("DDLQueryStatusSource"),
             {config_ref.getUInt64("distributed_ddl_keeper_max_retries", 5),

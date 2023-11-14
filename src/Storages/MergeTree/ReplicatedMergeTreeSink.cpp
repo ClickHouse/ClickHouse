@@ -155,7 +155,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl() = defa
 
 template <bool async_insert>
 size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(
-    const ZooKeeperWithFaultInjectionPtr & zookeeper, ZooKeeperRetriesControl & zk_retries_ctl)
+    const ZooKeeperWithFaultInjectionPtr & zookeeper, KeeperRetriesControl & zk_retries_ctl)
 {
     if (!isQuorumEnabled())
         return 0;
@@ -256,8 +256,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     const auto & settings = context->getSettingsRef();
     // TODO: We should be using WithRetries
-    ZooKeeperRetriesControl retries_ctl(
-        "ReplicatedMergeTreeSink::consume", log, ZooKeeperRetriesInfo::fromInsertSettings(settings), context->getProcessListElementSafe());
+    KeeperRetriesControl retries_ctl(
+        "ReplicatedMergeTreeSink::consume", log, KeeperRetriesInfo::fromInsertSettings(settings), context->getProcessListElementSafe());
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
         settings.insert_keeper_fault_injection_probability,
         settings.insert_keeper_fault_injection_seed,
@@ -410,7 +410,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
 template <>
 void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(
-    const ZooKeeperWithFaultInjectionPtr & zookeeper, ZooKeeperRetriesControl & zk_retries_ctl)
+    const ZooKeeperWithFaultInjectionPtr & zookeeper, KeeperRetriesControl & zk_retries_ctl)
 {
     if (!delayed_chunk)
         return;
@@ -450,7 +450,7 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(
 
 template <>
 void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(
-    const ZooKeeperWithFaultInjectionPtr & zookeeper, ZooKeeperRetriesControl & zk_retries_ctl)
+    const ZooKeeperWithFaultInjectionPtr & zookeeper, KeeperRetriesControl & zk_retries_ctl)
 {
     if (!delayed_chunk)
         return;
@@ -502,10 +502,10 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         context->getZooKeeper(),
         "writeExistingPart",
         log);
-    ZooKeeperRetriesControl retries_ctl(
+    KeeperRetriesControl retries_ctl(
         "writeExistingPart",
         log,
-        from_backup ? ZooKeeperRetriesInfo::fromBackupRestoreSettings(settings) : ZooKeeperRetriesInfo::fromInsertSettings(settings),
+        from_backup ? KeeperRetriesInfo::fromBackupRestoreSettings(settings) : KeeperRetriesInfo::fromInsertSettings(settings),
         context->getProcessListElementSafe());
 
     size_t replicas_num = checkQuorumPrecondition(zookeeper, retries_ctl);
@@ -556,7 +556,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
 template <bool async_insert>
 std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
-    ZooKeeperRetriesControl & retries_ctl,
+    KeeperRetriesControl & retries_ctl,
     MergeTreeData::MutableDataPartPtr & part,
     const BlockIDsType & block_id,
     size_t replicas_num,
@@ -926,7 +926,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         {
             LOG_TRACE(
                 log, "Insert of part {} failed when committing to keeper (Reason: {}). Attempting to recover it", part->name, multi_code);
-            ZooKeeperRetriesControl new_retry_controller = retries_ctl;
+            KeeperRetriesControl new_retry_controller = retries_ctl;
 
             /// We are going to try to verify if the transaction was written into keeper
             /// If we fail to do so (keeper unavailable) then we don't know if the changes were applied or not so
@@ -1093,7 +1093,8 @@ template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 {
     const auto & settings = context->getSettingsRef();
-    ZooKeeperRetriesControl retries_ctl("ReplicatedMergeTreeSink::onFinish",log, ZooKeeperRetriesInfo::fromInsertSettings(settings), context->getProcessListElementSafe());
+    KeeperRetriesControl retries_ctl(
+        "ReplicatedMergeTreeSink::onFinish", log, KeeperRetriesInfo::fromInsertSettings(settings), context->getProcessListElementSafe());
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
         settings.insert_keeper_fault_injection_probability,
         settings.insert_keeper_fault_injection_seed,
