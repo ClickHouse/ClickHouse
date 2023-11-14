@@ -12,6 +12,21 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
+}
+
+static IMergingAlgorithm::Status emitChunk(detail::SharedChunkPtr & chunk, bool finished = false)
+{
+    chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
+    return IMergingAlgorithm::Status(std::move(*chunk), finished);
+}
+
+ChunkSelectFinalIndices::ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_)
+    : column_holder(std::move(select_final_indices_))
+    , select_final_indices(typeid_cast<const ColumnUInt64 *>(column_holder.get()))
+{
+    if (!select_final_indices)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column passed to 'ChunkSelectFinalIndices' must be ColumnUInt64");
 }
 
 ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
@@ -98,8 +113,6 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             /// If there are enough rows and the last one is calculated completely
             if (merged_data.hasEnoughRows())
                 return Status(merged_data.pull());
-
-            detail::SharedChunkPtr chunk_to_emit;
 
             /// Write the data for the previous primary key.
             if (!selected_row.empty())
@@ -227,13 +240,6 @@ void ReplacingSortedAlgorithm::saveChunkForSkippingFinalFromSource(size_t curren
                 to_be_emitted.push(std::move(chunk));
         }
     }
-}
-
-
-IMergingAlgorithm::Status ReplacingSortedAlgorithm::emitChunk(detail::SharedChunkPtr & chunk, bool finished)
-{
-    chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-    return Status(std::move(*chunk), finished);
 }
 
 }

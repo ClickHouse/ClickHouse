@@ -12,14 +12,13 @@ class Logger;
 namespace DB
 {
 
+/** Use in skipping final to keep list of indices of selected row after merging final
+  */
 struct ChunkSelectFinalIndices : public ChunkInfo
 {
-    ColumnPtr column_holder;
-    const ColumnUInt64 * select_final_indices;
-    explicit ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_) : column_holder(std::move(select_final_indices_))
-    {
-        select_final_indices = typeid_cast<const ColumnUInt64 *>(column_holder.get());
-    }
+    const ColumnPtr column_holder;
+    const ColumnUInt64 * select_final_indices = nullptr;
+    explicit ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_);
 };
 
 /** Merges several sorted inputs into one.
@@ -53,7 +52,7 @@ private:
     bool cleanup = false;
     size_t * cleanedup_rows_count = nullptr;
 
-    bool use_skipping_final; /// Either we use skipping final algorithm
+    bool use_skipping_final = false; /// Either we use skipping final algorithm
     std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;
@@ -68,7 +67,6 @@ private:
 
     void saveChunkForSkippingFinalFromSource(size_t current_source_index);
     void saveChunkForSkippingFinalFromSelectedRow();
-    static Status emitChunk(detail::SharedChunkPtr & chunk, bool finished = false);
 };
 
 }

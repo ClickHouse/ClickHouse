@@ -301,7 +301,7 @@ private:
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
-    bool use_skipping_final;
+    bool use_skipping_final = false;
 };
 
 struct MergeTreeDataSelectAnalysisResult
