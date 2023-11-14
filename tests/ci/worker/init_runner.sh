@@ -314,7 +314,7 @@ while true; do
           ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/actions-hooks/pre-run.sh \
           ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/tmp/actions-hooks/post-run.sh \
           ./run.sh &
-        sleep 15
+        sleep 10
     else
         echo "Runner is working with pid $runner_pid, checking the metadata in background"
         check_proceed_spot_termination
@@ -330,8 +330,8 @@ while true; do
                 terminate_and_exit
             fi
         fi
-        sleep 5
     fi
+    sleep 5
 done
 
 # vim:ts=4:sw=4
