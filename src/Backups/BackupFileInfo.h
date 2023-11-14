@@ -42,6 +42,10 @@ struct BackupFileInfo
     /// Set if this file is just a reference to another file
     String reference_target;
 
+    /// List of files that are referencing this file
+    /// Used for plain backup which needs to resolve all references
+    Strings reference_sources;
+
     struct LessByFileName
     {
         bool operator()(const BackupFileInfo & lhs, const BackupFileInfo & rhs) const { return (lhs.file_name < rhs.file_name); }

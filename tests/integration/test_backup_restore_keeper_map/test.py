@@ -65,22 +65,24 @@ def new_backup_name(base_name):
     return f"Disk('backups', '{base_name}{backup_id_counter}')"
 
 
-def test_on_cluster():
-    node1.query_with_retry("CREATE DATABASE keeper_backup ON CLUSTER cluster")
+@pytest.mark.parametrize("deduplicate_files", [0, 1])
+def test_on_cluster(deduplicate_files):
+    database_name = f"keeper_backup{deduplicate_files}"
+    node1.query_with_retry(f"CREATE DATABASE {database_name} ON CLUSTER cluster")
     node1.query_with_retry(
-        "CREATE TABLE keeper_backup.keeper1 ON CLUSTER cluster (key UInt64, value String) Engine=KeeperMap('/test_on_cluster1') PRIMARY KEY key"
+        f"CREATE TABLE {database_name}.keeper1 ON CLUSTER cluster (key UInt64, value String) Engine=KeeperMap('/{database_name}/test_on_cluster1') PRIMARY KEY key"
     )
     node1.query_with_retry(
-        "CREATE TABLE keeper_backup.keeper2 ON CLUSTER cluster (key UInt64, value String) Engine=KeeperMap('/test_on_cluster1') PRIMARY KEY key"
+        f"CREATE TABLE {database_name}.keeper2 ON CLUSTER cluster (key UInt64, value String) Engine=KeeperMap('/{database_name}/test_on_cluster1') PRIMARY KEY key"
     )
     node1.query_with_retry(
-        "CREATE TABLE keeper_backup.keeper3 ON CLUSTER cluster (key UInt64, value String) Engine=KeeperMap('/test_on_cluster2') PRIMARY KEY key"
+        f"CREATE TABLE {database_name}.keeper3 ON CLUSTER cluster (key UInt64, value String) Engine=KeeperMap('/{database_name}/test_on_cluster2') PRIMARY KEY key"
     )
     node1.query_with_retry(
-        "INSERT INTO keeper_backup.keeper2 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 5"
+        f"INSERT INTO {database_name}.keeper2 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 5"
     )
     node1.query_with_retry(
-        "INSERT INTO keeper_backup.keeper3 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 5"
+        f"INSERT INTO {database_name}.keeper3 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 5"
     )
 
     expected_result = "".join(f"{i}\ttest{i}\n" for i in range(5))
@@ -89,7 +91,7 @@ def test_on_cluster():
         for node in [node1, node2, node3]:
             for i in range(1, 4):
                 result = node.query_with_retry(
-                    f"SELECT key, value FROM keeper_backup.keeper{i} ORDER BY key FORMAT TSV"
+                    f"SELECT key, value FROM {database_name}.keeper{i} ORDER BY key FORMAT TSV"
                 )
                 assert result == expected_result
 
@@ -97,10 +99,10 @@ def test_on_cluster():
 
     backup_name = new_backup_name("test_on_cluster")
     node1.query(
-        f"BACKUP DATABASE keeper_backup ON CLUSTER cluster TO {backup_name} SETTINGS async = false;"
+        f"BACKUP DATABASE {database_name} ON CLUSTER cluster TO {backup_name} SETTINGS async = false, deduplicate_files = {deduplicate_files};"
     )
 
-    node1.query("DROP DATABASE keeper_backup ON CLUSTER cluster SYNC;")
+    node1.query(f"DROP DATABASE {database_name} ON CLUSTER cluster SYNC;")
 
     def apply_for_all_nodes(f):
         for node in [node1, node2, node3]:
@@ -121,14 +123,14 @@ def test_on_cluster():
     apply_for_all_nodes(lambda node: node.start_clickhouse())
 
     node1.query(
-        f"RESTORE DATABASE keeper_backup ON CLUSTER cluster FROM {backup_name} SETTINGS async = false;"
+        f"RESTORE DATABASE {database_name} ON CLUSTER cluster FROM {backup_name} SETTINGS async = false;"
     )
 
     verify_data()
 
-    node1.query("DROP TABLE keeper_backup.keeper3 ON CLUSTER cluster SYNC;")
+    node1.query(f"DROP TABLE {database_name}.keeper3 ON CLUSTER cluster SYNC;")
     node1.query(
-        f"RESTORE TABLE keeper_backup.keeper3 ON CLUSTER cluster FROM {backup_name} SETTINGS async = false;"
+        f"RESTORE TABLE {database_name}.keeper3 ON CLUSTER cluster FROM {backup_name} SETTINGS async = false;"
     )
 
     verify_data()

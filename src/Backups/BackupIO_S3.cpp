@@ -249,6 +249,24 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
     BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
+void BackupWriterS3::copyFile(const String & destination, const String & source, size_t size)
+{
+    LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
+    copyS3File(
+        client,
+        client,
+        /* src_bucket */ s3_uri.bucket,
+        /* src_key= */ fs::path(s3_uri.key) / source,
+        0,
+        size,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / destination,
+        s3_settings.request_settings,
+        read_settings,
+        {},
+        threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+}
+
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
     copyDataToS3File(create_read_buffer, start_pos, length, client, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup, s3_settings.request_settings, {},

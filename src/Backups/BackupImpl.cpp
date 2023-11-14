@@ -362,10 +362,10 @@ void BackupImpl::writeBackupMetadata()
         *out << "<file>";
 
         *out << "<name>" << xml << info.file_name << "</name>";
+        *out << "<size>" << info.size << "</size>";
 
         if (info.size)
         {
-            *out << "<size>" << info.size << "</size>";
             *out << "<checksum>" << hexChecksum(info.checksum) << "</checksum>";
             if (info.base_size)
             {
@@ -381,10 +381,6 @@ void BackupImpl::writeBackupMetadata()
             if (info.encrypted_by_disk)
                 *out << "<encrypted_by_disk>true</encrypted_by_disk>";
         }
-        else if (!info.reference_target.empty())
-            *out << "<reference_target>" << xml << info.reference_target << "</reference_target>";
-        else
-            *out << "<size>" << info.size << "</size>";
 
         total_size += info.size;
         bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
@@ -465,13 +461,6 @@ void BackupImpl::readBackupMetadata()
             BackupFileInfo info;
             info.file_name = getString(file_config, "name");
 
-            info.reference_target = getString(file_config, "reference_target", "");
-            if (!info.reference_target.empty())
-            {
-                reference_files.emplace_back(std::move(info.file_name), std::move(info.reference_target));
-                continue;
-            }
-
             info.size = getUInt64(file_config, "size");
             if (info.size)
             {
@@ -519,14 +508,6 @@ void BackupImpl::readBackupMetadata()
                 size_of_entries += info.size - info.base_size;
             }
         }
-    }
-
-    for (auto & [source_file, target_file] : reference_files)
-    {
-        auto it = file_names.find(target_file);
-        if (it == file_names.end())
-            throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} referenced by {} not found", target_file, source_file);
-        file_names.emplace(std::move(source_file), it->second);
     }
 
     uncompressed_size = size_of_entries + str.size();
@@ -952,6 +933,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
+    }
+
+    if (!deduplicate_files)
+    {
+        for (const auto & reference : info.reference_sources)
+            writer->copyFile(reference, info.data_file_name, info.size - info.base_size);
     }
 
     {
