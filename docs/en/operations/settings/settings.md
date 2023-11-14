@@ -1657,16 +1657,17 @@ Possible values:
 
 Default value: `1`.
 
-## query_cache_store_results_of_queries_with_nondeterministic_functions {#query-cache-store-results-of-queries-with-nondeterministic-functions}
+## query_cache_nondeterministic_function_handling {#query-cache-nondeterministic-function-handling}
 
-If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
 
-- 0 - Disabled
-- 1 - Enabled
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
 
-Default value: `0`.
+Default value: `throw`.
 
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
@@ -3310,22 +3311,11 @@ Possible values:
 
 Default value: `0`.
 
-## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
-
-Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Possible values:
-
-- 0 - Show names of native ClickHouse data types.
-- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
-
-Default value: `0`.
-
 ## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
 
 When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+Has an effect only when the connection is made through the MySQL wire protocol.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3336,7 +3326,7 @@ Default value: `0`.
 
 When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+Has an effect only when the connection is made through the MySQL wire protocol.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3951,6 +3941,17 @@ If it is set to a non-empty string, check that this projection is used in the qu
 Possible values:
 
 - string: name of projection that used in a query
+
+Default value: `''`.
+
+## preferred_optimize_projection_name {#preferred_optimize_projection_name}
+
+If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
+
+
+Possible values:
+
+- string: name of preferred projection
 
 Default value: `''`.
 
@@ -4812,3 +4813,10 @@ LIFETIME(MIN 0 MAX 3600)
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```
+
+## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
+
+When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
+
+Default value: `false`.

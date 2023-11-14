@@ -131,7 +131,7 @@ void LocalConnection::sendQuery(
 
     try
     {
-        state->io = executeQuery(state->query, query_context, false, state->stage).second;
+        state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
         {

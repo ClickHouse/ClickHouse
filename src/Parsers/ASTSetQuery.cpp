@@ -9,7 +9,7 @@
 namespace DB
 {
 
-void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state) const
+void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
     for (const auto & change : changes)
     {

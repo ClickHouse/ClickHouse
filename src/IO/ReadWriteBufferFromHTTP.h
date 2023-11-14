@@ -23,7 +23,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #include <filesystem>
 

@@ -46,6 +46,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 `sharding_key` - (optionally) sharding key
 
+Specifying the `sharding_key` is necessary for the following:
+
+- For `INSERTs` into a distributed table (as the table engine needs the `sharding_key` to determine how to split the data). However, if `insert_distributed_one_random_shard` setting is enabled, then `INSERTs` do not need the sharding key
+- For use with `optimize_skip_unused_shards` as the `sharding_key` is necessary to determine what shards should be queried
+
 #### policy_name
 
 `policy_name` - (optionally) policy name, it will be used to store temporary files for background send
