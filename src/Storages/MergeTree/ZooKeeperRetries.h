@@ -128,6 +128,7 @@ public:
         user_error.message = std::move(message);
         user_error.exception = exception;
         keeper_error = KeeperError{};
+        total_failures++;
     }
 
     template <typename... Args>
@@ -274,20 +275,7 @@ private:
     {
         if (!logger)
             return;
-        if (user_error.code == ErrorCodes::OK)
-        {
-            LOG_DEBUG(
-                logger,
-                "ZooKeeperRetriesControl: {}: {}: retry_count={}/{} timeout={}ms error={} message={}",
-                name,
-                header,
-                current_iteration,
-                retries_info.max_retries,
-                current_backoff_ms,
-                keeper_error.code,
-                keeper_error.message);
-        }
-        else
+        if (user_error.code != ErrorCodes::OK)
         {
             LOG_DEBUG(
                 logger,

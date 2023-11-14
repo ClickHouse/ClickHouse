@@ -637,9 +637,6 @@ private:
 
                 ++calls_without_fault_injection;
 
-                if (unlikely(logger))
-                    LOG_TRACE(logger, "ZooKeeperWithFaultInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
-
                 return res;
             }
             else
@@ -657,9 +654,6 @@ private:
                 }
 
                 ++calls_without_fault_injection;
-
-                if (unlikely(logger))
-                    LOG_TRACE(logger, "ZooKeeperWithFaultInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
             }
         }
         catch (const zkutil::KeeperException & e)
