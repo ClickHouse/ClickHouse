@@ -38,6 +38,29 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     , metadata_helper(metadata_helper_)
 {}
 
+
+DiskObjectStorageTransaction::DiskObjectStorageTransaction(
+    IObjectStorage & object_storage_,
+    IMetadataStorage & metadata_storage_,
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
+    MetadataTransactionPtr metadata_transaction_)
+    : object_storage(object_storage_)
+    , metadata_storage(metadata_storage_)
+    , metadata_transaction(metadata_transaction_)
+    , metadata_helper(metadata_helper_)
+{}
+
+MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
+    IObjectStorage & object_storage_,
+    IMetadataStorage & metadata_storage_,
+    IObjectStorage& destination_object_storage_,
+    IMetadataStorage& destination_metadata_storage_,
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_)
+    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, metadata_helper_, destination_metadata_storage_.createTransaction())
+    , destination_object_storage(destination_object_storage_)
+    , destination_metadata_storage(destination_metadata_storage_)
+{}
+
 namespace
 {
 /// Operation which affects only metadata. Simplest way to
@@ -485,10 +508,12 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     std::string to_path;
 
     StoredObjects created_objects;
+    IObjectStorage& destination_object_storage;
 
     CopyFileObjectStorageOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
+        IObjectStorage & destination_object_storage_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const std::string & from_path_,
@@ -498,6 +523,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         , write_settings(write_settings_)
         , from_path(from_path_)
         , to_path(to_path_)
+        , destination_object_storage(destination_object_storage_)
     {}
 
     std::string getInfoForLog() const override
@@ -515,7 +541,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
             auto object_key = object_storage.generateObjectKeyForPath(to_path);
             auto object_to = StoredObject(object_key.serialize());
 
-            object_storage.copyObject(object_from, object_to, read_settings, write_settings);
+            object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
 
             tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
 
@@ -526,7 +552,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     void undo() override
     {
         for (const auto & object : created_objects)
-            object_storage.removeObject(object);
+            destination_object_storage.removeObject(object);
     }
 
     void finalize() override
@@ -859,7 +885,13 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
 void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, read_settings, write_settings, from_file_path, to_file_path));
+        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, object_storage, read_settings, write_settings, from_file_path, to_file_path));
+}
+
+void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
+{
+    operations_to_execute.emplace_back(
+        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 
 void DiskObjectStorageTransaction::commit()
