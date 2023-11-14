@@ -92,6 +92,8 @@ def test_different_keys():
     create_table()
 
     insert_data()
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+
     assert "BAD_DECRYPT" in node1.query_and_get_error("SELECT * FROM tbl")
     assert "BAD_DECRYPT" in node2.query_and_get_error("SELECT * FROM tbl")
 
