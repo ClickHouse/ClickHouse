@@ -302,7 +302,8 @@ while true; do
         check_proceed_spot_termination
 
         echo "Going to configure runner"
-        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" --ephemeral \
+        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" \
+          --ephemeral --disableupdate --unattended \
           --runnergroup Default --labels "$LABELS" --work _work --name "$INSTANCE_ID"
 
         echo "Another one check to avoid race between runner and infrastructure"
