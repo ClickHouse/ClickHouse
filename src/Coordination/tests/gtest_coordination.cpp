@@ -1104,20 +1104,15 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 }
 
 /// Truncating only some entries from the end
-TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
+/// For compressed logs we have no reliable way of knowing how many log entries were lost 
+/// after we truncate some bytes from the end
+TEST_F(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
 {
-    auto params = GetParam();
-
-    /// For compressed logs we have no reliable way of knowing how many log entries were lost 
-    /// after we truncate some bytes from the end
-    if (!params.extension.empty())
-        return;
-
     ChangelogDirTest test("./logs");
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20},
+        DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
         DB::FlushSettings(),
         keeper_context);
     changelog.init(1, 0);
@@ -1131,23 +1126,23 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
     changelog.end_of_append_batch(0, 0);
 
     waitDurableLogs(changelog);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin"));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_1_20.bin", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(plain_buf.size() - 30);
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20},
+        DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
         DB::FlushSettings(),
         keeper_context);
     changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), 19);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
-    EXPECT_TRUE(fs::exists("./logs/changelog_20_39.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
+    assertBrokenLogRemoved("./logs", "changelog_21_40.bin");
+    EXPECT_TRUE(fs::exists("./logs/changelog_20_39.bin"));
     auto entry = getLogEntry("hello_world", 7777);
     changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
