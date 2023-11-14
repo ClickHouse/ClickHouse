@@ -29,15 +29,15 @@ public:
         UInt64 keeper_fault_injection_seed{42};
         UInt64 keeper_value_max_size{1048576};
 
-        static KeeperSettings fromBackupRestoreSettings(const Settings & settings)
+        static KeeperSettings fromSettings(const Settings & settings)
         {
             return KeeperSettings{
-                .keeper_max_retries = settings.backup_restore_keeper_max_retries,
-                .keeper_retry_initial_backoff_ms = settings.backup_restore_keeper_retry_initial_backoff_ms,
-                .keeper_retry_max_backoff_ms = settings.backup_restore_keeper_retry_max_backoff_ms,
+                .keeper_max_retries = settings.keeper_max_retries,
+                .keeper_retry_initial_backoff_ms = settings.keeper_retry_initial_backoff_ms,
+                .keeper_retry_max_backoff_ms = settings.keeper_retry_max_backoff_ms,
                 .batch_size_for_keeper_multiread = settings.backup_restore_batch_size_for_keeper_multiread,
-                .keeper_fault_injection_probability = settings.backup_restore_keeper_fault_injection_probability,
-                .keeper_fault_injection_seed = settings.backup_restore_keeper_fault_injection_seed,
+                .keeper_fault_injection_probability = settings.keeper_fault_injection_probability,
+                .keeper_fault_injection_seed = settings.keeper_fault_injection_seed,
                 .keeper_value_max_size = settings.backup_restore_keeper_value_max_size};
         }
     };

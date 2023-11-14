@@ -2026,9 +2026,9 @@ SELECT * FROM test_table
 └───┘
 ```
 
-## insert_keeper_max_retries
+## keeper_max_retries
 
-The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
+The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during qyerues. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
 
 Possible values:
 
@@ -2037,19 +2037,19 @@ Possible values:
 
 Default value: 0
 
-Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
-The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
+Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `keeper_retry_initial_backoff_ms`, `keeper_retry_max_backoff_ms`.
+The first retry is done after `keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
 ```
-timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
+timeout = min(keeper_retry_max_backoff_ms, latest_timeout * 2)
 ```
 
-For example, if `insert_keeper_retry_initial_backoff_ms=100`, `insert_keeper_retry_max_backoff_ms=10000` and `insert_keeper_max_retries=8` then timeouts will be `100, 200, 400, 800, 1600, 3200, 6400, 10000`.
+For example, if `keeper_retry_initial_backoff_ms=100`, `keeper_retry_max_backoff_ms=10000` and `keeper_max_retries=8` then timeouts will be `100, 200, 400, 800, 1600, 3200, 6400, 10000`.
 
 Apart from fault tolerance, the retries aim to provide a better user experience - they allow to avoid returning an error during INSERT execution if Keeper is restarted, for example, due to an upgrade.
 
-## insert_keeper_retry_initial_backoff_ms {#insert_keeper_retry_initial_backoff_ms}
+## keeper_retry_initial_backoff_ms {#keeper_retry_initial_backoff_ms}
 
-Initial timeout(in milliseconds) to retry a failed Keeper request during INSERT query execution
+Initial timeout(in milliseconds) to retry a failed Keeper request during an operation
 
 Possible values:
 
@@ -2058,9 +2058,9 @@ Possible values:
 
 Default value: 100
 
-## insert_keeper_retry_max_backoff_ms {#insert_keeper_retry_max_backoff_ms}
+## keeper_retry_max_backoff_ms {#keeper_retry_max_backoff_ms}
 
-Maximum timeout (in milliseconds) to retry a failed Keeper request during INSERT query execution
+Maximum timeout (in milliseconds) to retry a failed Keeper request during an operation
 
 Possible values:
 

@@ -921,7 +921,9 @@ public:
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
     /// Same as getZooKeeper() but returns a keeper that can introduce faults before and after the operation
-    ZooKeeperWithFaultInjectionPtr getFaultyZooKeeper(const String & name, Poco::Logger * logger, bool) const;
+    /// *Disabled for the WIP until retries are added
+    ZooKeeperWithFaultInjectionPtr getKeeperWithFaultsDisabled(const String & name, Poco::Logger * logger) const;
+    ZooKeeperWithFaultInjectionPtr getKeeperWithFaultsEnabled(const String & name, Poco::Logger * logger) const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true

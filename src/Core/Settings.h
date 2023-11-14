@@ -30,7 +30,7 @@ class IColumn;
   * consider adding them to settings changes history in SettingsChangesHistory.h for special `compatibility` setting
   * to work correctly.
   */
-
+//
 #define COMMON_SETTINGS(M, ALIAS) \
     M(Dialect, dialect, Dialect::clickhouse, "Which dialect will be used to parse query", 0)\
     M(UInt64, min_compress_block_size, 65536, "The actual size of the block to compress, if the uncompressed data less than max_compress_block_size is no less than this value and no less than the volume of data for one mark.", 0) \
@@ -455,11 +455,6 @@ class IColumn;
     M(UInt64, max_temporary_data_on_disk_size_for_user, 0, "The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running user queries. Zero means unlimited.", 0)\
     M(UInt64, max_temporary_data_on_disk_size_for_query, 0, "The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries. Zero means unlimited.", 0)\
     \
-    M(UInt64, backup_restore_keeper_max_retries, 20, "Max retries for keeper operations during backup or restore", 0) \
-    M(UInt64, backup_restore_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for [Zoo]Keeper operations during backup or restore", 0) \
-    M(UInt64, backup_restore_keeper_retry_max_backoff_ms, 5000, "Max backoff timeout for [Zoo]Keeper operations during backup or restore", 0) \
-    M(Float,  backup_restore_keeper_fault_injection_probability, 0.0f, "Approximate probability of failure for a keeper request during backup or restore. Valid value is in interval [0.0f, 1.0f]", 0) \
-    M(UInt64, backup_restore_keeper_fault_injection_seed, 0, "0 - random seed, otherwise the setting value", 0) \
     M(UInt64, backup_restore_keeper_value_max_size, 1048576, "Maximum size of data of a [Zoo]Keeper's node during backup", 0) \
     M(UInt64, backup_restore_batch_size_for_keeper_multiread, 10000, "Maximum size of batch for multiread request to [Zoo]Keeper during backup or restore", 0) \
     M(UInt64, max_backup_bandwidth, 0, "The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.", 0) \
@@ -778,11 +773,11 @@ class IColumn;
     M(Bool, compatibility_ignore_auto_increment_in_create_table, false, "Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL", 0) \
     M(Bool, multiple_joins_try_to_keep_original_names, false, "Do not add aliases to top level expression list on multiple joins rewrite", 0) \
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
-    M(UInt64, insert_keeper_max_retries, 20, "Max retries for keeper operations during insert", 0) \
-    M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \
-    M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during insert", 0) \
-    M(Float, insert_keeper_fault_injection_probability, 0.0f, "Approximate probability of failure for a keeper request during insert. Valid value is in interval [0.0f, 1.0f]", 0) \
-    M(UInt64, insert_keeper_fault_injection_seed, 0, "0 - random seed, otherwise the setting value", 0) \
+    M(UInt64, keeper_max_retries, 20, "Max retries for keeper operations during a query", 0) \
+    M(UInt64, keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during a query", 0) \
+    M(UInt64, keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during a query", 0) \
+    M(Float, keeper_fault_injection_probability, 0.0f, "Approximate probability of failure for a keeper request during insert. Valid value is in interval [0.0f, 1.0f]", 0) \
+    M(UInt64, keeper_fault_injection_seed, 0, "0 - random seed, otherwise the setting value", 0) \
     M(Bool, force_aggregation_in_order, false, "Force use of aggregation in order on remote nodes during distributed aggregation. PLEASE, NEVER CHANGE THIS SETTING VALUE MANUALLY!", IMPORTANT) \
     M(UInt64, http_max_request_param_data_size, 10_MiB, "Limit on size of request data used as a query parameter in predefined HTTP requests.", 0) \
     M(Bool, function_json_value_return_type_allow_nullable, false, "Allow function JSON_VALUE to return nullable type.", 0) \
@@ -877,6 +872,17 @@ class IColumn;
     MAKE_OBSOLETE(M, UInt64, parallel_replicas_min_number_of_granules_to_enable, 0) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_projection, true) \
     MAKE_OBSOLETE(M, Bool, query_cache_store_results_of_queries_with_nondeterministic_functions, false) \
+    \
+    MAKE_OBSOLETE(M, UInt64, insert_keeper_max_retries, 20) \
+    MAKE_OBSOLETE(M, UInt64, insert_keeper_retry_initial_backoff_ms, 100) \
+    MAKE_OBSOLETE(M, UInt64, insert_keeper_retry_max_backoff_ms, 10000) \
+    MAKE_OBSOLETE(M, Float, insert_keeper_fault_injection_probability, 0.0f) \
+    MAKE_OBSOLETE(M, UInt64, insert_keeper_fault_injection_seed, 0) \
+    MAKE_OBSOLETE(M, UInt64, backup_restore_keeper_max_retries, 20) \
+    MAKE_OBSOLETE(M, UInt64, backup_restore_keeper_retry_initial_backoff_ms, 100) \
+    MAKE_OBSOLETE(M, UInt64, backup_restore_keeper_retry_max_backoff_ms, 5000) \
+    MAKE_OBSOLETE(M, Float, backup_restore_keeper_fault_injection_probability, 0.0f) \
+    MAKE_OBSOLETE(M, UInt64, backup_restore_keeper_fault_injection_seed, 0) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 

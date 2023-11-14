@@ -23,20 +23,12 @@ struct KeeperRetriesInfo
     {
     }
 
-    static KeeperRetriesInfo fromBackupRestoreSettings(const Settings & settings)
+    static KeeperRetriesInfo fromSettings(const Settings & settings)
     {
         return KeeperRetriesInfo{
-            settings.backup_restore_keeper_max_retries,
-            settings.backup_restore_keeper_retry_initial_backoff_ms,
-            settings.backup_restore_keeper_retry_max_backoff_ms};
-    }
-
-    static KeeperRetriesInfo fromInsertSettings(const Settings & settings)
-    {
-        return KeeperRetriesInfo{
-            settings.insert_keeper_max_retries,
-            settings.insert_keeper_retry_initial_backoff_ms,
-            settings.insert_keeper_retry_max_backoff_ms};
+            settings.keeper_max_retries,
+            settings.keeper_retry_initial_backoff_ms,
+            settings.keeper_retry_max_backoff_ms};
     }
 
     const UInt64 max_retries;
@@ -57,7 +49,7 @@ public:
         retryLoop(f, []() {});
     }
 
-    /// retryLoop() executes f() until it succeeds/max_retries is reached/non-retrialable error is encountered
+    /// retryLoop() executes f() until it succeeds/max_retries is reached/non-retryable error is encountered
     ///
     /// the callable f() can provide feedback in terms of errors in two ways:
     /// 1. throw KeeperException exception:
@@ -120,17 +112,14 @@ public:
     {
         if (logger)
             LOG_TRACE(logger, "KeeperRetriesControl: {}: setUserError: error={} message={}", name, code, message);
-
-        /// if current iteration is already failed, keep initial error
-        if (!iteration_succeeded)
-            return;
+        if (iteration_succeeded)
+            total_failures++;
 
         iteration_succeeded = false;
         user_error.code = code;
         user_error.message = std::move(message);
         user_error.exception = exception;
         keeper_error = KeeperError{};
-        total_failures++;
     }
 
     template <typename... Args>
@@ -154,17 +143,14 @@ public:
     {
         if (logger)
             LOG_TRACE(logger, "KeeperRetriesControl: {}: setKeeperError: error={} message={}", name, code, message);
-
-        /// if current iteration is already failed, keep initial error
-        if (!iteration_succeeded)
-            return;
+        if (iteration_succeeded)
+            total_failures++;
 
         iteration_succeeded = false;
         keeper_error.code = code;
         keeper_error.message = std::move(message);
         keeper_error.exception = exception;
         user_error = UserError{};
-        total_failures++;
     }
 
     template <typename... Args>
@@ -192,7 +178,7 @@ public:
 
     bool isRetry() const { return current_iteration > 1; }
 
-    Coordination::Error getLastKeeperErrorCode() const { return keeper_error.code; }
+    const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
 
     /// action will be called only once and only after latest failed retry
     void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
@@ -236,16 +222,16 @@ private:
 
         if (stop_retries)
         {
-            logLastError("stop retries on request");
             action_after_last_failed_retry();
+            logLastError("stop retries on request");
             throwIfError();
             return false;
         }
 
-        if (total_failures >= retries_info.max_retries)
+        if (total_failures > retries_info.max_retries)
         {
-            logLastError("retry limit is reached");
             action_after_last_failed_retry();
+            logLastError("retry limit is reached");
             throwIfError();
             return false;
         }
@@ -273,11 +259,24 @@ private:
             std::rethrow_exception(keeper_error.exception);
     }
 
-    void logLastError(std::string_view header)
+    void logLastError(const std::string_view & header)
     {
         if (!logger)
             return;
-        if (user_error.code != ErrorCodes::OK)
+        if (user_error.code == ErrorCodes::OK)
+        {
+            LOG_DEBUG(
+                logger,
+                "KeeperRetriesControl: {}: {}: retry_count={}/{} timeout={}ms error={} message={}",
+                name,
+                header,
+                current_iteration,
+                retries_info.max_retries,
+                current_backoff_ms,
+                keeper_error.code,
+                keeper_error.message);
+        }
+        else
         {
             LOG_DEBUG(
                 logger,

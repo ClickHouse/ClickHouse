@@ -44,10 +44,10 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
         zk_stopped_event.wait(90)
 
         node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=20"
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10) SETTINGS keeper_max_retries=20"
         )
         node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10) SETTINGS insert_keeper_max_retries=20"
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10) SETTINGS keeper_max_retries=20"
         )
 
         job.wait()
@@ -84,10 +84,10 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
         disconnect_event.wait(90)
 
         node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=20"
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10) SETTINGS keeper_max_retries=20"
         )
         node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10) SETTINGS insert_keeper_max_retries=20"
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10) SETTINGS keeper_max_retries=20"
         )
 
         job.wait()
@@ -111,7 +111,7 @@ def test_query_timeout_with_zk_down(started_cluster):
         start_time = time.time()
         with pytest.raises(QueryRuntimeException):
             node1.query(
-                "INSERT INTO zk_down SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_max_backoff_ms=1000, max_execution_time=1"
+                "INSERT INTO zk_down SELECT number, toString(number) FROM numbers(10) SETTINGS keeper_max_retries=10000, keeper_retry_max_backoff_ms=1000, max_execution_time=1"
             )
         finish_time = time.time()
         assert finish_time - start_time < 10

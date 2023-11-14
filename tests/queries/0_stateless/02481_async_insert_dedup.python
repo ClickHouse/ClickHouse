@@ -32,8 +32,7 @@ client.query(
     "insert into t_async_insert_dedup_no_part values (1), (2), (3), (4), (5)",
     settings={
         "async_insert": 1,
-        "wait_for_async_insert": 1,
-        "insert_keeper_fault_injection_probability": 0,
+        "wait_for_async_insert": 1
     },
 )
 result = client.query("select count(*) from t_async_insert_dedup_no_part")
@@ -93,7 +92,7 @@ def fetch_and_insert_data(q, client):
                 "async_insert_deduplicate": 1,
                 "wait_for_async_insert": 0,
                 "async_insert_busy_timeout_ms": 1500,
-                "insert_keeper_fault_injection_probability": 0,
+                "keeper_fault_injection_probability": 0,
                 "insert_deduplication_token": insert[1],
             },
         )

@@ -255,15 +255,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     const auto & settings = context->getSettingsRef();
-    // TODO: We should be using WithRetries
     KeeperRetriesControl retries_ctl(
-        "ReplicatedMergeTreeSink::consume", log, KeeperRetriesInfo::fromInsertSettings(settings), context->getProcessListElementSafe());
-    ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
-        settings.insert_keeper_fault_injection_probability,
-        settings.insert_keeper_fault_injection_seed,
-        context->getZooKeeper(),
-        "ReplicatedMergeTreeSink::consume",
-        log);
+        "ReplicatedMergeTreeSink::consume", log, KeeperRetriesInfo::fromSettings(settings), context->getProcessListElementSafe());
+    ZooKeeperWithFaultInjectionPtr zookeeper = context->getKeeperWithFaultsEnabled("ReplicatedMergeTreeSink::consume", log);
 
     /** If write is with quorum, then we check that the required number of replicas is now live,
       *  and also that for all previous parts for which quorum is required, this quorum is reached.
@@ -493,20 +487,12 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(
 }
 
 template <>
-bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool from_backup)
+bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
     auto const & settings = context->getSettingsRef();
-    auto zookeeper = ZooKeeperWithFaultInjection::createInstance(
-        from_backup ? settings.backup_restore_keeper_fault_injection_probability : settings.insert_keeper_fault_injection_probability,
-        from_backup ? settings.backup_restore_keeper_fault_injection_seed : settings.insert_keeper_fault_injection_seed,
-        context->getZooKeeper(),
-        "writeExistingPart",
-        log);
+    auto zookeeper = context->getKeeperWithFaultsEnabled("writeExistingPart", log);
     KeeperRetriesControl retries_ctl(
-        "writeExistingPart",
-        log,
-        from_backup ? KeeperRetriesInfo::fromBackupRestoreSettings(settings) : KeeperRetriesInfo::fromInsertSettings(settings),
-        context->getProcessListElementSafe());
+        "writeExistingPart", log, KeeperRetriesInfo::fromSettings(settings), context->getProcessListElementSafe());
 
     size_t replicas_num = checkQuorumPrecondition(zookeeper, retries_ctl);
 
@@ -583,7 +569,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     retries_ctl.retryLoop([&]()
     {
-        zookeeper->setKeeper(storage.getFaultyZooKeeper()->getKeeper());
+        zookeeper->setKeeper(context->getZooKeeper());
         if (storage.is_readonly)
         {
             /// stop retries if in shutdown
@@ -762,7 +748,22 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     else
                         quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
+                    KeeperRetriesControl new_retry_controller = retries_ctl;
+                    new_retry_controller.actionAfterLastFailedRetry([&]
+                    {
+                        LOG_WARNING(log, "Called actionAfterLastFailedRetry");
+                        /// We do not know whether or not data has been inserted
+                        /// - whether other replicas have time to download the part and mark the quorum as done.
+                        new_retry_controller.setUserError(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                                "Unknown status, client must retry. Reason: {}",
+                                new_retry_controller.getLastKeeperErrorMessage());
+                    });
+
+                    new_retry_controller.retryLoop([&]()
+                    {
+                        zookeeper->setKeeper(context->getZooKeeper());
+                        waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
+                    });
                 }
                 else
                 {
@@ -1061,6 +1062,14 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     if (isQuorumEnabled())
     {
+        retries_ctl.actionAfterLastFailedRetry([&]
+        {
+            LOG_WARNING(log, "Called actionAfterLastFailedRetry");
+            retries_ctl.setUserError(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                    "Unknown status, client must retry. Reason: {}",
+                    retries_ctl.getLastKeeperErrorMessage());
+        });
+
         retries_ctl.retryLoop([&]()
         {
             zookeeper->setKeeper(context->getZooKeeper());
@@ -1094,13 +1103,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 {
     const auto & settings = context->getSettingsRef();
     KeeperRetriesControl retries_ctl(
-        "ReplicatedMergeTreeSink::onFinish", log, KeeperRetriesInfo::fromInsertSettings(settings), context->getProcessListElementSafe());
-    ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
-        settings.insert_keeper_fault_injection_probability,
-        settings.insert_keeper_fault_injection_seed,
-        context->getZooKeeper(),
-        "ReplicatedMergeTreeSink::onFinish",
-        log);
+            "ReplicatedMergeTreeSink::onFinish", log, KeeperRetriesInfo::fromSettings(settings), context->getProcessListElementSafe());
+    ZooKeeperWithFaultInjectionPtr zookeeper = context->getKeeperWithFaultsEnabled("ReplicatedMergeTreeSink::onFinish", log);
     finishDelayedChunk(zookeeper, retries_ctl);
 }
 
@@ -1115,56 +1119,45 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     /// We are waiting for quorum to be satisfied.
     LOG_TRACE(log, "Waiting for quorum '{}' for part {}{}", quorum_path, part_name, quorumLogMessage(replicas_num));
 
-    try
+    fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0,
     {
-        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0,
+        if (!zookeeper->fault_policy)
         {
-            if (!zookeeper->fault_policy)
-            {
-                zookeeper->logger = log;
-                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
-            }
-            zookeeper->fault_policy->must_fail_before_op = true;
-        });
-
-        while (true)
-        {
-            zkutil::EventPtr event = std::make_shared<Poco::Event>();
-
-            std::string value;
-            /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
-            if (!zookeeper->tryGet(quorum_path, value, nullptr, event))
-                break;
-
-            LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_path);
-
-            ReplicatedMergeTreeQuorumEntry quorum_entry(value);
-
-            /// If the node has time to disappear, and then appear again for the next insert.
-            if (quorum_entry.part_name != part_name)
-                break;
-
-            if (!event->tryWait(quorum_timeout_ms))
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for quorum");
-
-            LOG_TRACE(log, "Quorum {} for part {} updated, will check quorum node still exists", quorum_path, part_name);
+            zookeeper->logger = log;
+            zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
         }
+        zookeeper->fault_policy->must_fail_before_op = true;
+    });
 
-        /// And what if it is possible that the current replica at this time has ceased to be active
-        /// and the quorum is marked as failed and deleted?
-        Coordination::Stat stat;
-        String value;
-        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat)
-            || stat.version != is_active_node_version)
-            throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "Replica become inactive while waiting for quorum");
-    }
-    catch (...)
+    while (true)
     {
-        /// We do not know whether or not data has been inserted
-        /// - whether other replicas have time to download the part and mark the quorum as done.
-        throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Unknown status, client must retry. Reason: {}",
-            getCurrentExceptionMessage(false));
+        zkutil::EventPtr event = std::make_shared<Poco::Event>();
+
+        std::string value;
+        /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
+        if (!zookeeper->tryGet(quorum_path, value, nullptr, event))
+            break;
+
+        LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_path);
+
+        ReplicatedMergeTreeQuorumEntry quorum_entry(value);
+
+        /// If the node has time to disappear, and then appear again for the next insert.
+        if (quorum_entry.part_name != part_name)
+            break;
+
+        if (!event->tryWait(quorum_timeout_ms))
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for quorum");
+
+        LOG_TRACE(log, "Quorum {} for part {} updated, will check quorum node still exists", quorum_path, part_name);
     }
+
+    /// And what if it is possible that the current replica at this time has ceased to be active
+    /// and the quorum is marked as failed and deleted?
+    Coordination::Stat stat;
+    String value;
+    if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat) || stat.version != is_active_node_version)
+        throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "Replica become inactive while waiting for quorum");
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
 }

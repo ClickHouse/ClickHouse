@@ -54,10 +54,7 @@ $CLICKHOUSE_CLIENT -nm -q """
     partition by key%100
     settings concurrent_part_removal_threshold=99, min_bytes_for_wide_part=0;
 
-    SET insert_keeper_max_retries=1000;
-    SET insert_keeper_retry_max_backoff_ms=10;
-
-    insert into rep_data_01810 select * from numbers(100);
+    insert into rep_data_01810 SETTINGS keeper_max_retries=1000, select * from numbers(100);
     drop table rep_data_01810 settings log_queries=1;
     system flush logs;
 

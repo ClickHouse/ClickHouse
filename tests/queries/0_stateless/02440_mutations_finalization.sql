@@ -1,7 +1,6 @@
 
 create table mut (n int) engine=ReplicatedMergeTree('/test/02440/{database}/mut', '1') order by tuple();
-set insert_keeper_fault_injection_probability=0;
-insert into mut values (1);
+insert into mut SETTINGS keeper_fault_injection_probability = 0 values (1);
 system stop merges mut;
 alter table mut update n = 2 where n = 1;
 -- it will create MUTATE_PART entry, but will not execute it

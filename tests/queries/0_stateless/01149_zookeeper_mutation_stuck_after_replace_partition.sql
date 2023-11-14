@@ -1,16 +1,14 @@
 -- Tags: zookeeper
 
-SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
-
 set send_logs_level='error';
 drop table if exists mt;
 drop table if exists rmt sync;
 
 create table mt (n UInt64, s String) engine = MergeTree partition by intDiv(n, 10) order by n;
-insert into mt values (3, '3'), (4, '4');
+insert into mt SETTINGS keeper_fault_injection_probability=0 values (3, '3'), (4, '4');
 
 create table rmt (n UInt64, s String) engine = ReplicatedMergeTree('/clickhouse/test_01149_{database}/rmt', 'r1') partition by intDiv(n, 10) order by n;
-insert into rmt values (1, '1'), (2, '2');
+insert into rmt SETTINGS keeper_fault_injection_probability=0 values (1, '1'), (2, '2');
 
 select * from rmt;
 select * from mt;
@@ -35,7 +33,7 @@ drop table rmt sync;
 
 set replication_alter_partitions_sync=0;
 create table rmt (n UInt64, s String) engine = ReplicatedMergeTree('/clickhouse/test_01149_{database}/rmt', 'r1') partition by intDiv(n, 10) order by n;
-insert into rmt values (1,'1'), (2, '2');
+insert into rmt SETTINGS keeper_fault_injection_probability=0 values (1,'1'), (2, '2');
 
 alter table rmt update s = 's'||toString(n) where 1;
 alter table rmt drop partition '0';

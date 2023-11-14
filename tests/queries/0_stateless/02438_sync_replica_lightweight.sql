@@ -7,10 +7,9 @@ create table rmt2 (n int) engine=ReplicatedMergeTree('/test/{database}/02438/', 
 system stop replicated sends rmt1;
 system stop merges rmt2;
 
-set insert_keeper_fault_injection_probability=0;
-
-insert into rmt1 values (1);
-insert into rmt1 values (2);
+-- Part ids are non-deterministic in case of insert retries
+insert into rmt1 SETTINGS keeper_fault_injection_probability = 0 values (1);
+insert into rmt1 SETTINGS keeper_fault_injection_probability = 0values (2);
 system sync replica rmt2 pull;  -- does not wait
 select type, new_part_name from system.replication_queue where database=currentDatabase() and table='rmt2' order by new_part_name;
 select 1, n, _part from rmt1 order by n;
@@ -30,7 +29,7 @@ select type, new_part_name from system.replication_queue where database=currentD
 system start merges rmt2;
 system sync replica rmt2;
 
-insert into rmt2 values (3);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (3);
 system sync replica rmt2 pull;
 optimize table rmt2 final;
 

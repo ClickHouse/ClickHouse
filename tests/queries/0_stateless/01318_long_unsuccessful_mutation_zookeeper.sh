@@ -18,9 +18,8 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # disable keeper fault injection during insert since test checks part names. Part names can differ in case of retries during insert
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT INTO mutation_table select number, toString(number) from numbers(100000) where number % 10 != 0"
-
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT INTO mutation_table VALUES(0, 'hello')"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 --query "INSERT INTO mutation_table select number, toString(number) from numbers(100000) where number % 10 != 0"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 --query "INSERT INTO mutation_table VALUES(0, 'hello')"
 
 $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM mutation_table"
 

@@ -11,7 +11,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/Macros.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Databases/DatabaseReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -190,7 +190,7 @@ public:
     Status prepare() override;
 
 private:
-    static Strings getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path);
+    static Strings getChildrenAllowNoNode(const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & node_path);
 
     static Block getSampleBlock(ContextPtr context_, bool hosts_to_wait);
 
@@ -424,18 +424,15 @@ Chunk DDLQueryStatusSource::generate()
         Strings tmp_hosts;
         Strings tmp_active_hosts;
 
-        const auto & config_ref = Context::getGlobalContextInstance()->getConfigRef();
         auto retries_ctl = KeeperRetriesControl(
             "executeDDLQueryOnCluster",
             &Poco::Logger::get("DDLQueryStatusSource"),
-            {config_ref.getUInt64("distributed_ddl_keeper_max_retries", 5),
-             config_ref.getUInt64("distributed_ddl_keeper_initial_backoff_ms", 100),
-             config_ref.getUInt64("distributed_ddl_keeper_max_backoff_ms", 5000)},
+            KeeperRetriesInfo::fromSettings(context->getSettingsRef()),
             context->getProcessListElementSafe());
 
         retries_ctl.retryLoop([&]()
         {
-            auto zookeeper = context->getZooKeeper();
+            auto zookeeper = context->getKeeperWithFaultsEnabled("executeDDLQueryOnCluster", &Poco::Logger::get("DDLQueryStatusSource"));
             node_exists = zookeeper->exists(node_path);
             tmp_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait);
             tmp_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
@@ -545,7 +542,7 @@ IProcessor::Status DDLQueryStatusSource::prepare()
         return ISource::prepare();
 }
 
-Strings DDLQueryStatusSource::getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
+Strings DDLQueryStatusSource::getChildrenAllowNoNode(const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & node_path)
 {
     Strings res;
     Coordination::Error code = zookeeper->tryGetChildren(node_path, res);

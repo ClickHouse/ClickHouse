@@ -1,6 +1,3 @@
-SET insert_keeper_max_retries=100;
-SET insert_keeper_retry_max_backoff_ms=10;
-
 SELECT 'simple partition key:';
 DROP TABLE IF EXISTS table1 SYNC;
 CREATE TABLE table1 (id Int64, v UInt64)

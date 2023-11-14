@@ -1,11 +1,11 @@
 <clickhouse>
     <profiles>
         <default>
-            <backup_restore_keeper_max_retries>1000</backup_restore_keeper_max_retries>
-            <backup_restore_keeper_retry_initial_backoff_ms>1</backup_restore_keeper_retry_initial_backoff_ms>
-            <backup_restore_keeper_retry_max_backoff_ms>1</backup_restore_keeper_retry_max_backoff_ms>
-            <backup_restore_keeper_fault_injection_seed>42</backup_restore_keeper_fault_injection_seed>
-            <backup_restore_keeper_fault_injection_probability>0.002</backup_restore_keeper_fault_injection_probability>
+            <keeper_max_retries>1000</keeper_max_retries>
+            <keeper_retry_initial_backoff_ms>1</keeper_retry_initial_backoff_ms>
+            <keeper_retry_max_backoff_ms>1</keeper_retry_max_backoff_ms>
+            <keeper_fault_injection_seed>42</keeper_fault_injection_seed>
+            <keeper_fault_injection_probability>0.002</keeper_fault_injection_probability>
         </default>
     </profiles>
 </clickhouse>

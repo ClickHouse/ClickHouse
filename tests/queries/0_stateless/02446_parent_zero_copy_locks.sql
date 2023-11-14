@@ -10,7 +10,7 @@ create table rmt2 (n int, m int, k int) engine=ReplicatedMergeTree('/test/02446/
 -- Probably that's why we have to replace repsistent lock with ephemeral sometimes.
 -- See also "Replacing persistent lock with ephemeral for path {}. It can happen only in case of local part loss"
 -- in StorageReplicatedMergeTree::createZeroCopyLockNode
-set insert_keeper_fault_injection_probability=0;
+set keeper_fault_injection_probability=0;
 
 insert into rmt1 values(1, 1, 1);
 insert into rmt2 values(2, 2, 2);

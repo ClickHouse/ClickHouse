@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -q "create table projection_broken_parts_2 (a int, b int, pro
     engine = ReplicatedMergeTree('/test/02254/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r2')
     order by a settings index_granularity = 1;"
 
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into projection_broken_parts_1 values (1, 1), (1, 2), (1, 3);"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 -q "insert into projection_broken_parts_1 values (1, 1), (1, 2), (1, 3);"
 $CLICKHOUSE_CLIENT -q "system sync replica projection_broken_parts_2;"
 $CLICKHOUSE_CLIENT -q "select 1, *, _part from projection_broken_parts_2 order by b;"
 $CLICKHOUSE_CLIENT -q "select 2, sum(b) from projection_broken_parts_2 group by a;"

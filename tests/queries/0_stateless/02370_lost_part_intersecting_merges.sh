@@ -13,10 +13,10 @@ $CLICKHOUSE_CLIENT -q "create table rmt1 (n int) engine=ReplicatedMergeTree('/te
 $CLICKHOUSE_CLIENT -q "create table rmt2 (n int) engine=ReplicatedMergeTree('/test/02369/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/{database}', '2') order by n"
 
 $CLICKHOUSE_CLIENT -q "system stop replicated sends rmt2"
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt2 values (0);"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 -q "insert into rmt2 values (0);"
 
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt1 values (1);"
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt1 values (2);"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 -q "insert into rmt1 values (1);"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 -q "insert into rmt1 values (2);"
 
 $CLICKHOUSE_CLIENT -q "system sync replica rmt1 pull;"
 
@@ -45,7 +45,7 @@ $CLICKHOUSE_CLIENT -q "select sleep(0.1) from numbers($(($RANDOM % 30))) setting
 $CLICKHOUSE_CLIENT -q "detach table rmt1;"
 $CLICKHOUSE_CLIENT -q "attach table rmt1;"
 
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt1 values (3);"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 -q "insert into rmt1 values (3);"
 $CLICKHOUSE_CLIENT -q "system sync replica rmt1 pull;"
 $CLICKHOUSE_CLIENT -q "optimize table rmt1 final;"
 

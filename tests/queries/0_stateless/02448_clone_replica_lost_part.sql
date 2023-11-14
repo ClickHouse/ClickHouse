@@ -1,7 +1,5 @@
 -- Tags: long
 
-SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
-
 drop table if exists rmt1;
 drop table if exists rmt2;
 create table rmt1 (n int) engine=ReplicatedMergeTree('/test/02448/{database}/rmt', '1') order by tuple()
@@ -17,15 +15,15 @@ create table rmt2 (n int) engine=ReplicatedMergeTree('/test/02448/{database}/rmt
 
 -- insert part only on one replica
 system stop replicated sends rmt1;
-insert into rmt1 values (1);
+insert into rmt1 SETTINGS keeper_fault_injection_probability=0 values (1);
 detach table rmt1;      -- make replica inactive
 system start replicated sends rmt1;
 
 -- trigger log rotation, rmt1 will be lost
-insert into rmt2 values (2);
-insert into rmt2 values (3);
-insert into rmt2 values (4);
-insert into rmt2 values (5);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (2);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (3);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (4);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (5);
 -- check that entry was not removed from the queue (part is not lost)
 set receive_timeout=5;
 system sync replica rmt2; -- {serverError TIMEOUT_EXCEEDED}
@@ -49,8 +47,8 @@ truncate table rmt2;
 
 -- insert parts only on one replica and merge them
 system stop replicated sends rmt2;
-insert into rmt2 values (1);
-insert into rmt2 values (2);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (1);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (2);
 system sync replica rmt2;
 optimize table rmt2 final;
 system sync replica rmt2;
@@ -61,9 +59,9 @@ system start replicated sends rmt2;
 
 
 -- trigger log rotation, rmt2 will be lost
-insert into rmt1 values (3);
-insert into rmt1 values (4);
-insert into rmt1 values (5);
+insert into rmt1 SETTINGS keeper_fault_injection_probability=0 values (3);
+insert into rmt1 SETTINGS keeper_fault_injection_probability=0 values (4);
+insert into rmt1 SETTINGS keeper_fault_injection_probability=0 values (5);
 set receive_timeout=5;
 -- check that entry was not removed from the queue (part is not lost)
 system sync replica rmt1; -- {serverError TIMEOUT_EXCEEDED}
@@ -87,7 +85,7 @@ select 6, arraySort(groupArray(n)) from rmt2;
 
 -- insert part only on one replica
 system stop replicated sends rmt1;
-insert into rmt1 values (123);
+insert into rmt1 SETTINGS keeper_fault_injection_probability=0 values (123);
 alter table rmt1 update n=10 where n=123 settings mutations_sync=1;
 -- give it a chance to remove source part
 select sleep(2) format Null; -- increases probability of reproducing the issue
@@ -95,10 +93,10 @@ detach table rmt1;      -- make replica inactive
 system start replicated sends rmt1;
 
 -- trigger log rotation, rmt1 will be lost
-insert into rmt2 values (20);
-insert into rmt2 values (30);
-insert into rmt2 values (40);
-insert into rmt2 values (50);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (20);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (30);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (40);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (50);
 -- check that entry was not removed from the queue (part is not lost)
 set receive_timeout=5;
 system sync replica rmt2; -- {serverError TIMEOUT_EXCEEDED}
@@ -122,10 +120,10 @@ select 9, arraySort(groupArray(n)) from rmt2;
 -- avoid arbitrary merges after inserting
 optimize table rmt2 final;
 -- insert parts (all_18_18_0, all_19_19_0) on both replicas (will be deduplicated, but it does not matter)
-insert into rmt1 values (100);
-insert into rmt2 values (100);
-insert into rmt1 values (200);
-insert into rmt2 values (200);
+insert into rmt1 SETTINGS keeper_fault_injection_probability=0 values (100);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (100);
+insert into rmt1 SETTINGS keeper_fault_injection_probability=0 values (200);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (200);
 
 -- otherwise we can get exception on drop part
 system sync replica rmt2;
@@ -134,11 +132,11 @@ system sync replica rmt1;
 detach table rmt1;
 
 -- create a gap in block numbers by dropping part
-insert into rmt2 values (300);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (300);
 alter table rmt2 drop part 'all_19_19_0';   -- remove 200
-insert into rmt2 values (400);
-insert into rmt2 values (500);
-insert into rmt2 values (600);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (400);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (500);
+insert into rmt2 SETTINGS keeper_fault_injection_probability=0 values (600);
 system sync replica rmt2;
 -- merge through gap
 optimize table rmt2;

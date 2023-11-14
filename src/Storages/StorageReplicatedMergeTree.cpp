@@ -6340,7 +6340,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     {
         const String old_name = loaded_parts[i]->name;
 
-        output.writeExistingPart(loaded_parts[i], /* from_backup */ false);
+        output.writeExistingPart(loaded_parts[i]);
 
         renamed_parts.old_and_new_names[i].old_name.clear();
 
@@ -10144,7 +10144,7 @@ void StorageReplicatedMergeTree::backupData(
     WithRetries local_with_retries(
         log,
         [&local_context]() { return local_context->getZooKeeper(); },
-        WithRetries::KeeperSettings::fromBackupRestoreSettings(local_context->getSettingsRef()),
+        WithRetries::KeeperSettings::fromSettings(local_context->getSettingsRef()),
         [](WithRetries::FaultyKeeper &) {});
     WithRetries & final_with_retries = backup_coordinator_remote ? backup_coordinator_remote->with_retries : local_with_retries;
 
@@ -10284,7 +10284,7 @@ void StorageReplicatedMergeTree::attachRestoredPartsFromBackup(MutableDataPartsV
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto sink = std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false,  getContext(), /*is_attach*/true);
     for (auto part : parts)
-        sink->writeExistingPart(part, /* from_backup */ true);
+        sink->writeExistingPart(part);
 }
 
 template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber<false, String>(

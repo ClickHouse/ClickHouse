@@ -202,7 +202,7 @@ bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const Strin
                 meta.replica_name,
                 "",
                 local_context,
-                local_context->getFaultyZooKeeper("Unfreezer", nullptr, false));
+                local_context->getKeeperWithFaultsDisabled("Unfreezer", nullptr));
         }
     }
 
