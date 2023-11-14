@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <Processors/ISource.h>
+#include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Pipe.h>
@@ -60,16 +61,16 @@ public:
 
     ReadFromInput(
         Block sample_block,
-        //StorageSnapshotPtr storage_snapshot_,
+        Pipe pipe_,
         StorageInput & storage_)
         : ISourceStep(DataStream{.header = std::move(sample_block)})
-        //, storage_snapshot(std::move(storage_snapshot_))
+        , pipe(std::move(pipe_))
         , storage(storage_)
     {
     }
 
 private:
-    //StorageSnapshotPtr storage_snapshot;
+    Pipe pipe;
     StorageInput & storage;
 };
 
@@ -85,21 +86,20 @@ void StorageInput::read(
 {
     storage_snapshot->check(column_names);
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Pipe input_source_pipe;
 
     auto query_context = context->getQueryContext();
     /// It is TCP request if we have callbacks for input().
-    if (!was_pipe_initialized && query_context->getInputBlocksReaderCallback())
+    if (query_context->getInputBlocksReaderCallback())
     {
         /// Send structure to the client.
         query_context->initializeInput(shared_from_this());
+        input_source_pipe = Pipe(std::make_shared<StorageInputSource>(query_context, sample_block));
     }
-
-    if (!was_pipe_initialized)
-        throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "Input stream is not initialized, input() must be used only in INSERT SELECT query");
 
     auto reading = std::make_unique<ReadFromInput>(
         std::move(sample_block),
-        //storage_snapshot,
+        std::move(input_source_pipe),
         *this);
 
     query_plan.addStep(std::move(reading));
@@ -107,6 +107,15 @@ void StorageInput::read(
 
 void ReadFromInput::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (!pipe.empty())
+    {
+        pipeline.init(std::move(pipe));
+        return;
+    }
+
+    if (!storage.was_pipe_initialized)
+        throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "Input stream is not initialized, input() must be used only in INSERT SELECT query");
+
     if (storage.was_pipe_used)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to read from input() twice.");
 

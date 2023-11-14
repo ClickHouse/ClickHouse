@@ -84,8 +84,10 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
             return {};   /// Not optimized when predicate contains stateful function or indeterministic function or window functions
         }
 
+        /// Skip predicate like `... IN (SELECT ... FROM input())` because
+        /// it can be duplicated but we can't execute `input()` twice.
         if (hasInputTableFunction(predicate_expression))
-            return {}; /// Not optimized when predicate contains input table function
+            return {};
 
         if (!expression_info.is_array_join)
         {
