@@ -246,7 +246,7 @@ UInt8 getGCDBytesSize(const IDataType * column_type)
 {
     WhichDataType which(column_type);
     if (!(which.isInt() || which.isUInt() || which.isDecimal() || which.isDateOrDate32() || which.isDateTime() ||which.isDateTime64()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD is not applicable for {} because the data type is not of fixed size",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD cannot be applied to column {} because it can only be used with Int*, UInt*, Decimal*, Date* or DateTime* types.",
             column_type->getName());
 
     size_t max_size = column_type->getSizeOfValueInMemory();
