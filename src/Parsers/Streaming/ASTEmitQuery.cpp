@@ -16,12 +16,12 @@ void ASTEmitQuery::formatImpl(const FormatSettings & format, FormatState &, Form
     }
 }
 
-void ASTEmitQuery::updateTreeHashImpl(SipHash & hash_state) const
+void ASTEmitQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     if (periodic_interval)
-        periodic_interval->updateTreeHashImpl(hash_state);
+        periodic_interval->updateTreeHashImpl(hash_state, ignore_aliases);
 
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 }
