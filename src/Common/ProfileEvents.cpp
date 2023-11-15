@@ -317,6 +317,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a query profiler signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
+    M(QueryProfilerConcurrencyOverruns, "Number of times we drop processing of a query profiler signal due to too many concurrent query profilers in other threads, which may indicate overload.") \
     M(QueryProfilerRuns, "Number of times QueryProfiler had been run.") \
     \
     M(CreatedLogEntryForMerge, "Successfully created log entry to merge parts in ReplicatedMergeTree.") \
@@ -546,6 +547,10 @@ The server successfully detected this situation and will download merged part fr
     M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
     M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
     \
+    M(BackupsOpenedForRead, "Number of backups opened for reading") \
+    M(BackupsOpenedForWrite, "Number of backups opened for writing") \
+    M(BackupReadMetadataMicroseconds, "Time spent reading backup metadata from .backup file") \
+    M(BackupWriteMetadataMicroseconds, "Time spent writing backup metadata to .backup file") \
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries") \
     M(BackupEntriesCollectorForTablesDataMicroseconds, "Time spent making backup entries for tables data") \
     M(BackupEntriesCollectorRunPostTasksMicroseconds, "Time spent running post tasks after making backup entries") \

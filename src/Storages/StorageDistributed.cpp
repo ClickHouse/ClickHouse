@@ -1248,7 +1248,7 @@ void StorageDistributed::initializeFromDisk()
 }
 
 
-void StorageDistributed::shutdown()
+void StorageDistributed::shutdown(bool)
 {
     async_insert_blocker.cancelForever();
 
@@ -1269,7 +1269,7 @@ void StorageDistributed::drop()
     // And second time shutdown() should be fast, since none of
     // DirectoryMonitor should not do anything, because ActionBlocker is
     // canceled (in shutdown()).
-    shutdown();
+    shutdown(true);
 
     // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())
@@ -1875,4 +1875,19 @@ void registerStorageDistributed(StorageFactory & factory)
     });
 }
 
+bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
+{
+    if (!data_volume)
+        return true;
+
+    for (auto & disk : data_volume->getDisks())
+    {
+        if (new_added_disks.contains(disk->getName()))
+        {
+            initializeDirectoryQueuesForDisk(disk);
+        }
+    }
+
+    return true;
+}
 }

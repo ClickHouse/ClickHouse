@@ -401,17 +401,12 @@ public:
     /// query_info - used to filter unneeded parts
     ///
     /// parts - part set to filter
-    ///
-    /// normal_parts - collects parts that don't have all the needed values to form the block.
-    /// Specifically, this is when a part doesn't contain a final mark and the related max value is
-    /// required.
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         bool has_filter,
         const SelectQueryInfo & query_info,
         const DataPartsVector & parts,
-        DataPartsVector & normal_parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
@@ -1092,6 +1087,8 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         const ActionDAGNodes & added_filter_nodes) const;
+
+    bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
 protected:
     friend class IMergeTreeDataPart;

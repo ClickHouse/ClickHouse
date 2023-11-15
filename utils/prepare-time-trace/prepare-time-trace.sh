@@ -11,12 +11,19 @@
 <<///
 CREATE TABLE build_time_trace
 (
-    -- extra columns here
+    -- Extra columns:
+    pull_request_number UInt32,
+    commit_sha String,
+    check_start_time DateTime,
+    check_name LowCardinality(String),
+    instance_type LowCardinality(String),
+    instance_id String,
+
+    -- Normal columns:
     file String,
     library LowCardinality(String),
     date Date DEFAULT toDate(time),
     time DateTime64(6),
-
     pid UInt32,
     tid UInt32,
     ph Enum8('B', 'E', 'X', 'i', 'I', 'C', 'b', 'n', 'e', 'S', 'T', 'p', 'F', 's', 't', 'f', 'P', 'N', 'O', 'D', 'M'),
@@ -30,15 +37,16 @@ CREATE TABLE build_time_trace
     args_name LowCardinality(String),
     is_total Bool DEFAULT name LIKE 'Total %'
 )
-ENGINE = MergeTree ORDER BY (date, file, name, args_name);
+ENGINE = MergeTree
+ORDER BY (date, file, name, args_name);
 ///
 
 INPUT_DIR=$1
 OUTPUT_DIR=$2
 
-find "$INPUT_DIR" -name '*.json' | grep -P '\.(c|cpp|cc|cxx)\.json$' | xargs -P $(nproc) -I{} bash -c "
+find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | grep -P '\.(c|cpp|cc|cxx)\.json|\.time-trace$' | xargs -P $(nproc) -I{} bash -c "
 
-    ORIGINAL_FILENAME=\$(echo '{}' | sed -r -e 's!\.json\$!!; s!/CMakeFiles/[^/]+\.dir!!')
+    ORIGINAL_FILENAME=\$(echo '{}' | sed -r -e 's!\.(json|time-trace)\$!!; s!/CMakeFiles/[^/]+\.dir!!')
     LIBRARY_NAME=\$(echo '{}' | sed -r -e 's!^.*/CMakeFiles/([^/]+)\.dir/.*\$!\1!')
     START_TIME=\$(jq '.beginningOfTime' '{}')
 
@@ -48,3 +56,29 @@ find "$INPUT_DIR" -name '*.json' | grep -P '\.(c|cpp|cc|cxx)\.json$' | xargs -P 
 # Now you can upload it as follows:
 
 #cat "$OUTPUT_DIR"/* | clickhouse-client --progress --query "INSERT INTO build_time_trace (extra_column_names, file, library, time, pid, tid, ph, ts, dur, cat, name, detail, count, avgMs, args_name) FORMAT JSONCompactEachRow"
+
+# Additionally, collect information about the sizes of translation units
+
+<<///
+CREATE TABLE binary_sizes
+(
+    -- Extra columns:
+    pull_request_number UInt32,
+    commit_sha String,
+    check_start_time DateTime,
+    check_name LowCardinality(String),
+    instance_type LowCardinality(String),
+    instance_id String,
+
+    -- Normal columns:
+    file LowCardinality(String),
+    library LowCardinality(String) DEFAULT extract(file, 'CMakeFiles/([^/]+)\.dir/'),
+    size UInt64,
+    date Date DEFAULT toDate(time),
+    time DateTime64(6) DEFAULT now64()
+)
+ENGINE = MergeTree
+ORDER BY (date, file, pull_request_number, commit_sha, check_name);
+///
+
+find "$INPUT_DIR" -type f -executable -or -name '*.o' -or -name '*.a' | grep -v cargo | xargs wc -c | grep -v 'total' > "${OUTPUT_DIR}/binary_sizes.txt"
