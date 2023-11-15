@@ -173,8 +173,7 @@ namespace
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
 
-        Strings paths;
-        expandSelector(path_from_uri, paths);
+        Strings paths = expandSelectionGlob(path_from_uri);
 
         std::vector<StorageHDFS::PathWithInfo> res;
 

@@ -196,8 +196,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
 {
     std::vector<std::string> result;
 
-    Strings for_match_paths_expanded;
-    expandSelector(for_match, for_match_paths_expanded);
+    Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
         listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result);

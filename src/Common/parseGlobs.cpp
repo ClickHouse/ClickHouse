@@ -122,17 +122,18 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     return buf_final_processing.str();
 }
 
-void expandSelector(const std::string & path, Strings & for_match_paths_expanded)
+namespace
 {
-    /// regexp for {expr1,expr2,expr3}, expr.. should be without "{", "}", "*" and ","
+void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> & for_match_paths_expanded)
+{
+    /// regexp for {expr1,expr2,....};
+    /// expr1, expr2,... cannot contain any of these: '{', '}', ','
     static const re2::RE2 selector_regex(R"({([^{}*,]+,[^{}*]*[^{}*,])})");
 
     std::string_view path_view(path);
     std::string_view matched;
 
-    if (RE2::FindAndConsume(&path_view, selector_regex, &matched))
-        std::string buffer(matched);
-    else
+    if (!RE2::FindAndConsume(&path_view, selector_regex, &matched))
     {
         for_match_paths_expanded.push_back(path);
         return;
@@ -140,7 +141,7 @@ void expandSelector(const std::string & path, Strings & for_match_paths_expanded
 
     Strings expanded_paths;
 
-    std::vector<size_t> anchor_positions = {};
+    std::vector<size_t> anchor_positions;
     bool opened = false, closed = false;
 
     for (std::string::const_iterator it = path.begin(); it != path.end(); it++)
@@ -181,7 +182,15 @@ void expandSelector(const std::string & path, Strings & for_match_paths_expanded
         std::string expanded_matcher = common_prefix
                                        + path.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
                                        + common_suffix;
-        expandSelector(expanded_matcher, for_match_paths_expanded);
+        expandSelectorGlobImpl(expanded_matcher, for_match_paths_expanded);
     }
+}
+}
+
+std::vector<std::string> expandSelectionGlob(const std::string & path)
+{
+    std::vector<std::string> result;
+    expandSelectorGlobImpl(path, result);
+    return result;
 }
 }
