@@ -188,7 +188,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
-    if (getDataSourceDescription().sameKind(to_disk.getDataSourceDescription()))
+    if (getDataSourceDescription() == to_disk.getDataSourceDescription())
     {
             /// It may use s3-server-side copy
             auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
