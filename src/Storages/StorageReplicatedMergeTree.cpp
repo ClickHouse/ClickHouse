@@ -836,7 +836,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
             zkutil::CreateMode::Persistent));
 
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", toString(getStorageID().getFullTableName()) + "|" + toString(ServerUUID::get()),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()),
             zkutil::CreateMode::Persistent));
 
         Coordination::Responses responses;
@@ -869,7 +869,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
     const String local_metadata = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
     const String local_columns = metadata_snapshot->getColumns().toString();
     const String local_metadata_version = toString(metadata_snapshot->getMetadataVersion());
-    const String creator_info = toString(getStorageID().getFullTableName()) + "|" + toString(ServerUUID::get());
+    const String creator_info = toString(getStorageID().uuid) + "|" + toString(ServerUUID::get());
 
     /// It is possible for the replica to fail after creating ZK nodes without saving local metadata.
     /// Because of that we need to check whether the replica exists and is newly created.
