@@ -1390,7 +1390,7 @@ void Planner::buildPlanForQueryNode()
         planner_context,
         query_processing_info);
 
-    std::vector<ActionsDAGPtr> result_actions_to_execute;
+    std::vector<ActionsDAGPtr> result_actions_to_execute = std::move(join_tree_query_plan.actions_dags);
 
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {

@@ -41,11 +41,11 @@
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 
-#include "Storages/ColumnDefault.h"
-#include "config_version.h"
-
+#include <Storages/ColumnDefault.h>
+#include <Common/config_version.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+
 #if USE_KRB5
 #include <Access/KerberosInit.h>
 #endif // USE_KRB5

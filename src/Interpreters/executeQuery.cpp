@@ -96,7 +96,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS;
+    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -1106,32 +1106,41 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// top of the pipeline which stores the result in the query cache.
                     if (can_use_query_cache && settings.enable_writes_to_query_cache)
                     {
-                        if (astContainsNonDeterministicFunctions(ast, context) && !settings.query_cache_store_results_of_queries_with_nondeterministic_functions)
-                            throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting `query_cache_store_results_of_queries_with_nondeterministic_functions = 1` to cache the query result regardless");
+                        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
+                        const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling = settings.query_cache_nondeterministic_function_handling;
 
-                        QueryCache::Key key(
-                            ast, res.pipeline.getHeader(),
-                            context->getUserName(), settings.query_cache_share_between_users,
-                            std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
-                            settings.query_cache_compress_entries);
+                        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
+                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                                "The query result was not cached because the query contains a non-deterministic function."
+                                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
 
-                        const size_t num_query_runs = query_cache->recordQueryRun(key);
-                        if (num_query_runs <= settings.query_cache_min_query_runs)
+                        if (!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
                         {
-                            LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}", num_query_runs, settings.query_cache_min_query_runs);
-                        }
-                        else
-                        {
-                            auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
-                                             key,
-                                             std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
-                                             settings.query_cache_squash_partial_results,
-                                             settings.max_block_size,
-                                             settings.query_cache_max_size_in_bytes,
-                                             settings.query_cache_max_entries));
-                            res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                            query_cache_usage = QueryCache::Usage::Write;
+                            QueryCache::Key key(
+                                ast, res.pipeline.getHeader(),
+                                context->getUserName(), settings.query_cache_share_between_users,
+                                std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
+                                settings.query_cache_compress_entries);
+
+                            const size_t num_query_runs = query_cache->recordQueryRun(key);
+                            if (num_query_runs <= settings.query_cache_min_query_runs)
+                            {
+                                LOG_TRACE(&Poco::Logger::get("QueryCache"),
+                                        "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                                        num_query_runs, settings.query_cache_min_query_runs);
+                            }
+                            else
+                            {
+                                auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                                 key,
+                                                 std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
+                                                 settings.query_cache_squash_partial_results,
+                                                 settings.max_block_size,
+                                                 settings.query_cache_max_size_in_bytes,
+                                                 settings.query_cache_max_entries));
+                                res.pipeline.writeResultIntoQueryCache(query_cache_writer);
+                                query_cache_usage = QueryCache::Usage::Write;
+                            }
                         }
                     }
 
