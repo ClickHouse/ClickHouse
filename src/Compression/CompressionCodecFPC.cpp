@@ -440,7 +440,7 @@ private:
         first = decompressValue(value1, is_dfcm_predictor1);
         second = decompressValue(value2, is_dfcm_predictor2);
 
-        return 1 + tail_size1 + tail_size2;
+        return expected_size;
     }
 
     static void* valueTail(TUInt& value, UInt32 compressed_size)
