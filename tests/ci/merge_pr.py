@@ -129,7 +129,7 @@ class Reviews:
         logging.info("The PR is changed at %s", last_changed.isoformat())
 
         approved_at = max(review.submitted_at for review in approved.values())
-        if approved_at == datetime.fromtimestamp(0):
+        if approved_at.timestamp() == 0:
             logging.info(
                 "Unable to get `datetime.fromtimestamp(0)`, "
                 "here's debug info about reviews: %s",
@@ -138,7 +138,7 @@ class Reviews:
         else:
             logging.info("The PR is approved at %s", approved_at.isoformat())
 
-        if approved_at < last_changed:
+        if approved_at.timestamp() < last_changed.timestamp():
             logging.info(
                 "There are changes done at %s after approval at %s",
                 last_changed.isoformat(),
