@@ -120,7 +120,7 @@ private:
     //     so the part to check will be chosen among currently active parts at check time
     // (2) after candidate for background check is chosen, we check latest time the part was checked.
     //     If the part was checked recently (see delay_between_background_part_checks_for_individual_part_seconds), try to chose another part
-    std::mt19937_64 gen;
+    pcg64_fast rndgen;
     MergeTreePartInfo last_checked_part;
     std::chrono::milliseconds background_check_backoff_timeout_ms{0};
     std::chrono::milliseconds last_check_duration{0};

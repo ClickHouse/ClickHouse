@@ -624,8 +624,8 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
             if (checked_part == MergeTreePartInfo{})
             {
                 const size_t active_parts_size = std::distance(active_parts.begin(), active_parts.end());
-                std::uniform_int_distribution<size_t> dist(0, active_parts_size - 1);
-                const size_t i = dist(gen);
+                std::uniform_int_distribution<size_t> uniform_distribution(0, active_parts_size - 1);
+                const size_t i = uniform_distribution(rndgen);
                 chassert(i < active_parts_size);
 
                 part = *(active_parts.advance_begin(i).begin());
