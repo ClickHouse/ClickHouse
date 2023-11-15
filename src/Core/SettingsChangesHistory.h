@@ -80,6 +80,8 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
+    {"23.11", {{"number_of_mutations_to_delay", 0, 100, "Set up a reasonable limit by default"},
+              {"number_of_mutations_to_throw", 0, 300, "Set up a reasonable limit by default"}}},
     {"23.9", {{"optimize_group_by_constant_keys", false, true, "Optimize group by constant keys by default"},
               {"input_format_json_try_infer_named_tuples_from_objects", false, true, "Try to infer named Tuples from JSON objects by default"},
               {"input_format_json_read_numbers_as_strings", false, true, "Allow to read numbers as strings in JSON formats by default"},
