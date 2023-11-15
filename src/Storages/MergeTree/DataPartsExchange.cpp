@@ -65,8 +65,7 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION = 8;
-// Reserved for ALTER PRIMARY KEY
-// constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PRIMARY_KEY = 9;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_WAITING_PREACTIVE = 9;
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -122,7 +121,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_WAITING_PREACTIVE))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -139,6 +138,29 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     try
     {
         part = findPart(part_name);
+
+        /// Ephemeral zero-copy lock may be lost for PreActive parts
+        /// do not expose PreActive parts
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_WAITING_PREACTIVE)
+        {
+            bool part_is_ready = part->getState() != MergeTreeDataPartState::PreActive;
+            writeBinary(part_is_ready, out);
+
+            if (!part_is_ready)
+            {
+                LOG_TRACE(log, "Part {} is in PreActive state, reply to the client that part is not ready yet", part_name);
+                return;
+            }
+        }
+        else
+        {
+            bool zero_copy_enabled = data.getSettings()->allow_remote_fs_zero_copy_replication;
+            if (part->getState() == MergeTreeDataPartState::PreActive && zero_copy_enabled)
+            {
+                /// report error, client will try again later, error message would be printed
+                throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in table", part_name);
+            }
+        }
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
@@ -357,12 +379,8 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     /// determine the local state of the part, so queries for the parts in these states are completely normal.
     MergeTreeData::DataPartPtr part;
 
-    /// Ephemeral zero-copy lock may be lost for PreActive parts
-    bool zero_copy_enabled = data.getSettings()->allow_remote_fs_zero_copy_replication;
-    if (zero_copy_enabled)
-        part = data.getPartIfExists(name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
-    else
-        part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+    part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+
     if (part)
         return part;
 
@@ -424,7 +442,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         {"endpoint",                endpoint_id},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_WAITING_PREACTIVE)},
         {"compress",                "false"}
     });
 
@@ -482,17 +500,42 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         creds.setPassword(password);
     }
 
-    std::unique_ptr<PooledReadWriteBufferFromHTTP> in = std::make_unique<PooledReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        nullptr,
-        timeouts,
-        creds,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        0, /* no redirects */
-        static_cast<uint64_t>(data_settings->replicated_max_parallel_fetches_for_host));
+    std::unique_ptr<PooledReadWriteBufferFromHTTP> in;
+    int server_protocol_version = 0;
+    bool part_is_ready = true;
 
-    int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
+    static const UInt32 part_not_ready_attempts = 5;
+    static const UInt32 wait_sleep_time_ms = 100;
+
+    for (UInt32 attempt = 1; attempt <= part_not_ready_attempts; ++attempt)
+    {
+        in = std::make_unique<PooledReadWriteBufferFromHTTP>(
+            uri,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            nullptr,
+            timeouts,
+            creds,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            0, /* no redirects */
+            static_cast<uint64_t>(data_settings->replicated_max_parallel_fetches_for_host));
+
+        server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
+
+        if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_WAITING_PREACTIVE)
+            readBinary(part_is_ready, *in);
+
+        if (part_is_ready)
+            break;
+
+        sleepForMilliseconds(wait_sleep_time_ms);
+
+        if (blocker.isCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Fetching of part was cancelled");
+    }
+
+    if (!part_is_ready)
+        throw Exception(ErrorCodes::ABORTED, "Part {} is still not ready in host {} after {} attempts, try another host",
+                        part_name, host, part_not_ready_attempts);
 
     String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
 
