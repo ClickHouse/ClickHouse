@@ -128,7 +128,7 @@ SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_t
 ``` text
 Row 1:
 ──────
-hostname:                              clickhouse.ru-central1.internal
+hostname:                              clickhouse.eu-central1.internal
 type:                                  QueryFinish
 event_date:                            2021-11-03
 event_time:                            2021-11-03 16:13:54
@@ -169,7 +169,7 @@ initial_query_start_time:              2021-11-03 16:13:54
 initial_query_start_time_microseconds: 2021-11-03 16:13:54.952325
 interface:                             1
 os_user:                               sevirov
-client_hostname:                       clickhouse.ru-central1.internal
+client_hostname:                       clickhouse.eu-central1.internal
 client_name:                           ClickHouse
 client_revision:                       54449
 client_version_major:                  21
