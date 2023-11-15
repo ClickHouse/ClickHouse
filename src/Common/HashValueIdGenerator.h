@@ -186,6 +186,8 @@ inline bool quickLookupValueId(HashValueIdCacheLine & cache,
 }
 )
 
+#define INNER_ENABLE_AVX512 0
+
 class IHashValueIdGenerator
 {
 public:
@@ -311,7 +313,7 @@ protected:
 
     ALWAYS_INLINE void getValueId(const StringRef &raw_value, UInt64 serialized_value [[maybe_unused]], UInt64 & value_id)
     {
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
         if (isArchSupported(TargetArch::AVX512BW))
         {
             if (enable_value_id_cache_line)
@@ -353,7 +355,7 @@ protected:
         else
             TargetSpecific::Default::shortValuesToUInt64(data_pos, element_bytes, value_ids, n);
 
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
         if (isArchSupported(TargetArch::AVX512BW))
             TargetSpecific::AVX512BW::getValueIdsByRange(value_ids, range_delta, n);
         else
@@ -437,7 +439,7 @@ private:
         const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() : nullptr;
         for (; i + batch_size < n; i += batch_size)
         {
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
             else
@@ -447,7 +449,7 @@ private:
             }
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
             computeValueIdForString(char_pos, str_lens, batch_size, tmp_value_ids, null_map_pos);
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_size);
             else
@@ -604,7 +606,7 @@ private:
             else
                 computeValueIdsInNormalMode(tmp_value_ids, batch_step, char_pos, str_len, null_map_pos);
 
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
             else
@@ -677,8 +679,7 @@ private:
             }
             data_pos += element_bytes;
         }
-        // enable_range_mode = enable_range_mode && range_max > range_min && range_max - range_min + 1 + is_nullable <= max_distinct_values;
-        enable_range_mode = false;
+        enable_range_mode = enable_range_mode && range_max > range_min && range_max - range_min + 1 + is_nullable <= max_distinct_values;
         if (enable_range_mode)
         {
             allocated_value_id =  range_max - range_min + 1 + is_nullable;
@@ -725,7 +726,7 @@ private:
             else
                 computeValueIdsInNormalMode(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
 
-#if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
             else
