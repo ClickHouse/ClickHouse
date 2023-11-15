@@ -439,7 +439,7 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-Values of type String or FixedString.
+Values of arbitrary types. If an argument is not a String or FixedString, it is converted to the String type using the default serialization.
 
 **Returned values**
 
@@ -459,6 +459,20 @@ Result:
 ┌─concat('Hello, ', 'World!')─┐
 │ Hello, World!               │
 └─────────────────────────────┘
+```
+
+**Example**
+
+```sql
+SELECT concat(42, 144);
+```
+
+Result:
+
+```result
+┌─concat(42, 144)─┐
+│ 42144           │
+└─────────────────┘
 ```
 
 ## concatAssumeInjective
