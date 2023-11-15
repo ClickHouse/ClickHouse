@@ -40,8 +40,6 @@ namespace ErrorCodes
     extern const int READONLY;
     extern const int UNKNOWN_STATUS_OF_INSERT;
     extern const int INSERT_WAS_DEDUPLICATED;
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int NO_ACTIVE_REPLICAS;
     extern const int DUPLICATE_DATA_PART;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int LOGICAL_ERROR;
@@ -1144,7 +1142,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
             break;
 
         if (!event->tryWait(quorum_timeout_ms))
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for quorum");
+            throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Timeout while waiting for quorum");
 
         LOG_TRACE(log, "Quorum {} for part {} updated, will check quorum node still exists", quorum_path, part_name);
     }
@@ -1154,7 +1152,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     Coordination::Stat stat;
     String value;
     if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat) || stat.version != is_active_node_version)
-        throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "Replica become inactive while waiting for quorum");
+        throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Replica became inactive while waiting for quorum");
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
 }

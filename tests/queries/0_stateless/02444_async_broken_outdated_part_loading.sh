@@ -8,8 +8,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "drop table if exists rmt sync;"
 $CLICKHOUSE_CLIENT -q "create table rmt (n int) engine=ReplicatedMergeTree('/test/02444/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', '1') order by n"
 
-$CLICKHOUSE_CLIENT -q "insert into rmt values (1);"
-$CLICKHOUSE_CLIENT -q "insert into rmt values (2);"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 -q "insert into rmt values (1);"
+$CLICKHOUSE_CLIENT --keeper_fault_injection_probability=0 -q "insert into rmt values (2);"
 
 $CLICKHOUSE_CLIENT -q "system sync replica rmt pull;"
 $CLICKHOUSE_CLIENT --optimize_throw_if_noop=1 -q "optimize table rmt final"

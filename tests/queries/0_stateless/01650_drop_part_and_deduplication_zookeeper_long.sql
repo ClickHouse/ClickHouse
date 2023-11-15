@@ -14,8 +14,8 @@ PARTITION BY partitioner;
 
 SYSTEM STOP MERGES partitioned_table;
 
-INSERT INTO partitioned_table VALUES (1, 1, 'A'), (2, 2, 'B'), (3, 3, 'C');
-INSERT INTO partitioned_table VALUES (11, 1, 'AA'), (22, 2, 'BB'), (33, 3, 'CC');
+INSERT INTO partitioned_table SETTINGS keeper_fault_injection_probability=0 VALUES (1, 1, 'A'), (2, 2, 'B'), (3, 3, 'C');
+INSERT INTO partitioned_table SETTINGS keeper_fault_injection_probability=0 VALUES (11, 1, 'AA'), (22, 2, 'BB'), (33, 3, 'CC');
 
 SELECT '~~~~source parts~~~~~';
 
@@ -23,7 +23,7 @@ SELECT partition_id, name FROM system.parts WHERE table = 'partitioned_table' AN
 
 SELECT substring(name, 1, 2), value FROM system.zookeeper WHERE path='/clickhouse/' || currentDatabase() || '/01650_drop_part_and_deduplication_partitioned_table/blocks/' ORDER BY value;
 
-INSERT INTO partitioned_table VALUES (33, 3, 'CC'); -- must be deduplicated
+INSERT INTO partitioned_table SETTINGS keeper_fault_injection_probability=0 VALUES (33, 3, 'CC'); -- must be deduplicated
 
 SELECT '~~~~parts after deduplication~~~~~';
 
@@ -39,7 +39,7 @@ SELECT partition_id, name FROM system.parts WHERE table = 'partitioned_table' AN
 
 SELECT substring(name, 1, 2), value FROM system.zookeeper WHERE path='/clickhouse/' || currentDatabase() || '/01650_drop_part_and_deduplication_partitioned_table/blocks/' ORDER BY value;
 
-INSERT INTO partitioned_table VALUES (33, 3, 'CC'); -- mustn't be deduplicated
+INSERT INTO partitioned_table SETTINGS keeper_fault_injection_probability=0 VALUES (33, 3, 'CC'); -- mustn't be deduplicated
 
 SELECT '~~~~parts after new part without deduplication~~~~~';
 

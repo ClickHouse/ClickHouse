@@ -24,7 +24,7 @@ SELECT v FROM replica1 ORDER BY v;
 
 SELECT name FROM system.detached_parts WHERE table = 'replica2' AND database = currentDatabase();
 
-ALTER TABLE replica2 ATTACH PART 'all_1_1_0';
+ALTER TABLE replica2 ATTACH PART 'all_1_1_0' SETTINGS keeper_fault_injection_probability=0;
 
 SYSTEM SYNC REPLICA replica1;
 SELECT v FROM replica1 ORDER BY v;
