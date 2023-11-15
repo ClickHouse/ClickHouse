@@ -1,3 +1,4 @@
+#include <Columns/ColumnNullable.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -5,8 +6,8 @@
 #include "Common/assert_cast.h"
 #include "Core/MySQL/IMySQLWritePacket.h"
 #include "DataTypes/DataTypeLowCardinality.h"
-#include "DataTypes/DataTypeNullable.h"
 #include "DataTypes/DataTypesDecimal.h"
+
 #include "MySQLUtils.h"
 
 namespace DB
@@ -36,7 +37,9 @@ ResultSetRow::ResultSetRow(const Serializations & serializations, const DataType
         else if (type_index == TypeIndex::DateTime64)
         {
             WriteBufferFromOwnString ostr;
-            ColumnPtr col = MySQLUtils::getBaseColumn(columns, i);
+            ColumnPtr col = columns[i]->convertToFullIfNeeded();
+            if (col->isNullable())
+                col = assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
             auto components = MySQLUtils::getNormalizedDateTime64Components(data_type, col, row_num);
             writeDateTimeText<'-', ':', ' '>(LocalDateTime(components.whole, DateLUT::instance(getDateTimeTimezone(*data_type))), ostr);
             ostr.write('.');
