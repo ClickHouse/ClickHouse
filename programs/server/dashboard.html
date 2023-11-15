@@ -1081,7 +1081,6 @@ function showAuthError(message) {
     charts.style.opacity = '0';
     document.getElementById('add').style.display = 'none';
     document.getElementById('edit').style.display = 'none';
-    document.getElementById('search-span').style.display = 'none';
 
     const authError = document.getElementById('auth-error');
     authError.textContent = message;
@@ -1182,12 +1181,13 @@ function enableButtons() {
 async function reloadAll(do_search) {
     disableButtons();
     try {
-        if (do_search) {
-            await searchQueries(document.getElementById('search-query').value);
-        }
         updateParams();
-        await drawAll();
+        search_query = document.getElementById('search-query').value;
         saveState();
+        if (do_search) {
+            await searchQueries();
+        }
+        await drawAll();
     } catch (e) {
         showAuthError(e.toString());
     }
@@ -1207,9 +1207,7 @@ function saveState() {
         window.location.pathname + (window.location.search || '') + '#' + btoa(JSON.stringify(state)));
 }
 
-async function searchQueries(query) {
-    search_query = query;
-
+async function searchQueries() {
     let {data, error} = await doFetch(search_query);
     if (error) {
         throw new Error(error);
@@ -1270,10 +1268,11 @@ if (window.location.hash) {
 async function start() {
     try {
         if (queries.length == 0) {
-            await searchQueries(search_query);
+            await searchQueries();
         } else {
             regenerate();
         }
+        saveState();
         let new_theme = window.localStorage.getItem('theme');
         if (new_theme && new_theme != theme) {
             setTheme(new_theme);
