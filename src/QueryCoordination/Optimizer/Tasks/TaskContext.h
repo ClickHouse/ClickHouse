@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QueryCoordination/Optimizer/Cost/Cost.h>
+#include <QueryCoordination/Optimizer/Cost/CostSettings.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeContext.h>
 
@@ -17,8 +18,13 @@ public:
     TaskContext(
         Group & group_,
         const PhysicalProperties & required_properties_,
+        OptimizeContextPtr optimize_context_);
+
+    TaskContext(
+        Group & group_,
+        const PhysicalProperties & required_properties_,
         OptimizeContextPtr optimize_context_,
-        Cost upper_bound_cost_ = Cost::infinite());
+        Cost upper_bound_cost_);
 
     Group & getCurrentGroup();
 

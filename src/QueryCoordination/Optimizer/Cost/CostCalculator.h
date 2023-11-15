@@ -31,6 +31,7 @@ public:
         , context(task_context_->getQueryContext())
         , cost_settings(CostSettings::fromContext(context))
         , cbo_settings(task_context_->getOptimizeContext()->getCBOSettings())
+        , cost_weight(cost_settings.getCostWeight())
     {
         auto query_coordination_info = context->getQueryCoordinationMetaInfo();
         auto cluster = context->getCluster(query_coordination_info.cluster_name);
@@ -96,6 +97,9 @@ private:
 
     /// Settings for CBO optimizer
     CBOSettings cbo_settings;
+
+    /// Cost modeling weight.
+    Cost::Weight cost_weight;
 };
 
 }

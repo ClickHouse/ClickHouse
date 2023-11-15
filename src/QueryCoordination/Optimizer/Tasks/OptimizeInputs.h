@@ -2,6 +2,7 @@
 
 #include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeTask.h>
+#include <QueryCoordination/Optimizer/Cost/CostSettings.h>
 
 namespace DB
 {
@@ -12,13 +13,20 @@ using GroupNodePtr = std::shared_ptr<GroupNode>;
 class OptimizeInputs final : public OptimizeTask
 {
 public:
-    /// support recover task
+    /// Support task recovery
     struct Frame
     {
         Frame(GroupNodePtr node, ContextPtr context)
         {
             DeriveRequiredChildProp visitor(node, context);
             alternative_child_prop = node->accept(visitor);
+
+            prop_idx = 0;
+            child_idx = 0;
+            pre_child_idx = -1;
+
+            local_cost = Cost(CostSettings::fromContext(context).getCostWeight(), 0);
+            total_cost = Cost(CostSettings::fromContext(context).getCostWeight(), 0);
         }
 
         /// Whether it is turn to visit new alternative sub problem.
@@ -37,13 +45,13 @@ public:
         /// there are 2 child problems broadcast join and shuffle join.
         /// For leaf node of query plan, alternative_child_prop has one element which has no child property.
         AlternativeChildrenProp alternative_child_prop;
-        Int32 prop_idx{0};
+        Int32 prop_idx;
 
         /// alternative calc frame
-        Int32 pre_child_idx{-1};
-        Int32 child_idx{0};
-        Cost local_cost{0};
-        Cost total_cost{0};
+        Int32 pre_child_idx;
+        Int32 child_idx;
+        Cost local_cost;
+        Cost total_cost;
 
         std::vector<PhysicalProperties> actual_children_prop;
     };

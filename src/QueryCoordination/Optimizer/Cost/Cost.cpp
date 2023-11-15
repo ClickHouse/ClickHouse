@@ -13,12 +13,12 @@ extern const int LOGICAL_ERROR;
 
 Float64 Cost::get() const
 {
-    return cpu_cost * CPU_COST_COEFFICIENT + mem_cost * MEM_COST_COEFFICIENT + net_cost * NET_COST_COEFFICIENT;
+    return cpu_cost * weight.cpu_weight + mem_cost * weight.mem_weight + net_cost * weight.net_weight;
 }
 
-Cost Cost::infinite()
+Cost Cost::infinite(const Weight & weight_)
 {
-    return Cost(std::numeric_limits<Float64>::max());
+    return Cost(weight_, std::numeric_limits<Float64>::max());
 }
 
 void Cost::dividedBy(size_t n)
@@ -40,15 +40,17 @@ void Cost::multiplyBy(size_t n)
 
 Cost & Cost::operator=(const Cost & other)
 {
+    this->weight = other.weight;
     this->cpu_cost = other.cpu_cost;
     this->mem_cost = other.mem_cost;
     this->net_cost = other.net_cost;
     return *this;
 }
 
-Cost Cost::operator+(const Cost & other)
+Cost Cost::operator+(const Cost & other) const
 {
-    Cost result;
+    checkWeight(other);
+    Cost result(other.weight);
     result.cpu_cost = this->cpu_cost + other.cpu_cost;
     result.mem_cost = this->mem_cost + other.mem_cost;
     result.net_cost = this->net_cost + other.net_cost;
@@ -56,9 +58,10 @@ Cost Cost::operator+(const Cost & other)
     return result;
 }
 
-Cost Cost::operator-(const Cost & other)
+Cost Cost::operator-(const Cost & other) const
 {
-    Cost result;
+    checkWeight(other);
+    Cost result(other.weight);
     result.cpu_cost = this->cpu_cost - other.cpu_cost;
     result.mem_cost = this->mem_cost - other.mem_cost;
     result.net_cost = this->net_cost - other.net_cost;
@@ -72,6 +75,7 @@ Cost Cost::operator-(const Cost & other)
 
 Cost & Cost::operator+=(const Cost & other)
 {
+    checkWeight(other);
     this->cpu_cost += other.cpu_cost;
     this->mem_cost += other.mem_cost;
     this->net_cost += other.net_cost;
@@ -80,6 +84,7 @@ Cost & Cost::operator+=(const Cost & other)
 
 Cost & Cost::operator-=(const Cost & other)
 {
+    checkWeight(other);
     this->cpu_cost -= other.cpu_cost;
     this->mem_cost -= other.mem_cost;
     this->net_cost -= other.net_cost;
@@ -93,21 +98,25 @@ Cost & Cost::operator-=(const Cost & other)
 
 bool Cost::operator<(const Cost & other) const
 {
+    checkWeight(other);
     return this->get() < other.get();
 }
 
 bool Cost::operator>(const Cost & other) const
 {
+    checkWeight(other);
     return this->get() > other.get();
 }
 
 bool Cost::operator<=(const Cost & other) const
 {
+    checkWeight(other);
     return this->get() <= other.get();
 }
 
 bool Cost::operator>=(const Cost & other) const
 {
+    checkWeight(other);
     return this->get() >= other.get();
 }
 
@@ -118,9 +127,22 @@ void Cost::reset()
     net_cost = 0.0;
 }
 
+void Cost::checkWeight(const Cost & other) const
+{
+    if (weight != other.weight)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Weight is not equal when calculating two cost.");
+}
+
 String Cost::toString() const
 {
     return fmt::format("(summary:{:.2g}, cup:{:.2g}, mem:{:.2g}, net:{:.2g})", get(), cpu_cost, mem_cost, net_cost);
+}
+
+bool Cost::Weight::operator!=(const Weight& other) const
+{
+    return cpu_weight != other.cpu_weight ||
+        mem_weight != other.mem_weight ||
+        net_weight != other.net_weight;
 }
 
 }

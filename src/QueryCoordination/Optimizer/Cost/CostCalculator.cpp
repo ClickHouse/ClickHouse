@@ -13,18 +13,18 @@ Cost CostCalculator::visit(QueryPlanStepPtr step)
 Cost CostCalculator::visitDefault(IQueryPlanStep & step)
 {
     if (typeid_cast<ISourceStep *>(&step))
-        return Cost(statistics.getDataSize());
+        return Cost(cost_weight, statistics.getDataSize());
 
     Float64 total_input_data_size{};
     for (const auto & input : input_statistics)
         total_input_data_size += input.getDataSize();
 
-    return Cost(total_input_data_size);
+    return Cost(cost_weight, total_input_data_size);
 }
 
 Cost CostCalculator::visit(ReadFromMergeTree &)
 {
-    return Cost(statistics.getDataSize());
+    return Cost(cost_weight, statistics.getDataSize());
 }
 
 Cost CostCalculator::visit(AggregatingStep & step)
@@ -33,22 +33,29 @@ Cost CostCalculator::visit(AggregatingStep & step)
 
     /// Single stage aggregating
     if (!step.isPreliminaryAgg())
+    {
         if (cbo_settings.cbo_aggregating_mode == CBOStepExecutionMode::TWO_STAGE)
-            return Cost::infinite();
-        else
-            return Cost(input.getDataSize(), statistics.getDataSize());
+            return Cost::infinite(cost_weight);
+        return Cost(cost_weight, input.getDataSize(), statistics.getDataSize());
+    }
     /// Two stage aggregating, first stage
-    else if (cbo_settings.cbo_aggregating_mode == CBOStepExecutionMode::ONE_STAGE)
-        return Cost::infinite();
     else
-        return Cost(input.getDataSize(), statistics.getDataSize());
+    {
+        if (cbo_settings.cbo_aggregating_mode == CBOStepExecutionMode::ONE_STAGE)
+            return Cost::infinite(cost_weight);
+
+        Cost cost(cost_weight, input.getDataSize(), statistics.getDataSize());
+        cost.dividedBy(node_count);
+        return cost;
+    }
 }
 
 /// Two stage aggregating, second stage
 Cost CostCalculator::visit(MergingAggregatedStep & step)
 {
     const auto & input = input_statistics.front();
-    Cost cost(input.getDataSize(), statistics.getDataSize());
+    Cost cost(cost_weight, input.getDataSize(), statistics.getDataSize());
+
     if (child_props[0].distribution.type == Distribution::Hashed)
         cost.dividedBy(node_count);
 
@@ -73,12 +80,12 @@ Cost CostCalculator::visit(MergingAggregatedStep & step)
 
 Cost CostCalculator::visit(ExpressionStep &)
 {
-    return Cost(input_statistics.front().getDataSize());
+    return Cost(cost_weight, input_statistics.front().getDataSize());
 }
 
 Cost CostCalculator::visit(FilterStep &)
 {
-    return Cost(input_statistics.front().getDataSize());
+    return Cost(cost_weight, input_statistics.front().getDataSize());
 }
 
 Cost CostCalculator::visit(SortingStep & step)
@@ -90,29 +97,29 @@ Cost CostCalculator::visit(SortingStep & step)
     if (step.getPhase() == SortingStep::Phase::Preliminary)
     {
         if (cbo_settings.cbo_sorting_mode == CBOStepExecutionMode::ONE_STAGE)
-            return Cost::infinite();
+            return Cost::infinite(cost_weight);
 
         /// cpu_cost: n * log2(n)
         auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
-        Cost cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
+        Cost cost(cost_weight, cpu_coefficient * input.getDataSize(), input.getDataSize());
 
-        /// sorting in all shards TODO if sorting node is only one.
+        /// TODO Just like ExchangeDataStep, we do not know the real nodes count sending data simultaneously.
         cost.dividedBy(node_count);
         return cost;
     }
     /// Two stage sorting, second stage
     else if (step.getPhase() == SortingStep::Phase::Final)
     {
-        return Cost(input.getDataSize(), input.getDataSize());
+        return Cost(cost_weight, input.getDataSize(), input.getDataSize());
     }
     /// Single stage sorting
     else
     {
         if (cbo_settings.cbo_sorting_mode == CBOStepExecutionMode::TWO_STAGE)
-            return Cost::infinite();
+            return Cost::infinite(cost_weight);
 
         auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
-        return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
+        return Cost(cost_weight, cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
 }
 
@@ -124,10 +131,10 @@ Cost CostCalculator::visit(LimitStep & step)
     if (step.getPhase() == LimitStep::Phase::Preliminary)
     {
         if (cbo_settings.cbo_limiting_mode == CBOStepExecutionMode::ONE_STAGE)
-            return Cost::infinite();
+            return Cost::infinite(cost_weight);
 
         /// cpu_cost
-        Cost cost(input.getDataSize());
+        Cost cost(cost_weight, input.getDataSize());
 
         /// sorting in all shards
         cost.dividedBy(node_count);
@@ -136,15 +143,15 @@ Cost CostCalculator::visit(LimitStep & step)
     /// Two stage limiting, second stage
     else if (step.getPhase() == LimitStep::Phase::Final)
     {
-        return Cost(input.getDataSize(), input.getDataSize());
+        return Cost(cost_weight, input.getDataSize(), input.getDataSize());
     }
     /// Single stage limiting
     else
     {
         if (cbo_settings.cbo_limiting_mode == CBOStepExecutionMode::TWO_STAGE)
-            return Cost::infinite();
+            return Cost::infinite(cost_weight);
         else
-            return Cost(input.getDataSize());
+            return Cost(cost_weight, input.getDataSize());
     }
 }
 
@@ -223,7 +230,7 @@ Cost CostCalculator::visit(JoinStep & step)
         build_mem_cost *= node_count;
     }
 
-    return Cost(build_cpu_cost + probe_cpu_cost, build_mem_cost + probe_mem_cost);
+    return Cost(cost_weight, build_cpu_cost + probe_cpu_cost, build_mem_cost + probe_mem_cost);
 }
 
 Cost CostCalculator::visit(UnionStep & step)
@@ -237,18 +244,21 @@ Cost CostCalculator::visit(ExchangeDataStep & step)
     const auto & input = statistics;
     auto distribution_type = step.getDistribution().type;
 
-    Cost cost(input.getDataSize(), 0.0, input.getDataSize());
+    Cost cost(cost_weight, 0.0, 0.0, input.getDataSize());
 
-    if (distribution_type == Distribution::Replicated)
+    if (distribution_type != Distribution::Replicated)
         cost.multiplyBy(node_count);
 
+    /// TODO ExchangeDataStep required child distribution is any and here we do not know the real nodes count
+    /// sending data simultaneously, but most time it is all shards, so we divide node_count.
+    cost.dividedBy(node_count);
     return cost;
 }
 
 Cost CostCalculator::visit(CreatingSetStep &)
 {
     const auto & input = input_statistics.front();
-    return Cost(input.getDataSize(), input.getDataSize());
+    return Cost(cost_weight, input.getDataSize(), input.getDataSize());
 }
 
 Cost CostCalculator::visit(ExtremesStep & step)
@@ -259,13 +269,13 @@ Cost CostCalculator::visit(ExtremesStep & step)
 Cost CostCalculator::visit(RollupStep &)
 {
     const auto & input = input_statistics.front();
-    return Cost(input.getDataSize(), input.getDataSize());
+    return Cost(cost_weight, input.getDataSize(), input.getDataSize());
 }
 
 Cost CostCalculator::visit(CubeStep &)
 {
     const auto & input = input_statistics.front();
-    return Cost(input.getDataSize(), input.getDataSize());
+    return Cost(cost_weight, input.getDataSize(), input.getDataSize());
 }
 
 Cost CostCalculator::visit(TotalsHavingStep & step)
@@ -282,29 +292,29 @@ Cost CostCalculator::visit(TopNStep & step)
     if (step.getPhase() == TopNStep::Phase::Preliminary)
     {
         if (cbo_settings.cbo_topn_mode == CBOStepExecutionMode::ONE_STAGE)
-            return Cost::infinite();
+            return Cost::infinite(cost_weight);
 
         /// cpu_cost
         auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
-        Cost cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
+        Cost cost(cost_weight, cpu_coefficient * input.getDataSize(), input.getDataSize());
 
-        /// sorting in all shards
+        /// TODO Just like ExchangeDataStep, we do not know the real nodes count sending data simultaneously.
         cost.dividedBy(node_count);
         return cost;
     }
     /// Two stage TopN, second stage
     else if (step.getPhase() == TopNStep::Phase::Final)
     {
-        return Cost(input.getDataSize(), input.getDataSize());
+        return Cost(cost_weight, input.getDataSize(), input.getDataSize());
     }
     /// Single stage TopN
     else
     {
         if (cbo_settings.cbo_topn_mode == CBOStepExecutionMode::TWO_STAGE)
-            return Cost::infinite();
+            return Cost::infinite(cost_weight);
 
         auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
-        return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
+        return Cost(cost_weight, cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
 }
 

@@ -33,7 +33,6 @@ public:
     bool updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost);
 
     Cost getCostByProp(const PhysicalProperties & properties);
-    Cost getSatisfiedBestCost(const PhysicalProperties & required_properties) const;
 
     std::optional<std::pair<PhysicalProperties, Group::NodeAndCost>>
     getSatisfiedBestGroupNode(const PhysicalProperties & required_properties) const;

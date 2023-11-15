@@ -30,28 +30,20 @@ void Group::addGroupNode(GroupNodePtr group_node, UInt32 group_node_id)
     group_nodes.emplace_back(std::move(group_node));
 }
 
-Cost Group::getSatisfiedBestCost(const PhysicalProperties & required_properties) const
-{
-    auto best_node = getSatisfiedBestGroupNode(required_properties);
-    if (best_node)
-        return best_node->second.cost;
-    return Cost::infinite();
-}
-
 std::optional<std::pair<PhysicalProperties, Group::NodeAndCost>>
 Group::getSatisfiedBestGroupNode(const PhysicalProperties & required_properties) const
 {
-    auto min_cost = Cost::infinite();
-
+    /// Use a NaN
+    auto min_cost = std::numeric_limits<Float64>::max() + 1.0;
     std::pair<PhysicalProperties, NodeAndCost> res;
 
     for (const auto & [properties, group_node_cost] : prop_to_best)
     {
         if (properties.satisfy(required_properties))
         {
-            if (group_node_cost.cost < min_cost)
+            if (group_node_cost.cost.get() < min_cost)
             {
-                min_cost = group_node_cost.cost;
+                min_cost = group_node_cost.cost.get();
                 res.first = properties;
                 res.second = group_node_cost;
             }
