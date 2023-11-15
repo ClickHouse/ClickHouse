@@ -186,7 +186,7 @@ inline bool quickLookupValueId(HashValueIdCacheLine & cache,
 }
 )
 
-#define INNER_ENABLE_AVX512 1
+#define INNER_ENABLE_AVX512 0
 
 class IHashValueIdGenerator
 {
