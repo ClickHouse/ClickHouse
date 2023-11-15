@@ -359,6 +359,8 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
 
     JoinClausesAndActions result;
     result.join_expression_actions = join_expression_actions;
+    if (join_expression_actions->hasArrayJoin())
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "JOIN ON {} cannot contain arrayJoin", join_node.getJoinExpression()->formatASTForErrorMessage());
 
     const auto & function_name = join_expressions_actions_root_node->function->getName();
     if (function_name == "or")
