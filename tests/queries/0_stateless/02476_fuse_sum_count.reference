@@ -256,14 +256,27 @@ QUERY id: 0
         QUERY id: 14, is_subquery: 1
           PROJECTION COLUMNS
             x Int64
+            count(b) UInt64
           PROJECTION
-            LIST id: 15, nodes: 1
-              FUNCTION id: 16, function_name: sum, function_type: aggregate, result_type: Int64
+            LIST id: 15, nodes: 2
+              FUNCTION id: 16, function_name: tupleElement, function_type: ordinary, result_type: Int64
                 ARGUMENTS
-                  LIST id: 17, nodes: 1
-                    COLUMN id: 18, column_name: b, result_type: Int8, source_id: 19
+                  LIST id: 17, nodes: 2
+                    FUNCTION id: 18, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                      ARGUMENTS
+                        LIST id: 19, nodes: 1
+                          COLUMN id: 20, column_name: b, result_type: Int8, source_id: 21
+                    CONSTANT id: 22, constant_value: UInt64_1, constant_value_type: UInt8
+              FUNCTION id: 23, function_name: tupleElement, function_type: ordinary, result_type: UInt64
+                ARGUMENTS
+                  LIST id: 24, nodes: 2
+                    FUNCTION id: 18, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                      ARGUMENTS
+                        LIST id: 19, nodes: 1
+                          COLUMN id: 20, column_name: b, result_type: Int8, source_id: 21
+                    CONSTANT id: 25, constant_value: UInt64_2, constant_value_type: UInt8
           JOIN TREE
-            TABLE id: 19, table_name: default.fuse_tbl
+            TABLE id: 21, table_name: default.fuse_tbl
 0	0	nan
 0	0	nan
 45	10	4.5	Decimal(38, 0)	UInt64	Float64
