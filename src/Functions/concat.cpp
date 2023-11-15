@@ -135,6 +135,7 @@ private:
             else
             {
                 // An arbitrary type argument: converting it to a StringColumn first
+                const auto full_column = column->convertToFullIfNeeded();
                 const auto serialization = arguments[i].type->getDefaultSerialization();
                 ColumnString::MutablePtr converted_col_str = ColumnString::create();
                 static FormatSettings format_settings;
@@ -143,7 +144,7 @@ private:
                 auto & write_buffer = write_helper.getWriteBuffer();
                 for (size_t j = 0; j < column->size(); ++j)
                 {
-                    serialization->serializeText(*column, j, write_buffer, format_settings);
+                    serialization->serializeText(*full_column, j, write_buffer, format_settings);
                     write_helper.rowWritten();
                 }
                 write_helper.finalize();
@@ -210,11 +211,11 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        if (isArray(arguments.at(0).type))
+        if (std::ranges::all_of(arguments, [](const auto & elem) { return isArray(elem.type); }))
             return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
-        if (isMap(arguments.at(0).type))
+        if (std::ranges::all_of(arguments, [](const auto & elem) { return isMap(elem.type); }))
             return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
-        if (isTuple(arguments.at(0).type))
+        if (std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(elem.type); }))
             return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionConcat::create(context),

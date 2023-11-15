@@ -24,6 +24,7 @@ With foo
 With bar
 With foo
 With bar
+With 42
 With fae310ca-d52a-4923-9e9b-02bf67f4b009
 With 2023-11-14
 With 2123-11-14
@@ -40,11 +41,21 @@ With (42,43)
 With [(0,0),(10,0),(10,10),(0,10)]
 With [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]
 With [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]]
+-- NULL arguments
 \N
--- Miscellaneous tests
+\N
+\N
+\N
+\N
+\N
+\N
+-- Various arguments tests
 Non-const strings
+Two arguments test
 Three arguments test
 3 arguments test with int type
+42144
+42144255
+42144
+42144255
 Testing the alias
-\N
-\N
