@@ -11,7 +11,6 @@ namespace DB
   */
 
 std::string escapeForFileName(const std::string & s);
-std::string escapeForFileName(std::string_view s);
 std::string unescapeForFileName(const std::string & s);
 
 }

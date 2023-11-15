@@ -245,7 +245,7 @@ bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & 
             with_retries.renewZooKeeper(zk);
 
             /// we need to remove leading '/' from root_zk_path
-            auto normalized_root_zk_path = std::string_view{root_zk_path}.substr(1);
+            auto normalized_root_zk_path = root_zk_path.substr(1);
             std::string restore_lock_path = fs::path(zookeeper_path) / "keeper_map_tables" / escapeForFileName(normalized_root_zk_path);
             zk->createAncestors(restore_lock_path);
             auto code = zk->tryCreate(restore_lock_path, table_unique_id, zkutil::CreateMode::Persistent);
