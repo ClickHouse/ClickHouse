@@ -65,7 +65,7 @@ static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQue
     return res.str();
 }
 
-PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock, int timeout)
+PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock, int timeout)
 {
     if (is_finished)
         return {};

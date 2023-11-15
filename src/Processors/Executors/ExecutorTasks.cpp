@@ -53,14 +53,16 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
     {
         std::unique_lock lock(mutex);
 
+    #if defined(OS_LINUX)
         if (num_threads == 1)
         {
-            if (auto res = async_task_queue.wait(lock, 0))
+            if (auto res = async_task_queue.tryGetReadyTask(lock))
             {
                 context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
                 return;
             }
         }
+    #endif
 
         /// Try get async task assigned to this thread or any other task from queue.
         if (auto * async_task = context.tryPopAsyncTask())
