@@ -18,7 +18,7 @@ std::vector<std::pair<Field, Field>> MergeTreePartitionGlobalMinMaxIdxCalculator
         block.getByPosition(index).column->get(0, min_idx);
         block.getByPosition(index).column->get(1, max_idx);
 
-        min_max_indexes.emplace_back(min_idx, max_idx);
+        min_max_indexes.emplace_back(std::move(min_idx), std::move(max_idx));
     }
 
     return min_max_indexes;

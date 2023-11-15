@@ -21,14 +21,14 @@ namespace
 
         auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
         auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
-        size_t minmax_idx_size = minmax_column_types.size();
+        const size_t minmax_idx_size = minmax_column_types.size();
 
         assert(minmax_idx_size == 1u);
 
         for (size_t i = 0; i < minmax_idx_size; ++i)
         {
-            auto data_type = minmax_column_types[i];
-            auto column_name = minmax_column_names[i];
+            const auto data_type = minmax_column_types[i];
+            const auto column_name = minmax_column_names[i];
 
             auto column = data_type->createColumn();
 
@@ -37,7 +37,7 @@ namespace
 
             auto column_with_type_and_name = ColumnWithTypeAndName(column->getPtr(), data_type, column_name);
 
-            block.insert(column_with_type_and_name);
+            block.insert(std::move(column_with_type_and_name));
         }
 
         return block;
