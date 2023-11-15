@@ -64,7 +64,7 @@ uint8_t CompressionCodecGCD::getMethodByte() const
 
 void CompressionCodecGCD::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 namespace

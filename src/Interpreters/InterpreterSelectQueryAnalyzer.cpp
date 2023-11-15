@@ -109,6 +109,10 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         }
     }
 
+    /// Don't replace storage if table name differs
+    if (auto * table_node = table_expression_to_replace->as<TableNode>(); table_node && table_node->getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
+        return;
+
     auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
