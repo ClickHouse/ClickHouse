@@ -225,7 +225,7 @@ quit
 
     setup_logs_replication
 
-    clickhouse-test --fuzz \
+    /usr/share/clickhouse-test/clickhouse-test --fuzz \
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
          $NEW_TESTS_OPT \
