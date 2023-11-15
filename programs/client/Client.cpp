@@ -17,18 +17,15 @@
 #include "Core/Protocol.h"
 #include "Parsers/formatAST.h"
 
-#include <base/find_symbols.h>
-
 #include <Access/AccessControl.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 
-#include <Core/QueryProcessingStage.h>
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
 
@@ -425,7 +422,7 @@ void Client::connect()
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
-        UInt16 port = ConnectionParameters::getPortFromConfig(config());
+        UInt16 port = ConnectionParameters::getPortFromConfig(config(), host);
         hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
 
