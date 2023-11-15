@@ -336,7 +336,7 @@ void SortingStep::fullSort(
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
 
     /// If there are several streams, then we merge them into one
-    if ((pipeline.getNumStreams() > 1 && partition_by_description.empty()) || pipeline.getNumThreads() == 1)
+    if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getHeader(),
