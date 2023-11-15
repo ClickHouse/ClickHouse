@@ -1349,6 +1349,20 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
 
 void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 {
+    if (checkPartsImpl(skip_sanity_checks))
+        return;
+
+    /// We failed to check parts in an optimistic way, and now we need all the parts including Outdated parts to check them correctly.
+    waitForOutdatedPartsToBeLoaded();
+
+    if (checkPartsImpl(skip_sanity_checks))
+        return;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "checkPartsImpl returned false after loading Outdated parts");
+}
+
+bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
+{
     auto zookeeper = getFaultyZooKeeper();
 
     Strings expected_parts_vec = zookeeper->getChildren(fs::path(replica_path) / "parts");
@@ -1443,6 +1457,18 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
             continue;
         }
 
+        /// We have uncovered unexpected parts, and we are not sure if we can restore them or not.
+        /// So we have to exit, load all Outdated parts, and check again.
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            if (!outdated_data_parts_loading_finished)
+            {
+                LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to check if unexpected parts can be recovered. "
+                              "Need retry.");
+                return false;
+            }
+        }
+
         /// Part is unexpected and we don't have covering part: it's suspicious
         uncovered_unexpected_parts.insert(part->name);
         uncovered_unexpected_parts_rows += part->rows_count;
@@ -1499,7 +1525,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
                         unexpected_parts_rows - uncovered_unexpected_parts_rows);
     }
 
-    if (unexpected_parts_nonnew_rows > 0 || uncovered_unexpected_parts_rows > 0)
+    if (unexpected_parts_nonnew_rows > 0 || uncovered_unexpected_parts_rows > 0 || !restorable_unexpected_parts.empty())
     {
         LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(restorable_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
                   fmt::join(covered_unexpected_parts, ", "), fmt::join(expected_parts, ", "));
@@ -1524,6 +1550,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}{}", part->name, part->name, restore_covered ? ", restoring covered parts" : "");
         forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", restore_covered);
     }
+
+    return true;
 }
 
 
