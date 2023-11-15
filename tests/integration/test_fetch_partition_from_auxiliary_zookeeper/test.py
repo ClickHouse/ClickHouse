@@ -48,12 +48,13 @@ def test_fetch_part_from_allowed_zookeeper(start_cluster, part, date, part_name)
         )
     )
 
-    with pytest.raises(QueryRuntimeException):
+    with pytest.raises(QueryRuntimeException) as exc:
         node.query(
             """ALTER TABLE simple2 FETCH {part} '{part_name}' FROM 'zookeeper:/clickhouse/tables/0/simple';""".format(
                 part=part, part_name=part_name
             )
         )
+    assert "Unknown auxiliary ZooKeeper name" in str(exc.value)
 
     assert (
         node.query(

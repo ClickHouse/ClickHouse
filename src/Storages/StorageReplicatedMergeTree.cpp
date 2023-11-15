@@ -6943,7 +6943,13 @@ void StorageReplicatedMergeTree::fetchPartition(
     if (from.empty())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "ZooKeeper path should not be empty");
 
-    ZooKeeperWithFaultInjectionPtr zookeeper = tryGetFaultyZooKeeper();
+    ZooKeeperWithFaultInjectionPtr zookeeper;
+    /// TODO: Support faults
+    if (from_zookeeper_name != default_zookeeper_name)
+        zookeeper = ZooKeeperWithFaultInjection::createInstance(
+            0, 0, getContext()->getAuxiliaryZooKeeper(from_zookeeper_name), "StorageReplicatedMergeTree", log);
+    else
+        zookeeper = tryGetFaultyZooKeeper();
 
     if (from.back() == '/')
         from.resize(from.size() - 1);
