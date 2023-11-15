@@ -33,7 +33,8 @@ namespace CurrentMetrics
 
 namespace DB
 {
-    class ZooKeeperLog;
+class ZooKeeperLog;
+class ZooKeeperWithFaultInjection;
 
 namespace ErrorCodes
 {
@@ -175,6 +176,8 @@ private:
 /// Methods with names not starting at try- raise KeeperException on any error.
 class ZooKeeper
 {
+    friend class DB::ZooKeeperWithFaultInjection;
+
 public:
 
     using Ptr = std::shared_ptr<ZooKeeper>;
@@ -620,8 +623,6 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
-
-    std::mutex mutex;
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;

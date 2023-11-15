@@ -33,6 +33,17 @@ public:
             throw zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED, "Fault injection before operation");
         }
     }
+
+    bool beforeOperationNoThrow()
+    {
+        if (distribution(rndgen) || must_fail_before_op)
+        {
+            must_fail_before_op = false;
+            return true;
+        }
+        return false;
+    }
+
     void afterOperation()
     {
         if (distribution(rndgen) || must_fail_after_op)
@@ -40,6 +51,16 @@ public:
             must_fail_after_op = false;
             throw zkutil::KeeperException::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT, "Fault injection after operation");
         }
+    }
+
+    bool afterOperationNoThrow()
+    {
+        if (distribution(rndgen) || must_fail_after_op)
+        {
+            must_fail_after_op = false;
+            return true;
+        }
+        return false;
     }
 
 private:
@@ -62,8 +83,6 @@ class ZooKeeperWithFaultInjection
     std::unique_ptr<RandomFaultInjection> fault_policy;
     std::string name;
     Poco::Logger * logger = nullptr;
-    UInt64 calls_total = 0;
-    UInt64 calls_without_fault_injection = 0;
     const UInt64 seed = 0;
 
     std::vector<std::string> ephemeral_nodes;
@@ -169,14 +188,69 @@ public:
 
     zk::FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {})
     {
-        /// TODO: Support injection in promises
-        return keeper->asyncExists(path, watch_callback);
+        auto promise = std::make_shared<std::promise<Coordination::ExistsResponse>>();
+        auto future = promise->get_future();
+        if (injectFailureBeforeOp(promise))
+        {
+            if (logger)
+                LOG_TRACE(
+                    logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func=asyncExists path={}", seed, path);
+            return future;
+        }
+
+        auto callback = [&, promise](const Coordination::ExistsResponse & response) mutable
+        {
+            if (injectFailureAfterOp(promise))
+            {
+                if (logger)
+                    LOG_TRACE(
+                        logger, "ZooKeeperWithFaultInjection injected fault after operation: seed={} func=asyncExists path={}", seed, path);
+                return;
+            }
+
+            if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
+                promise->set_exception(std::make_exception_ptr(zkutil::KeeperException::fromPath(response.error, path)));
+            else
+                promise->set_value(response);
+        };
+
+        keeper->impl->exists(
+            path,
+            std::move(callback),
+            watch_callback ? std::make_shared<Coordination::WatchCallback>(watch_callback) : Coordination::WatchCallbackPtr{});
+        return future;
     }
 
     zk::FutureGet asyncTryGet(const std::string & path)
     {
-        /// TODO: Support injection in promises
-        return keeper->asyncTryGet(path);
+        auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+        auto future = promise->get_future();
+        if (injectFailureBeforeOp(promise))
+        {
+            if (logger)
+                LOG_TRACE(
+                    logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func=asyncTryGet path={}", seed, path);
+            return future;
+        }
+
+        auto callback = [&, promise](const Coordination::GetResponse & response) mutable
+        {
+            if (injectFailureAfterOp(promise))
+            {
+                if (logger)
+                    LOG_TRACE(
+                        logger, "ZooKeeperWithFaultInjection injected fault after operation: seed={} func=asyncTryGet path={}", seed, path);
+                return;
+            }
+
+            if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
+                promise->set_exception(std::make_exception_ptr(zkutil::KeeperException::fromPath(response.error, path)));
+            else
+                promise->set_value(response);
+        };
+
+        keeper->impl->get(path, std::move(callback), {});
+        return future;
     }
 
     bool tryGet(
@@ -250,7 +324,11 @@ public:
             {
                 responses.clear();
                 for (size_t i = 0; i < requests.size(); ++i)
-                    responses.emplace_back(std::make_shared<Coordination::ZooKeeperErrorResponse>());
+                {
+                    auto response = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                    response->error = Coordination::Error::ZOPERATIONTIMEOUT;
+                    responses.emplace_back(std::move(response));
+                }
             });
 
         /// collect ephemeral nodes when no fault was injected (to clean up later)
@@ -264,8 +342,55 @@ public:
 
     zk::FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops)
     {
-        /// TODO: Support injection in promises
-        return keeper->asyncTryMultiNoThrow(ops);
+        auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
+        auto future = promise->get_future();
+        size_t request_size = ops.size();
+        if (!keeper || (unlikely(fault_policy) && fault_policy->beforeOperationNoThrow()))
+        {
+            if (logger)
+                LOG_TRACE(
+                    logger,
+                    "ZooKeeperWithFaultInjection injected fault before operation: seed={} func=asyncTryMultiNoThrow path={}",
+                    seed,
+                    ops.empty() ? "" : ops.front()->getPath());
+            Coordination::MultiResponse errors;
+            for (size_t i = 0; i < request_size; i++)
+            {
+                auto r = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                r->error = Coordination::Error::ZSESSIONEXPIRED;
+                errors.responses.emplace_back(std::move(r));
+            }
+            promise->set_value(errors);
+            return future;
+        }
+
+        auto callback = [&, promise](const Coordination::MultiResponse & response) mutable
+        {
+            if (unlikely(fault_policy) && fault_policy->afterOperationNoThrow())
+            {
+                if (logger)
+                    LOG_TRACE(
+                        logger,
+                        "ZooKeeperWithFaultInjection injected fault after operation: seed={} func=asyncTryMultiNoThrow path={}",
+                        seed,
+                        ops.empty() ? "" : ops.front()->getPath());
+                Coordination::MultiResponse errors;
+                for (size_t i = 0; i < request_size; i++)
+                {
+                    auto r = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                    r->error = Coordination::Error::ZOPERATIONTIMEOUT;
+                    errors.responses.emplace_back(std::move(r));
+                }
+                promise->set_value(errors);
+            }
+            else
+            {
+                promise->set_value(response);
+            }
+        };
+
+        keeper->impl->multi(ops, std::move(callback));
+        return future;
     }
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
@@ -378,8 +503,32 @@ public:
 
     zk::FutureCreate asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode)
     {
-        /// TODO: Support injection in promises
-        return keeper->asyncTryCreateNoThrow(path, data, mode);
+        auto promise = std::make_shared<std::promise<Coordination::CreateResponse>>();
+        auto future = promise->get_future();
+        if (!keeper || (unlikely(fault_policy) && fault_policy->beforeOperationNoThrow()))
+        {
+            Coordination::CreateResponse r;
+            r.error = Coordination::Error::ZSESSIONEXPIRED;
+            promise->set_value(r);
+            return future;
+        }
+
+        auto callback = [&, promise](const Coordination::CreateResponse & response) mutable
+        {
+            if (unlikely(fault_policy) && fault_policy->afterOperationNoThrow())
+            {
+                Coordination::CreateResponse r;
+                r.error = Coordination::Error::ZOPERATIONTIMEOUT;
+                promise->set_value(r);
+            }
+            else
+            {
+                promise->set_value(response);
+            }
+        };
+
+        keeper->impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
+        return future;
     }
 
     Coordination::Responses multi(const Coordination::Requests & requests)
@@ -417,14 +566,83 @@ public:
 
     zk::FutureRemove asyncTryRemove(const std::string & path, int32_t version = -1)
     {
-        /// TODO: Support injection in promises
-        return keeper->asyncTryRemove(path, version);
+        auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
+        auto future = promise->get_future();
+        if (injectFailureBeforeOp(promise))
+        {
+            if (logger)
+                LOG_TRACE(
+                    logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func=asyncTryRemove path={}", seed, path);
+            return future;
+        }
+
+        auto callback = [&, promise](const Coordination::RemoveResponse & response) mutable
+        {
+            if (injectFailureAfterOp(promise))
+            {
+                if (logger)
+                    LOG_TRACE(
+                        logger,
+                        "ZooKeeperWithFaultInjection injected fault before operation: seed={} func=asyncTryRemove path={}",
+                        seed,
+                        path);
+                return;
+            }
+
+            if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE
+                && response.error != Coordination::Error::ZBADVERSION && response.error != Coordination::Error::ZNOTEMPTY)
+            {
+                promise->set_exception(std::make_exception_ptr(zkutil::KeeperException::fromPath(response.error, path)));
+            }
+            else
+                promise->set_value(response);
+        };
+
+        keeper->impl->remove(path, version, std::move(callback));
+        return future;
     }
 
     zk::FutureRemove asyncTryRemoveNoThrow(const std::string & path, int32_t version = -1)
     {
-        /// TODO: Support injection in promises
-        return keeper->asyncTryRemoveNoThrow(path, version);
+        auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
+        auto future = promise->get_future();
+        if (!keeper || (unlikely(fault_policy) && fault_policy->beforeOperationNoThrow()))
+        {
+            if (logger)
+                LOG_TRACE(
+                    logger,
+                    "ZooKeeperWithFaultInjection injected fault before operation: seed={} func=asyncTryRemoveNoThrow path={}",
+                    seed,
+                    path);
+            Coordination::RemoveResponse r;
+            r.error = Coordination::Error::ZSESSIONEXPIRED;
+            promise->set_value(r);
+            return future;
+        }
+
+        auto callback = [&, promise](const Coordination::RemoveResponse & response) mutable
+        {
+            if (unlikely(fault_policy) && fault_policy->afterOperationNoThrow())
+            {
+                if (logger)
+                    LOG_TRACE(
+                        logger,
+                        "ZooKeeperWithFaultInjection injected fault after operation: seed={} func=asyncTryRemoveNoThrow path={}",
+                        seed,
+                        path);
+                Coordination::RemoveResponse r;
+                r.error = Coordination::Error::ZOPERATIONTIMEOUT;
+                promise->set_value(r);
+            }
+            else
+            {
+                promise->set_value(response);
+            }
+        };
+
+        keeper->impl->remove(path, version, std::move(callback));
+
+        return future;
     }
 
     void removeRecursive(const std::string & path)
@@ -598,8 +816,6 @@ private:
     {
         try
         {
-            ++calls_total;
-
             if (!keeper)
                 throw zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED,
                     "Session is considered to be expired due to fault injection");
@@ -635,8 +851,6 @@ private:
                         });
                 }
 
-                ++calls_without_fault_injection;
-
                 return res;
             }
             else
@@ -652,8 +866,6 @@ private:
                                 fault_after_op_cleanup();
                         });
                 }
-
-                ++calls_without_fault_injection;
             }
         }
         catch (const zkutil::KeeperException & e)
@@ -689,6 +901,38 @@ private:
 
             throw;
         }
+    }
+
+    template <typename T>
+    bool injectFailureBeforeOp(T & promise)
+    {
+        if (!keeper)
+        {
+            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException::fromMessage(
+                Coordination::Error::ZSESSIONEXPIRED, "Session is considered to be expired due to fault injection")));
+            return true;
+        }
+
+        if (unlikely(fault_policy) && fault_policy->beforeOperationNoThrow())
+        {
+            promise->set_exception(std::make_exception_ptr(
+                zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED, "Fault injection before operation")));
+            return true;
+        }
+        return false;
+    }
+
+    template <typename T>
+    bool injectFailureAfterOp(T & promise)
+    {
+        if (unlikely(fault_policy) && fault_policy->afterOperationNoThrow())
+        {
+            promise->set_exception(std::make_exception_ptr(
+                zkutil::KeeperException::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT, "Fault injection after operation")));
+            return true;
+        }
+
+        return false;
     }
 };
 
