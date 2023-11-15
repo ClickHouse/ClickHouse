@@ -1,9 +1,4 @@
-#include <exception>
-#include <variant>
 #include <IO/S3/Credentials.h>
-#include <boost/algorithm/string/classification.hpp>
-#include <Poco/Exception.h>
-#include "Common/Exception.h"
 
 #if USE_AWS_S3
 
@@ -21,22 +16,24 @@
 #    include <aws/core/platform/FileSystem.h>
 
 #    include <Common/logger_useful.h>
-
+#    include <Common/Exception.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
 
+#    include <exception>
+#    include <variant>
 #    include <fstream>
 #    include <base/EnumReflection.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/algorithm/string/split.hpp>
-
-
-#include <Poco/URI.h>
-#include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/StreamCopier.h>
+#    include <boost/algorithm/string.hpp>
+#    include <boost/algorithm/string/split.hpp>
+#    include <boost/algorithm/string/classification.hpp>
+#    include <Poco/Exception.h>
+#    include <Poco/URI.h>
+#    include <Poco/Net/HTTPClientSession.h>
+#    include <Poco/Net/HTTPRequest.h>
+#    include <Poco/Net/HTTPResponse.h>
+#    include <Poco/StreamCopier.h>
 
 
 namespace DB
@@ -65,7 +62,7 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
 }
 
 const char SSO_CREDENTIALS_PROVIDER_LOG_TAG[] = "SSOCredentialsProvider";
-const int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
+constexpr int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
 
 }
 
@@ -275,11 +272,11 @@ String getGCPAvailabilityZoneOrException()
     boost::split(zone_info, response_data, boost::is_any_of("/"));
     /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
     if (zone_info.size() != 4)
-        throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>, got {}", response_data);
+        throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>");
     return zone_info[3];
 }
 
-String getRunningAvailabilityZoneImpl()
+String getRunningAvailabilityZone()
 {
     LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
     try
@@ -302,26 +299,6 @@ String getRunningAvailabilityZoneImpl()
     }
 }
 
-std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImplOrException()
-{
-    try
-    {
-        return getRunningAvailabilityZoneImpl();
-    }
-    catch (...)
-    {
-        return std::current_exception();
-    }
-}
-
-String getRunningAvailabilityZone()
-{
-    static auto az_or_exception = getRunningAvailabilityZoneImplOrException();
-    if (const auto * az = std::get_if<String>(&az_or_exception))
-        return *az;
-    else
-        std::rethrow_exception(std::get<std::exception_ptr>(az_or_exception));
-}
 
 AWSEC2InstanceProfileConfigLoader::AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)
     : client(client_)
