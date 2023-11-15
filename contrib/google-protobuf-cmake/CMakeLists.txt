@@ -174,6 +174,8 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/message.cc
   ${protobuf_source_dir}/src/google/protobuf/message_lite.cc
   ${protobuf_source_dir}/src/google/protobuf/parse_context.cc
+  ${protobuf_source_dir}/src/google/protobuf/port.cc
+  ${protobuf_source_dir}/src/google/protobuf/reflection_mode.cc
   ${protobuf_source_dir}/src/google/protobuf/reflection_ops.cc
   ${protobuf_source_dir}/src/google/protobuf/repeated_field.cc
   ${protobuf_source_dir}/src/google/protobuf/repeated_ptr_field.cc
@@ -213,6 +215,7 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/enum.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/extension.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field_generators/cord_field.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field_generators/enum_field.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field_generators/map_field.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/field_generators/message_field.cc
@@ -299,6 +302,13 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/python/pyi_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/retention.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/ruby/ruby_generator.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/accessors.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/singular_bytes.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/singular_scalar.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/context.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/generator.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/message.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/naming.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/subprocess.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/zip_writer.cc
 )
