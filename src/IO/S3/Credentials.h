@@ -25,7 +25,7 @@ inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
 
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
-String getRunningAvailabilityZone();
+std::string getRunningAvailabilityZone();
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -189,12 +189,14 @@ public:
 
 #else
 
+#    include <string>
+
 namespace DB
 {
 
 namespace S3
 {
-String getRunningAvailabilityZone();
+std::string getRunningAvailabilityZone();
 }
 
 }

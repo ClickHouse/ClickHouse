@@ -784,15 +784,17 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
 #else
 
+#    include <stdexcept>
+
 namespace DB
 {
 
 namespace S3
 {
 
-String getRunningAvailabilityZone()
+std::string getRunningAvailabilityZone()
 {
-    throw Poco::Exception("Does not support availability zone detection for non-cloud environment");
+    throw std::runtime_error("Does not support availability zone detection for non-cloud environment");
 }
 
 }
