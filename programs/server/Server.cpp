@@ -1573,6 +1573,10 @@ try
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+
     /// Set path for filesystem caches
     fs::path filesystem_caches_path(config().getString("filesystem_caches_path", ""));
     if (!filesystem_caches_path.empty())
