@@ -199,7 +199,7 @@ static void checkSuspiciousIndices(const ASTFunction * index_function)
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        const IAST::Hash hash = child->getTreeHash();
+        const IAST::Hash hash = child->getTreeHash(/*ignore_aliases=*/ true);
         const auto & first_half_of_hash = hash.low64;
 
         if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
@@ -1863,6 +1863,9 @@ try
             is_async ? "asynchronously" : "synchronously");
     }
 
+    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(getSettings()->sleep_before_loading_outdated_parts_ms)));
+    ThreadFuzzer::maybeInjectSleep();
+
     /// Acquire shared lock because 'relative_data_path' is used while loading parts.
     TableLockHolder shared_lock;
     if (is_async)
@@ -1875,6 +1878,7 @@ try
 
     while (true)
     {
+        ThreadFuzzer::maybeInjectSleep();
         PartLoadingTree::NodePtr part;
 
         {
@@ -3982,7 +3986,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
 
-    if (restore_covered && part->info.level == 0)
+    if (restore_covered && part->info.level == 0 && part->info.mutation == 0)
     {
         LOG_WARNING(log, "Will not recover parts covered by zero-level part {}", part->name);
         return;
@@ -6498,7 +6502,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     bool has_filter,
     const SelectQueryInfo & query_info,
     const DataPartsVector & parts,
-    DataPartsVector & normal_parts,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context) const
 {
@@ -6623,11 +6626,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 continue;
         }
 
+        /// It's extremely rare that some parts have final marks while others don't. To make it
+        /// straightforward, disable minmax_count projection when `max(pk)' encounters any part with
+        /// no final mark.
         if (need_primary_key_max_column && !part->index_granularity.hasFinalMark())
-        {
-            normal_parts.push_back(part);
-            continue;
-        }
+            return {};
 
         real_parts.push_back(part);
         filter_column_data.back() = 1;
@@ -8231,4 +8234,24 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
     storage.currently_emerging_big_parts.erase(emerging_part_name);
 }
 
+bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
+{
+    auto storage_policy = getStoragePolicy();
+    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+    for (const auto & name : new_added_disks)
+    {
+        auto disk = storage_policy->tryGetDiskByName(name);
+        if (disk)
+        {
+            disk->createDirectories(relative_data_path);
+            disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
+            auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
+            writeIntText(format_version.toUnderType(), *buf);
+            buf->finalize();
+            if (getContext()->getSettingsRef().fsync_metadata)
+                buf->sync();
+        }
+    }
+    return true;
+}
 }

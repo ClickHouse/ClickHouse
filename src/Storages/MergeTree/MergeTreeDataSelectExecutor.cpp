@@ -828,8 +828,8 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByPartition(
-    std::optional<PartitionPruner> & partition_pruner,
-    std::optional<KeyCondition> & minmax_idx_condition,
+    const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<KeyCondition> & minmax_idx_condition,
     MergeTreeData::DataPartsVector & parts,
     std::vector<AlterConversionsPtr> & alter_conversions,
     const std::optional<std::unordered_set<String>> & part_values,
@@ -1288,6 +1288,8 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
     std::optional<ReadFromMergeTree::Indexes> indexes;
+    /// NOTE: We don't need alter_conversions because the returned analysis_result is only used for:
+    /// 1. estimate the number of rows to read; 2. projection reading, which doesn't have alter_conversions.
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         /*alter_conversions=*/ {},
@@ -1824,7 +1826,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
-    std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     PartFilterCounters & counters)
 {
@@ -1886,7 +1888,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
-    std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context,
     PartFilterCounters & counters,

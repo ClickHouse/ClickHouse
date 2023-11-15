@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+-- no-parallel: it checks the number of threads, which can be lowered in presence of other queries
 -- https://github.com/ClickHouse/ClickHouse/issues/37900
 
 drop table if exists t;

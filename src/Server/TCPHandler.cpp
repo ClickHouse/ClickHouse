@@ -59,11 +59,11 @@
 #   include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
 
-#include "Core/Protocol.h"
-#include "Storages/MergeTree/RequestResponse.h"
+#include <Core/Protocol.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include "TCPHandler.h"
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -104,6 +104,7 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int WRONG_PASSWORD;
 }
 
 namespace
@@ -496,7 +497,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, false, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, QueryFlags{}, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -1431,8 +1432,11 @@ void TCPHandler::receiveHello()
                     getClientAddress(client_info));
                 return;
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                if (e.code() != DB::ErrorCodes::WRONG_PASSWORD)
+                    throw;
+
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }

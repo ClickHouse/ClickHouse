@@ -13,6 +13,7 @@ def cluster():
     cluster.add_instance(
         "node",
         main_configs=[
+            "configs/old_node.xml",
             "configs/storage_conf.xml",
         ],
         user_configs=[
@@ -25,10 +26,11 @@ def cluster():
     cluster.add_instance(
         "new_node",
         main_configs=[
+            "configs/new_node.xml",
             "configs/storage_conf.xml",
         ],
         user_configs=[
-            "configs/settings_new.xml",
+            "configs/settings.xml",
         ],
         with_minio=True,
         macros={"replica": "2"},
@@ -37,6 +39,7 @@ def cluster():
     cluster.add_instance(
         "switching_node",
         main_configs=[
+            "configs/switching_node.xml",
             "configs/storage_conf.xml",
         ],
         user_configs=[
@@ -238,24 +241,21 @@ def test_replicated_merge_tree(cluster, storage_policy):
 
 
 def switch_config_write_full_object_key(node, enable):
-    setting_path = "/etc/clickhouse-server/users.d/settings.xml"
+    setting_path = "/etc/clickhouse-server/config.d/switching_node.xml"
+
+    is_on = "<storage_metadata_write_full_object_key>1<"
+    is_off = "<storage_metadata_write_full_object_key>0<"
+
     data = read_file(node, setting_path)
 
     assert data != ""
+    assert is_on in data or is_off in data
 
-    is_on = "<storage_metadata_write_full_object_key>1</storage_metadata_write_full_object_key>"
-    is_off = "<storage_metadata_write_full_object_key>0</storage_metadata_write_full_object_key>"
-
-    enable_line = is_off
     if enable:
-        enable_line = is_on
-
-    if is_on in data:
-        data = data.replace(is_on, enable_line)
+        node.replace_in_config(setting_path, is_off, is_on)
     else:
-        data = data.replace(is_off, enable_line)
+        node.replace_in_config(setting_path, is_on, is_off)
 
-    write_file(node, setting_path, data)
     node.restart_clickhouse()
 
 
