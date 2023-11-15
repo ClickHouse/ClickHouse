@@ -114,7 +114,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    bool recursive = false)
+    bool recursive)
 {
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
@@ -128,7 +128,7 @@ void listFilesWithRegexpMatchingImpl(
         catch (const std::exception &) // NOLINT
         {
             /// There is no such file, but we just ignore this.
-//            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", for_match);
+            /// throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", for_match);
         }
         return;
     }
@@ -185,7 +185,7 @@ void listFilesWithRegexpMatchingImpl(
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result);
+                                                total_bytes_to_read, result, false);
         }
     }
 }
@@ -199,7 +199,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
 
     return result;
 }

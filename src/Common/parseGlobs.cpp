@@ -126,31 +126,32 @@ namespace
 {
 void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> & for_match_paths_expanded)
 {
-    /// regexp for {expr1,expr2,....};
+    /// regexp for {expr1,expr2,....} (a selector glob);
     /// expr1, expr2,... cannot contain any of these: '{', '}', ','
     static const re2::RE2 selector_regex(R"({([^{}*,]+,[^{}*]*[^{}*,])})");
 
     std::string_view path_view(path);
     std::string_view matched;
 
+    // No (more) selector globs found, quit
     if (!RE2::FindAndConsume(&path_view, selector_regex, &matched))
     {
         for_match_paths_expanded.push_back(path);
         return;
     }
 
-    Strings expanded_paths;
-
     std::vector<size_t> anchor_positions;
-    bool opened = false, closed = false;
+    bool opened = false;
+    bool closed = false;
 
-    for (std::string::const_iterator it = path.begin(); it != path.end(); it++)
+    // Looking for first occurrence of {} selector: write down positions of {, } and all intermediate commas
+    for (auto it = path.begin(); it != path.end(); ++it)
     {
         if (*it == '{')
         {
             if (opened)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected '{{' found in path '{}' at position {}.", path, std::distance(path.begin(), it));
+                                "Unexpected '{{' found in path '{}' at position {}.", path, it - path.begin());
             anchor_positions.push_back(std::distance(path.begin(), it));
             opened = true;
         }
@@ -158,7 +159,7 @@ void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> &
         {
             if (!opened)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected '}}' found in path '{}' at position {}.", path, std::distance(path.begin(), it));
+                                "Unexpected '}}' found in path '{}' at position {}.", path, it - path.begin());
             anchor_positions.push_back(std::distance(path.begin(), it));
             closed = true;
             break;
@@ -175,13 +176,15 @@ void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> &
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Invalid {{}} glob in path {}.", path);
 
-    std::string common_prefix = path.substr(0, anchor_positions[0]);
-    std::string common_suffix = path.substr(anchor_positions[anchor_positions.size()-1] + 1);
+    // generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]
+    std::string common_prefix = path.substr(0, anchor_positions.front());
+    std::string common_suffix = path.substr(anchor_positions.back() + 1);
     for (size_t i = 1; i < anchor_positions.size(); ++i)
     {
-        std::string expanded_matcher = common_prefix
-                                       + path.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
-                                       + common_suffix;
+        std::string current_selection =
+                path.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1));
+
+        std::string expanded_matcher = common_prefix + current_selection + common_suffix;
         expandSelectorGlobImpl(expanded_matcher, for_match_paths_expanded);
     }
 }
