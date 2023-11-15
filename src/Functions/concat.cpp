@@ -132,15 +132,15 @@ private:
             else
             {
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
-                const auto full_column = column->convertToFullIfNeeded();
-                const auto serialization = arguments[i].type->getDefaultSerialization();
+                auto full_column = column->convertToFullIfNeeded();
+                auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
                 ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
-                for (size_t j = 0; j < column->size(); ++j)
+                for (size_t row = 0; row < column->size(); ++row)
                 {
-                    serialization->serializeText(*full_column, j, write_buffer, format_settings);
+                    serialization->serializeText(*full_column, row, write_buffer, format_settings);
                     write_helper.rowWritten();
                 }
                 write_helper.finalize();
@@ -150,7 +150,7 @@ private:
                 data[i] = &converted_col_str->getChars();
                 offsets[i] = &converted_col_str->getOffsets();
 
-                /// Keep the refcounted-pointer alive
+                /// Keep the pointer alive
                 converted_col_ptrs[i] = std::move(converted_col_str);
             }
         }
