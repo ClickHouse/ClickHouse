@@ -283,11 +283,11 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
         auto output_column_stats = statistics.getColumnStatistics(aggregate.column_name);
         chassert(output_column && output_column_stats);
 
+        output_column_stats->setDataType(output_column->type);
+
         /// For uniq and uniqExact usually has large stat, so we should update the row size.
         if (aggregate.function->getName() == "uniq" || aggregate.function->getName() == "uniqExact")
             output_column_stats->setAvgRowSize(input.getOutputRowSize() * output_column_stats->getAvgRowSize() / statistics.getOutputRowSize());
-
-        output_column_stats->setDataType(output_column->type);
     }
 
     return statistics;
