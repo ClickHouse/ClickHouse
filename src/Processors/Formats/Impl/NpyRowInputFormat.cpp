@@ -37,7 +37,11 @@ float convertFloat16ToFloat32(uint16_t float16_value)
     uint16_t fraction = float16_value & 0x3FF;
 
     if (exponent == 0 && fraction == 0)
-        return float(sign << 31);
+    {
+        if (sign)
+            return float(-0.0);
+        return float(0.0);
+    }
 
     // Handling special cases for exponent
     if (exponent == 0x1F)
