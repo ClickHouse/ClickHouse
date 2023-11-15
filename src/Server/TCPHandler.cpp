@@ -587,8 +587,19 @@ void TCPHandler::runImpl()
         }
         catch (const Exception & e)
         {
-            /// Authentication failure with interserver secret.
-            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+            /// Authentication failure with interserver secret
+            /// - early exit without trying to send the exception to the client.
+            /// Because the server should not try to skip (parse, decompress) the remaining packets sent by the client,
+            /// as it will lead to additional work and unneeded exposure to unauthenticated connections.
+
+            /// Note that the exception AUTHENTICATION_FAILED can be here in two cases:
+            /// 1. The authentication in receiveHello is skipped with "interserver secret",
+            /// postponed to receiving the query, and then failed.
+            /// 2. Receiving exception from a query using a table function to authenticate with another server.
+            /// In this case, the user is already authenticated with this server,
+            /// is_interserver_mode is false, and we can send the exception to the client normally.
+
+            if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
                 throw;
 
             state.io.onException();
