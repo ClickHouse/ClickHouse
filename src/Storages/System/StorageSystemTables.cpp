@@ -74,18 +74,24 @@ namespace
 
 ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
 {
-    MutableColumnPtr column = ColumnString::create();
+    MutableColumnPtr database_column = ColumnString::create();
+    MutableColumnPtr engine_column = ColumnString::create();
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & database_name : databases | boost::adaptors::map_keys)
+    for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// We don't want to show the internal database for temporary tables in system.tables
 
-        column->insert(database_name);
+        database_column->insert(database_name);
+        engine_column->insert(database->getEngineName());
     }
 
-    Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
+    Block block
+    {
+        ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "database"),
+        ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine")
+    };
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
     return block.getByPosition(0).column;
 }
