@@ -219,27 +219,21 @@ void StorageReplicatedMergeTree::setZooKeeper()
     /// (excluding auxiliary zookeepers)
 
     std::lock_guard lock(current_zookeeper_mutex);
-    if (!current_zookeeper)
-        current_zookeeper = ZooKeeperWithFaultInjection::createInstance(
-            0, /// TODO: Enable faults based on the appropriate settings
-            0, /// TODO: Enable faults based on the appropriate settings
-            nullptr,
-            "StorageReplicatedMergeTree",
-            log);
     if (zookeeper_name == default_zookeeper_name)
     {
-        current_zookeeper->setKeeper(getContext()->getZooKeeper());
+        current_zookeeper = getContext()->getZooKeeper();
     }
     else
     {
-        current_zookeeper->setKeeper(getContext()->getAuxiliaryZooKeeper(zookeeper_name));
+        current_zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
     }
 }
 
 ZooKeeperWithFaultInjectionPtr StorageReplicatedMergeTree::tryGetFaultyZooKeeper() const
 {
     std::lock_guard lock(current_zookeeper_mutex);
-    return current_zookeeper;
+    /// TODO: Enable faults based on settings once retries are introduced
+    return ZooKeeperWithFaultInjection::createInstance(0, 0, current_zookeeper, "StorageReplicatedMergeTree", log);
 }
 
 ZooKeeperWithFaultInjectionPtr StorageReplicatedMergeTree::getFaultyZooKeeper() const
@@ -401,6 +395,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
 
+    auto keeper = getFaultyZooKeeper();
     std::optional<std::unordered_set<std::string>> expected_parts_on_this_replica;
     bool skip_sanity_checks = false;
     /// It does not make sense for CREATE query
@@ -408,17 +403,17 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         try
         {
-            if (current_zookeeper && current_zookeeper->exists(replica_path + "/host"))
+            if (!keeper->isNull() && keeper->exists(replica_path + "/host"))
             {
                 /// Check it earlier if we can (we don't want incompatible version to start).
                 /// If "/host" doesn't exist, then replica is probably dropped and there's nothing to check.
-                ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(current_zookeeper, replica_path);
+                ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(keeper, replica_path);
             }
 
-            if (current_zookeeper && current_zookeeper->exists(replica_path + "/flags/force_restore_data"))
+            if (!keeper->isNull() && keeper->exists(replica_path + "/flags/force_restore_data"))
             {
                 skip_sanity_checks = true;
-                current_zookeeper->remove(replica_path + "/flags/force_restore_data");
+                keeper->remove(replica_path + "/flags/force_restore_data");
 
                 LOG_WARNING(
                     log,
@@ -431,10 +426,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
                 LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
             } /// In case of force_restore it doesn't make sense to check anything
-            else if (current_zookeeper && current_zookeeper->exists(replica_path))
+            else if (!keeper->isNull() && keeper->exists(replica_path))
             {
                 std::vector<std::string> parts_on_replica;
-                if (current_zookeeper->tryGetChildren(fs::path(replica_path) / "parts", parts_on_replica) == Coordination::Error::ZOK)
+                if (keeper->tryGetChildren(fs::path(replica_path) / "parts", parts_on_replica) == Coordination::Error::ZOK)
                 {
                     expected_parts_on_this_replica.emplace();
                     for (const auto & part : parts_on_replica)
@@ -465,7 +460,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     }
 
-    if (!current_zookeeper)
+    if (keeper->isNull())
     {
         if (!attach)
         {
@@ -522,7 +517,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             if (same_structure)
             {
                 Coordination::Stat metadata_stat;
-                current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+                keeper->get(zookeeper_path + "/metadata", &metadata_stat);
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_stat.version));
             }
         }
@@ -10035,7 +10030,7 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
     if (disk->supportZeroCopyReplication() && settings_ptr->allow_remote_fs_zero_copy_replication)
     {
         String table_id = getTableSharedID();
-        return removeSharedDetachedPart(disk, path, part_name, table_id, replica_name, zookeeper_path, getContext(), current_zookeeper);
+        return removeSharedDetachedPart(disk, path, part_name, table_id, replica_name, zookeeper_path, getContext(), getFaultyZooKeeper());
     }
 
     disk->removeRecursive(path);

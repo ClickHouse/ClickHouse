@@ -751,7 +751,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     KeeperRetriesControl new_retry_controller = retries_ctl;
                     new_retry_controller.actionAfterLastFailedRetry([&]
                     {
-                        LOG_WARNING(log, "Called actionAfterLastFailedRetry");
                         /// We do not know whether or not data has been inserted
                         /// - whether other replicas have time to download the part and mark the quorum as done.
                         new_retry_controller.setUserError(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
@@ -1064,7 +1063,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     {
         retries_ctl.actionAfterLastFailedRetry([&]
         {
-            LOG_WARNING(log, "Called actionAfterLastFailedRetry");
             retries_ctl.setUserError(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                     "Unknown status, client must retry. Reason: {}",
                     retries_ctl.getLastKeeperErrorMessage());

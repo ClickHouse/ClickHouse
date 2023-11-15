@@ -420,8 +420,8 @@ private:
 
     using MergeTreeData::MutableDataPartPtr;
 
-    ZooKeeperWithFaultInjectionPtr current_zookeeper; /// Use only the methods below.
-    mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
+    zkutil::ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(current_zookeeper_mutex); /// Use only the methods below.
+    mutable std::mutex current_zookeeper_mutex; /// To recreate the session in the background thread.
 
     ZooKeeperWithFaultInjectionPtr tryGetFaultyZooKeeper() const;
     ZooKeeperWithFaultInjectionPtr getFaultyZooKeeper() const;

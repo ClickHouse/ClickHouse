@@ -324,7 +324,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
     /// `current_zookeeper` lives for the lifetime of `replica_is_active_node`,
     ///  since before changing `current_zookeeper`, `replica_is_active_node` object is destroyed in `partialShutdown` method.
-    storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.current_zookeeper->getKeeper());
+    storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.getFaultyZooKeeper()->getKeeper());
 }
 
 

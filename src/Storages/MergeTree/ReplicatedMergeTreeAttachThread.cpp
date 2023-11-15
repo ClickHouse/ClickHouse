@@ -42,7 +42,7 @@ void ReplicatedMergeTreeAttachThread::run()
     try
     {
         // we delay the first reconnect if the storage failed to connect to ZK initially
-        if (!first_try_done && !storage.current_zookeeper)
+        if (!first_try_done && storage.getFaultyZooKeeper()->isNull())
         {
             needs_retry = true;
         }
