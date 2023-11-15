@@ -183,6 +183,9 @@ public:
     /// action will be called only once and only after latest failed retry
     void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
 
+    const std::string & getName() { return name; }
+    Poco::Logger * getLogger() { return logger; }
+
 private:
     struct KeeperError
     {

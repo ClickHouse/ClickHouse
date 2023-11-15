@@ -432,7 +432,7 @@ Chunk DDLQueryStatusSource::generate()
 
         retries_ctl.retryLoop([&]()
         {
-            auto zookeeper = context->getKeeperWithFaultsEnabled("executeDDLQueryOnCluster", &Poco::Logger::get("DDLQueryStatusSource"));
+            auto zookeeper = context->getKeeperWithFaultsEnabled(retries_ctl);
             node_exists = zookeeper->exists(node_path);
             tmp_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait);
             tmp_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");

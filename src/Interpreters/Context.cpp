@@ -82,6 +82,7 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/ZooKeeper/KeeperRetriesController.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/ShellCommand.h>
@@ -2937,14 +2938,20 @@ ZooKeeperWithFaultInjectionPtr Context::getKeeperWithFaultsDisabled(const String
             logger);
 }
 
-ZooKeeperWithFaultInjectionPtr Context::getKeeperWithFaultsEnabled(const String & name, Poco::Logger * logger) const
+ZooKeeperWithFaultInjectionPtr Context::getKeeperWithFaultsEnabled(KeeperRetriesControl & retries_ctl) const
 {
-    return ZooKeeperWithFaultInjection::createInstance(
-            settings.keeper_fault_injection_probability,
-            settings.keeper_fault_injection_seed,
-            getZooKeeper(),
-            name,
-            logger);
+    ZooKeeperWithFaultInjectionPtr res;
+    retries_ctl.retryLoop([&]
+    {
+        zkutil::ZooKeeperPtr zk = getZooKeeper();
+        res = ZooKeeperWithFaultInjection::createInstance(
+                settings.keeper_fault_injection_probability,
+                settings.keeper_fault_injection_seed,
+                zk,
+                retries_ctl.getName(),
+                retries_ctl.getLogger());
+    });
+    return res;
 }
 
 namespace

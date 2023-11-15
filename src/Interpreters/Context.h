@@ -177,6 +177,7 @@ struct BackgroundTaskSchedulingSettings;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+class KeeperRetriesControl;
 class ZooKeeperWithFaultInjection;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
@@ -923,7 +924,7 @@ public:
     /// Same as getZooKeeper() but returns a keeper that can introduce faults before and after the operation
     /// *Disabled for the WIP until retries are added
     ZooKeeperWithFaultInjectionPtr getKeeperWithFaultsDisabled(const String & name, Poco::Logger * logger) const;
-    ZooKeeperWithFaultInjectionPtr getKeeperWithFaultsEnabled(const String & name, Poco::Logger * logger) const;
+    ZooKeeperWithFaultInjectionPtr getKeeperWithFaultsEnabled(KeeperRetriesControl & retries_ctl) const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true

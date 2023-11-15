@@ -162,87 +162,86 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(
 
     size_t replicas_number = 0;
 
-    zk_retries_ctl.retryLoop(
-        [&]()
+    zk_retries_ctl.retryLoop([&]()
+    {
+        zookeeper->setKeeper(context->getZooKeeper());
+
+        /// Stop retries if in shutdown, note that we need to check
+        /// shutdown_prepared_called, not shutdown_called, since the table
+        /// will be marked as readonly after calling
+        /// StorageReplicatedMergeTree::flushAndPrepareForShutdown(), and
+        /// the final shutdown() can not be called if you have Buffer table
+        /// that writes to this replicated table, until all the retries
+        /// will be made.
+        if (storage.is_readonly && storage.shutdown_prepared_called)
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+
+        quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
+
+        Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
+
+        Strings exists_paths;
+        exists_paths.reserve(replicas.size());
+        for (const auto & replica : replicas)
+            if (replica != storage.replica_name)
+                exists_paths.emplace_back(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active");
+
+        auto exists_result = zookeeper->exists(exists_paths);
+        auto get_results = zookeeper->get(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
+
+        Coordination::Error keeper_error = Coordination::Error::ZOK;
+        size_t active_replicas = 1; /// Assume current replica is active (will check below)
+        for (size_t i = 0; i < exists_paths.size(); ++i)
         {
-            zookeeper->setKeeper(context->getZooKeeper());
+            auto error = exists_result[i].error;
+            if (error == Coordination::Error::ZOK)
+                ++active_replicas;
+            else if (Coordination::isHardwareError(error))
+                keeper_error = error;
+        }
 
-            /// Stop retries if in shutdown, note that we need to check
-            /// shutdown_prepared_called, not shutdown_called, since the table
-            /// will be marked as readonly after calling
-            /// StorageReplicatedMergeTree::flushAndPrepareForShutdown(), and
-            /// the final shutdown() can not be called if you have Buffer table
-            /// that writes to this replicated table, until all the retries
-            /// will be made.
-            if (storage.is_readonly && storage.shutdown_prepared_called)
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+        replicas_number = replicas.size();
+        size_t quorum_size = getQuorumSize(replicas_number);
 
-            quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
+        if (active_replicas < quorum_size)
+        {
+            if (Coordination::isHardwareError(keeper_error))
+                throw Coordination::Exception::fromMessage(keeper_error, "Failed to check number of alive replicas");
 
-            Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
+            throw Exception(
+                ErrorCodes::TOO_FEW_LIVE_REPLICAS,
+                "Number of alive replicas ({}) is less than requested quorum ({}/{}).",
+                active_replicas,
+                quorum_size,
+                replicas_number);
+        }
 
-            Strings exists_paths;
-            exists_paths.reserve(replicas.size());
-            for (const auto & replica : replicas)
-                if (replica != storage.replica_name)
-                    exists_paths.emplace_back(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active");
+        /** Is there a quorum for the last part for which a quorum is needed?
+            * Write of all the parts with the included quorum is linearly ordered.
+            * This means that at any time there can be only one part,
+            *  for which you need, but not yet reach the quorum.
+            * Information about this part will be located in `/quorum/status` node.
+            * If the quorum is reached, then the node is deleted.
+            */
 
-            auto exists_result = zookeeper->exists(exists_paths);
-            auto get_results = zookeeper->get(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
+        String quorum_status;
+        if (!quorum_parallel && zookeeper->tryGet(quorum_info.status_path, quorum_status))
+            throw Exception(
+                ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE,
+                "Quorum for previous write has not been satisfied yet. Status: {}",
+                quorum_status);
 
-            Coordination::Error keeper_error = Coordination::Error::ZOK;
-            size_t active_replicas = 1; /// Assume current replica is active (will check below)
-            for (size_t i = 0; i < exists_paths.size(); ++i)
-            {
-                auto error = exists_result[i].error;
-                if (error == Coordination::Error::ZOK)
-                    ++active_replicas;
-                else if (Coordination::isHardwareError(error))
-                    keeper_error = error;
-            }
+        /// Both checks are implicitly made also later (otherwise there would be a race condition).
 
-            replicas_number = replicas.size();
-            size_t quorum_size = getQuorumSize(replicas_number);
+        auto is_active = get_results[0];
+        auto host = get_results[1];
 
-            if (active_replicas < quorum_size)
-            {
-                if (Coordination::isHardwareError(keeper_error))
-                    throw Coordination::Exception::fromMessage(keeper_error, "Failed to check number of alive replicas");
+        if (is_active.error == Coordination::Error::ZNONODE || host.error == Coordination::Error::ZNONODE)
+            throw Exception(ErrorCodes::READONLY, "Replica is not active right now");
 
-                throw Exception(
-                    ErrorCodes::TOO_FEW_LIVE_REPLICAS,
-                    "Number of alive replicas ({}) is less than requested quorum ({}/{}).",
-                    active_replicas,
-                    quorum_size,
-                    replicas_number);
-            }
-
-            /** Is there a quorum for the last part for which a quorum is needed?
-                * Write of all the parts with the included quorum is linearly ordered.
-                * This means that at any time there can be only one part,
-                *  for which you need, but not yet reach the quorum.
-                * Information about this part will be located in `/quorum/status` node.
-                * If the quorum is reached, then the node is deleted.
-                */
-
-            String quorum_status;
-            if (!quorum_parallel && zookeeper->tryGet(quorum_info.status_path, quorum_status))
-                throw Exception(
-                    ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE,
-                    "Quorum for previous write has not been satisfied yet. Status: {}",
-                    quorum_status);
-
-            /// Both checks are implicitly made also later (otherwise there would be a race condition).
-
-            auto is_active = get_results[0];
-            auto host = get_results[1];
-
-            if (is_active.error == Coordination::Error::ZNONODE || host.error == Coordination::Error::ZNONODE)
-                throw Exception(ErrorCodes::READONLY, "Replica is not active right now");
-
-            quorum_info.is_active_node_version = is_active.stat.version;
-            quorum_info.host_node_version = host.stat.version;
-        });
+        quorum_info.is_active_node_version = is_active.stat.version;
+        quorum_info.host_node_version = host.stat.version;
+    });
 
     return replicas_number;
 }
@@ -257,7 +256,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     const auto & settings = context->getSettingsRef();
     KeeperRetriesControl retries_ctl(
         "ReplicatedMergeTreeSink::consume", log, KeeperRetriesInfo::fromSettings(settings), context->getProcessListElementSafe());
-    ZooKeeperWithFaultInjectionPtr zookeeper = context->getKeeperWithFaultsEnabled("ReplicatedMergeTreeSink::consume", log);
+    ZooKeeperWithFaultInjectionPtr zookeeper = context->getKeeperWithFaultsEnabled(retries_ctl);
 
     /** If write is with quorum, then we check that the required number of replicas is now live,
       *  and also that for all previous parts for which quorum is required, this quorum is reached.
@@ -490,9 +489,9 @@ template <>
 bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
     auto const & settings = context->getSettingsRef();
-    auto zookeeper = context->getKeeperWithFaultsEnabled("writeExistingPart", log);
     KeeperRetriesControl retries_ctl(
         "writeExistingPart", log, KeeperRetriesInfo::fromSettings(settings), context->getProcessListElementSafe());
+    auto zookeeper = context->getKeeperWithFaultsEnabled(retries_ctl);
 
     size_t replicas_num = checkQuorumPrecondition(zookeeper, retries_ctl);
 
@@ -1102,7 +1101,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
     const auto & settings = context->getSettingsRef();
     KeeperRetriesControl retries_ctl(
             "ReplicatedMergeTreeSink::onFinish", log, KeeperRetriesInfo::fromSettings(settings), context->getProcessListElementSafe());
-    ZooKeeperWithFaultInjectionPtr zookeeper = context->getKeeperWithFaultsEnabled("ReplicatedMergeTreeSink::onFinish", log);
+    ZooKeeperWithFaultInjectionPtr zookeeper = context->getKeeperWithFaultsEnabled(retries_ctl);
     finishDelayedChunk(zookeeper, retries_ctl);
 }
 

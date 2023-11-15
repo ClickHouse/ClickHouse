@@ -2948,7 +2948,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     # while materialized view is working to inject zookeeper failure
     pm.drop_instance_zk_connections(instance)
     instance.wait_for_log_line(
-        "Error.*(Connection loss|Coordination::Exception).*while pushing to view"
+        ".*while pushing to view test.consumer.*KEEPER_EXCEPTION.*"
     )
     pm.heal_all()
     instance.wait_for_log_line("Committed offset 22")
