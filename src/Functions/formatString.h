@@ -1,14 +1,14 @@
 #pragma once
 
+#include <Columns/ColumnString.h>
+#include <Common/format.h>
+#include <Common/memcpySmall.h>
+#include <base/types.h>
+
 #include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
-#include <Columns/ColumnString.h>
-#include <base/types.h>
-#include <Common/format.h>
-#include <Common/memcpySmall.h>
-
 
 namespace DB
 {

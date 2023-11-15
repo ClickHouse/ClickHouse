@@ -91,7 +91,6 @@ private:
         else
         {
             /// Fallback: use generic implementation for not very important cases.
-            /// Concat of arbitrary types also goes here.
             return executeFormatImpl(arguments, input_rows_count);
         }
 
@@ -108,7 +107,7 @@ private:
         std::vector<const ColumnString::Offsets *> offsets(num_arguments);
         std::vector<size_t> fixed_string_sizes(num_arguments);
         std::vector<std::optional<String>> constant_strings(num_arguments);
-        std::vector<ColumnPtr> converted_col_ptrs(num_arguments);
+        std::vector<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)
@@ -132,14 +131,13 @@ private:
             }
             else
             {
-                // An arbitrary type argument: converting it to a StringColumn first
+                /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
                 const auto full_column = column->convertToFullIfNeeded();
                 const auto serialization = arguments[i].type->getDefaultSerialization();
-                ColumnString::MutablePtr converted_col_str = ColumnString::create();
-                static FormatSettings format_settings;
-
+                auto converted_col_str = ColumnString::create();
                 ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
+                FormatSettings format_settings;
                 for (size_t j = 0; j < column->size(); ++j)
                 {
                     serialization->serializeText(*full_column, j, write_buffer, format_settings);
@@ -147,12 +145,12 @@ private:
                 }
                 write_helper.finalize();
 
-                // Same as the normal `ColumnString` branch
+                /// Same as the normal `ColumnString` branch
                 has_column_string = true;
                 data[i] = &converted_col_str->getChars();
                 offsets[i] = &converted_col_str->getOffsets();
 
-                // keep the refcounted-pointer around (to be able to use data/offsets later)
+                /// Keep the refcounted-pointer alive
                 converted_col_ptrs[i] = std::move(converted_col_str);
             }
         }

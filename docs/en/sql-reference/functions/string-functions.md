@@ -429,7 +429,7 @@ SELECT format('{} {}', 'Hello', 'World')
 
 ## concat
 
-Concatenates the strings listed in the arguments without separator.
+Concatenates the given arguments.
 
 **Syntax**
 
@@ -439,7 +439,9 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-Values of arbitrary types. If an argument is not a String or FixedString, it is converted to the String type using the default serialization.
+At least two values of arbitrary type.
+
+Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -448,6 +450,8 @@ The String created by concatenating the arguments.
 If any of arguments is `NULL`, the function returns `NULL`.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT concat('Hello, ', 'World!');
@@ -461,7 +465,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-**Example**
+Query:
 
 ```sql
 SELECT concat(42, 144);
@@ -539,6 +543,8 @@ Concatenates the given strings with a given separator.
 ``` sql
 concatWithSeparator(sep, expr1, expr2, expr3...)
 ```
+
+Alias: `concat_ws`
 
 **Arguments**
 
