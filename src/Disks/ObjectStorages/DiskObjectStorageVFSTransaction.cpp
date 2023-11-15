@@ -122,8 +122,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
 
     auto buffer = writeFileOps(path, buf_size, mode, settings, autocommit, blob);
 
-    // TODO myrrc this is not committed when autocommit=on
-    // And this possibly should be grouped in a single Keeper transaction instead of three
+    // TODO myrrc this possibly should be grouped in a single Keeper transaction instead of three
     const StoredObjects objects = {{std::move(blob)}};
     addStoredObjectsOp(VFSTransactionLogItem::Type::CreateInode, objects);
     addStoredObjectsOp(VFSTransactionLogItem::Type::Link, objects);

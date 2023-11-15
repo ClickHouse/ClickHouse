@@ -54,6 +54,8 @@ void ObjectStorageVFSGCThread::run()
     }
 
     zookeeper_lock->unlock();
+
+    LOG_DEBUG(log, "Removed lock for log range [{};{}]", start_logpointer, end_logpointer);
     task->scheduleAfter(sleep_ms);
 }
 
@@ -73,20 +75,29 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
         ops.emplace_back(zkutil::makeGetRequest(getNode(i)));
 
     std::vector<VFSTransactionLogItem> logs;
-    std::optional<String> previous_snapshot_remote_path;
+    String previous_snapshot_remote_path;
 
     for (const auto & item : storage.zookeeper->multi(ops))
     {
         auto log_item = VFSTransactionLogItem{}.deserialize(dynamic_cast<const Coordination::GetResponse &>(*item).data);
 
+        if (log_item.type == VFSTransactionLogItem::Type::CreateInode)
+        {
+            LOG_DEBUG(log, "Create entry {}", log_item);
+        }
+
         if (log_item.type == VFSTransactionLogItem::Type::CreateInode //NOLINT
             && log_item.local_path.starts_with(VFS_SNAPSHOT_PREFIX))
-            previous_snapshot_remote_path.emplace(log_item.remote_path);
+            previous_snapshot_remote_path = log_item.remote_path;
 
         logs.emplace_back(std::move(log_item));
     }
 
-    const StoredObject previous_snapshot{*previous_snapshot_remote_path};
+    if (previous_snapshot_remote_path.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No shapshot for {} found in log entries [{};{}]",
+            end_logpointer - 1, start_logpointer, end_logpointer);
+
+    const StoredObject previous_snapshot{previous_snapshot_remote_path};
     auto snapshot_buf = storage.readObject(previous_snapshot);
     String snapshot_str;
     readStringUntilEOF(snapshot_str, *snapshot_buf);
