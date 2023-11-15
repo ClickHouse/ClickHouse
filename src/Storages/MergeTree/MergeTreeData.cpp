@@ -192,6 +192,7 @@ namespace ErrorCodes
     extern const int NOT_INITIALIZED;
     extern const int SERIALIZATION_ERROR;
     extern const int TOO_MANY_MUTATIONS;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -4832,17 +4833,36 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
             throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on disk '{}'", partition_id, disk->getName());
     }
 
-    MovePartsOutcome moves_outcome = movePartsToSpace(parts, std::static_pointer_cast<Space>(disk), local_context->getReadSettings(), local_context->getWriteSettings());
-    switch (moves_outcome)
+    if (parts_mover.moves_blocker.isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
+
+    auto moving_tagger = checkPartsForMove(parts, std::static_pointer_cast<Space>(disk));
+    if (moving_tagger->parts_to_move.empty())
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
+
+    const auto & query_settings = local_context->getSettingsRef();
+    std::future<MovePartsOutcome> moves_future = movePartsToSpace(moving_tagger, local_context->getReadSettings(), local_context->getWriteSettings(), query_settings.alter_move_to_space_execute_async);
+
+    if (query_settings.alter_move_to_space_execute_async && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
-        case MovePartsOutcome::MovesAreCancelled:
-            throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
-        case MovePartsOutcome::NothingToMove:
-            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
-        case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
-        case MovePartsOutcome::PartsMoved:
-            break;
+        return;
+    }
+    else
+    {
+        auto moves_outcome = moves_future.get();
+        switch (moves_outcome)
+        {
+            case MovePartsOutcome::MovesAreCancelled:
+                throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
+            case MovePartsOutcome::NothingToMove:
+                throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
+            case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
+                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
+            case MovePartsOutcome::CannotScheduleMove:
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Cannot schedule move, no free threads, try to wait until all in-progress move finish or increase <background_move_pool_size>");
+            case MovePartsOutcome::PartsMoved:
+                break;
+        }
     }
 }
 
@@ -4895,17 +4915,36 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
             throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on volume '{}'", partition_id, volume->getName());
     }
 
-    MovePartsOutcome moves_outcome = movePartsToSpace(parts, std::static_pointer_cast<Space>(volume), local_context->getReadSettings(), local_context->getWriteSettings());
-    switch (moves_outcome)
+    if (parts_mover.moves_blocker.isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
+
+    auto moving_tagger = checkPartsForMove(parts, std::static_pointer_cast<Space>(volume));
+    if (moving_tagger->parts_to_move.empty())
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
+
+    const auto & query_settings = local_context->getSettingsRef();
+    std::future<MovePartsOutcome> moves_future = movePartsToSpace(moving_tagger, local_context->getReadSettings(), local_context->getWriteSettings(), query_settings.alter_move_to_space_execute_async);
+
+    if (query_settings.alter_move_to_space_execute_async && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
-        case MovePartsOutcome::MovesAreCancelled:
-            throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
-        case MovePartsOutcome::NothingToMove:
-            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
-        case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
-        case MovePartsOutcome::PartsMoved:
-            break;
+        return;
+    }
+    else
+    {
+        auto moves_outcome = moves_future.get();
+        switch (moves_outcome)
+        {
+            case MovePartsOutcome::MovesAreCancelled:
+                throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
+            case MovePartsOutcome::NothingToMove:
+                throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
+            case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
+                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
+            case MovePartsOutcome::CannotScheduleMove:
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Cannot schedule move, no free threads, try to wait until all in-progress move finish or increase <background_move_pool_size>");
+            case MovePartsOutcome::PartsMoved:
+                break;
+        }
     }
 }
 
@@ -7476,16 +7515,33 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1;
 }
 
-MovePartsOutcome MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space, const ReadSettings & read_settings, const WriteSettings & write_settings)
+std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async)
 {
-    if (parts_mover.moves_blocker.isCancelled())
-        return MovePartsOutcome::MovesAreCancelled;
+    auto finish_move_promise = std::make_shared<std::promise<MovePartsOutcome>>();
+    auto finish_move_future = finish_move_promise->get_future();
 
-    auto moving_tagger = checkPartsForMove(parts, space);
-    if (moving_tagger->parts_to_move.empty())
-        return MovePartsOutcome::NothingToMove;
+    if (async)
+    {
+        bool is_scheduled = background_moves_assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
+            [this, finish_move_promise, moving_tagger, read_settings, write_settings] () mutable
+            {
+                auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true);
 
-    return moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true);
+                finish_move_promise->set_value(outcome);
+
+                return outcome == MovePartsOutcome::PartsMoved;
+            }, moves_assignee_trigger, getStorageID()));
+
+        if (!is_scheduled)
+            finish_move_promise->set_value(MovePartsOutcome::CannotScheduleMove);
+    }
+    else
+    {
+        auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true);
+        finish_move_promise->set_value(outcome);
+    }
+
+    return finish_move_future;
 }
 
 MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
