@@ -334,10 +334,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                     bool source_has_value = with_element.hasChildNodes();
                     if (source_has_value)
                         for (const auto & attr_name: SUBSTITUTION_ATTRS)
-                        {
-                            if (config_element.hasAttribute(attr_name))
-                                config_element.removeAttribute(attr_name);
-                        }
+                            config_element.removeAttribute(attr_name);
 
                     mergeAttributes(config_element, with_element);
                     mergeRecursive(config, config_node, with_node);
