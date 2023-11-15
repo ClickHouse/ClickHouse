@@ -14,7 +14,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
