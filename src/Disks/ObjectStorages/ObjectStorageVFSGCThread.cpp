@@ -81,11 +81,6 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
     {
         auto log_item = VFSTransactionLogItem{}.deserialize(dynamic_cast<const Coordination::GetResponse &>(*item).data);
 
-        if (log_item.type == VFSTransactionLogItem::Type::CreateInode)
-        {
-            LOG_DEBUG(log, "Create entry {}", log_item);
-        }
-
         if (log_item.type == VFSTransactionLogItem::Type::CreateInode //NOLINT
             && log_item.local_path.starts_with(VFS_SNAPSHOT_PREFIX))
             previous_snapshot_remote_path = log_item.remote_path;
@@ -103,7 +98,13 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
     readStringUntilEOF(snapshot_str, *snapshot_buf);
 
     out.snapshot = VFSSnapshot{}.deserialize(snapshot_str);
+
+    LOG_TRACE(log, "Loaded snapshot {}", out.snapshot);
+    LOG_TRACE(log, "Got log batch\n{}", fmt::join(logs, "\n"));
+
     out.obsolete_objects = out.snapshot.update(logs);
+
+    // TODO myrrc this won't remove local metadata file from disk
     out.obsolete_objects.emplace_back(previous_snapshot);
 
     return out;

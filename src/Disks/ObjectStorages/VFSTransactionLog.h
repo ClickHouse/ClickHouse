@@ -59,3 +59,19 @@ struct fmt::formatter<DB::VFSTransactionLogItem>
         return fmt::format_to(ctx.out(), "LogItem({})", item.serialize());
     }
 };
+
+// TODO myrrc for logging purposes only
+template <>
+struct fmt::formatter<DB::VFSSnapshot>
+{
+    constexpr auto parse(auto & ctx) { return ctx.begin(); }
+    constexpr auto format(const DB::VFSSnapshot & snapshot, auto & ctx)
+    {
+        fmt::format_to(ctx.out(), "VFSSnapshot(\n");
+
+        for (const auto & [_, obj_pair] : snapshot.items)
+            fmt::format_to(ctx.out(), "Item({}, links={})\n", obj_pair.second, obj_pair.first);
+
+        return fmt::format_to(ctx.out(), ")");
+    }
+};
