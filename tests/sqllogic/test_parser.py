@@ -519,12 +519,12 @@ class QueryResult:
                 elif t == "I":
                     try:
                         res_row.append(str(int(c)))
-                    except (ValueError) as ex:
-                        #raise QueryExecutionError(
-                        #    f"Got non-integer result '{c}' for I type."
-                        #)
+                    except ValueError as ex:
+                        # raise QueryExecutionError(
+                        #     f"Got non-integer result '{c}' for I type."
+                        # )
                         res_row.append(str(int(0)))
-                    except (OverflowError) as ex:
+                    except OverflowError as ex:
                         raise QueryExecutionError(
                             f"Got overflowed result '{c}' for I type."
                         )
