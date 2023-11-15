@@ -28,7 +28,7 @@ void AsynchronousMetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
 
-    columns[column_idx++]->insert(hostname);
+    columns[column_idx++]->insert(getFQDNOrHostName());
     columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(metric_name);
@@ -39,7 +39,6 @@ void AsynchronousMetricLog::addValues(const AsynchronousMetricValues & values)
 {
     AsynchronousMetricLogElement element;
 
-    element.hostname = getFQDNOrHostName();
     element.event_time = time(nullptr);
     element.event_date = DateLUT::instance().toDayNum(element.event_time);
 
