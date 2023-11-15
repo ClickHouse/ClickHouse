@@ -37,15 +37,8 @@ def test_reload_query_masking_rules():
     # event will not be registered
     node.query("SELECT 'TOPSECRET.TOPSECRET'")
     assert_logs_contain_with_retry(node, "SELECT 'TOPSECRET.TOPSECRET'")
-
-    # If there were no 'QueryMaskingRulesMatch' events, the query below returns
-    # 0 rows
-    assert (
-        node.query(
-            "SELECT count(value) FROM system.events WHERE name = 'QueryMaskingRulesMatch'"
-        )
-        == "0\n"
-    )
+    assert not node.contains_in_log(r"SELECT '\[hidden\]'")
+    node.rotate_logs()
 
     node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "configs/changed_settings.xml"),
@@ -58,17 +51,7 @@ def test_reload_query_masking_rules():
     # will be incremented
     node.query("SELECT 'TOPSECRET.TOPSECRET'")
 
-    assert_eq_with_retry(
-        node,
-        "SELECT count(value) FROM system.events WHERE name = 'QueryMaskingRulesMatch'",
-        "1",
-    )
     assert_logs_contain_with_retry(node, r"SELECT '\[hidden\]'")
-    assert (
-        node.query(
-            "SELECT value FROM system.events WHERE name = 'QueryMaskingRulesMatch'"
-        )
-        == "1\n"
-    )
+    assert not node.contains_in_log("SELECT 'TOPSECRET.TOPSECRET'")
 
     node.rotate_logs()
