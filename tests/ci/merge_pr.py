@@ -230,8 +230,8 @@ def main():
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
     # pylint: disable=protected-access
-    repo.organization._url.value = repo.organization.url.replace(  # type: ignore
-        "/users/", "/orgs/", 1
+    repo.organization._url = repo._makeStringAttribute(
+        repo.organization.url.replace("/users/", "/orgs/", 1)
     )
     # pylint: enable=protected-access
     pr = repo.get_pull(args.pr)
