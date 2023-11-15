@@ -475,10 +475,12 @@ def colored(text, args, color=None, on_color=None, attrs=None):
     else:
         return text
 
+
 def test_fuzzing_start(test_name):
-    padding_size = (shutil.get_terminal_size((72, 72))[0] - len(test_name))
+    padding_size = shutil.get_terminal_size((72, 72))[0] - len(test_name)
     left_padding = padding_size // 2
     return "-" * left_padding + test_name + "-" * (padding_size - left_padding) + "\n"
+
 
 class TestStatus(enum.Enum):
     FAIL = "FAIL"
@@ -856,7 +858,11 @@ class TestCase:
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
 
-        file_suffix = f".{os.getpid()}" if is_concurrent and (args.test_runs > 1 or args.fuzz) else ""
+        file_suffix = (
+            f".{os.getpid()}"
+            if is_concurrent and (args.test_runs > 1 or args.fuzz)
+            else ""
+        )
         self.reference_file = self.get_reference_file(suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
@@ -983,13 +989,21 @@ class TestCase:
         return None
 
     def process_result_impl(
-        self, proc, stdout: str, stderr: str, debug_log: str, total_time: float, fuzz: bool
+        self,
+        proc,
+        stdout: str,
+        stderr: str,
+        debug_log: str,
+        total_time: float,
+        fuzz: bool,
     ):
         description = ""
 
         if fuzz:
             description += "\n" + stdout
-            return TestResult(self.name, TestStatus.FUZZED, None, total_time, description)
+            return TestResult(
+                self.name, TestStatus.FUZZED, None, total_time, description
+            )
 
         debug_log = trim_for_log(debug_log)
 
@@ -1572,7 +1586,9 @@ class TestSuite:
         )
 
         if args.fuzz and args.extreme_fuzz_tests:
-            extreme_fuzz_tests = list(self.get_selected_tests(lambda x: True, args.extreme_fuzz_tests))
+            extreme_fuzz_tests = list(
+                self.get_selected_tests(lambda x: True, args.extreme_fuzz_tests)
+            )
             new_all_tests = list()
             for test in self.all_tests:
                 new_all_tests += extreme_fuzz_tests + [test]
@@ -1744,9 +1760,13 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
         about = "about " if is_concurrent else ""
         proc_name = multiprocessing.current_process().name
         if args.fuzz:
-            print(f"\nFuzzing {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
+            print(
+                f"\nFuzzing {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n"
+            )
         else:
-            print(f"\nRunning {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
+            print(
+                f"\nRunning {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n"
+            )
 
     while True:
         if is_concurrent:
@@ -2479,7 +2499,10 @@ def get_additional_client_options(args):
     if args.client_option:
         all_options += args.client_option
     if args.fuzz:
-        all_options += [f"query-fuzzer-runs={args.query_fuzzer_runs}", f"create-query-fuzzer-runs={args.query_fuzzer_runs}"]
+        all_options += [
+            f"query-fuzzer-runs={args.query_fuzzer_runs}",
+            f"create-query-fuzzer-runs={args.query_fuzzer_runs}",
+        ]
     return " ".join("--" + option for option in all_options)
 
 
