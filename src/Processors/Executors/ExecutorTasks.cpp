@@ -121,14 +121,14 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
 
     /// Take local task from queue if has one.
     if (!queue.empty() && !context.hasAsyncTasks()
-        && context.num_consequintely_scheduled_local_tasks < context.max_consequintely_scheduled_local_tasks)
+        && context.num_scheduled_local_tasks < context.max_scheduled_local_tasks)
     {
-        ++context.num_consequintely_scheduled_local_tasks;
+        ++context.num_scheduled_local_tasks;
         context.setTask(queue.front());
         queue.pop();
     }
     else
-        context.num_consequintely_scheduled_local_tasks = 0;
+        context.num_scheduled_local_tasks = 0;
 
     if (!queue.empty() || !async_queue.empty())
     {
