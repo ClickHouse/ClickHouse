@@ -326,14 +326,18 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                     NodePtr new_node = config->importNode(with_node, true);
                     config_root->replaceChild(new_node, config_node);
                 }
-                else if (with_element.hasChildNodes() && with_element.firstChild()->nodeType() == Node::TEXT_NODE)
-                {
-                    NodePtr new_node = config->importNode(with_node, true);
-                    config_root->replaceChild(new_node, config_node);
-                }
                 else
                 {
                     Element & config_element = dynamic_cast<Element &>(*config_node);
+
+                    /// Remove substitution attributes from the merge target node if source node already has a value
+                    bool source_has_value = with_element.hasChildNodes();
+                    if (source_has_value)
+                        for (const auto & attr_name: SUBSTITUTION_ATTRS)
+                        {
+                            if (config_element.hasAttribute(attr_name))
+                                config_element.removeAttribute(attr_name);
+                        }
 
                     mergeAttributes(config_element, with_element);
                     mergeRecursive(config, config_node, with_node);
