@@ -44,9 +44,9 @@ ORDER BY (date, file, name, args_name);
 INPUT_DIR=$1
 OUTPUT_DIR=$2
 
-find "$INPUT_DIR" -name '*.json' | grep -P '\.(c|cpp|cc|cxx)\.json$' | xargs -P $(nproc) -I{} bash -c "
+find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | grep -P '\.(c|cpp|cc|cxx)\.json|\.time-trace$' | xargs -P $(nproc) -I{} bash -c "
 
-    ORIGINAL_FILENAME=\$(echo '{}' | sed -r -e 's!\.json\$!!; s!/CMakeFiles/[^/]+\.dir!!')
+    ORIGINAL_FILENAME=\$(echo '{}' | sed -r -e 's!\.(json|time-trace)\$!!; s!/CMakeFiles/[^/]+\.dir!!')
     LIBRARY_NAME=\$(echo '{}' | sed -r -e 's!^.*/CMakeFiles/([^/]+)\.dir/.*\$!\1!')
     START_TIME=\$(jq '.beginningOfTime' '{}')
 
