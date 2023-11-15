@@ -57,14 +57,16 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const override;
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
 
     bool ignoreQuota() const override { return select_query_options.ignore_quota; }
 
-
     const Planner & getPlanner() const { return planner; }
+
     Planner & getPlanner() { return planner; }
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }

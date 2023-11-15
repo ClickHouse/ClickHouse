@@ -8,6 +8,7 @@ import digest_helper as dh
 
 _12 = b"12\n"
 _13 = b"13\n"
+_14 = b"14\n"
 
 
 # pylint:disable=protected-access
@@ -50,12 +51,13 @@ class TestDigests(unittest.TestCase):
 
         # dir1
         hash_expected = md5()
-        hash_expected.update(_12)
+        hash_expected.update(_12 + _14)
         dh._digest_directory(self.tests_dir / "dir1", hash_tested)
         self.assertEqual(hash_expected.digest(), hash_tested.digest())
 
         # dir2 contains 12 and 13
-        hash_expected.update(_13)
+        hash_expected = md5()
+        hash_expected.update(_12 + _13)
         hash_tested = md5()
         dh._digest_directory(self.tests_dir / "dir2", hash_tested)
         self.assertEqual(hash_expected.digest(), hash_tested.digest())
@@ -78,7 +80,7 @@ class TestDigests(unittest.TestCase):
         )
         # Test directory works fine
         hash_expected = md5()
-        hash_expected.update(_12)
+        hash_expected.update(_12 + _14)
         self.assertEqual(
             hash_expected.digest(), dh.digest_path(self.tests_dir / "dir1").digest()
         )
@@ -86,20 +88,22 @@ class TestDigests(unittest.TestCase):
         hash_tested = hash_expected.copy()
         dh.digest_path(self.tests_dir / "dir3", hash_tested)
         hash_expected = md5()
-        hash_expected.update(_12 + _12 + _13)
+        hash_expected.update(_12 + _14 + _12 + _13)
         self.assertEqual(hash_expected.digest(), hash_tested.digest())
         # Test the full content of the following structure
         # tests/digests
         # ├── 12
         # ├── dir1
-        # │   └── 12
+        # │   ├── 12
+        # │   └── subdir1_1
+        # │       └── 14
         # ├── dir2
         # │   ├── 12
         # │   └── 13
         # ├── dir3 -> dir2
         # └── symlink-12 -> 12
         hash_expected = md5()
-        hash_expected.update(_12 * 3 + (_13 + _12) * 2)
+        hash_expected.update(_12 * 2 + _14 + (_12 + _13) * 2 + _12)
         self.assertEqual(
             hash_expected.digest(), dh.digest_path(self.tests_dir).digest()
         )
