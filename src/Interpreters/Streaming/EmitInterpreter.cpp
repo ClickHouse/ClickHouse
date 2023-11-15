@@ -10,7 +10,7 @@ namespace Streaming
 
 void EmitInterpreter::checkEmitAST(ASTPtr & query)
 {
-    auto select_query = query->as<ASTSelectQuery>();
+    auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         return;
 
@@ -18,7 +18,7 @@ void EmitInterpreter::checkEmitAST(ASTPtr & query)
     if (!emit_query)
         return;
 
-    auto emit = emit_query->as<ASTEmitQuery>();
+    auto * emit = emit_query->as<ASTEmitQuery>();
     assert(emit);
 
     if (emit->periodic_interval)

@@ -163,7 +163,7 @@ void AggregatingTransform::setCurrentChunk(Chunk chunk, const ChunkContextPtr & 
     current_chunk_aggregated = std::move(chunk);
 
     if (chunk_ctx)
-        current_chunk_aggregated.setChunkContext(std::move(chunk_ctx));
+        current_chunk_aggregated.setChunkContext(chunk_ctx);
 }
 
 IProcessor::Status AggregatingTransform::preparePushToOutput()

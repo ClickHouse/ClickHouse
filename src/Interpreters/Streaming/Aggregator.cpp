@@ -1840,7 +1840,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     if constexpr (std::is_same_v<KeyHandler, EmptyKeyHandler>)
         table_src.template mergeToViaEmplace<decltype(func), false>(table_dst, std::move(func));
     else
-        table_src.template mergeToViaEmplace<decltype(func), false>(table_dst, std::move(func), std::move(key_handler));
+        table_src.template mergeToViaEmplace<decltype(func), false>(table_dst, std::move(func), std::forward<KeyHandler>(key_handler));
 
     if (clear_states)
         table_src.clearAndShrink();

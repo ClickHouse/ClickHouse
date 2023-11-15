@@ -50,7 +50,7 @@ std::optional<IntervalKind> mapIntervalKind(const String & func_name)
 void checkIntervalAST(const ASTPtr & ast, const String & msg)
 {
     assert(ast);
-    auto func_node = ast->as<ASTFunction>();
+    auto * func_node = ast->as<ASTFunction>();
     if (func_node)
     {
         auto kind = mapIntervalKind(func_node->name);

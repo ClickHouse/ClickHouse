@@ -30,7 +30,7 @@ void mergeEmitQuerySettings(const ASTPtr & emit_query, WatermarkStamperParams & 
     if (!emit_query)
         return;
 
-    auto emit = emit_query->as<ASTEmitQuery>();
+    auto * emit = emit_query->as<ASTEmitQuery>();
     assert(emit);
 
     if (emit->periodic_interval)
