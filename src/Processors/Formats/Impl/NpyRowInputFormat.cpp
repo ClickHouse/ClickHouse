@@ -38,9 +38,8 @@ float convertFloat16ToFloat32(uint16_t float16_value)
 
     if (exponent == 0 && fraction == 0)
     {
-        if (sign)
-            return float(-0.0);
-        return float(0.0);
+        uint32_t float32_value = sign << 31;
+        return std::bit_cast<float>(float32_value);
     }
 
     // Handling special cases for exponent
