@@ -6,7 +6,6 @@
 
 #    include <exception>
 #    include <base/types.h>
-#    include <variant>
 
 #    include <aws/core/client/ClientConfiguration.h>
 #    include <aws/core/internal/AWSHttpResourceClient.h>

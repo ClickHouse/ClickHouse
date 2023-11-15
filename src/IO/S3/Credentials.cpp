@@ -21,7 +21,6 @@
 #    include <IO/S3/Client.h>
 
 #    include <exception>
-#    include <variant>
 #    include <fstream>
 #    include <base/EnumReflection.h>
 
