@@ -158,8 +158,7 @@ std::optional<JoinTableSide> extractJoinTableSideFromExpression(const ActionsDAG
     return table_side;
 }
 
-void buildJoinClause(ActionsDAGPtr join_expression_dag,
-    const std::unordered_set<const ActionsDAG::Node *> & join_expression_dag_input_nodes,
+void buildJoinClause(const std::unordered_set<const ActionsDAG::Node *> & join_expression_dag_input_nodes,
     const ActionsDAG::Node * join_expressions_actions_node,
     const NameSet & left_table_expression_columns_names,
     const NameSet & right_table_expression_columns_names,
@@ -176,8 +175,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
     {
         for (const auto & child : join_expressions_actions_node->children)
         {
-            buildJoinClause(join_expression_dag,
-                join_expression_dag_input_nodes,
+            buildJoinClause(join_expression_dag_input_nodes,
                 child,
                 left_table_expression_columns_names,
                 right_table_expression_columns_names,
@@ -369,8 +367,7 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
         {
             result.join_clauses.emplace_back();
 
-            buildJoinClause(join_expression_actions,
-                join_expression_dag_input_nodes,
+            buildJoinClause(join_expression_dag_input_nodes,
                 child,
                 join_left_actions_names_set,
                 join_right_actions_names_set,
@@ -382,8 +379,7 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
     {
         result.join_clauses.emplace_back();
 
-        buildJoinClause(join_expression_actions,
-                join_expression_dag_input_nodes,
+        buildJoinClause(join_expression_dag_input_nodes,
                 join_expressions_actions_root_node,
                 join_left_actions_names_set,
                 join_right_actions_names_set,
