@@ -92,6 +92,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.interval.output_format = settings.interval_output_format;
     format_settings.input_format_ipv4_default_on_conversion_error = settings.input_format_ipv4_default_on_conversion_error;
     format_settings.input_format_ipv6_default_on_conversion_error = settings.input_format_ipv6_default_on_conversion_error;
+    format_settings.input_format_numbers_enum_on_conversion_error = settings.input_format_numbers_enum_on_conversion_error;
     format_settings.bool_true_representation = settings.bool_true_representation;
     format_settings.bool_false_representation = settings.bool_false_representation;
     format_settings.enable_streaming = settings.output_format_enable_streaming;

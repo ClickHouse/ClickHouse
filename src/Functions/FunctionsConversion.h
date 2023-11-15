@@ -4071,26 +4071,37 @@ arguments, result_type, input_rows_count); \
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
 
-        if (checkAndGetDataType<DataTypeInt8>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnInt8, EnumType>();
-        else if (checkAndGetDataType<DataTypeInt16>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnInt16, EnumType>();
-        else if (checkAndGetDataType<DataTypeInt32>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnInt32, EnumType>();
-        else if (checkAndGetDataType<DataTypeInt64>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnInt64, EnumType>();
-        else if (checkAndGetDataType<DataTypeUInt8>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnUInt8, EnumType>();
-        else if (checkAndGetDataType<DataTypeUInt16>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnUInt16, EnumType>();
-        else if (checkAndGetDataType<DataTypeUInt32>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnUInt32, EnumType>();
-        else if (checkAndGetDataType<DataTypeUInt64>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnUInt64, EnumType>();
-        else if (checkAndGetDataType<DataTypeFloat32>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnFloat32, EnumType>();
-        else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
-            return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
+        bool input_format_numbers_enum_on_conversion_error_value = context && context->getSettingsRef().input_format_numbers_enum_on_conversion_error;
+
+        if (isNativeNumber(from_type))
+        {
+            if (!input_format_numbers_enum_on_conversion_error_value)
+            {
+                auto function = Function::create();
+                return createFunctionAdaptor(function, from_type);
+            }
+
+            if (checkAndGetDataType<DataTypeInt8>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt8, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt16>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt16, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt32, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt64, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt8>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt8, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt16>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt16, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt32, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt64, EnumType>();
+            else if (checkAndGetDataType<DataTypeFloat32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnFloat32, EnumType>();
+            else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
+        }
 
         if (isEnum(from_type))
         {
