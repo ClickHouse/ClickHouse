@@ -536,13 +536,11 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version):
             f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
         )
 
-    print(os.listdir(f"/iceberg_data/default/{TABLE_NAME}/metadata/"))
     for i in range(50):
         os.rename(
             f"/iceberg_data/default/{TABLE_NAME}/metadata/v{i + 1}.metadata.json",
             f"/iceberg_data/default/{TABLE_NAME}/metadata/{str(i).zfill(5)}-{uuid.uuid4()}.metadata.json",
         )
-    print(os.listdir(f"/iceberg_data/default/{TABLE_NAME}/metadata/"))
 
     files = upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
