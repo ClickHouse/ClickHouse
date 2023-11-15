@@ -279,8 +279,8 @@ bool StorageView::isStreamingQuery(ContextPtr query_context) const
 {
     auto select = getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
     auto local_context = Context::createCopy(query_context);
-
-    return InterpreterSelectWithUnionQuery(select, local_context, SelectQueryOptions().noModify().analyze()).isStreamingQuery();
+    local_context->setCollectRequiredColumns(false);
+    return InterpreterSelectWithUnionQuery(select, local_context, SelectQueryOptions().analyze()).isStreamingQuery();
 }
 
 void registerStorageView(StorageFactory & factory)
