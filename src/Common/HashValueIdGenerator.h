@@ -186,7 +186,7 @@ inline bool quickLookupValueId(HashValueIdCacheLine & cache,
 }
 )
 
-#define INNER_ENABLE_AVX512 0
+#define INNER_ENABLE_AVX512 1
 
 class IHashValueIdGenerator
 {
@@ -345,7 +345,7 @@ protected:
         applyNullMap(value_ids, null_map, n);
     }
 
-    template<typename T, bool data_pos_aligned, bool enable_range_mode>
+    template<typename T, bool data_pos_aligned>
     ALWAYS_INLINE void computeValueIdsInRangeMode(UInt64 * __restrict value_ids, size_t n, const UInt8 * __restrict data_pos, size_t element_bytes, const UInt8 * __restrict null_map)
     {
         UInt64 range_delta = range_min - is_nullable;
@@ -367,13 +367,8 @@ protected:
         for (size_t i = 0; i < n; ++i)
         {
             StringRef raw_value(data_pos, element_bytes);
-            if constexpr (enable_range_mode)
-            {
-                if (is_nullable > value_ids[i] || value_ids[i] >  range_length)
-                    getValueId(raw_value, value_ids[i], value_ids[i]);
-            }
-            else
-                getValueId(raw_value, value_ids[i], value_ids[i]);
+            if (is_nullable > value_ids[i] || value_ids[i] > range_length)
+                getValueId(raw_value, value_ids[i] + range_delta, value_ids[i]);
             data_pos += element_bytes;
         }
         applyNullMap(value_ids, null_map, n);
@@ -602,7 +597,7 @@ private:
             const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
 
             if (str_len <= 8 && enable_range_mode)
-                computeValueIdsInRangeMode<UInt8, false, true>(tmp_value_ids, batch_step, char_pos, str_len, null_map_pos);
+                computeValueIdsInRangeMode<UInt8, false>(tmp_value_ids, batch_step, char_pos, str_len, null_map_pos);
             else
                 computeValueIdsInNormalMode(tmp_value_ids, batch_step, char_pos, str_len, null_map_pos);
 
@@ -622,7 +617,7 @@ private:
         {
             const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
             if (str_len <= 8 && enable_range_mode)
-                computeValueIdsInRangeMode<UInt8, false, true>(tmp_value_ids, n - i, char_pos, str_len, null_map_pos);
+                computeValueIdsInRangeMode<UInt8, false>(tmp_value_ids, n - i, char_pos, str_len, null_map_pos);
             else
                 computeValueIdsInNormalMode(tmp_value_ids, n - i, char_pos, str_len, null_map_pos);
             TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, n - i);
@@ -720,7 +715,7 @@ private:
 
             if constexpr (is_basic_number)
                 if (enable_range_mode)
-                    computeValueIdsInRangeMode<ElementType, true, true>(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
+                    computeValueIdsInRangeMode<ElementType, true>(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
                 else
                     computeValueIdsInNormalMode(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
             else
@@ -759,7 +754,7 @@ private:
             const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
             if constexpr (is_basic_number)
                 if (enable_range_mode)
-                    computeValueIdsInRangeMode<ElementType, true, true>(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
+                    computeValueIdsInRangeMode<ElementType, true>(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
                 else
                     computeValueIdsInNormalMode(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
             else
