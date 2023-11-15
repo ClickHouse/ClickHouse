@@ -5,6 +5,12 @@
 
 static constexpr auto VFS_SNAPSHOT_PREFIX = "vfs_snapshot_";
 
+String getNode(size_t id)
+{
+    // Zookeeper's sequential node is 10 digits with padding zeros
+    return fmt::format("{}{:010}", DB::VFS_LOG_ITEM, id);
+}
+
 namespace DB
 {
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
@@ -19,28 +25,33 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
 
 ObjectStorageVFSGCThread::~ObjectStorageVFSGCThread() = default;
 
+// TODO myrrc handle exceptions -- reschedule task if interrupted
 void ObjectStorageVFSGCThread::run()
 {
     if (!zookeeper_lock->tryLock())
     {
-        LOG_DEBUG(log, "Failed to acquire GC lock, sleeping");
+        LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         task->scheduleAfter(sleep_ms);
         return;
     }
 
-    LOG_DEBUG(log, "Acquired GC lock");
-
     const auto [start_str, end_str] = std::ranges::minmax(storage.zookeeper->getChildren(VFS_LOG_BASE_NODE));
-    const size_t start_logpointer = start_str.empty() ? 0 : parseFromString<size_t>(start_str);
-    const size_t end_logpointer = end_str.empty() ? 0 : parseFromString<size_t>(end_str);
+    // log- is a prefix
+    const size_t start_logpointer = start_str.empty() ? 0 : parseFromString<size_t>(start_str.substr(4));
+    const size_t end_logpointer = end_str.empty() ? 0 : parseFromString<size_t>(end_str.substr(4));
 
-    auto [snapshot, obsolete_objects] = getSnapshotWithLogEntries(start_logpointer, end_logpointer);
+    LOG_DEBUG(log, "Acquired lock for log range [{};{}]", start_logpointer, end_logpointer);
 
-    const String snapshot_name = fmt::format("{}{}", VFS_SNAPSHOT_PREFIX, end_logpointer);
-    writeSnapshot(std::move(snapshot), snapshot_name);
+    if (end_logpointer > 0) [[likely]]
+    {
+        auto [snapshot, obsolete_objects] = getSnapshotWithLogEntries(start_logpointer, end_logpointer);
 
-    removeObjectsFromObjectStorage(obsolete_objects);
-    removeLogEntries(start_logpointer, end_logpointer);
+        const String snapshot_name = fmt::format("{}{}", VFS_SNAPSHOT_PREFIX, end_logpointer);
+        writeSnapshot(std::move(snapshot), snapshot_name);
+
+        removeObjectsFromObjectStorage(obsolete_objects);
+        removeLogEntries(start_logpointer, end_logpointer);
+    }
 
     zookeeper_lock->unlock();
     task->scheduleAfter(sleep_ms);
@@ -59,7 +70,7 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
 
     Coordination::Requests ops;
     for (size_t i = start_logpointer; i <= end_logpointer; ++i)
-        ops.emplace_back(zkutil::makeGetRequest(fmt::format("{}{}", VFS_LOG_ITEM, i)));
+        ops.emplace_back(zkutil::makeGetRequest(getNode(i)));
 
     std::vector<VFSTransactionLogItem> logs;
     std::optional<String> previous_snapshot_remote_path;
@@ -104,10 +115,10 @@ void ObjectStorageVFSGCThread::removeObjectsFromObjectStorage(const VFSSnapshot:
 
 void ObjectStorageVFSGCThread::removeLogEntries(size_t start_logpointer, size_t end_logpointer)
 {
-    LOG_DEBUG(log, "Removing logpointers {}-{}", start_logpointer, end_logpointer);
+    LOG_DEBUG(log, "Removing log range [{};{}]", start_logpointer, end_logpointer);
     Coordination::Requests ops;
     for (size_t i = start_logpointer; i <= end_logpointer; ++i)
-        ops.emplace_back(zkutil::makeRemoveRequest(fmt::format("{}{}", VFS_LOG_ITEM, i), -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(getNode(i), -1));
 
     storage.zookeeper->multi(ops);
 }

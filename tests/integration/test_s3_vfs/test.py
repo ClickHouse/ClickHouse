@@ -12,13 +12,15 @@ node1 = cluster.add_instance(
     main_configs=["configs/config.d/s3.xml"],
     macros={"replica": "1"},
     with_minio=True,
-    with_zookeeper=True)
+    with_zookeeper=True,
+)
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config.d/s3.xml"],
     macros={"replica": "2"},
     with_minio=True,
-    with_zookeeper=True)
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -135,26 +137,27 @@ def test_s3_vfs(started_cluster, policy):
     # Based on version 21.x - two parts
     wait_for_large_objects_count(cluster, 2)
 
+    node1.query("DROP TABLE s3_test ON CLUSTER test_cluster SYNC")
+    time.sleep(11)  # wait for GC to start and clean data
+
     zk = cluster.get_kazoo_client("zoo1")
     log_items = [
-        zk.get(f"/vfs_log/{log_pointer}")[0].decode("utf-8")
-        for log_pointer in sorted(zk.get_children("/vfs_log"))
+        zk.get(f"/vfs_log/ops/{log_pointer}")[0].decode("utf-8")
+        for log_pointer in sorted(zk.get_children("/vfs_log/ops"))
     ]
 
-    assert len(log_items) == 54  # 27 items for 2 replicas
     for item in log_items:
         logging.info(item)
 
+# Merges don't work as for now
+#     node1.query("OPTIMIZE TABLE s3_test FINAL")
+# 
+#     # Based on version 21.x - after merge, two old parts and one merged
+#     wait_for_large_objects_count(cluster, 3)
+# 
+#     # Based on version 21.x - after cleanup - only one merged part
+#     wait_for_large_objects_count(cluster, 1, timeout=60)
+# 
+#     node1.query("DROP TABLE IF EXISTS s3_test SYNC")
+#     node2.query("DROP TABLE IF EXISTS s3_test SYNC")
     assert False
-    return
-
-    node1.query("OPTIMIZE TABLE s3_test FINAL")
-
-    # Based on version 21.x - after merge, two old parts and one merged
-    wait_for_large_objects_count(cluster, 3)
-
-    # Based on version 21.x - after cleanup - only one merged part
-    wait_for_large_objects_count(cluster, 1, timeout=60)
-
-    node1.query("DROP TABLE IF EXISTS s3_test SYNC")
-    node2.query("DROP TABLE IF EXISTS s3_test SYNC")
