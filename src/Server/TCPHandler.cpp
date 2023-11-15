@@ -104,6 +104,7 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int WRONG_PASSWORD;
 }
 
 namespace
@@ -1431,8 +1432,11 @@ void TCPHandler::receiveHello()
                     getClientAddress(client_info));
                 return;
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                if (e.code() != DB::ErrorCodes::WRONG_PASSWORD)
+                    throw;
+
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }
