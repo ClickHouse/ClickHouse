@@ -1266,6 +1266,16 @@
     -->
     <dictionaries_config>*_dictionary.*ml</dictionaries_config>
 
+    <!-- Load dictionaries lazily, i.e. a dictionary will be loaded when it's used for the first time.
+         "0" means ClickHouse will start loading dictionaries immediately as it finds them.
+    -->
+    <dictionaries_lazy_load>1</dictionaries_lazy_load>
+
+    <!-- Wait at startup until all the dictionaries are loaded (or failed to load)
+         before listening to connections. Setting this to 1 can make ClickHouse start slowly.
+    -->
+    <wait_dictionaries_load_at_startup>0</wait_dictionaries_load_at_startup>
+
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
 

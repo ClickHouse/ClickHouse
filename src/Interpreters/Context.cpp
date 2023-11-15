@@ -2324,6 +2324,21 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
     shared->dictionaries_xmls = external_dictionaries_loader.addConfigRepository(std::move(repository));
 }
 
+void Context::waitForDictionariesLoad() const
+{
+    LOG_TRACE(shared->log, "Waiting for dictionaries to be loaded");
+    auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
+    for (const auto & result : results)
+    {
+        if ((result.status != ExternalLoaderStatus::LOADED) && (result.status != ExternalLoaderStatus::LOADED_AND_RELOADING))
+        {
+            LOG_WARNING(shared->log, "Some dictionaries were not loaded ({}, {})", result.name, result.status);
+            return;
+        }
+    }
+    LOG_INFO(shared->log, "All dictionaries have been loaded");
+}
+
 void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
 {
     auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
