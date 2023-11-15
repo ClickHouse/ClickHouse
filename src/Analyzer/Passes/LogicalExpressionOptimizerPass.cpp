@@ -7,6 +7,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -35,13 +36,27 @@ public:
 
         if (function_node->getFunctionName() == "or")
         {
-            tryOptimizeIsNotDistinctOrIsNull(node);
+            bool is_argument_type_changed = tryOptimizeIsNotDistinctOrIsNull(node, getContext());
+            if (is_argument_type_changed)
+                need_rerun_resolve = true;
             return;
         }
     }
 
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (!need_rerun_resolve)
+            return;
+
+        if (auto * function_node = node->as<FunctionNode>())
+            rerunFunctionResolve(function_node, getContext());
+    }
+
 private:
-    void tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node)
+    bool need_rerun_resolve = false;
+
+    /// Returns true if type of some operand is changed and parent function needs to be re-resolved
+    static bool tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node, const ContextPtr & context)
     {
         auto & function_node = node->as<FunctionNode &>();
         assert(function_node.getFunctionName() == "or");
@@ -139,10 +154,12 @@ private:
 
         if (arguments_to_reresolve.empty())
             /// Nothing have been changed
-            return;
+            return false;
 
-        auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
-        auto strict_equals_function_resolver = FunctionFactory::instance().get("isNotDistinctFrom", getContext());
+        auto and_function_resolver = FunctionFactory::instance().get("and", context);
+        auto strict_equals_function_resolver = FunctionFactory::instance().get("isNotDistinctFrom", context);
+
+        bool need_reresolve = false;
         QueryTreeNodes new_or_operands;
         for (size_t i = 0; i < or_operands.size(); ++i)
         {
@@ -151,7 +168,8 @@ private:
                 auto * function = or_operands[i]->as<FunctionNode>();
                 if (function->getFunctionName() == "equals")
                 {
-                    /// Because we removed checks for IS NULL, we should replace `a = b` with `a <=> b`
+                    /// We should replace `a = b` with `a <=> b` because we removed checks for IS NULL
+                    need_reresolve = need_reresolve || function->getResultType()->isNullable();
                     function->resolveAsFunction(strict_equals_function_resolver);
                     new_or_operands.emplace_back(std::move(or_operands[i]));
                 }
@@ -181,13 +199,14 @@ private:
         if (new_or_operands.size() == 1)
         {
             node = std::move(new_or_operands[0]);
-            return;
+            return need_reresolve;
         }
 
         /// Rebuild OR function
-        auto or_function_resolver = FunctionFactory::instance().get("or", getContext());
+        auto or_function_resolver = FunctionFactory::instance().get("or", context);
         function_node.getArguments().getNodes() = std::move(new_or_operands);
         function_node.resolveAsFunction(or_function_resolver);
+        return need_reresolve;
     }
 };
 
