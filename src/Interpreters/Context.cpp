@@ -2328,15 +2328,19 @@ void Context::waitForDictionariesLoad() const
 {
     LOG_TRACE(shared->log, "Waiting for dictionaries to be loaded");
     auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
+    bool all_dictionaries_loaded = true;
     for (const auto & result : results)
     {
         if ((result.status != ExternalLoaderStatus::LOADED) && (result.status != ExternalLoaderStatus::LOADED_AND_RELOADING))
         {
-            LOG_WARNING(shared->log, "Some dictionaries were not loaded ({}, {})", result.name, result.status);
-            return;
+            LOG_WARNING(shared->log, "Dictionary {} was not loaded ({})", result.name, result.status);
+            all_dictionaries_loaded = false;
         }
     }
-    LOG_INFO(shared->log, "All dictionaries have been loaded");
+    if (all_dictionaries_loaded)
+        LOG_INFO(shared->log, "All dictionaries have been loaded");
+    else
+        LOG_INFO(shared->log, "Some dictionaries were not loaded");
 }
 
 void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
