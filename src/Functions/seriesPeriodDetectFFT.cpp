@@ -56,15 +56,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw DB::Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument for function {} must be array but it  has type {}.",
-                getName(),
-                arguments[0]->getName());
+        FunctionArgumentDescriptors args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeFloat64>();
     }
