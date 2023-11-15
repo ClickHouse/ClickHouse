@@ -72,7 +72,7 @@ public:
     void renameInMemory(const StorageID & new_table_id) override;
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;

@@ -14,7 +14,7 @@ namespace DB
 class ProxyListConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
-    explicit ProxyListConfigurationResolver(std::vector<Poco::URI> proxies_);
+    ProxyListConfigurationResolver(std::vector<Poco::URI> proxies_, Protocol request_protocol_, bool disable_tunneling_for_https_requests_over_http_proxy_ = false);
 
     ProxyConfiguration resolve() override;
 

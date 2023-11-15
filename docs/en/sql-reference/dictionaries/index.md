@@ -1769,7 +1769,7 @@ Example of settings:
         <password>qwerty123</password>
         <keyspase>database_name</keyspase>
         <column_family>table_name</column_family>
-        <allow_filering>1</allow_filering>
+        <allow_filtering>1</allow_filtering>
         <partition_key_prefix>1</partition_key_prefix>
         <consistency>One</consistency>
         <where>"SomeColumn" = 42</where>
@@ -1787,7 +1787,7 @@ Setting fields:
 - `password` – Password of the Cassandra user.
 - `keyspace` – Name of the keyspace (database).
 - `column_family` – Name of the column family (table).
-- `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+- `allow_filtering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
 - `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is 1 (the first key column is a partition key and other key columns are clustering key).
 - `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`.
 - `where` – Optional selection criteria.

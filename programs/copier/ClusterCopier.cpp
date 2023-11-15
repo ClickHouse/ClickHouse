@@ -5,6 +5,7 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -59,7 +60,7 @@ void ClusterCopier::init()
     getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
-    task_cluster->random_engine.seed(task_cluster->random_device());
+    task_cluster->random_engine.seed(randomSeed());
     for (auto & task_table : task_cluster->table_tasks)
     {
         task_table.cluster_pull = getContext()->getCluster(task_table.cluster_pull_name);
