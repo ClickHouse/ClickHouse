@@ -58,6 +58,7 @@ namespace DB
         extern const int UNKNOWN_TYPE;
         extern const int LOGICAL_ERROR;
         extern const int DECIMAL_OVERFLOW;
+        extern const int ILLEGAL_COLUMN;
     }
 
     static const std::initializer_list<std::pair<String, std::shared_ptr<arrow::DataType>>> internal_type_to_arrow_type =
@@ -356,6 +357,18 @@ namespace DB
         }
     }
 
+    static void checkIfIndexesTypeIsExceeded(const std::shared_ptr<arrow::DataType> & arrow_type, size_t dict_size)
+    {
+        const auto & dict_indexes_arrow_type = assert_cast<const arrow::DictionaryType *>(arrow_type.get())->index_type();
+        /// We use UInt32 or UInt64 type for indexes. It makes sense to check overflow only for UInt32.
+        const auto * indexes_uint32_type = typeid_cast<const arrow::UInt32Type *>(dict_indexes_arrow_type.get());
+        if (indexes_uint32_type && dict_size > UINT32_MAX)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot convert ClickHouse LowCardinality column to Arrow Dictionary column:"
+                " resulting dictionary size exceeds the max value of index type UInt32");
+    }
+
     template<typename ValueType>
     static void fillArrowArrayWithLowCardinalityColumnDataImpl(
         const String & column_name,
@@ -396,6 +409,7 @@ namespace DB
             {
                 const auto & new_values = new_dict.getNestedColumn();
                 mapping = dict.uniqueInsertRangeFrom(*new_values, 0, new_values->size());
+                checkIfIndexesTypeIsExceeded(array_builder->type(), dict.size());
             }
         }
 
@@ -799,18 +813,26 @@ namespace DB
 
     static std::shared_ptr<arrow::DataType> getArrowTypeForLowCardinalityIndexes(ColumnPtr indexes_column)
     {
-        /// Arrow docs recommend preferring signed integers over unsigned integers for representing dictionary indices.
-        /// https://arrow.apache.org/docs/format/Columnar.html#dictionary-encoded-layout
         switch (indexes_column->getDataType())
         {
+            /// In ClickHouse blocks with same header can contain LowCardinality columns with
+            /// different dictionaries.
+            /// Arrow supports only single dictionary for all batches, but it allows to extend
+            /// dictionary if previous dictionary is a prefix of a new one.
+            /// But it can happen that LowCardinality columns contains UInt8 indexes columns
+            /// but resulting extended arrow dictionary will exceed UInt8 and we will need UInt16,
+            /// but it's not possible to change the type of Arrow dictionary indexes as it's
+            /// written in Arrow schema.
+            /// We can just always use type UInt64, but it can be inefficient.
+            /// In most cases UInt32 should be enough (with more unique values using dictionary is quite meaningless).
+            /// So we use minimum UInt32 type here (actually maybe even UInt16 will be enough).
+            /// In case if it's exceeded during dictionary extension, an exception will be thrown.
             case TypeIndex::UInt8:
-                return arrow::int8();
             case TypeIndex::UInt16:
-                return arrow::int16();
             case TypeIndex::UInt32:
-                return arrow::int32();
+                return arrow::uint32();
             case TypeIndex::UInt64:
-                return arrow::int64();
+                return arrow::uint64();
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}.", indexes_column->getName());
         }

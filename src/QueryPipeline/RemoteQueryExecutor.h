@@ -165,7 +165,7 @@ public:
     Block getExtremes() { return std::move(extremes); }
 
     /// Set callback for progress. It will be called on Progress packet.
-    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
+    void setProgressCallback(ProgressCallback callback);
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }

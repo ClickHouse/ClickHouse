@@ -389,6 +389,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     request_for_session->log_idx = log_idx;
 
+    if (!keeper_context->local_logs_preprocessed)
+        preprocess(*request_for_session);
+
     auto try_push = [this](const KeeperStorage::ResponseForSession& response)
     {
         if (!responses_queue.push(response))
@@ -493,11 +496,12 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 }
 
 
-void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
     cluster_config = ClusterConfig::deserialize(*tmp);
+    last_committed_idx = log_idx;
 }
 
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)

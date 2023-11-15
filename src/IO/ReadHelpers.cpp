@@ -784,7 +784,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             return;
         }
 
-        /// Unquoted case. Look for delimiter or \r or \n.
+        /// Unquoted case. Look for delimiter or \r (followed by '\n') or \n.
         while (!buf.eof())
         {
             char * next_pos = buf.position();
@@ -832,6 +832,18 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             if (!buf.hasPendingData())
                 continue;
+
+            /// Check for single '\r' not followed by '\n'
+            /// We should not stop in this case.
+            if (*buf.position() == '\r' && !settings.allow_cr_end_of_line)
+            {
+                ++buf.position();
+                if (!buf.eof() && *buf.position() != '\n')
+                {
+                    s.push_back('\r');
+                    continue;
+                }
+            }
 
             if constexpr (WithResize<Vector>)
             {

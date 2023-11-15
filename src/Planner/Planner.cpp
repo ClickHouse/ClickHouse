@@ -381,6 +381,17 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     return aggregator_params;
 }
 
+SortDescription getSortDescriptionFromNames(const Names & names)
+{
+    SortDescription order_descr;
+    order_descr.reserve(names.size());
+
+    for (const auto & name : names)
+        order_descr.emplace_back(name, 1, 1);
+
+    return order_descr;
+}
+
 void addAggregationStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
@@ -392,6 +403,12 @@ void addAggregationStep(QueryPlan & query_plan,
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
+
+    if (settings.force_aggregation_in_order)
+    {
+        group_by_sort_description = getSortDescriptionFromNames(aggregation_analysis_result.aggregation_keys);
+        sort_description_for_merging = group_by_sort_description;
+    }
 
     auto merge_threads = settings.max_threads;
     auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -464,12 +481,14 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings.max_block_size);
 
     bool is_remote_storage = false;
+    bool parallel_replicas_from_merge_tree = false;
 
     const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
     if (table_expression_node_to_data.size() == 1)
     {
         auto it = table_expression_node_to_data.begin();
         is_remote_storage = it->second.isRemote();
+        parallel_replicas_from_merge_tree = it->second.isMergeTree() && query_context->canUseParallelReplicasOnInitiator();
     }
 
     SortDescription group_by_sort_description;
@@ -479,7 +498,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         params,
         query_analysis_result.aggregate_final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-        settings.distributed_aggregation_memory_efficient && is_remote_storage && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
+        settings.distributed_aggregation_memory_efficient && (is_remote_storage || parallel_replicas_from_merge_tree) && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
@@ -905,8 +924,12 @@ void addWindowSteps(QueryPlan & query_plan,
             query_plan.addStep(std::move(sorting_step));
         }
 
+        // Fan out streams only for the last window to preserve the ordering between windows,
+        // and WindowTransform works on single stream anyway.
+        const bool streams_fan_out = settings.query_plan_enable_multithreading_after_window_functions && ((i + 1) == window_descriptions_size);
+
         auto window_step
-            = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions);
+            = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window_description, window_description.window_functions, streams_fan_out);
         window_step->setStepDescription("Window step for window '" + window_description.window_name + "'");
         query_plan.addStep(std::move(window_step));
     }
@@ -1197,6 +1220,8 @@ void Planner::buildPlanForUnionNode()
     {
         Planner query_planner(query_node, select_query_options);
         query_planner.buildQueryPlanIfNeeded();
+        for (const auto & row_policy : query_planner.getUsedRowPolicies())
+            used_row_policies.insert(row_policy);
         auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
         query_plans_headers.push_back(query_node_plan->getCurrentDataStream().header);
         query_plans.push_back(std::move(query_node_plan));
@@ -1344,8 +1369,10 @@ void Planner::buildPlanForQueryNode()
         select_query_options,
         top_level_identifiers,
         planner_context);
+
     auto from_stage = join_tree_query_plan.from_stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
+    used_row_policies = std::move(join_tree_query_plan.used_row_policies);
 
     LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),
@@ -1369,6 +1396,9 @@ void Planner::buildPlanForQueryNode()
     {
         if (table_expression_data.getPrewhereFilterActions())
             result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
+
+        if (table_expression_data.getRowLevelFilterActions())
+            result_actions_to_execute.push_back(table_expression_data.getRowLevelFilterActions());
     }
 
     if (query_processing_info.isIntermediateStage())

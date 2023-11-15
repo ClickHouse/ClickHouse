@@ -15,6 +15,7 @@ struct JoinTreeQueryPlan
 {
     QueryPlan query_plan;
     QueryProcessingStage::Enum from_stage;
+    std::set<std::string> used_row_policies;
 };
 
 /// Build JOIN TREE query plan for query node
