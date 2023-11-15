@@ -10,7 +10,7 @@ namespace DB
 
 class StorageInput final : public IStorage
 {
-  friend class ReadFromInput;
+    friend class ReadFromInput;
 public:
     StorageInput(const StorageID & table_id, const ColumnsDescription & columns_);
 
