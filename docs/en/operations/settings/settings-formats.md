@@ -274,6 +274,12 @@ Deserialization of IPV6 will use default values instead of throwing exception on
 
 Disabled by default.
 
+## input_format_numbers_enum_on_conversion_error {#input_format_numbers_enum_on_conversion_error}
+
+Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
+
+Disabled by default.
+
 ## bool_true_representation {#bool_true_representation}
 
 Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
