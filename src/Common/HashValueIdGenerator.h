@@ -186,7 +186,7 @@ inline bool quickLookupValueId(HashValueIdCacheLine & cache,
 }
 )
 
-#define INNER_ENABLE_AVX512 0
+#define INNER_ENABLE_AVX512 1
 
 class IHashValueIdGenerator
 {
@@ -214,9 +214,9 @@ public:
                 auto * range_values_ptr = pool.alloc(alloc_size) + pad_left;
                 UInt64 value_id = i - range_min + is_nullable;
                 // LOG_ERROR(&Poco::Logger::get("IHashValueIdGenerator"), "xxx switch to normal mode. range: {} -> {}, value id: {}, row_bytes: {}", range_min, range_max, value_id, row_bytes);
-                memcpy(range_values_ptr, reinterpret_cast<const UInt8 *>(&value_id), sizeof(UInt64));
+                memcpy(range_values_ptr, reinterpret_cast<const UInt8 *>(&i), sizeof(UInt64));
                 StringRef raw_value(range_values_ptr, row_bytes);
-                emplaceValueId(raw_value, i);
+                emplaceValueId(raw_value, value_id);
             }
             enable_range_mode = false;
             enable_value_id_cache_line = false;
