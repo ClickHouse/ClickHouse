@@ -25,7 +25,7 @@ ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTyp
     : row_num(row_num_), columns(columns_), data_types(data_types_), serializations(serializations_)
 {
     payload_size = 1 + null_bitmap_size;
-    static FormatSettings format_settings;
+    FormatSettings format_settings;
     for (size_t i = 0; i < columns.size(); ++i)
     {
         ColumnPtr col = columns[i]->convertToFullIfNeeded();
