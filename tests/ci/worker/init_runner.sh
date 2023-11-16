@@ -130,6 +130,23 @@ terminate_and_exit() {
 
 declare -f terminate_and_exit >> /tmp/actions-hooks/common.sh
 
+check_spot_instance_is_old() {
+    # This function should be executed ONLY BETWEEN runnings.
+    # It's unsafe to execute while the runner is working!
+    local LIFE_CYCLE
+    LIFE_CYCLE=$(curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle)
+    if [ "$LIFE_CYCLE" == "spot" ]; then
+        local UPTIME
+        UPTIME=$(< /proc/uptime)
+        UPTIME=${UPTIME%%.*}
+        if (( 3600 < UPTIME )); then
+            echo "The spot instance has uptime $UPTIME, it's time to shut it down"
+            return 0
+        fi
+    fi
+    return 1
+}
+
 check_proceed_spot_termination() {
     # The function checks and proceeds spot instance termination if exists
     # The event for spot instance termination
@@ -161,6 +178,7 @@ no_terminating_metadata() {
     # The event for rebalance recommendation. Not strict, so we have some room to make a decision here
     if curl -s --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
         echo 'Received recommendation to rebalance, checking the uptime'
+        local UPTIME
         UPTIME=$(< /proc/uptime)
         UPTIME=${UPTIME%%.*}
         # We don't shutdown the instances younger than 30m
@@ -302,6 +320,7 @@ while true; do
         # If runner is not active, check that it needs to terminate itself
         echo "Checking if the instance suppose to terminate"
         no_terminating_metadata || terminate_on_event
+        check_spot_instance_is_old && terminate_and_exit
         check_proceed_spot_termination
 
         echo "Going to configure runner"
@@ -311,6 +330,7 @@ while true; do
 
         echo "Another one check to avoid race between runner and infrastructure"
         no_terminating_metadata || terminate_on_event
+        check_spot_instance_is_old && terminate_and_exit
         check_proceed_spot_termination
 
         echo "Run"
