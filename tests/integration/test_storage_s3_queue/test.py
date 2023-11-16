@@ -734,7 +734,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         create_mv(instance, table_name, dst_table_name)
 
     total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=1
+        started_cluster, files_path, files_to_generate, row_num=50
     )
 
     def get_count(node, table_name):
