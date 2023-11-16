@@ -100,9 +100,9 @@ namespace DB
     M(UInt64, total_memory_profiler_sample_max_allocation_size, 0, "Collect random allocations of size less or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.", 0) \
     M(Bool, validate_tcp_client_information, false, "Validate client_information in the query packet over the native TCP protocol.", 0) \
     \
-    M(Bool, ebable_background_statistics, true, "Enable background table statistics collecting and refreshing", 0) \
-    M(UInt64, background_statistics_refresh_period_sec, 24 * 3600, "Background table statistics refreshing period in second", 0) \
-    M(UInt64, background_statistics_collect_period_sec, 24 * 3600, "Background table statistics collecting period in second", 0)
+    M(Bool, ebable_background_statistics, true, "Enable background table statistics collecting and refreshing.", 0) \
+    M(UInt64, background_statistics_refresh_period_sec, 6 * 3600, "Background table statistics refreshing period in second.", 0) \
+    M(UInt64, background_statistics_collect_period_sec, 24 * 3600, "Background table statistics collecting period in second.", 0)
 
 DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, SERVER_SETTINGS)
 

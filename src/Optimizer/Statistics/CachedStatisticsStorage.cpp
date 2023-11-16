@@ -57,11 +57,11 @@ void CachedStatisticsStorage::loadAll()
 
     for (auto & [table, cluster] : table_and_clusters_copy)
     {
-        auto loaded = loader.load(table, cluster);
+        auto loaded = loader.load(table, cluster);/// TODO group tables by cluster and conduct loading in batch
         if (loaded)
             loaded_stats.insert({table, loaded});
         else
-            LOG_WARNING(log, "No statistics for table {} when refreshing", table.getFullNameNotQuoted());
+            LOG_WARNING(log, "No statistics for table {}, maybe user remove it manually.", table.getFullNameNotQuoted());
     }
 
     {
