@@ -41,6 +41,7 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
     removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
+    void createLink(const String & path) override;
 
     auto shared_from_this()
     {

@@ -658,6 +658,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
         readBinary(projections, *in);
 
+    auto output_buffer_getter_metadata = [](
+        IDataPartStorage & part_storage, const auto & file_name, size_t file_size)
+    {
+        auto full_path = fs::path(part_storage.getFullPath()) / file_name;
+        return std::make_unique<WriteBufferFromFile>(
+            full_path,
+            std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
+    };
+
     if (!response_disk_type_with_zero_copy.empty())
     {
         if (!try_zero_copy)
@@ -681,20 +690,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
         try
         {
-            auto output_buffer_getter = [](
-                IDataPartStorage & part_storage, const auto & file_name, size_t file_size)
-            {
-                auto full_path = fs::path(part_storage.getFullPath()) / file_name;
-                return std::make_unique<WriteBufferFromFile>(
-                    full_path,
-                    std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
-            };
-
             return
             {
                 downloadPartToDisk(
                     part_name, replica_path, to_detached, tmp_prefix, disk, true, *in,
-                    output_buffer_getter, projections, throttler, sync),
+                    output_buffer_getter_metadata, projections, throttler, sync),
                 std::move(temporary_directory_lock)
             };
         }
@@ -762,20 +762,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 "Got '{}' cookie for in-memory part",
                 OBJECT_STORAGE_VFS);
 
-        auto output_buffer_getter = [](
-            IDataPartStorage & part_storage, const auto & file_name, size_t file_size)
-        {
-            auto full_path = fs::path(part_storage.getFullPath()) / file_name;
-            return std::make_unique<WriteBufferFromFile>(
-                full_path,
-                std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
-        };
-
         return
         {
             downloadPartToDisk(
                 part_name, replica_path, to_detached, tmp_prefix, disk, false, *in,
-                output_buffer_getter, projections, throttler, sync,
+                output_buffer_getter_metadata, projections, throttler, sync,
                 /*object_storage_vfs=*/true),
             std::move(temporary_directory_lock)
         };

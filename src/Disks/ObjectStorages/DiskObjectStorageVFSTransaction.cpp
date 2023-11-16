@@ -142,7 +142,7 @@ void DiskObjectStorageVFSTransaction::writeFileUsingBlobWritingFunction(
 
     writeFileUsingBlobWritingFunctionOps(path, mode, std::move(write_blob_function), blob);
 
-    // TODO myrrc this possibly should be grouped in a single Keeper transaction instead of two
+    // TODO myrrc this possibly should be grouped in a single Keeper transaction instead of three
 
     const StoredObjects objects = {{std::move(blob)}};
     addStoredObjectsOp(VFSTransactionLogItem::Type::CreateInode, objects);
@@ -157,6 +157,12 @@ void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, co
     LOG_TRACE(log, "createHardLink");
     DiskObjectStorageTransaction::createHardLink(src_path, dst_path);
     addStoredObjectsOp(VFSTransactionLogItem::Type::Link, metadata_storage.getStorageObjects(src_path));
+}
+
+void DiskObjectStorageVFSTransaction::createLink(const String & path)
+{
+    LOG_TRACE(log, "createLink");
+    addStoredObjectsOp(VFSTransactionLogItem::Type::Link, metadata_storage.getStorageObjects(path));
 }
 
 // Unfortunately, knowledge of object storage blob path doesn't go beyond

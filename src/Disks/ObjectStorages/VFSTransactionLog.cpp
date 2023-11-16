@@ -7,6 +7,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 String VFSTransactionLogItem::serialize() const
 {
     if (type == Type::CreateInode)
@@ -56,11 +61,8 @@ VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactio
             case CreateInode: {
                 if (auto it = items.find(item.remote_path); it != items.end()) [[unlikely]]
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Items with same remote path found in snapshot ({}) and log ({})",
-                        it->second.second,
-                        item);
-                items.emplace(item.remote_path, ObjectWithRefcount{0, item});
+                        ErrorCodes::LOGICAL_ERROR, "Items with same remote path found in snapshot ({}) and log ({})", it->second.obj, item);
+                items.emplace(item.remote_path, ObjectWithRefcount{item, 0});
                 break;
             }
             case Link: {
@@ -68,7 +70,7 @@ VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactio
                 if (it == items.end()) [[unlikely]]
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Item {} not found in snapshot", item);
 
-                ++it->second.first;
+                ++it->second.links;
                 break;
             }
             case Unlink: {
@@ -76,9 +78,9 @@ VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactio
                 if (it == items.end()) [[unlikely]]
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Item {} not found in snapshot", item);
 
-                if (--it->second.first == 0)
+                if (--it->second.links == 0)
                 {
-                    out.emplace_back(it->second.second);
+                    out.emplace_back(it->second.obj);
                     items.erase(it);
                 }
                 break;
@@ -103,11 +105,11 @@ VFSSnapshot & VFSSnapshot::deserialize(std::string_view str)
         items.emplace(
             object_parts[2],
             ObjectWithRefcount{
-                links,
                 StoredObject(
                     /*remote_path*/ object_parts[2],
                     /*bytes_size*/ parseFromString<size_t>(object_parts[3]),
-                    /*local_path*/ object_parts[1])});
+                    /*local_path*/ object_parts[1]),
+                links});
     }
 
     return *this;
@@ -116,13 +118,8 @@ VFSSnapshot & VFSSnapshot::deserialize(std::string_view str)
 String VFSSnapshot::serialize() const
 {
     String out;
-    for (const auto & [_, object_with_refcount] : items)
-        out += fmt::format(
-            "{} {} {} {}\n",
-            object_with_refcount.first,
-            object_with_refcount.second.local_path,
-            object_with_refcount.second.remote_path,
-            object_with_refcount.second.bytes_size);
+    for (const auto & [_, item] : items)
+        out += fmt::format("{} {} {} {}\n", item.links, item.obj.local_path, item.obj.remote_path, item.obj.bytes_size);
     return out;
 }
 }

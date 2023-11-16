@@ -33,7 +33,11 @@ void getStoredObjectsVFSLogOps( //NOLINT
 struct VFSSnapshot
 {
     using ObsoleteObjects = StoredObjects;
-    using ObjectWithRefcount = std::pair<size_t/*links*/, StoredObject>;
+    struct ObjectWithRefcount
+    {
+        StoredObject obj;
+        size_t links;
+    };
 
     std::unordered_map<String /*object_storage_path*/, ObjectWithRefcount> items;
 
@@ -70,7 +74,7 @@ struct fmt::formatter<DB::VFSSnapshot>
         fmt::format_to(ctx.out(), "VFSSnapshot(\n");
 
         for (const auto & [_, obj_pair] : snapshot.items)
-            fmt::format_to(ctx.out(), "Item({}, links={})\n", obj_pair.second, obj_pair.first);
+            fmt::format_to(ctx.out(), "Item({}, links={})\n", obj_pair.obj, obj_pair.links);
 
         return fmt::format_to(ctx.out(), ")");
     }
