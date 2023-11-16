@@ -1818,6 +1818,9 @@ try
         try
         {
             global_context->loadOrReloadDictionaries(config());
+
+            if (config().getBool("wait_dictionaries_load_at_startup", false))
+                global_context->waitForDictionariesLoad();
         }
         catch (...)
         {
