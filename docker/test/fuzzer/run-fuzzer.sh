@@ -234,6 +234,7 @@ quit
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
     timeout -s TERM --preserve-status 30m clickhouse-client \
+        --max-memory-usage-for-client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
