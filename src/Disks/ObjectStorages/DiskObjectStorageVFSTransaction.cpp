@@ -118,23 +118,22 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
     const WriteSettings & settings,
     bool autocommit)
 {
-    LOG_TRACE(log, "writeFile(is_metadata={})", settings.is_metadata_file_for_vfs);
+    const bool is_metadata_file_for_vfs = path.starts_with("vfs:");
+    LOG_TRACE(log, "writeFile(is_metadata={})", is_metadata_file_for_vfs);
 
     StoredObjects currently_existing_blobs = metadata_storage.exists(path) ? metadata_storage.getStorageObjects(path) : StoredObjects{};
     StoredObject blob;
 
     // This is a metadata file we got from some replica, we need to load it on local metadata disk
     // and add a Link entry
-    // Alternative to using a write setting is prefixing path with "vfs:" but this isn't a good solution
-    // either
-    if (settings.is_metadata_file_for_vfs)
+    if (is_metadata_file_for_vfs)
     {
-        chassert(currently_existing_blobs.empty());
+        const String path_without_prefix = path.substr(4);
         return std::make_unique<WriteBufferWithFinalizeCallback>(
-            std::make_unique<WriteBufferFromFile>(path, buf_size),
-            [tx = shared_from_this(), path](size_t)
+            std::make_unique<WriteBufferFromFile>(path_without_prefix, buf_size),
+            [tx = shared_from_this(), path_without_prefix](size_t)
             {
-                const StoredObjects objects = tx->metadata_storage.getStorageObjects(path);
+                const StoredObjects objects = tx->metadata_storage.getStorageObjects(path_without_prefix);
                 tx->addStoredObjectsOp(VFSTransactionLogItem::Type::Link, objects);
                 tx->commit();
             },

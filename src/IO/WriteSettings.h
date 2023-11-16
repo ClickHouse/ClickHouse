@@ -26,9 +26,6 @@ struct WriteSettings
     /// Monitoring
     bool for_object_storage = false; // to choose which profile events should be incremented
 
-    // TODO myrrc abstraction leak that should be replaced as soon as possible
-    bool is_metadata_file_for_vfs = false;
-
     bool operator==(const WriteSettings & other) const = default;
 };
 
