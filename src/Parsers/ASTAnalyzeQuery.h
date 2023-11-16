@@ -9,13 +9,13 @@
 namespace DB
 {
 
-class ASTAnalyzeQuery : public IAST /// TODO open , public ASTQueryWithOnCluster
+class ASTAnalyzeQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     /// Whether sampling
-    bool is_full;
+    bool is_full; /// TODO implement
     /// Whether running asynchronously
-    bool is_async;
+    bool is_async; /// TODO implement
 
     /// Analyzing target
     ASTPtr database;
@@ -23,7 +23,6 @@ public:
     ASTPtr column_list;
 
     ASTPtr settings;
-    String cluster;
 
     String getID(char) const override { return "Analyze"; }
 
@@ -38,6 +37,8 @@ public:
         f(reinterpret_cast<void **>(&column_list));
         f(reinterpret_cast<void **>(&settings));
     }
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTAnalyzeQuery>(clone()); }
 };
 
 

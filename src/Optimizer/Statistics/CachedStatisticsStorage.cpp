@@ -103,7 +103,7 @@ void CachedStatisticsStorage::shutdown()
 
 CachedStatisticsStorage::~CachedStatisticsStorage()
 {
-    shutdown();
+    this->shutdown();
 }
 
 }

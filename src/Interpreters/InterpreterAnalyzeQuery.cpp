@@ -1,10 +1,13 @@
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAnalyzeQuery.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageDistributed.h>
 
 
 namespace DB
@@ -19,6 +22,10 @@ extern const int UNSUPPORTED_METHOD;
 
 BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
 {
+    /// TODO add access
+    AccessRightsElements access_rights_elements;
+    /// access_rights_elements.emplace_back(AccessType::xxx);
+
     auto * query = query_ptr->as<ASTAnalyzeQuery>();
     auto statistics_storage = context->getStatisticsStorage();
 
@@ -31,13 +38,33 @@ BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
     if (!storage)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", storage_id.getFullNameNotQuoted());
 
-    if (storage->isRemote())
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD, "Analyzing is unsupported for non local table {}", storage_id.getFullNameNotQuoted());
+    /// If analyzing a distributed table we schedule a DDL task and use cluster of the distributed table.
+    if (auto * distributed_storage = storage->as<StorageDistributed>())
+    {
+        auto cloned = query_ptr->clone();
+        auto * cloned_analyze_query = cloned->as<ASTAnalyzeQuery>();
 
-    if (storage->as<MergeTreeData>())
+        /// Set cluster to cluster of distributed table
+        cloned_analyze_query->cluster = distributed_storage->getCluster()->getName();
+
+        /// Replace distributed table to local table
+        if (database != distributed_storage->getRemoteDatabaseName())
+            cloned_analyze_query->database = std::make_shared<ASTIdentifier>(distributed_storage->getRemoteDatabaseName());
+        cloned_analyze_query->table = std::make_shared<ASTIdentifier>(distributed_storage->getRemoteTableName());
+
+        DDLQueryOnClusterParams params;
+        params.access_to_check = std::move(access_rights_elements);
+        return executeDDLQueryOnCluster(cloned, context, params);
+    }
+
+    if (!storage->isMergeTree())
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD, "Analyzing is unsupported for non merge tree table {}", storage_id.getFullNameNotQuoted());
+
+    if (storage->isRemote())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Analyzing is unsupported the remote table {}", storage_id.getFullNameNotQuoted());
+
+    context->checkAccess(access_rights_elements);
 
     Names column_names;
     auto table_columns = storage->getInMemoryMetadata().getColumns();
