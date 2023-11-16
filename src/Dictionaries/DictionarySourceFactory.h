@@ -52,7 +52,20 @@ public:
         const std::string & default_database,
         bool check_config) const;
 
+    /// Checks configuration without creating a dictionary source.
+    void checkConfiguration(
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr global_context) const;
+
 private:
+    Creator getCreator(
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr global_context) const;
+
     using SourceRegistry = std::unordered_map<std::string, Creator>;
     SourceRegistry registered_sources;
 

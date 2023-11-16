@@ -87,6 +87,31 @@ namespace
                 lock = std::unique_lock(mutex);
         }
     };
+
+    // Exception is shared for multiple threads.
+    // We can't just rethrow it, because sharing the same exception object
+    // between multiple threads can lead to weird effects if they decide to
+    // modify it, for example, by adding some error context.
+    void rethrowException(std::exception_ptr exception, const String & name)
+    {
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (const Poco::Exception & e)
+        {
+            /// This will create a copy for Poco::Exception and DB::Exception
+            e.rethrow();
+        }
+        catch (...)
+        {
+            throw DB::Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
+                                "Failed to load dictionary '{}': {}",
+                                name,
+                                getCurrentExceptionMessage(true /*with stack trace*/,
+                                                            true /*check embedded stack trace*/));
+        }
+    }
 }
 
 
@@ -398,11 +423,16 @@ public:
     using CreateObjectFunction = std::function<LoadablePtr(
         const String & /* name */, const ObjectConfig & /* config */, const LoadablePtr & /* previous_version */)>;
 
+    /// Called to check object's configuration.
+    using CheckObjectConfigFunction = std::function<void(const String & /* name */, const ObjectConfig & /* config */)>;
+
     LoadingDispatcher(
         const CreateObjectFunction & create_object_function_,
+        const CheckObjectConfigFunction & check_object_config_function_,
         const String & type_name_,
         Poco::Logger * log_)
         : create_object(create_object_function_)
+        , check_object_config(check_object_config_function_)
         , type_name(type_name_)
         , log(log_)
     {
@@ -640,6 +670,26 @@ public:
     {
         std::lock_guard lock{mutex};
         return infos.contains(name);
+    }
+
+    void checkObjectConfig(const String & name) const
+    {
+        std::shared_ptr<const ObjectConfig> config;
+        {
+            std::lock_guard lock{mutex};
+            const Info * info = getInfo(name);
+            if (!info)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not found", type_name, name);
+
+            if (info->loaded())
+                return;
+
+            if (info->failed())
+                rethrowException(info->exception, name);
+
+            config = info->config;
+        }
+        check_object_config(name, *config);
     }
 
     /// Starts reloading all the object which update time is earlier than now.
@@ -1192,6 +1242,7 @@ private:
     }
 
     const CreateObjectFunction create_object;
+    const CheckObjectConfigFunction check_object_config;
     const String type_name;
     Poco::Logger * log;
 
@@ -1277,6 +1328,7 @@ ExternalLoader::ExternalLoader(const String & type_name_, Poco::Logger * log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
           [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
+          [this](const String & name, const ObjectConfig & config) { return checkObjectConfigImpl(name, *config.config, config.key_in_config); },
           type_name_,
           log_))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
@@ -1437,29 +1489,7 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.status == ExternalLoader::Status::LOADING)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' is still loading", type_name, result.name);
     if (result.exception)
-    {
-        // Exception is shared for multiple threads.
-        // Don't just rethrow it, because sharing the same exception object
-        // between multiple threads can lead to weird effects if they decide to
-        // modify it, for example, by adding some error context.
-        try
-        {
-            std::rethrow_exception(result.exception);
-        }
-        catch (const Poco::Exception & e)
-        {
-            /// This will create a copy for Poco::Exception and DB::Exception
-            e.rethrow();
-        }
-        catch (...)
-        {
-            throw DB::Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
-                                "Failed to load dictionary '{}': {}",
-                                result.name,
-                                getCurrentExceptionMessage(true /*with stack trace*/,
-                                                           true /*check embedded stack trace*/));
-        }
-    }
+        rethrowException(result.exception, result.name);
     if (result.status == ExternalLoader::Status::NOT_EXIST)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not found", type_name, result.name);
     if (result.status == ExternalLoader::Status::NOT_LOADED)
@@ -1489,6 +1519,11 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,
         std::rethrow_exception(exception);
 }
 
+
+void ExternalLoader::checkObjectConfig(const String & name) const
+{
+    loading_dispatcher->checkObjectConfig(name);
+}
 
 void ExternalLoader::reloadConfig() const
 {

@@ -315,12 +315,21 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
-            if (!args.attach && !lazy_load)
+            if (!args.attach)
             {
-                /// load() is called here to force loading the dictionary, wait until the loading is finished,
-                /// and throw an exception if the loading is failed.
-                external_dictionaries_loader.load(dictionary_id.getInternalDictionaryName());
+                bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
+                if (lazy_load)
+                {
+                    /// Lazy load is enabled so here we only slightly check the configuration of a dictionary
+                    /// and throw if it contains obvious errors.
+                    external_dictionaries_loader.checkDictionaryConfig(dictionary_id.getInternalDictionaryName());
+                }
+                else
+                {
+                    /// load() is called here to force loading the dictionary, wait until the loading is finished,
+                    /// and throw an exception if the loading is failed.
+                    external_dictionaries_loader.load(dictionary_id.getInternalDictionaryName());
+                }
             }
 
             return result_storage;

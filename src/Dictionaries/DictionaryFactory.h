@@ -44,6 +44,13 @@ public:
         const ASTCreateQuery & ast,
         ContextPtr global_context) const;
 
+    /// Checks configuration without creating a dictionary.
+    void checkConfiguration(
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr global_context) const;
+
     using LayoutCreateFunction = std::function<DictionaryPtr(
         const std::string & name,
         const DictionaryStructure & dict_struct,
@@ -62,6 +69,12 @@ public:
     void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex = true);
 
 private:
+    LayoutCreateFunction getLayoutCreator(
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr global_context) const;
+
     struct RegisteredLayout
     {
         LayoutCreateFunction layout_create_function;

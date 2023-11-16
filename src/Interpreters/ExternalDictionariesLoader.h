@@ -27,6 +27,11 @@ public:
 
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// Checks (not very deeply) the configuration of a specified dictionary and throws an exception if the configuration is not ok.
+    /// It's a light-version of the checks which `getDictionary()` does, but without actually loading a dictionary or accessing any data.
+    /// The function is used to block creating a dictionary if its definition is definitely wrong.
+    void checkDictionaryConfig(const std::string & dictionary_name);
+
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
@@ -41,7 +46,10 @@ public:
 
 protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
-            const std::string & key_in_config, const std::string & repository_name) const override;
+                       const std::string & key_in_config, const std::string & repository_name) const override;
+
+    void checkObjectConfigImpl(const std::string & name, const Poco::Util::AbstractConfiguration & config,
+                               const std::string & key_in_config) const override;
 
     std::string resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 

@@ -34,45 +34,66 @@ DictionaryPtr DictionaryFactory::create(
     ContextPtr global_context,
     bool created_from_ddl) const
 {
-    Poco::Util::AbstractConfiguration::Keys keys;
-    const auto & layout_prefix = config_prefix + ".layout";
-    config.keys(layout_prefix, keys);
-    if (keys.size() != 1)
-        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
-            "{}: element dictionary.layout should have exactly one child element",
-            name);
-
     const DictionaryStructure dict_struct{config, config_prefix};
 
     DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(
         name, config, config_prefix + ".source", dict_struct, global_context, config.getString(config_prefix + ".database", ""), created_from_ddl);
     LOG_TRACE(&Poco::Logger::get("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
 
-    const auto & layout_type = keys.front();
+    auto layout_creator = getLayoutCreator(name, config, config_prefix, global_context);
+    auto result = layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
 
-    {
-        const auto found = registered_layouts.find(layout_type);
-        if (found != registered_layouts.end())
-        {
-            const auto & layout_creator = found->second.layout_create_function;
-            auto result = layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
-            if (config.hasProperty(config_prefix + ".comment"))
-                result->setDictionaryComment(config.getString(config_prefix + ".comment"));
+    if (config.hasProperty(config_prefix + ".comment"))
+        result->setDictionaryComment(config.getString(config_prefix + ".comment"));
 
-            return result;
-        }
-    }
-
-    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-        "{}: unknown dictionary layout type: {}",
-        name,
-        layout_type);
+    return result;
 }
 
 DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, ContextPtr global_context) const
 {
     auto configuration = getDictionaryConfigurationFromAST(ast, global_context);
     return DictionaryFactory::create(name, *configuration, "dictionary", global_context, true);
+}
+
+void DictionaryFactory::checkConfiguration(
+    const std::string & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr global_context) const
+{
+    DictionaryStructure{config, config_prefix};
+    DictionarySourceFactory::instance().checkConfiguration(name, config, config_prefix + ".source", global_context);
+    getLayoutCreator(name, config, config_prefix, global_context);
+}
+
+DictionaryFactory::LayoutCreateFunction DictionaryFactory::getLayoutCreator(
+    const std::string & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr /* global_context */) const
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    const auto & layout_prefix = config_prefix + ".layout";
+    config.keys(layout_prefix, keys);
+    if (keys.size() != 1)
+    {
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+            "{}: element dictionary.layout should have exactly one child element",
+            name);
+    }
+
+    const auto & layout_type = keys.front();
+
+    const auto found = registered_layouts.find(layout_type);
+    if (found == registered_layouts.end())
+    {
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+            "{}: unknown dictionary layout type: {}",
+            name,
+            layout_type);
+    }
+
+    return found->second.layout_create_function;
 }
 
 bool DictionaryFactory::isComplex(const std::string & layout_type) const

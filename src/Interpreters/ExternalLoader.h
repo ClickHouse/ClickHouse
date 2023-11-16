@@ -200,6 +200,11 @@ public:
     /// Check if object with name exists in configuration
     bool has(const String & name) const;
 
+    /// Checks (not very deeply) the configuration of a specified object and throws an exception if the configuration is not ok.
+    /// It's a light-version of the checks which `load()` does, but without actually loading an object or accessing any data.
+    /// The function can be used to block creating an object if its definition is definitely wrong.
+    void checkObjectConfig(const String & name) const;
+
     /// Reloads all config repositories.
     void reloadConfig() const;
 
@@ -211,6 +216,7 @@ public:
 
 protected:
     virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
+    virtual void checkObjectConfigImpl(const String & /* name */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
 
 private:
     void checkLoaded(const LoadResult & result, bool check_no_errors) const;

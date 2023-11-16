@@ -60,6 +60,16 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary
     return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 }
 
+void ExternalDictionariesLoader::checkDictionaryConfig(const std::string & dictionary_name)
+{
+    checkObjectConfig(dictionary_name);
+}
+
+void ExternalDictionariesLoader::checkObjectConfigImpl(
+    const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config) const
+{
+    DictionaryFactory::instance().checkConfiguration(name, config, key_in_config, getContext());
+}
 
 void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {

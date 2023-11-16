@@ -84,28 +84,48 @@ DictionarySourcePtr DictionarySourceFactory::create(
     const std::string & default_database,
     bool check_config) const
 {
+    auto create_source = getCreator(name, config, config_prefix, global_context);
+    auto sample_block = createSampleBlock(dict_struct);
+    return create_source(dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
+}
+
+void DictionarySourceFactory::checkConfiguration(
+    const std::string & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr global_context) const
+{
+    getCreator(name, config, config_prefix, global_context);
+}
+
+DictionarySourceFactory::Creator DictionarySourceFactory::getCreator(
+    const std::string & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr /* global_context */) const
+{
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
     if (keys.empty() || keys.size() > 2)
+    {
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
             "{}: element dictionary.source should have one or two child elements",
             name);
+    }
 
     const std::string & source_type = keys.front() == "settings" ? keys.back() : keys.front();
 
     const auto found = registered_sources.find(source_type);
-    if (found != registered_sources.end())
+    if (found == registered_sources.end())
     {
-        const auto & create_source = found->second;
-        auto sample_block = createSampleBlock(dict_struct);
-        return create_source(dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+            "{}: unknown dictionary source type: {}",
+            name,
+            source_type);
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-        "{}: unknown dictionary source type: {}",
-        name,
-        source_type);
+    return found->second;
 }
 
 DictionarySourceFactory & DictionarySourceFactory::instance()
