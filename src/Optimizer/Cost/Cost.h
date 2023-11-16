@@ -23,7 +23,7 @@ public:
     }
     Cost(Weight weight_, Float64 cpu_cost_, Float64 mem_cost_) : Cost(weight_, cpu_cost_, mem_cost_, 0.0) { }
     Cost(Weight weight_, Float64 cpu_cost_) : Cost(weight_, cpu_cost_, 0.0, 0.0) { }
-    Cost(Weight weight_ = {0.2, 0.2, 0.6}) : Cost(weight_, 0.0, 0.0, 0.0) { }
+    Cost(Weight weight_ = {0.0, 0.0, 0.0}) : Cost(weight_, 0.0, 0.0, 0.0) { }
 
     Cost(const Cost & other) : weight(other.weight), cpu_cost(other.cpu_cost), mem_cost(other.mem_cost), net_cost(other.net_cost) { }
 

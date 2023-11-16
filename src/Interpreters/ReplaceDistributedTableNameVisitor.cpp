@@ -178,7 +178,10 @@ void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident,
 
         /// 2. Replace distributed table to local table.
         auto local_table = local_table_ident->getTableId();
-        DatabaseCatalog::instance().getTable(local_table, context); /// local must has local_table
+        auto local_table_meta = DatabaseCatalog::instance().getTable(local_table, context); /// the local table must exists
+
+        if (!local_table_meta->isMergeTree())
+            has_non_merge_tree_table = true;
 
         table_ident.resetTable(database_name, table_name);
 

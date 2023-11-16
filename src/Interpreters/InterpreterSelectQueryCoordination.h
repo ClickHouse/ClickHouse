@@ -12,7 +12,6 @@ class InterpreterSelectQueryCoordination : public IInterpreter
 {
 public:
     InterpreterSelectQueryCoordination(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions &);
-
     InterpreterSelectQueryCoordination(const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions &);
 
     BlockIO execute() override;
@@ -20,7 +19,7 @@ public:
     void explain(WriteBufferFromOwnString & buf, const QueryPlan::ExplainPlanOptions & options_, bool json, bool optimize_);
     void explainFragment(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentOptions & options_);
 
-    /// Disable use_index_for_in_with_subqueries.
+    /// Disable use_index_for_in_with_subqueries. /// TODO remove in the future
     void setIncompatibleSettings();
 
     bool ignoreQuota() const override { return false; }
@@ -51,12 +50,13 @@ private:
     ///     1. there is no table function
     ///     2. there is no local table
     ///     3. allow_experimental_query_coordination = 1
+    ///     4. there is no non merge tree table
     bool query_coordination_enabled;
 
     /// Query plan
     QueryPlan plan;
 
-    /// Distributed query plan, enabled only if query_coordination_enabled is true.
+    /// Distributed query plan, used only if query_coordination_enabled is true.
     FragmentPtrs fragments;
 
     Poco::Logger * log;

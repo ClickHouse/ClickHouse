@@ -81,6 +81,7 @@ public:
     bool has_distributed_table = false;
     bool has_local_table = false;
     bool has_table_function = false;
+    bool has_non_merge_tree_table = false; /// TODO remove
 
     explicit ReplaceDistributedTableNameVisitor(ContextPtr context_) : context(context_) { }
 

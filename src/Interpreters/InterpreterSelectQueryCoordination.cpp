@@ -41,7 +41,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     {
         setIncompatibleSettings();
 
-        // Only propagate WITH elements to subqueries if we're not a subquery
+        /// Expand CET in advance
         if (!options.is_subquery)
         {
             if (context->getSettingsRef().enable_global_with_statement)
@@ -76,6 +76,9 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
         }
 
         if (visitor.has_local_table)
+            context->setDistributedForQueryCoord(false);
+
+        if (visitor.has_non_merge_tree_table)
             context->setDistributedForQueryCoord(false);
     }
     else
