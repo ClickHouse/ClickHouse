@@ -2743,7 +2743,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     /// we can possibly duplicate entries in queue of cloned replica.
     while (true)
     {
-        if (shutdown_called || partial_shutdown_called)
+        if (shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Cannot clone replica because shutdown called");
 
         Coordination::Stat log_pointer_stat;
@@ -3112,7 +3112,7 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
     String source_columns;
     while (true)
     {
-        if (shutdown_called || partial_shutdown_called)
+        if (shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Cannot clone metadata because shutdown called");
 
         Coordination::Stat metadata_stat;
