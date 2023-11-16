@@ -1,14 +1,15 @@
 #include <Backups/BackupCoordinationStageSync.h>
 
-#include <base/chrono_io.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/Exception.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Backups/BackupCoordinationStage.h>
+#include <base/chrono_io.h>
+#include <Common/Exception.h>
+#include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {
@@ -170,13 +171,13 @@ BackupCoordinationStageSync::State BackupCoordinationStageSync::readCurrentState
                 {
                     with_retries.renewZooKeeper(zookeeper);
 
-                    if (zookeeper->existsNoFailureInjection(alive_node_path))
+                    if (zookeeper->exists(alive_node_path))
                     {
                         unready_host_state.alive = true;
                         return;
                     }
 
-                    // Retry with backoff. We also check whether it is last retry or no, because we won't to rethrow an exception.
+                    // Retry with backoff. We also check whether it is last retry or no, because we don't want to rethrow an exception.
                     if (!holder.retries_ctl.isLastRetry())
                         holder.retries_ctl.setKeeperError(Coordination::Error::ZNONODE, "There is no alive node for host {}. Will retry", host);
                 });

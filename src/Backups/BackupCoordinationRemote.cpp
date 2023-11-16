@@ -5,14 +5,15 @@
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationStage.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/escapeForFileName.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Common/escapeForFileName.h>
 
 
 namespace DB
@@ -182,11 +183,9 @@ BackupCoordinationRemote::BackupCoordinationRemote(
             if (my_is_internal)
             {
                 String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
+                zk->deleteEphemeralNodeIfContentMatches(alive_node_path, "");
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-
-                if (code == Coordination::Error::ZNODEEXISTS)
-                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
-                else if (code != Coordination::Error::ZOK)
+                if (code != Coordination::Error::ZOK)
                     throw zkutil::KeeperException::fromPath(code, alive_node_path);
             }
         })
@@ -249,7 +248,7 @@ void BackupCoordinationRemote::removeAllNodes()
         /// at `zookeeper_path` which might cause such hosts to stop with exception "ZNONODE". Or such hosts might still do some useless part
         /// of their backup work before that. Anyway in this case backup won't be finalized (because only an initiator can do that).
         with_retries.renewZooKeeper(zk);
-        zk->removeRecursive(zookeeper_path);
+        zk->tryRemoveRecursive(zookeeper_path);
     });
 }
 

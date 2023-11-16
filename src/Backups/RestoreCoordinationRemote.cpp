@@ -1,11 +1,12 @@
 #include <Backups/BackupCoordinationRemote.h>
 #include <Backups/BackupCoordinationStage.h>
-#include <Backups/RestoreCoordinationRemote.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Backups/RestoreCoordinationRemote.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
-#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -43,11 +44,9 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
             if (my_is_internal)
             {
                 String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
+                zk->deleteEphemeralNodeIfContentMatches(alive_node_path, "");
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-
-                if (code == Coordination::Error::ZNODEEXISTS)
-                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
-                else if (code != Coordination::Error::ZOK)
+                if (code != Coordination::Error::ZOK)
                     throw zkutil::KeeperException::fromPath(code, alive_node_path);
             }
         })
@@ -275,7 +274,7 @@ void RestoreCoordinationRemote::removeAllNodes()
         [&, &zk = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zk);
-            zk->removeRecursive(zookeeper_path);
+            zk->tryRemoveRecursive(zookeeper_path);
         });
 }
 
