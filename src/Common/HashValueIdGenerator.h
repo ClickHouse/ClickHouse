@@ -44,7 +44,7 @@ struct HashValueIdCacheLine
 {
     size_t allocated_num = 0;
     alignas(64) UInt64 values[8] = {0};
-    alignas(64) UInt64 value_ids[8] = {0};
+    alignas(64) UInt64 value_ids[8] = {-1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL};
 };
 
 DECLARE_DEFAULT_CODE(
