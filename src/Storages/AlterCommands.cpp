@@ -395,11 +395,24 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         column.ttl = ttl;
 
-        metadata.columns.add(column, after_column, first);
-
-        /// Slow, because each time a list is copied
         if (context->getSettingsRef().flatten_nested)
-            metadata.columns.flattenNested();
+        {
+            StorageInMemoryMetadata temporary_metadata;
+            temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
+            temporary_metadata.columns.flattenNested();
+
+            const auto transformed_columns = temporary_metadata.columns.getAll();
+
+            for (auto it = transformed_columns.rbegin(); it != transformed_columns.rend(); it++)
+            {
+                const auto & transformed_column = temporary_metadata.columns.get(it->name);
+                metadata.columns.add(transformed_column, after_column, first);
+            }
+        }
+        else
+        {
+            metadata.columns.add(column, after_column, first);
+        }
     }
     else if (type == DROP_COLUMN)
     {
