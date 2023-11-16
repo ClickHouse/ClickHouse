@@ -766,7 +766,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
             IDataPartStorage & part_storage, const String & file_name, size_t file_size)
         {
             // Alternative is altering WriteSettings but this also is a bad solution
-            return part_storage.writeFile("vfs:" + file_name,
+            return part_storage.writeFile(file_name + ":vfs",
                 std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE),
                 {});
         };

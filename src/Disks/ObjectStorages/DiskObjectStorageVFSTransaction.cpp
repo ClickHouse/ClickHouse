@@ -118,7 +118,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
     const WriteSettings & settings,
     bool autocommit)
 {
-    const bool is_metadata_file_for_vfs = path.starts_with("vfs:");
+    const bool is_metadata_file_for_vfs = path.ends_with(":vfs");
     LOG_TRACE(log, "writeFile(is_metadata={})", is_metadata_file_for_vfs);
 
     StoredObjects currently_existing_blobs = metadata_storage.exists(path) ? metadata_storage.getStorageObjects(path) : StoredObjects{};
