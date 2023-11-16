@@ -1,4 +1,15 @@
 #include <IO/S3/Credentials.h>
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
+}
 
 #if USE_AWS_S3
 
@@ -16,11 +27,9 @@
 #    include <aws/core/platform/FileSystem.h>
 
 #    include <Common/logger_useful.h>
-#    include <Common/Exception.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
 
-#    include <exception>
 #    include <fstream>
 #    include <base/EnumReflection.h>
 
@@ -42,7 +51,6 @@ namespace ErrorCodes
 {
     extern const int AWS_ERROR;
     extern const int GCP_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace S3
@@ -280,20 +288,20 @@ String getRunningAvailabilityZone()
     LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
     try
     {
-        auto aws_az = AWSEC2MetadataClient::getAvailabilityZoneOrException();
-        return aws_az;
+        return AWSEC2MetadataClient::getAvailabilityZoneOrException();
     }
-    catch (const std::exception & aws_ex)
+    catch (...)
     {
+        auto aws_ex_msg = getExceptionMessage(std::current_exception(), false);
         try
         {
-            auto gcp_zone = getGCPAvailabilityZoneOrException();
-            return gcp_zone;
+            return getGCPAvailabilityZoneOrException();
         }
-        catch (const std::exception & gcp_ex)
+        catch (...)
         {
+            auto gcp_ex_msg = getExceptionMessage(std::current_exception(), false);
             throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex.what(), gcp_ex.what());
+                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex_msg, gcp_ex_msg);
         }
     }
 }
@@ -784,8 +792,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
 #else
 
-#    include <stdexcept>
-
 namespace DB
 {
 
@@ -794,7 +800,7 @@ namespace S3
 
 std::string getRunningAvailabilityZone()
 {
-    throw std::runtime_error("Does not support availability zone detection for non-cloud environment");
+    throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Does not support availability zone detection for non-cloud environment");
 }
 
 }

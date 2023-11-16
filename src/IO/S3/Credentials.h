@@ -4,7 +4,6 @@
 
 #if USE_AWS_S3
 
-#    include <exception>
 #    include <base/types.h>
 
 #    include <aws/core/client/ClientConfiguration.h>
