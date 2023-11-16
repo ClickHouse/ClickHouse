@@ -123,7 +123,7 @@ ReplaceDistributedTableNameVisitor::enter(ASTFunction & table_function, ASTPtr &
 {
     has_table_function = true;
 
-    if (table_function.name != "remote") /// TODO cluster
+    if (table_function.name != "remote" || table_function.name != "remoteSecure" || table_function.name != "cluster" || table_function.name != "clusterAllReplicas") /// TODO cluster
         return {};
 
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function_ast, context);
