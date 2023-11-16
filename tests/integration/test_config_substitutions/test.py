@@ -30,6 +30,15 @@ node6 = cluster.add_instance(
     },
     main_configs=["configs/include_from_source.xml"],
 )
+node7 = cluster.add_instance(
+    "node7",
+    user_configs=[
+        "configs/000-config_with_env_subst.xml",
+        "configs/010-env_subst_override.xml",
+    ],
+    env_variables={"MAX_QUERY_SIZE": "121212"},
+    instance_env_variables=True,
+)  # overridden with 424242
 
 
 @pytest.fixture(scope="module")
@@ -77,6 +86,10 @@ def test_config(start_cluster):
     assert (
         node6.query("select value from system.settings where name = 'max_query_size'")
         == "99999\n"
+    )
+    assert (
+        node7.query("select value from system.settings where name = 'max_query_size'")
+        == "424242\n"
     )
 
 
