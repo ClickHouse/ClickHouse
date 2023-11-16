@@ -158,7 +158,7 @@ void StorageMergeTree::startup()
         /// It means that failed "startup" must not create any background tasks that we will have to wait.
         try
         {
-            shutdown();
+            shutdown(false);
         }
         catch (...)
         {
@@ -170,7 +170,7 @@ void StorageMergeTree::startup()
     }
 }
 
-void StorageMergeTree::shutdown()
+void StorageMergeTree::shutdown(bool)
 {
     if (shutdown_called.exchange(true))
         return;
@@ -196,7 +196,7 @@ void StorageMergeTree::shutdown()
 
 StorageMergeTree::~StorageMergeTree()
 {
-    shutdown();
+    shutdown(false);
 }
 
 void StorageMergeTree::read(
@@ -290,7 +290,7 @@ void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr quer
 
 void StorageMergeTree::drop()
 {
-    shutdown();
+    shutdown(true);
     /// In case there is read-only disk we cannot allow to call dropAllData(), but dropping tables is allowed.
     if (isStaticStorage())
         return;
@@ -341,6 +341,8 @@ void StorageMergeTree::alter(
                     prev_mutation = it->first;
             }
 
+            /// Always wait previous mutations synchronously, because alters
+            /// should be executed in sequential order.
             if (prev_mutation != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
@@ -368,9 +370,7 @@ void StorageMergeTree::alter(
             resetObjectColumnsFromActiveParts(parts_lock);
         }
 
-        /// Always execute required mutations synchronously, because alters
-        /// should be executed in sequential order.
-        if (!maybe_mutation_commands.empty())
+        if (!maybe_mutation_commands.empty() && local_context->getSettingsRef().alter_sync > 0)
             waitForMutation(mutation_version, false);
     }
 

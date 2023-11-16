@@ -1,9 +1,4 @@
-#include <exception>
-#include <variant>
 #include <IO/S3/Credentials.h>
-#include <boost/algorithm/string/classification.hpp>
-#include <Poco/Exception.h>
-#include "Common/Exception.h"
 
 #if USE_AWS_S3
 
@@ -16,7 +11,6 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 
-#    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <aws/core/utils/HashingUtils.h>
 #    include <aws/core/platform/FileSystem.h>
 
@@ -28,16 +22,6 @@
 #    include <fstream>
 #    include <base/EnumReflection.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/algorithm/string/split.hpp>
-
-
-#include <Poco/URI.h>
-#include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/StreamCopier.h>
-
 
 namespace DB
 {
@@ -45,8 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AWS_ERROR;
-    extern const int GCP_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace S3
@@ -169,6 +151,30 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     return GetResourceWithAWSWebServiceResult(credentials_request).GetPayload();
 }
 
+Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
+{
+    String user_agent_string = awsComputeUserAgentString();
+    auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
+    if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
+            "Failed to make token request. HTTP response code: {}", response_code);
+
+    token = std::move(new_token);
+    const String url = endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
+    std::shared_ptr<Aws::Http::HttpRequest> profile_request(
+        Aws::Http::CreateHttpRequest(url, Aws::Http::HttpMethod::HTTP_GET, Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
+
+    profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, token);
+    profile_request->SetUserAgent(user_agent_string);
+
+    const auto result = GetResourceWithAWSWebServiceResult(profile_request);
+    if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK)
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
+            "Failed to get availability zone. HTTP response code: {}", result.GetResponseCode());
+
+    return Aws::Utils::StringUtils::Trim(result.GetPayload().c_str());
+}
+
 std::pair<Aws::String, Aws::Http::HttpResponseCode> AWSEC2MetadataClient::getEC2MetadataToken(const std::string & user_agent_string) const
 {
     std::lock_guard locker(token_mutex);
@@ -193,10 +199,10 @@ Aws::String AWSEC2MetadataClient::getCurrentRegion() const
     return Aws::Region::AWS_GLOBAL;
 }
 
-static Aws::String getAWSMetadataEndpoint()
+std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
 {
-    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
     Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
+    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
     if (ec2_metadata_service_endpoint.empty())
     {
         Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
@@ -227,95 +233,8 @@ static Aws::String getAWSMetadataEndpoint()
             }
         }
     }
-    return ec2_metadata_service_endpoint;
-}
-
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
-{
-    auto endpoint = getAWSMetadataEndpoint();
-    return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
-}
-
-String AWSEC2MetadataClient::getAvailabilityZoneOrException()
-{
-    Poco::URI uri(getAWSMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
-    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
-
-    Poco::Net::HTTPResponse response;
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
-    session.sendRequest(request);
-
-    std::istream & rs = session.receiveResponse(response);
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
-    String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
-    return response_data;
-}
-
-String getGCPAvailabilityZoneOrException()
-{
-    Poco::URI uri(String(GCP_METADATA_SERVICE_ENDPOINT) + "/computeMetadata/v1/instance/zone");
-    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
-    Poco::Net::HTTPResponse response;
-    request.set("Metadata-Flavor", "Google");
-    session.sendRequest(request);
-    std::istream & rs = session.receiveResponse(response);
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
-    String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
-    Strings zone_info;
-    boost::split(zone_info, response_data, boost::is_any_of("/"));
-    /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
-    if (zone_info.size() != 4)
-        throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>, got {}", response_data);
-    return zone_info[3];
-}
-
-String getRunningAvailabilityZoneImpl()
-{
-    LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
-    try
-    {
-        auto aws_az = AWSEC2MetadataClient::getAvailabilityZoneOrException();
-        return aws_az;
-    }
-    catch (const DB::Exception & aws_ex)
-    {
-        try
-        {
-            auto gcp_zone = getGCPAvailabilityZoneOrException();
-            return gcp_zone;
-        }
-        catch (const DB::Exception & gcp_ex)
-        {
-            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex.displayText(), gcp_ex.displayText());
-        }
-    }
-}
-
-std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImplOrException()
-{
-    try
-    {
-        return getRunningAvailabilityZoneImpl();
-    }
-    catch (...)
-    {
-        return std::current_exception();
-    }
-}
-
-String getRunningAvailabilityZone()
-{
-    static auto az_or_exception = getRunningAvailabilityZoneImplOrException();
-    if (const auto * az = std::get_if<String>(&az_or_exception))
-        return *az;
-    else
-        std::rethrow_exception(std::get<std::exception_ptr>(az_or_exception));
+    LOG_INFO(logger, "Using IMDS endpoint: {}", ec2_metadata_service_endpoint);
+    return std::make_shared<AWSEC2MetadataClient>(client_configuration, ec2_metadata_service_endpoint.c_str());
 }
 
 AWSEC2InstanceProfileConfigLoader::AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)
@@ -784,6 +703,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             aws_client_configuration.requestTimeoutMs = 1000;
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+
             auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
@@ -795,23 +715,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
     /// in chain.
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
-}
-
-}
-
-}
-
-#else
-
-namespace DB
-{
-
-namespace S3
-{
-
-String getRunningAvailabilityZone()
-{
-    throw Poco::Exception("Does not support availability zone detection for non-cloud environment");
 }
 
 }
