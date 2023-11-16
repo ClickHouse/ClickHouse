@@ -164,7 +164,7 @@ if (OS_LINUX)
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     # - The clickhouse-odbc-bridge and clickhouse-library-bridge binaries
     #   should not expose their symbols to ODBC drivers and libraries.
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 endif ()
 
 if (OS_DARWIN)
@@ -273,6 +273,11 @@ option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
 if (ENABLE_BUILD_PROFILING)
      if (COMPILER_CLANG)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
+
+        if (LINKER_NAME MATCHES "lld")
+            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
+            set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        endif ()
      else ()
         message (${RECONFIGURE_MESSAGE_LEVEL} "Build profiling is only available with CLang")
      endif ()
