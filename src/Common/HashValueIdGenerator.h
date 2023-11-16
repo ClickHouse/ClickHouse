@@ -17,6 +17,7 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
 #include <Common/PODArray_fwd.h>
+#include "Exception.h"
 #include "config.h"
 
 #if defined(__SSE2__)
@@ -288,6 +289,10 @@ protected:
         memcpy(new_str, raw_value.data, raw_value.size);
 
         m_value_ids.emplace(StringRef(new_str, raw_value.size), m_it, inserted);
+        if (!inserted)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert value id {} for ", value_id);
+        }
         m_it->getMapped() = value_id;
     }
 
