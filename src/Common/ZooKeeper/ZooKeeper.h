@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Types.h"
+#include <Poco/Logger.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <optional>
 #include <unordered_set>
@@ -226,7 +227,7 @@ public:
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    std::vector<ShuffleHost> shuffleHosts() const;
+    std::vector<ShuffleHost> shuffleHosts(bool& dns_error) const;
 
     void tryConnectSameAZKeeper();
 
@@ -581,7 +582,6 @@ public:
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
 private:
-
     void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
@@ -666,13 +666,14 @@ public:
     void update(const std::string & host, const std::string & availability_zone);
 
     // shuffleHosts returns a more optimal host order to connect. We try our best based on previous az information to return the local host first.
-    std::vector<ShuffleHost> shuffleHosts(const std::string & local_az, const std::vector<std::string> & hosts);
+    std::vector<ShuffleHost> shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool& dns_error);
 
     // maybeWorthTryingOtherHost returns true if we want to connecto `local_az` and we have tried `attempted_host` already.
     // For example, if some hosts their availability zone are still unknown, or we still have some same az not tried yet.
     bool needTryOtherHost(const std::string & local_az, const std::set<std::string> & attempted_host);
 
 private:
+    void updateWithLock(const std::string & host, const std::string & availability_zone);
 
     std::map<std::string, std::string> az_by_host;
     std::mutex mutex;
