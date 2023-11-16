@@ -29,9 +29,6 @@
 #    include <immintrin.h>
 #endif
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes
