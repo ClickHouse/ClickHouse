@@ -45,6 +45,9 @@ private:
     template <typename ColumnValue, typename DataValue>
     void readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness);
 
+    template <typename ColumnValue>
+    void readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness);
+
     void readRows(MutableColumns & columns);
 
     void readValue(IColumn * column);
