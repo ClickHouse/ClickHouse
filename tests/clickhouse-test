@@ -674,7 +674,7 @@ class MergeTreeSettingsRandomizer:
         "replace_long_file_name_to_hash": lambda: random.randint(0, 1),
         "max_file_name_length": threshold_generator(0.3, 0.3, 0, 128),
         "sleep_before_commit_local_part_in_replicated_table_ms": threshold_generator(
-            0.3, 0.3, 0, 250
+            0.7, 0.7, 0, 100
         ),
     }
 
