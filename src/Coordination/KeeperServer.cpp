@@ -4,7 +4,6 @@
 #include "config.h"
 
 #include <chrono>
-#include <filesystem>
 #include <string>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
@@ -617,6 +616,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     {
         const auto preprocess_logs = [&]
         {
+            keeper_context->local_logs_preprocessed = true;
             auto log_store = state_manager->load_log_store();
             if (last_log_idx_on_disk > 0 && last_log_idx_on_disk > state_machine->last_commit_index())
             {
@@ -642,7 +642,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             {
                 LOG_INFO(log, "All local log entries preprocessed");
             }
-            keeper_context->local_logs_preprocessed = true;
         };
 
         switch (type)
