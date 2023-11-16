@@ -2497,7 +2497,7 @@ def find_clickhouse_command(binary, command):
 def get_additional_client_options(args):
     all_options = []
     if args.client_option:
-        all_options += args.client_option
+        all_options += copy.copy(args.client_option)
     if args.fuzz:
         all_options += [
             f"query-fuzzer-runs={args.query_fuzzer_runs}",
