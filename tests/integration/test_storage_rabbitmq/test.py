@@ -110,9 +110,9 @@ def rabbitmq_setup_teardown():
     ],
 )
 def test_rabbitmq_select(rabbitmq_cluster, secure):
-    port = 5672
+    port = cluster.rabbitmq_port
     if secure:
-        port = 5671
+        port = cluster.rabbitmq_secure_port
 
     instance.query(
         """
