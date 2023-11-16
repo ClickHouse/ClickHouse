@@ -45,13 +45,13 @@ for _ in {0..10}; do
   count=$($CLICKHOUSE_CLIENT -nm -q "
     SYSTEM FLUSH LOGS;
 
-    SELECT count() > 0
+    SELECT count()
     FROM system.text_log
     WHERE logger_name ILIKE '%' || currentDatabase() || '%enabled_part_check_t%ReplicatedMergeTreePartCheckThread%' AND message ILIKE '%Background part check: ZooKeeper hardware error%' AND event_date >= yesterday()
     GROUP BY logger_name;
   ")
-  if [[ $count -gt 0 ]]; then
-    count=$($CLICKHOUSE_CLIENT -nm -q "
+  if [[ $count -eq 1 ]]; then
+    errors=$($CLICKHOUSE_CLIENT -nm -q "
       SYSTEM FLUSH LOGS;
 
       SELECT count() > 0
@@ -59,7 +59,9 @@ for _ in {0..10}; do
       WHERE logger_name ILIKE '%' || currentDatabase() || '%enabled_part_check_t%ReplicatedMergeTreePartCheckThread%' AND level in ('Fatal', 'Critical', 'Error', 'Warning') AND event_date >= yesterday()
       GROUP BY logger_name;
     ")
-    echo "No error in traces in case of zookeeper hardware error"
+    if [[ errors -eq 0 ]]; then
+      echo "No error in traces in case of zookeeper hardware error"
+    fi
     break;
   fi
 
