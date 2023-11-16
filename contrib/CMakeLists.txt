@@ -1,7 +1,7 @@
 #"${folder}/CMakeLists.txt" Third-party libraries may have substandard code.
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -ffunction-sections -fdata-sections")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -ffunction-sections -fdata-sections")
 
 if (WITH_COVERAGE)
   set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})

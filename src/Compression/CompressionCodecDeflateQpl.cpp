@@ -377,7 +377,7 @@ uint8_t CompressionCodecDeflateQpl::getMethodByte() const
 
 void CompressionCodecDeflateQpl::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecDeflateQpl::getMaxCompressedDataSize(UInt32 uncompressed_size) const

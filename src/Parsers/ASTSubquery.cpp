@@ -19,7 +19,7 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else
     {
-        const auto hash = getTreeHash();
+        const auto hash = getTreeHash(/*ignore_aliases=*/ true);
         writeCString("__subquery_", ostr);
         writeString(toString(hash), ostr);
     }

@@ -367,9 +367,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
 
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     keeper_context->initialize(config, this);
 
     requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_request_queue_size);
@@ -452,7 +452,7 @@ void KeeperDispatcher::shutdown()
     try
     {
         {
-            if (keeper_context->shutdown_called.exchange(true))
+            if (!keeper_context || keeper_context->shutdown_called.exchange(true))
                 return;
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");

@@ -517,9 +517,9 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     SipHash sip_hash;
     sip_hash.update(original_name);
     if (create.columns_list)
-        create.columns_list->updateTreeHash(sip_hash);
+        create.columns_list->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
     if (create.storage)
-        create.storage->updateTreeHash(sip_hash);
+        create.storage->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
 
     const auto hash = getSipHash128AsPair(sip_hash);
 
