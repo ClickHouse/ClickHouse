@@ -1125,6 +1125,7 @@ azureBlobStorageCluster
 backend
 backoff
 backticks
+backupview
 balancer
 basename
 bcrypt
@@ -1542,6 +1543,7 @@ github
 glibc
 globalIn
 globalNotIn
+globbing
 glushkovds
 golang
 googletest
