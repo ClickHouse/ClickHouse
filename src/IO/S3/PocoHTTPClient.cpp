@@ -276,7 +276,7 @@ void PocoHTTPClient::makeRequestInternal(
 {
     /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
     const auto request_configuration = per_request_configuration();
-    if (http_connection_pool_size)
+    if (http_connection_pool_size && request_configuration.host.empty())
         makeRequestInternalImpl<true>(request, request_configuration, response, readLimiter, writeLimiter);
     else
         makeRequestInternalImpl<false>(request, request_configuration, response, readLimiter, writeLimiter);

@@ -29,9 +29,7 @@ CREATE DICTIONARY 01760_db.dict_array
 PRIMARY KEY key
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'polygons' DB '01760_db'))
 LIFETIME(0)
-LAYOUT(POLYGON())
-SETTINGS(dictionary_use_async_executor=1, max_threads=8)
-;
+LAYOUT(POLYGON());
 
 SELECT 'dictGet';
 

@@ -847,8 +847,6 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
         blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
-        if (file_progress_callback)
-            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
         is_finished = true;
         return;
     }
@@ -1137,6 +1135,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
                 format, *read_buf, sample_block, getContext(), max_block_size,
                 format_settings, max_parsing_threads, std::nullopt,
                 /* is_remote_fs */ true, compression_method);
+        input_format->setQueryInfo(query_info, getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();

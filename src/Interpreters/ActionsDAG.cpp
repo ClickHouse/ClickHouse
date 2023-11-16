@@ -578,7 +578,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
 
 Block ActionsDAG::updateHeader(Block header) const
 {
-    IntermediateExecutionResult node_to_column;
+    std::unordered_map<const Node *, ColumnWithTypeAndName> node_to_column;
     std::set<size_t> pos_to_remove;
 
     {
@@ -602,40 +602,8 @@ Block ActionsDAG::updateHeader(Block header) const
     }
 
     ColumnsWithTypeAndName result_columns;
-    try
-    {
-        result_columns = evaluatePartialResult(node_to_column, outputs, true);
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
-            e.addMessage(" in block {}", header.dumpStructure());
 
-        throw;
-    }
 
-    if (isInputProjected())
-        header.clear();
-    else
-        header.erase(pos_to_remove);
-
-    Block res;
-
-    for (auto & col : result_columns)
-        res.insert(std::move(col));
-
-    for (auto && item : header)
-        res.insert(std::move(item));
-
-    return res;
-}
-
-ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
-    IntermediateExecutionResult & node_to_column,
-    const NodeRawConstPtrs & outputs,
-    bool throw_on_error)
-{
-    ColumnsWithTypeAndName result_columns;
     result_columns.reserve(outputs.size());
 
     struct Frame
@@ -660,50 +628,58 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                     while (frame.next_child < node->children.size())
                     {
                         const auto * child = node->children[frame.next_child];
-                        ++frame.next_child;
                         if (!node_to_column.contains(child))
                         {
                             stack.push({.node = child});
                             break;
                         }
+
+                        ++frame.next_child;
                     }
 
-                    if (stack.top().node != node)
+                    if (frame.next_child < node->children.size())
                         continue;
 
                     stack.pop();
 
                     ColumnsWithTypeAndName arguments(node->children.size());
-                    bool has_all_arguments = true;
                     for (size_t i = 0; i < arguments.size(); ++i)
                     {
                         arguments[i] = node_to_column[node->children[i]];
                         if (!arguments[i].column)
-                            has_all_arguments = false;
-                        if (!has_all_arguments && throw_on_error)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                            "Not found column {}", node->children[i]->result_name);
+                                            "Not found column {} in block {}", node->children[i]->result_name,
+                                            header.dumpStructure());
                     }
 
-                    if (node->type == ActionsDAG::ActionType::INPUT && throw_on_error)
+                    if (node->type == ActionsDAG::ActionType::INPUT)
                         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                        "Not found column {}",
-                                        node->result_name);
+                                        "Not found column {} in block {}",
+                                        node->result_name, header.dumpStructure());
 
-                    if (node->type != ActionsDAG::ActionType::INPUT && has_all_arguments)
-                        node_to_column[node] = executeActionForHeader(node, std::move(arguments));
+                    node_to_column[node] = executeActionForHeader(node, std::move(arguments));
                 }
             }
 
-            auto it = node_to_column.find(output_node);
-            if (it != node_to_column.end())
+            if (node_to_column[output_node].column)
                 result_columns.push_back(node_to_column[output_node]);
-            else
-                result_columns.emplace_back(nullptr, output_node->result_type, output_node->result_name);
         }
     }
 
-    return result_columns;
+    if (isInputProjected())
+        header.clear();
+    else
+        header.erase(pos_to_remove);
+
+    Block res;
+
+    for (auto & col : result_columns)
+        res.insert(std::move(col));
+
+    for (auto && item : header)
+        res.insert(std::move(item));
+
+    return res;
 }
 
 NameSet ActionsDAG::foldActionsByProjection(
@@ -885,6 +861,20 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
     }
 
     return dag;
+}
+
+void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
+{
+    ::sort(outputs.begin(), outputs.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
+    {
+        return key_names_pos_map.find(lhs->result_name)->second < key_names_pos_map.find(rhs->result_name)->second;
+    });
+}
+
+void ActionsDAG::addAggregatesViaProjection(const Block & aggregates)
+{
+    for (const auto & aggregate : aggregates)
+        outputs.push_back(&addInput(aggregate));
 }
 
 void ActionsDAG::addAliases(const NamesWithAliases & aliases)

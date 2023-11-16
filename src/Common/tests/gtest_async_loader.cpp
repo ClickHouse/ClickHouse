@@ -74,7 +74,7 @@ struct AsyncLoaderTest
     T randomInt(T from, T to)
     {
         std::uniform_int_distribution<T> distribution(from, to);
-        std::lock_guard lock(rng_mutex);
+        std::scoped_lock lock(rng_mutex);
         return distribution(rng);
     }
 

@@ -406,9 +406,6 @@
       -->
     <mark_cache_size>5368709120</mark_cache_size>
 
-    <!-- For marks of secondary indices.
-      -->
-    <index_mark_cache_size>5368709120</index_mark_cache_size>
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
          the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -927,15 +924,6 @@
         <shard>01</shard>
         <replica>example01-01-1</replica>
     </macros>
-    -->
-
-    <!-- Replica group name for database Replicated.
-          The cluster created by Replicated database will consist of replicas in the same group.
-          DDL queries will only wail for the replicas in the same group.
-          Empty by default.
-    -->
-    <!--
-    <replica_group_name><replica_group_name>
     -->
 
 
@@ -1472,15 +1460,6 @@
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
 
     <!-- You can also configure rocksdb like this: -->
-    <!-- Full list of options:
-         - options:
-           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/options.h#L1452
-         - column_family_options:
-           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/options.h#L66
-         - block_based_table_options:
-           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/table/block_based/block_based_table_factory.cc#L228
-           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/table.h#L129
-    -->
     <!--
     <rocksdb>
         <options>
@@ -1489,9 +1468,6 @@
         <column_family_options>
             <num_levels>2</num_levels>
         </column_family_options>
-        <block_based_table_options>
-            <block_size>1024</block_size>
-        </block_based_table_options>
         <tables>
             <table>
                 <name>TABLE</name>
@@ -1501,9 +1477,6 @@
                 <column_family_options>
                     <num_levels>2</num_levels>
                 </column_family_options>
-                <block_based_table_options>
-                    <block_size>1024</block_size>
-                </block_based_table_options>
             </table>
         </tables>
     </rocksdb>

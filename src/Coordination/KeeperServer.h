@@ -44,8 +44,6 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
-    uint64_t last_log_idx_on_disk = 0;
-
     nuraft::ptr<nuraft::cluster_config> last_local_config;
 
     Poco::Logger * log;
@@ -66,7 +64,7 @@ private:
 
     std::atomic_bool is_recovering = false;
 
-    KeeperContextPtr keeper_context;
+    std::shared_ptr<KeeperContext> keeper_context;
 
     const bool create_snapshot_on_exit;
     const bool enable_reconfiguration;

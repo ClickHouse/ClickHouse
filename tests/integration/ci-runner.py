@@ -436,15 +436,13 @@ class ClickhouseIntegrationTestsRunner:
         cmd = (
             f"cd {repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
+            f"| tee '{out_file_full}'"
         )
 
-        logging.info(
-            "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
+        logging.info("Getting all tests with cmd '%s'", cmd)
+        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+            cmd, shell=True
         )
-        with open(out_file_full, "wb") as ofd:
-            subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                cmd, shell=True, stdout=ofd, stderr=ofd
-            )
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
@@ -494,6 +492,8 @@ class ClickhouseIntegrationTestsRunner:
             if test not in main_counters["PASSED"]:
                 if test in main_counters["FAILED"]:
                     main_counters["FAILED"].remove(test)
+                if test in main_counters["ERROR"]:
+                    main_counters["ERROR"].remove(test)
                 if test in main_counters["BROKEN"]:
                     main_counters["BROKEN"].remove(test)
 
@@ -506,6 +506,7 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 if test in main_counters["PASSED"]:
                     main_counters["PASSED"].remove(test)
+                    continue
                 if test not in broken_tests:
                     if test not in main_counters[state]:
                         main_counters[state].append(test)

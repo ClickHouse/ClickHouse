@@ -245,6 +245,12 @@ public:
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
+    /// Reorder the output nodes using given position mapping.
+    void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
+
+    /// Add aggregate columns to output nodes from projection
+    void addAggregatesViaProjection(const Block & aggregates);
+
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
@@ -264,12 +270,6 @@ public:
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
     Block updateHeader(Block header) const;
-
-    using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
-    static ColumnsWithTypeAndName evaluatePartialResult(
-        IntermediateExecutionResult & node_to_column,
-        const NodeRawConstPtrs & outputs,
-        bool throw_on_error);
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.

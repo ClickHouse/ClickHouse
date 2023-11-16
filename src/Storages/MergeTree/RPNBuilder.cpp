@@ -396,12 +396,6 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
 
 RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
 {
-    const size_t total_arguments = getArgumentsSize();
-    if (index >= total_arguments) /// Bug #52632
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "RPNBuilderFunctionTreeNode has {} arguments, attempted to get argument at index {}",
-                total_arguments, index);
-
     if (ast_node)
     {
         const auto * ast_function = assert_cast<const ASTFunction *>(ast_node);

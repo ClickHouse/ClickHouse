@@ -29,6 +29,18 @@ std::string DataTypeDecimal<T>::doGetName() const
 }
 
 template <is_decimal T>
+std::string DataTypeDecimal<T>::getSQLCompatibleName() const
+{
+    /// See https://dev.mysql.com/doc/refman/8.0/en/precision-math-decimal-characteristics.html
+    /// DECIMAL(M,D)
+    /// M is the maximum number of digits (the precision). It has a range of 1 to 65.
+    /// D is the number of digits to the right of the decimal point (the scale). It has a range of 0 to 30 and must be no larger than M.
+    if (this->precision > 65 || this->scale > 30)
+        return "TEXT";
+    return fmt::format("DECIMAL({}, {})", this->precision, this->scale);
+}
+
+template <is_decimal T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 {
     if (auto * ptype = typeid_cast<const DataTypeDecimal<T> *>(&rhs))

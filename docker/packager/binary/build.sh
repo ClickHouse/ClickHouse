@@ -68,9 +68,7 @@ then
   # Execute all commands
   for file in /build/packages/pre-build/*.sh ;
   do
-    # The script may want to modify environment variables. Why not to allow it to do so?
-    # shellcheck disable=SC1090
-    source "$file"
+    bash "$file"
   done
 else
   echo "There are no subcommands to execute :)"

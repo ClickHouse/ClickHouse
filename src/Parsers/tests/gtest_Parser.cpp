@@ -18,7 +18,6 @@
 #include <string_view>
 #include <regex>
 #include <gtest/gtest.h>
-#include "gtest_common.h"
 #include <boost/algorithm/string/replace.hpp>
 
 namespace
@@ -26,6 +25,13 @@ namespace
 using namespace DB;
 using namespace std::literals;
 }
+
+
+struct ParserTestCase
+{
+    const std::string_view input_text;
+    const char * expected_ast = nullptr;
+};
 
 std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> parser)
 {
@@ -40,6 +46,9 @@ std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
     boost::replace_all(input_text, "\n", "\\n");
     return ostr << "ParserTestCase input: " << input_text;
 }
+
+class ParserTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<IParser>, ParserTestCase>>
+{};
 
 TEST_P(ParserTest, parseQuery)
 {
@@ -298,7 +307,7 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         }
 })));
 
-INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
+INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<ParserKQLQuery>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
@@ -329,6 +338,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName",
             "SELECT\n    FirstName,\n    LastName\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 3\n)"
+        },
+        {
+            "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education",
+            "SELECT\n    FirstName,\n    LastName,\n    Education\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 3\n)"
         },
         {
             "Customers | sort by FirstName desc",
@@ -412,23 +425,23 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
         },
         {
             "Customers |summarize count() by Occupation",
-            "SELECT\n    Occupation,\n    count() AS count_\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    count(),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers|summarize sum(Age) by Occupation",
-            "SELECT\n    Occupation,\n    sum(Age) AS sum_Age\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    sum(Age),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers|summarize  avg(Age) by Occupation",
-            "SELECT\n    Occupation,\n    avg(Age) AS avg_Age\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    avg(Age),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers|summarize  min(Age) by Occupation",
-            "SELECT\n    Occupation,\n    min(Age) AS min_Age\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    min(Age),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers |summarize  max(Age) by Occupation",
-            "SELECT\n    Occupation,\n    max(Age) AS max_Age\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    max(Age),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers | where FirstName contains 'pet'",
@@ -473,146 +486,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
         {
             "Customers | where FirstName !startswith 'pet'",
             "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE 'pet%')"
-        },
-        {
-            "Customers | where Age in ((Customers|project Age|where Age < 30))",
-            "SELECT *\nFROM Customers\nWHERE Age IN (\n    SELECT Age\n    FROM Customers\n    WHERE Age < 30\n)"
-        },
-        {
-            "Customers|where Occupation has_any ('Skilled','abcd')",
-            "SELECT *\nFROM Customers\nWHERE hasTokenCaseInsensitive(Occupation, 'Skilled') OR hasTokenCaseInsensitive(Occupation, 'abcd')"
-        },
-        {
-            "Customers|where Occupation has_all ('Skilled','abcd')",
-            "SELECT *\nFROM Customers\nWHERE hasTokenCaseInsensitive(Occupation, 'Skilled') AND hasTokenCaseInsensitive(Occupation, 'abcd')"
-        },
-        {
-            "Customers|where Occupation has_all (strcat('Skill','ed'),'Manual')",
-            "SELECT *\nFROM Customers\nWHERE hasTokenCaseInsensitive(Occupation, concat('Skill', 'ed')) AND hasTokenCaseInsensitive(Occupation, 'Manual')"
-        },
-        {
-            "Customers | where Occupation == strcat('Pro','fessional') | take 1",
-            "SELECT *\nFROM Customers\nWHERE Occupation = concat('Pro', 'fessional')\nLIMIT 1"
-        },
-        {
-            "Customers | project countof('The cat sat on the mat', 'at')",
-            "SELECT countSubstrings('The cat sat on the mat', 'at')\nFROM Customers"
-        },
-        {
-            "Customers | project countof('The cat sat on the mat', 'at', 'normal')",
-            "SELECT countSubstrings('The cat sat on the mat', 'at')\nFROM Customers"
-        },
-        {
-            "Customers | project countof('The cat sat on the mat', 'at', 'regex')",
-            "SELECT countMatches('The cat sat on the mat', 'at')\nFROM Customers"
-        },
-        {
-            "Customers | project extract('(\\b[A-Z]+\\b).+(\\b\\d+)', 0, 'The price of PINEAPPLE ice cream is 10')",
-            "SELECT extract('The price of PINEAPPLE ice cream is 10', '\\b[A-Z]+\\b.+\\b\\\\d+')\nFROM Customers"
-        },
-        {
-            "Customers | project extract('(\\b[A-Z]+\\b).+(\\b\\d+)', 1, 'The price of PINEAPPLE ice cream is 20')",
-            "SELECT extract('The price of PINEAPPLE ice cream is 20', '\\b[A-Z]+\\b')\nFROM Customers"
-        },
-        {
-            "Customers | project extract('(\\b[A-Z]+\\b).+(\\b\\d+)', 2, 'The price of PINEAPPLE ice cream is 30')",
-            "SELECT extract('The price of PINEAPPLE ice cream is 30', '\\b\\\\d+')\nFROM Customers"
-        },
-        {
-            "Customers | project extract('(\\b[A-Z]+\\b).+(\\b\\d+)', 2, 'The price of PINEAPPLE ice cream is 40', typeof(int))",
-            "SELECT accurateCastOrNull(extract('The price of PINEAPPLE ice cream is 40', '\\b\\\\d+'), 'Int32')\nFROM Customers"
-        },
-        {
-            "Customers | project extract_all('(\\w)(\\w+)(\\w)','The price of PINEAPPLE ice cream is 50')",
-            "SELECT extractAllGroups('The price of PINEAPPLE ice cream is 50', '(\\\\w)(\\\\w+)(\\\\w)')\nFROM Customers"
-        },
-        {
-            " Customers | project split('aa_bb', '_')",
-            "SELECT if(empty('_'), splitByString(' ', 'aa_bb'), splitByString('_', 'aa_bb'))\nFROM Customers"
-        },
-        {
-            "Customers | project split('aaa_bbb_ccc', '_', 1)",
-            "SELECT multiIf((length(if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc'))) >= 2) AND (2 > 0), arrayPushBack([], if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc'))[2]), 2 = 0, if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc')), arrayPushBack([], NULL[1]))\nFROM Customers"
-        },
-        {
-            "Customers | project strcat_delim('-', '1', '2', 'A')",
-            "SELECT concat('1', '-', '2', '-', 'A')\nFROM Customers"
-        },
-        {
-            "Customers | project indexof('abcdefg','cde')",
-            "SELECT position('abcdefg', 'cde', 1) - 1\nFROM Customers"
-        },
-        {
-            "Customers | project indexof('abcdefg','cde', 2) ",
-            "SELECT position('abcdefg', 'cde', 3) - 1\nFROM Customers"
-        },
-        {
-            "print x=1, s=strcat('Hello', ', ', 'World!')",
-            "SELECT\n    1 AS x,\n    concat('Hello', ', ', 'World!') AS s"
-        },
-        {
-            "print parse_urlquery('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')",
-            "SELECT concat('{', concat('\"Query Parameters\":', concat('{\"', replace(replace(if(position('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment', '?') > 0, queryString('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), 'https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '=', '\":\"'), '&', '\",\"'), '\"}')), '}')"
-        },
-        {
-            "print strcmp('a','b')",
-            "SELECT multiIf('a' = 'b', 0, 'a' < 'b', -1, 1)"
-        },
-        {
-            "print parse_url('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')",
-            "SELECT concat('{', concat('\"Scheme\":\"', protocol('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Host\":\"', domain('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Port\":\"', toString(port('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')), '\"'), ',', concat('\"Path\":\"', path('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Username\":\"', splitByChar(':', splitByChar('@', netloc('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'))[1])[1], '\"'), ',', concat('\"Password\":\"', splitByChar(':', splitByChar('@', netloc('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'))[1])[2], '\"'), ',', concat('\"Query Parameters\":', concat('{\"', replace(replace(queryString('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '=', '\":\"'), '&', '\",\"'), '\"}')), ',', concat('\"Fragment\":\"', fragment('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), '}')"
-        },
-        {
-            "Customers | summarize t = make_list(FirstName) by FirstName",
-            "SELECT\n    FirstName,\n    groupArrayIf(FirstName, FirstName IS NOT NULL) AS t\nFROM Customers\nGROUP BY FirstName"
-        },
-        {
-            "Customers | summarize t = make_list(FirstName, 10) by FirstName",
-            "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, FirstName IS NOT NULL) AS t\nFROM Customers\nGROUP BY FirstName"
-        },
-        {
-            "Customers | summarize t = make_list_if(FirstName, Age > 10) by FirstName",
-            "SELECT\n    FirstName,\n    groupArrayIf(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-        },
-        {
-            "Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName",
-            "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-        },
-        {
-            "Customers | summarize t = make_set(FirstName) by FirstName",
-            "SELECT\n    FirstName,\n    groupUniqArray(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
-        },
-        {
-            "Customers | summarize t = make_set(FirstName, 10) by FirstName",
-            "SELECT\n    FirstName,\n    groupUniqArray(10)(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
-        },
-        {
-            "Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName",
-            "SELECT\n    FirstName,\n    groupUniqArrayIf(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-        },
-        {
-            "Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName",
-            "SELECT\n    FirstName,\n    groupUniqArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-        },
-        {
-            "print output = dynamic([1, 2, 3])",
-            "SELECT [1, 2, 3] AS output"
-        },
-        {
-            "print output = dynamic(['a', 'b', 'c'])",
-            "SELECT ['a', 'b', 'c'] AS output"
-        },
-        {
-            "T | extend duration = endTime - startTime",
-            "SELECT\n    * EXCEPT duration,\n    endTime - startTime AS duration\nFROM T"
-        },
-        {
-            "T |project endTime, startTime | extend duration = endTime - startTime",
-            "SELECT\n    * EXCEPT duration,\n    endTime - startTime AS duration\nFROM\n(\n    SELECT\n        endTime,\n        startTime\n    FROM T\n)"
-        },
-        {
-            "T | extend c =c*2, b-a, d = a + b, a*b",
-            "SELECT\n    * EXCEPT c EXCEPT d,\n    c * 2 AS c,\n    b - a AS Column1,\n    a + b AS d,\n    a * b AS Column2\nFROM T"
         }
 })));
 

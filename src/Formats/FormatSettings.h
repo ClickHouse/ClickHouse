@@ -88,15 +88,6 @@ struct FormatSettings
         IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
     } interval;
 
-    enum class DateTimeOverflowBehavior
-    {
-        Ignore,
-        Throw,
-        Saturate
-    };
-
-    DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
-
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
 
@@ -197,7 +188,6 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
         bool write_named_tuples_as_objects = false;
-        bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
         bool ignore_unknown_keys_in_named_tuple = false;
         bool serialize_as_strings = false;
@@ -351,7 +341,6 @@ struct FormatSettings
         bool interpret_expressions = true;
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
-        bool allow_data_after_semicolon = false;
     } values;
 
     enum class ORCCompression
@@ -373,8 +362,6 @@ struct FormatSettings
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
         bool use_fast_decoder = true;
-        bool filter_push_down = true;
-        UInt64 output_row_index_stride = 10'000;
     } orc;
 
     /// For capnProto format we should determine how to

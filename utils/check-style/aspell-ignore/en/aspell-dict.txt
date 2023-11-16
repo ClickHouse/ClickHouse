@@ -148,7 +148,6 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
-Clangd
 ClickBench
 ClickCat
 ClickHouse
@@ -194,9 +193,7 @@ DDLWorker
 DDLWorkerThreads
 DDLWorkerThreadsActive
 DECRYPT
-DELETEs
 DESC
-DIEs
 DOGEFI
 DataGrip
 DataLens
@@ -278,7 +275,6 @@ FilesystemMainPathTotalBytes
 FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
-FileLog
 FixedString
 Flink
 ForEach
@@ -341,8 +337,6 @@ Hudi
 HyperLogLog
 Hypot
 IANA
-IDE
-IDEs
 IMDS
 INFILE
 INSERTed
@@ -365,7 +359,6 @@ Instana
 IntN
 Integrations
 IntelliJ
-IntelliSense
 InterserverConnection
 InterserverThreads
 IsPentagon
@@ -445,7 +438,6 @@ LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
-Levenshtein
 LibFuzzer
 LightHouse
 LineAsString
@@ -576,7 +568,6 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
-NumPy
 OFNS
 OLAP
 OLTP
@@ -590,7 +581,6 @@ OSGuestTimeNormalized
 OSIOWaitTime
 OSIOWaitTimeCPU
 OSIOWaitTimeNormalized
-OSIOWaitMicroseconds
 OSIdleTime
 OSIdleTimeCPU
 OSIdleTimeNormalized
@@ -1001,11 +991,8 @@ activerecord
 addDate
 addDays
 addHours
-addMicroseconds
-addMilliseconds
 addMinutes
 addMonths
-addNanoseconds
 addQuarters
 addSeconds
 addWeeks
@@ -1059,7 +1046,6 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFlatten
-arrayFold
 arrayIntersect
 arrayJaccardIndex
 arrayJoin
@@ -1075,7 +1061,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -1190,11 +1175,13 @@ bugfix
 buildId
 buildable
 builtins
-byteHammingDistance
 byteSize
-byteSwap
 bytebase
 bytesToCutForIPv
+byteEditDistance
+byteHammingDistance
+byteJaccardIndex
+byteLevenshteinDistance
 cLoki
 caConfig
 cacheSessions
@@ -1239,9 +1226,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
-clangd
 cli
-clickcache
 clickcat
 clickhouse
 clickhousedb
@@ -1367,12 +1352,12 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
-deltaLake
-deltaSum
-deltaSumTimestamp
 deltalake
+deltaLake
 deltasum
+deltaSum
 deltasumtimestamp
+deltaSumTimestamp
 demangle
 denormalize
 denormalized
@@ -1410,14 +1395,12 @@ dmesg
 domainWithoutWWW
 dont
 dotProduct
-downsampling
 dplyr
 dragonbox
 dropoff
 dumpColumnStructure
 durations
 ecto
-editDistance
 embeddings
 emptyArray
 emptyArrayDate
@@ -1435,7 +1418,6 @@ encodeXMLComponent
 encodings
 encryptions
 endian
-endianness
 endsWith
 endsWithUTF
 enum
@@ -1466,14 +1448,12 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
-fibonacci
 fifo
 filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
 filesystems
-filelog
 finalizeAggregation
 fips
 firstLine
@@ -1488,8 +1468,6 @@ fmtlib
 formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
-formatQuery
-formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
 formatReadableSize
@@ -1589,7 +1567,6 @@ hadoop
 halfMD
 halfday
 hardlink
-hardlinked
 hardlinks
 hasAll
 hasAny
@@ -1648,7 +1625,6 @@ injective
 innogames
 inodes
 instantiation
-instantiations
 intDiv
 intDivOrZero
 intExp
@@ -1674,7 +1650,6 @@ isValidUTF
 isZeroOrNull
 iteratively
 jaccard
-jaccardIndex
 javaHash
 javaHashUTF
 jbod
@@ -1682,7 +1657,6 @@ jdbc
 jemalloc
 joinGet
 json
-jsonMergePatch
 jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
@@ -1725,7 +1699,6 @@ kurtsamp
 laion
 lang
 laravel
-largestTriangleThreeBuckets
 latencies
 ldap
 leftPad
@@ -1735,8 +1708,6 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
-levenshtein
-levenshteinDistance
 lexicographically
 lgamma
 libFuzzer
@@ -1776,7 +1747,6 @@ london
 lowcardinality
 lowerUTF
 lowercased
-lttb
 lzma
 macOS
 mailrugo
@@ -1844,6 +1814,7 @@ monthName
 moscow
 msgpack
 msgpk
+multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -1857,7 +1828,6 @@ multiSearchAny
 multiSearchFirstIndex
 multiSearchFirstPosition
 multibyte
-multidirectory
 multiline
 multiplyDecimal
 multipolygon
@@ -2166,7 +2136,6 @@ requestor
 requireTLSv
 resharding
 reshards
-resolvers
 resultset
 retentions
 rethrow
@@ -2251,12 +2220,12 @@ sparkbar
 sparsehash
 speedscope
 splitBy
+splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp
 splitByString
 splitByWhitespace
-splitby
 sql
 sqlalchemy
 sqlinsert
@@ -2331,11 +2300,8 @@ substrings
 subtitiles
 subtractDays
 subtractHours
-subtractMicroseconds
-subtractMilliseconds
 subtractMinutes
 subtractMonths
-subtractNanoseconds
 subtractQuarters
 subtractSeconds
 subtractWeeks
@@ -2361,7 +2327,6 @@ symlinks
 syntaxes
 syscall
 syscalls
-sysctl
 syslog
 syslogd
 systemd

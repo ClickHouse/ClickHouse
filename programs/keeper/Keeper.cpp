@@ -50,9 +50,6 @@
 
 #include <Disks/registerDisks.h>
 
-#include <incbin.h>
-/// A minimal file used when the keeper is run without installation
-INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
@@ -161,8 +158,6 @@ int Keeper::run()
 
 void Keeper::initialize(Poco::Util::Application & self)
 {
-    ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(gkeeper_resource_embedded_xmlData), gkeeper_resource_embedded_xmlSize));
-
     BaseDaemon::initialize(self);
     logger().information("starting up");
 

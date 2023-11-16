@@ -949,7 +949,7 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context).second;
+        io = ::DB::executeQuery(true, query, query_context);
     }
 
     void Call::processInput()

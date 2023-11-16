@@ -83,6 +83,8 @@ public:
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
+    /// Name of corresponding data type in MySQL (exampe: Bigint, Blob, etc)
+    virtual String getSQLCompatibleName() const = 0;
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
@@ -452,24 +454,9 @@ inline bool isObject(const T & data_type) { return WhichDataType(data_type).isOb
 template <typename T>
 inline bool isUInt8(const T & data_type) { return WhichDataType(data_type).isUInt8(); }
 template <typename T>
-inline bool isUInt16(const T & data_type) { return WhichDataType(data_type).isUInt16(); }
-template <typename T>
-inline bool isUInt32(const T & data_type) { return WhichDataType(data_type).isUInt32(); }
-template <typename T>
 inline bool isUInt64(const T & data_type) { return WhichDataType(data_type).isUInt64(); }
 template <typename T>
 inline bool isUnsignedInteger(const T & data_type) { return WhichDataType(data_type).isUInt(); }
-
-template <typename T>
-inline bool isInt8(const T & data_type) { return WhichDataType(data_type).isInt8(); }
-template <typename T>
-inline bool isInt16(const T & data_type) { return WhichDataType(data_type).isInt16(); }
-template <typename T>
-inline bool isInt32(const T & data_type) { return WhichDataType(data_type).isInt32(); }
-template <typename T>
-inline bool isInt64(const T & data_type) { return WhichDataType(data_type).isInt64(); }
-template <typename T>
-inline bool isInt(const T & data_type) { return WhichDataType(data_type).isInt(); }
 
 template <typename T>
 inline bool isInteger(const T & data_type)

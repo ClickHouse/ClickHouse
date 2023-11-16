@@ -135,7 +135,7 @@ public:
     /// Just vector of SHA1 from user:password
     using AuthIDs = std::vector<AuthID>;
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
-    using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
+    using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
 
     int64_t session_id_counter{1};
 

@@ -43,7 +43,7 @@ void executeQuery(
 
 /// More low-level function for server-to-server interaction.
 /// Prepares a query for execution but doesn't execute it.
-/// Returns a pair of parsed query and BlockIO which, when used, will result in query execution.
+/// Returns a pair of block streams which, when used, will result in query execution.
 /// This means that the caller can to the extent control the query execution pipeline.
 ///
 /// To execute:
@@ -55,11 +55,20 @@ void executeQuery(
 ///
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
-std::pair<ASTPtr, BlockIO> executeQuery(
+BlockIO executeQuery(
     const String & query,     /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     bool internal = false,    /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
+);
+
+/// Old interface with allow_processors flag. For compatibility.
+BlockIO executeQuery(
+    bool allow_processors,  /// If can use processors pipeline
+    const String & query,
+    ContextMutablePtr context,
+    bool internal = false,
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete
 );
 
 /// Executes BlockIO returned from executeQuery(...)
