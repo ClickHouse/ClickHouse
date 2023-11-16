@@ -138,11 +138,9 @@ String Cost::toString() const
     return fmt::format("(summary:{:.2g}, cup:{:.2g}, mem:{:.2g}, net:{:.2g})", get(), cpu_cost, mem_cost, net_cost);
 }
 
-bool Cost::Weight::operator!=(const Weight& other) const
+bool Cost::Weight::operator!=(const Weight & other) const
 {
-    return cpu_weight != other.cpu_weight ||
-        mem_weight != other.mem_weight ||
-        net_weight != other.net_weight;
+    return cpu_weight != other.cpu_weight || mem_weight != other.mem_weight || net_weight != other.net_weight;
 }
 
 }

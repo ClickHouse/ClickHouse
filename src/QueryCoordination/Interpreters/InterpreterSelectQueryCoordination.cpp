@@ -11,9 +11,9 @@
 #include <QueryCoordination/Fragments/FragmentBuilder.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
 #include <QueryCoordination/Interpreters/ReplaceDistributedTableNameVisitor.h>
+#include <QueryCoordination/Optimizer/CostBasedOptimizer.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
-#include "QueryCoordination/Optimizer/CostBasedOptimizer.h"
 
 
 namespace DB

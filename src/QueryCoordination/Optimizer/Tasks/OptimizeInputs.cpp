@@ -1,3 +1,4 @@
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <QueryCoordination/Optimizer/Cost/CostCalculator.h>
 #include <QueryCoordination/Optimizer/DeriveOutputProp.h>
 #include <QueryCoordination/Optimizer/Group.h>
@@ -6,7 +7,6 @@
 #include <QueryCoordination/Optimizer/Tasks/OptimizeGroup.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeInputs.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeTask.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Common/typeid_cast.h>
 
 

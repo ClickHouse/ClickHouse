@@ -5,8 +5,7 @@
 namespace DB
 {
 
-TaskContext::TaskContext(
-    Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_)
+TaskContext::TaskContext(Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_)
     : group(group_), required_properties(required_properties_), optimize_context(optimize_context_)
 {
     upper_bound_cost = Cost::infinite(CostSettings::fromContext(optimize_context_->getQueryContext()).getCostWeight());

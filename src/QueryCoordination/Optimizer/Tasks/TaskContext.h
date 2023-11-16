@@ -15,16 +15,10 @@ using OptimizeTaskPtr = std::unique_ptr<OptimizeTask>;
 class TaskContext
 {
 public:
-    TaskContext(
-        Group & group_,
-        const PhysicalProperties & required_properties_,
-        OptimizeContextPtr optimize_context_);
+    TaskContext(Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_);
 
     TaskContext(
-        Group & group_,
-        const PhysicalProperties & required_properties_,
-        OptimizeContextPtr optimize_context_,
-        Cost upper_bound_cost_);
+        Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_, Cost upper_bound_cost_);
 
     Group & getCurrentGroup();
 

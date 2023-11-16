@@ -230,35 +230,35 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
         /// cardinality of data set. But in practice a shard may have only partial of cardinality,
         /// so we multiply a coefficient.
 
-//        /// The coefficient is effected by selectivity, because
-//        /// the lower of the selectivity the more chance of shard has full cardinality.
-//        /// The coefficient is calculated based on a mapping of selectivity and coefficients
-//        /// which the value is from practice.
-//        static std::vector<std::pair<Float64, Float64>> mapping
-//            = {{0.0, 0.0}, {0.001, 0.1}, {0.01, 0.2}, {0.1, 0.5}, {0.5, 0.7}, {1.0, 1.0}};
-//        auto get_coefficient = [](Float64 selectivity_)
-//        {
-//            if (selectivity_ <= mapping.front().first)
-//                return mapping.front().second;
-//
-//            if (selectivity_ >= mapping.back().first)
-//                return mapping.back().second;
-//
-//            for (size_t i = 0; i < mapping.size() - 1; i++)
-//            {
-//                if (selectivity_ >= mapping[i].first && selectivity_ < mapping[i + 1].first)
-//                {
-//                    Float64 x1 = mapping[i].first;
-//                    Float64 y1 = mapping[i].second;
-//                    Float64 x2 = mapping[i + 1].first;
-//                    Float64 y2 = mapping[i + 1].second;
-//                    Float64 coefficient = y1 + (y2 - y1) * (selectivity_ - x1) / (x2 - x1);
-//                    return coefficient;
-//                }
-//            }
-//            return 0.0; // Default coefficient if there are no valid mappings
-//        };
-//        selectivity = selectivity * node_count * get_coefficient(selectivity);
+        //        /// The coefficient is effected by selectivity, because
+        //        /// the lower of the selectivity the more chance of shard has full cardinality.
+        //        /// The coefficient is calculated based on a mapping of selectivity and coefficients
+        //        /// which the value is from practice.
+        //        static std::vector<std::pair<Float64, Float64>> mapping
+        //            = {{0.0, 0.0}, {0.001, 0.1}, {0.01, 0.2}, {0.1, 0.5}, {0.5, 0.7}, {1.0, 1.0}};
+        //        auto get_coefficient = [](Float64 selectivity_)
+        //        {
+        //            if (selectivity_ <= mapping.front().first)
+        //                return mapping.front().second;
+        //
+        //            if (selectivity_ >= mapping.back().first)
+        //                return mapping.back().second;
+        //
+        //            for (size_t i = 0; i < mapping.size() - 1; i++)
+        //            {
+        //                if (selectivity_ >= mapping[i].first && selectivity_ < mapping[i + 1].first)
+        //                {
+        //                    Float64 x1 = mapping[i].first;
+        //                    Float64 y1 = mapping[i].second;
+        //                    Float64 x2 = mapping[i + 1].first;
+        //                    Float64 y2 = mapping[i + 1].second;
+        //                    Float64 coefficient = y1 + (y2 - y1) * (selectivity_ - x1) / (x2 - x1);
+        //                    return coefficient;
+        //                }
+        //            }
+        //            return 0.0; // Default coefficient if there are no valid mappings
+        //        };
+        //        selectivity = selectivity * node_count * get_coefficient(selectivity);
         auto coefficient = stats_settings.statistics_agg_full_cardinality_coefficient;
         selectivity = selectivity * node_count * coefficient;
     }
@@ -287,7 +287,8 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
 
         /// For uniq and uniqExact usually has large stat, so we should update the row size.
         if (aggregate.function->getName() == "uniq" || aggregate.function->getName() == "uniqExact")
-            output_column_stats->setAvgRowSize(input.getOutputRowSize() * output_column_stats->getAvgRowSize() / statistics.getOutputRowSize());
+            output_column_stats->setAvgRowSize(
+                input.getOutputRowSize() * output_column_stats->getAvgRowSize() / statistics.getOutputRowSize());
     }
 
     return statistics;

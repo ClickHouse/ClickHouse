@@ -27,4 +27,3 @@ CostSettings CostSettings::fromContext(ContextPtr from)
 }
 
 }
-

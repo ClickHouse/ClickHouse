@@ -51,7 +51,13 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
         rows = block.rows();
 
     LOG_TRACE(
-        &Poco::Logger::get("ExchangeDataSource"), "Fragment {} exchange id {} receive {} rows from {} bucket_num {}", fragment_id, plan_id, rows, source, block.info.bucket_num);
+        &Poco::Logger::get("ExchangeDataSource"),
+        "Fragment {} exchange id {} receive {} rows from {} bucket_num {}",
+        fragment_id,
+        plan_id,
+        rows,
+        source,
+        block.info.bucket_num);
     num_rows += rows;
 
     Chunk chunk(block.getColumns(), rows);

@@ -2,8 +2,8 @@
 
 #include <Client/Connection.h>
 #include <Client/ConnectionPool.h>
-#include <Processors/ISink.h>
 #include <Core/ColumnNumbers.h>
+#include <Processors/ISink.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 

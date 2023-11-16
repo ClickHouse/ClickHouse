@@ -1,8 +1,8 @@
 #pragma once
 
+#include <QueryCoordination/Optimizer/Cost/CostSettings.h>
 #include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeTask.h>
-#include <QueryCoordination/Optimizer/Cost/CostSettings.h>
 
 namespace DB
 {

@@ -20,5 +20,3 @@ StatisticsSettings StatisticsSettings::fromContext(ContextPtr from)
 }
 
 }
-
-

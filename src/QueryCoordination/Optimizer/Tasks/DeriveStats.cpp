@@ -1,7 +1,7 @@
-#include <Common/logger_useful.h>
 #include <QueryCoordination/Optimizer/Group.h>
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 #include <QueryCoordination/Optimizer/Tasks/DeriveStats.h>
+#include <Common/logger_useful.h>
 #include "QueryCoordination/Optimizer/Statistics/DeriveStatistics.h"
 
 namespace DB
@@ -54,7 +54,8 @@ void DeriveStats::deriveStats()
     Statistics stats = group_node->accept(visitor);
 
     auto * log = &Poco::Logger::get(
-        "DeriveStats group(" + std::to_string(task_context->getCurrentGroup().getId()) + ") group node(" + group_node->getStep()->getName() + ")");
+        "DeriveStats group(" + std::to_string(task_context->getCurrentGroup().getId()) + ") group node(" + group_node->getStep()->getName()
+        + ")");
     LOG_TRACE(log, "got {:.2g}", stats.getOutputRowSize());
 
     task_context->getCurrentGroup().setStatistics(stats);

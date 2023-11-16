@@ -282,7 +282,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
         {
             chassert(column_set->getData() != nullptr);
             auto set_ptr = column_set->getData()->get();
-            if (set_ptr && set_ptr->hasExplicitSetElements()) /// TODO set not filled
+            if (set_ptr && set_ptr->hasExplicitSetElements()) /// TODO set not filled in prewhere
                 set_data_column = set_ptr->getSetElements()[0]; /// TODO multi-column
         }
     }

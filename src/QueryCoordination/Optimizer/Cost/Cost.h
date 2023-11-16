@@ -14,7 +14,7 @@ public:
         Float64 mem_weight;
         Float64 net_weight;
 
-        bool operator!=(const Weight& other) const;
+        bool operator!=(const Weight & other) const;
     };
 
     Cost(Weight weight_, Float64 cpu_cost_, Float64 mem_cost_, Float64 net_cost_)

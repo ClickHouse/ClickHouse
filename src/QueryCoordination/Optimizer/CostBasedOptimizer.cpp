@@ -1,9 +1,9 @@
 #include "CostBasedOptimizer.h"
-#include <Common/Stopwatch.h>
 #include <QueryCoordination/Optimizer/Memo.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeContext.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeGroup.h>
 #include <QueryCoordination/Optimizer/Tasks/Scheduler.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
