@@ -1,26 +1,26 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
-#include <QueryPipeline/BlockIO.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TableOverrideUtils.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Formats/FormatFactory.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/queryToString.h>
+#include <Interpreters/TableOverrideUtils.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/DumpASTNode.h>
+#include <Parsers/queryToString.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include "InterpreterSelectQueryCoordination.h"
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>

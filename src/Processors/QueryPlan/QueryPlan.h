@@ -3,7 +3,8 @@
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <QueryCoordination/PlanNode.h>
+#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Cost/Cost.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <list>
@@ -113,8 +114,18 @@ public:
     bool getConcurrencyControl() const { return concurrency_control; }
 
     /// Tree node. Step and it's children.
-    using Node = PlanNode;
+    struct PlanNode
+    {
+        QueryPlanStepPtr step;
+        std::vector<PlanNode *> children = {};
 
+        UInt32 plan_id;
+
+        /// Just for explain statement
+        Cost cost;
+        Statistics statistics;
+    };
+    using Node = PlanNode;
     using Nodes = std::list<Node>;
 
     Node * getRootNode() const { return root; }
@@ -137,6 +148,7 @@ protected:
     bool concurrency_control = false;
 };
 
+using PlanNode = QueryPlan::PlanNode;
 std::string debugExplainStep(const PlanNode & node);
 
 }

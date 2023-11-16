@@ -3,7 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
-#include <QueryCoordination/Optimizer/Statistics/IStatisticsStorage.h>
+#include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 

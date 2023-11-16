@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Optimizer/SubQueryPlan.h>
 #include <QueryCoordination/Fragments/Fragment.h>
-#include <QueryCoordination/Optimizer/SubQueryPlan.h>
 
 namespace DB
 {

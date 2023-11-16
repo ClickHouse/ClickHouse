@@ -1,0 +1,50 @@
+#include <Optimizer/GroupStep.h>
+#include <Optimizer/Rule/ConvertToTopN.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/TopNStep.h>
+
+namespace DB
+{
+
+ConvertToTopN::ConvertToTopN(size_t id_) : Rule(id_)
+{
+    pattern.setStepType(Limit);
+    Pattern child_pattern(Sort);
+    child_pattern.addChildren({Pattern(PatternAny)});
+    pattern.addChildren({child_pattern});
+}
+
+std::vector<SubQueryPlan> ConvertToTopN::transform(SubQueryPlan & sub_plan, ContextPtr /*context*/)
+{
+    auto * limit_step = typeid_cast<LimitStep *>(sub_plan.getRootNode()->step.get());
+
+    if (!limit_step)
+        return {};
+
+    if (limit_step->getPhase() != LimitStep::Phase::Unknown)
+        return {};
+
+    auto * sorting_step = typeid_cast<SortingStep *>(sub_plan.getRootNode()->children[0]->step.get());
+
+    if (!sorting_step)
+        return {};
+
+    if (sorting_step->getPhase() != SortingStep::Phase::Unknown)
+        return {};
+
+    auto group_step = sub_plan.getRootNode()->children[0]->children[0]->step;
+    if (!typeid_cast<GroupStep *>(group_step.get()))
+        return {};
+
+    auto topn = std::make_shared<TopNStep>(sub_plan.getRootNode()->children[0]->step, sub_plan.getRootNode()->step);
+
+    SubQueryPlan res_sub_plan;
+    res_sub_plan.addStep(group_step);
+    res_sub_plan.addStep(topn);
+
+    std::vector<SubQueryPlan> res;
+    res.emplace_back(std::move(res_sub_plan));
+    return res;
+}
+
+}

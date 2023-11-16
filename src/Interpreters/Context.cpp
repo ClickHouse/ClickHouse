@@ -105,8 +105,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/find_symbols.h>
 #include <QueryCoordination/Coordinator.h>
-#include <QueryCoordination/Optimizer/Statistics/IStatisticsStorage.h>
-#include <QueryCoordination/Optimizer/Statistics/CachedStatisticsStorage.h>
+#include <Optimizer/Statistics/IStatisticsStorage.h>
+#include <Optimizer/Statistics/CachedStatisticsStorage.h>
 
 
 namespace fs = std::filesystem;

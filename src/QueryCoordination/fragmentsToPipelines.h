@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cluster.h>
-#include <QueryCoordination/IO/FragmentRequest.h>
+#include <QueryCoordination/Fragments/FragmentRequest.h>
 #include <QueryCoordination/Pipelines/Pipelines.h>
 
 

@@ -13,15 +13,15 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <QueryCoordination/IO/FragmentsRequest.h>
-#include <QueryCoordination/IO/ExchangeDataRequest.h>
+#include <QueryCoordination/Fragments/FragmentRequest.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 #include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include "QueryCoordination/Exchange/ExchangeDataRequest.h"
 
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"

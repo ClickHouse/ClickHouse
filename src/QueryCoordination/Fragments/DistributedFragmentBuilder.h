@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QueryCoordination/Fragments/DistributedFragment.h>
-#include <QueryCoordination/IO/FragmentRequest.h>
+#include <QueryCoordination/Fragments/FragmentRequest.h>
 
 namespace DB
 {

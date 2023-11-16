@@ -14,6 +14,25 @@ class Fragment;
 using FragmentPtr = std::shared_ptr<Fragment>;
 using FragmentPtrs = std::vector<FragmentPtr>;
 
+/**Fragment is a part of the whole distributed query plan.
+ * It is split by ExchangeDataStep in the original query plan.
+ *
+ * The following is a query plan for a shuffle-hash-join
+ *       Projection
+ *          |
+ *         Join
+ *        /    \
+ *  Exchange   Exchange
+ *     /          \
+ *    Scan       Scan
+ *
+ * Then we will have 3 fragments:
+ *       Projection
+ *          |
+ *         Join
+ *        /    \
+ *  Exchange   Exchange         Scan        Scan
+ */
 class Fragment : public std::enable_shared_from_this<Fragment>
 {
 public:
@@ -54,6 +73,9 @@ public:
 
     UInt32 getFragmentID() const;
     UInt32 getDestFragmentID() const;
+
+    /// Whether a fragment has a destination(father),
+    /// if not, means it is the root fragment.
     bool hasDestFragment() const;
 
     UInt32 getDestExchangeID() const;
@@ -69,12 +91,11 @@ private:
     Node makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_ = {});
     void explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & settings);
 
+    /// Build query pipeline for the fragment, note that it is a part of the whole distributed pepelines.
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings, const BuildQueryPipelineSettings & build_pipeline_settings);
 
-private:
     UInt32 fragment_id;
-
     UInt32 plan_id_counter;
 
     Nodes nodes;

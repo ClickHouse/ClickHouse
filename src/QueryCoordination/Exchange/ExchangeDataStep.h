@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Optimizer/PhysicalProperties.h>
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 namespace DB

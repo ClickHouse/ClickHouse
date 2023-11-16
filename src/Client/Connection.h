@@ -36,7 +36,7 @@ using Connections = std::vector<ConnectionPtr>;
 
 class NativeReader;
 class NativeWriter;
-class FragmentsRequest;
+struct FragmentsRequest;
 struct ExchangeDataRequest;
 class QueryCoordinationMetaInfo;
 

@@ -2,7 +2,7 @@
 
 #include <Interpreters/Cluster.h>
 #include <QueryCoordination/Fragments/Fragment.h>
-#include <QueryCoordination/IO/FragmentsRequest.h>
+#include <QueryCoordination/Fragments/FragmentRequest.h>
 #include <Common/logger_useful.h>
 
 namespace DB

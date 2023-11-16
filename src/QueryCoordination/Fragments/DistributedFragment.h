@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <QueryCoordination/Exchange/ExchangeDataRequest.h>
 #include <QueryCoordination/Exchange/ExchangeDataSource.h>
 #include <QueryCoordination/Fragments/Fragment.h>
-#include <QueryCoordination/IO/ExchangeDataRequest.h>
-#include <QueryCoordination/IO/FragmentRequest.h>
+#include <QueryCoordination/Fragments/FragmentRequest.h>
 #include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 
 namespace DB
@@ -23,7 +23,6 @@ public:
     FragmentPtr getFragment() const { return fragment; }
 
     const Destinations & getDataTo() const { return data_to; }
-
     const Sources & getDataFrom() const { return data_from; }
 
 private:

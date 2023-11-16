@@ -6,8 +6,6 @@
 namespace DB
 {
 
-using String = std::string;
-
 class QueryCoordinationMetaInfo
 {
 public:

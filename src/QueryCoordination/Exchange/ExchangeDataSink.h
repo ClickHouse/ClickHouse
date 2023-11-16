@@ -3,9 +3,9 @@
 #include <Client/Connection.h>
 #include <Client/ConnectionPool.h>
 #include <Core/ColumnNumbers.h>
+#include <Optimizer/PhysicalProperties.h>
 #include <Processors/ISink.h>
-#include <QueryCoordination/IO/ExchangeDataRequest.h>
-#include <QueryCoordination/Optimizer/PhysicalProperties.h>
+#include <QueryCoordination/Exchange/ExchangeDataRequest.h>
 
 namespace DB
 {

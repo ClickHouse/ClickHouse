@@ -11,9 +11,8 @@ class Fragment;
 using FragmentPtr = std::shared_ptr<Fragment>;
 using FragmentPtrs = std::vector<FragmentPtr>;
 
-class QueryCoordinationState
+struct QueryCoordinationState
 {
-public:
     FragmentPtrs fragments;
     Pipelines pipelines;
     std::unordered_map<String, IConnectionPool::Entry> remote_host_connection;

@@ -269,7 +269,7 @@ void Coordinator::sendFragmentsToPreparePipelines()
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    // send
+    /// send
     for (auto [host, fragments_for_send] : host_fragments)
     {
         FragmentsRequest fragments_request;
@@ -301,7 +301,7 @@ void Coordinator::sendFragmentsToPreparePipelines()
         }
     }
 
-    // receive ready
+    /// receive ready
     for (auto & [host, _] : host_fragments)
     {
         if (host != local_host)
