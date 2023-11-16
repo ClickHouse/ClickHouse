@@ -1,4 +1,5 @@
 #include "DiskObjectStorageVFSTransaction.h"
+#include "Disks/IO/WriteBufferWithFinalizeCallback.h"
 #include "Disks/ObjectStorages/DiskObjectStorageTransactionOperation.h"
 #include "Disks/ObjectStorages/VFSTransactionLog.h"
 
@@ -27,7 +28,8 @@ DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction( //NOLINT
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
     zkutil::ZooKeeperPtr zookeeper_)
-    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, nullptr), zookeeper(zookeeper_)
+    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, nullptr)
+    , zookeeper(zookeeper_)
     , log(&Poco::Logger::get("DiskObjectStorageVFS"))
 {
 }
@@ -116,9 +118,28 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
     const WriteSettings & settings,
     bool autocommit)
 {
-    LOG_TRACE(log, "writeFile(autocommit={})", autocommit);
+    LOG_TRACE(log, "writeFile(is_metadata={})", settings.is_metadata_file_for_vfs);
+
     StoredObjects currently_existing_blobs = metadata_storage.exists(path) ? metadata_storage.getStorageObjects(path) : StoredObjects{};
     StoredObject blob;
+
+    // This is a metadata file we got from some replica, we need to load it on local metadata disk
+    // and add a Link entry
+    // Alternative to using a write setting is prefixing path with "vfs:" but this isn't a good solution
+    // either
+    if (settings.is_metadata_file_for_vfs)
+    {
+        chassert(currently_existing_blobs.empty());
+        return std::make_unique<WriteBufferWithFinalizeCallback>(
+            std::make_unique<WriteBufferFromFile>(path, buf_size),
+            [tx = shared_from_this(), path](size_t)
+            {
+                const StoredObjects objects = tx->metadata_storage.getStorageObjects(path);
+                tx->addStoredObjectsOp(VFSTransactionLogItem::Type::Link, objects);
+                tx->commit();
+            },
+            "");
+    }
 
     auto buffer = writeFileOps(path, buf_size, mode, settings, autocommit, blob);
 
@@ -142,7 +163,7 @@ void DiskObjectStorageVFSTransaction::writeFileUsingBlobWritingFunction(
 
     writeFileUsingBlobWritingFunctionOps(path, mode, std::move(write_blob_function), blob);
 
-    // TODO myrrc this possibly should be grouped in a single Keeper transaction instead of three
+    // TODO myrrc this possibly should be grouped in a single Keeper transaction instead of two
 
     const StoredObjects objects = {{std::move(blob)}};
     addStoredObjectsOp(VFSTransactionLogItem::Type::CreateInode, objects);
@@ -157,12 +178,6 @@ void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, co
     LOG_TRACE(log, "createHardLink");
     DiskObjectStorageTransaction::createHardLink(src_path, dst_path);
     addStoredObjectsOp(VFSTransactionLogItem::Type::Link, metadata_storage.getStorageObjects(src_path));
-}
-
-void DiskObjectStorageVFSTransaction::createLink(const String & path)
-{
-    LOG_TRACE(log, "createLink");
-    addStoredObjectsOp(VFSTransactionLogItem::Type::Link, metadata_storage.getStorageObjects(path));
 }
 
 // Unfortunately, knowledge of object storage blob path doesn't go beyond

@@ -35,10 +35,6 @@ public:
     DiskObjectStoragePtr createDiskObjectStorage() override;
     String getStructure() const;
 
-    // Return a buffer which writes a file, then reads it back, deserializes and inserts a Link
-    // entry for every remote file
-    std::unique_ptr<WriteBufferFromFileBase> writeBufferAndLink(const String& file_path, size_t file_size);
-
 private:
     // TODO myrrc not sure we should couple object storage and garbage collector this way
     // This has a downside that e.g. clickhouse-disks usage spins up a GC each time we issue

@@ -1,9 +1,7 @@
 #include "DiskObjectStorageVFS.h"
-#include "DiskObjectStorageVFSTransaction.h"
-#include "Disks/IO/WriteBufferWithFinalizeCallback.h"
-#include "IO/ReadBufferFromFile.h"
-#include "Interpreters/Context.h"
 #include "ObjectStorageVFSGCThread.h"
+#include "DiskObjectStorageVFSTransaction.h"
+#include "Interpreters/Context.h"
 
 namespace DB
 {
@@ -63,28 +61,12 @@ String DiskObjectStorageVFS::getStructure() const
     return fmt::format("DiskObjectStorageVFS-{}({})", getName(), object_storage->getName());
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFS::writeBufferAndLink(const String & file_path, size_t file_size)
-{
-    // TODO myrrc this is terribly ineffective -- we should create a single transaction for path +
-    // projections download, not a transaction per file
-    auto callback = [tx = createObjectStorageTransaction(), file_path](size_t)
-    {
-        tx->createLink(file_path);
-        tx->commit();
-    };
-
-    return std::make_unique<WriteBufferWithFinalizeCallback>(
-        std::make_unique<WriteBufferFromFile>(file_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size)),
-        std::move(callback),
-        /*remote path*/ "");
-}
-
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageVFSTransaction>(*object_storage, *metadata_storage, zookeeper);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageVFS::readObject(const StoredObject & object)
+std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageVFS::readObject(const StoredObject& object)
 {
     return object_storage->readObject(object);
 }
