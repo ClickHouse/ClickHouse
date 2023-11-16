@@ -272,14 +272,16 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
-    auto check_projection = [&](const String & name, std::shared_ptr<IMergeTreeDataPart> projection)
+    for (const auto & [name, projection] : data_part->getProjectionParts())
     {
+        if (is_cancelled())
+            return {};
+
         auto projection_file = name + ".proj";
         if (!throw_on_broken_projection && projection->is_broken)
         {
             projections_on_disk.erase(projection_file);
             checksums_txt.remove(projection_file);
-            return;
         }
 
         IMergeTreeDataPart::Checksums projection_checksums;
@@ -297,10 +299,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (isRetryableException(std::current_exception()))
                 throw;
 
-            LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
-
-            if (!data_part->hasBrokenProjection(name))
-                data_part->markProjectionPartAsBroken(name, getCurrentExceptionMessage(false), getCurrentExceptionCode());
+            if (!projection->is_broken)
+            {
+                LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
+                projection->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
+            }
 
             is_broken_projection = true;
             if (throw_on_broken_projection)
@@ -308,7 +311,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
             projections_on_disk.erase(projection_file);
             checksums_txt.remove(projection_file);
-            return;
         }
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
@@ -316,24 +318,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             projection_checksums.getTotalChecksumUInt128());
 
         projections_on_disk.erase(projection_file);
-    };
-
-    auto broken_projection_parts = data_part->getBrokenProjectionParts(); /// Iterate over copy
-    for (const auto & [name, projection] : broken_projection_parts)
-    {
-        if (is_cancelled())
-            return {};
-        else
-            check_projection(name, projection);
-    }
-
-    auto projection_parts = data_part->getProjectionParts(); /// Iterate over copy
-    for (const auto & [name, projection] : projection_parts)
-    {
-        if (is_cancelled())
-            return {};
-        else
-            check_projection(name, projection);
     }
 
     if (require_checksums && !projections_on_disk.empty())

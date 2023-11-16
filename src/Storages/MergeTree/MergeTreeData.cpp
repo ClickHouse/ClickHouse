@@ -5737,7 +5737,7 @@ MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & afforda
 }
 
 MergeTreeData::ProjectionPartsVector
-MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, bool fill_states) const
+MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
 {
     auto lock = lockParts();
     ProjectionPartsVector res;
@@ -5749,20 +5749,14 @@ MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & a
             res.data_parts.push_back(part);
             for (const auto & [_, projection_part] : part->getProjectionParts())
                 res.projection_parts.push_back(projection_part);
-            for (const auto & [_, projection_part] : part->getBrokenProjectionParts())
-                res.broken_projection_parts.push_back(projection_part);
         }
     }
 
-    if (fill_states)
+    if (out_states != nullptr)
     {
-        res.projection_parts_states.resize(res.projection_parts.size());
+        out_states->resize(res.projection_parts.size());
         for (size_t i = 0; i < res.projection_parts.size(); ++i)
-            (res.projection_parts_states)[i] = res.projection_parts[i]->getParentPart()->getState();
-
-        res.broken_projection_parts_states.resize(res.broken_projection_parts.size());
-        for (size_t i = 0; i < res.broken_projection_parts.size(); ++i)
-            (res.broken_projection_parts_states)[i] = res.broken_projection_parts[i]->getParentPart()->getState();
+            (*out_states)[i] = res.projection_parts[i]->getParentPart()->getState();
     }
 
     return res;
@@ -5815,7 +5809,7 @@ bool MergeTreeData::supportsLightweightDelete() const
     return true;
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(bool fill_states) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     ProjectionPartsVector res;
     auto lock = lockParts();
@@ -5826,15 +5820,11 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
             res.projection_parts.push_back(projection_part);
     }
 
-    if (fill_states)
+    if (out_states != nullptr)
     {
-        res.projection_parts_states.resize(res.projection_parts.size());
+        out_states->resize(res.projection_parts.size());
         for (size_t i = 0; i < res.projection_parts.size(); ++i)
-            (res.projection_parts_states)[i] = res.projection_parts[i]->getParentPart()->getState();
-
-        res.broken_projection_parts_states.resize(res.broken_projection_parts.size());
-        for (size_t i = 0; i < res.broken_projection_parts.size(); ++i)
-            (res.broken_projection_parts_states)[i] = res.broken_projection_parts[i]->getParentPart()->getState();
+            (*out_states)[i] = res.projection_parts[i]->getParentPart()->getState();
     }
     return res;
 }
@@ -7050,8 +7040,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             }
         }
 
-        auto projections = src_part->getProjectionParts();
-        for (const auto & [name, projection_part] : projections)
+        for (const auto & [name, projection_part] : src_part->getProjectionParts())
         {
             const auto & projection_storage = projection_part->getDataPartStorage();
             for (auto it = projection_storage.iterate(); it->isValid(); it->next())
@@ -7654,21 +7643,39 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
 
 bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason)
 {
-    if (left->getProjectionParts().size() != right->getProjectionParts().size())
+    auto remove_broken_parts = [](auto & parts)
+    {
+        std::set<String> broken_projection_parts;
+        for (const auto & [name, part] : parts)
+        {
+            if (part->is_broken)
+                broken_projection_parts.emplace(name);
+        }
+        for (const auto & name : broken_projection_parts)
+            parts.erase(name);
+    };
+
+    auto left_projection_parts = left->getProjectionParts();
+    auto right_projection_parts = right->getProjectionParts();
+
+    remove_broken_parts(left_projection_parts);
+    remove_broken_parts(right_projection_parts);
+
+    if (left_projection_parts.size() != right_projection_parts.size())
     {
         out_reason = fmt::format(
             "Parts have different number of projections: {} in part '{}' and {} in part '{}'",
-            left->getProjectionParts().size(),
+            left_projection_parts.size(),
             left->name,
-            right->getProjectionParts().size(),
+            right_projection_parts.size(),
             right->name
         );
         return false;
     }
 
-    for (const auto & [name, _] : left->getProjectionParts())
+    for (const auto & [name, _] : left_projection_parts)
     {
-        if (!right->hasProjection(name))
+        if (!right_projection_parts.contains(name))
         {
             out_reason = fmt::format(
                 "The part '{}' doesn't have projection '{}' while part '{}' does", right->name, name, left->name

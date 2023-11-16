@@ -64,7 +64,7 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 }
 
 MergeTreeData::ProjectionPartsVector
-StoragesInfo::getProjectionParts(bool fill_states, bool has_state_column) const
+StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
     if (data->getInMemoryMetadataPtr()->projections.empty())
         return {};
@@ -74,12 +74,12 @@ StoragesInfo::getProjectionParts(bool fill_states, bool has_state_column) const
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getProjectionPartsVectorForInternalUsage({State::Active, State::Outdated}, fill_states);
+            return data->getProjectionPartsVectorForInternalUsage({State::Active, State::Outdated}, &state);
 
-        return data->getAllProjectionPartsVector(fill_states);
+        return data->getAllProjectionPartsVector(&state);
     }
 
-    return data->getProjectionPartsVectorForInternalUsage({State::Active}, fill_states);
+    return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state);
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)

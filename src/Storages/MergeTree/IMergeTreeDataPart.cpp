@@ -745,8 +745,7 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
                     LOG_ERROR(&Poco::Logger::get("IMergeTreeDataPart"),
                               "Cannot load projection {}, will consider it broken", projection.name);
 
-                    addBrokenProjectionPart(projection.name, std::move(part), getCurrentExceptionMessage(false), getCurrentExceptionCode());
-                    continue;
+                    part->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
                 }
 
                 addProjectionPart(projection.name, std::move(part));
@@ -2147,44 +2146,30 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     return getStreamNameOrHash(stream_name, extension, storage_);
 }
 
-void IMergeTreeDataPart::addBrokenProjectionPart(
-    const String & projection_name,
-    std::shared_ptr<IMergeTreeDataPart> projection_part,
-    const String & message,
-    int code)
-{
-    projection_part->setBrokenReason(message, code);
-    bool inserted = broken_projection_parts.emplace(projection_name, projection_part).second;
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} in part {} is already added to a broken projection parts list", projection_name, name);
-}
-
 void IMergeTreeDataPart::markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const
 {
-    std::lock_guard lock(broken_projections_mutex);
-
     auto it = projection_parts.find(projection_name);
     if (it == projection_parts.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no projection part '{}'", projection_name);
-
     it->second->setBrokenReason(message, code);
-
-    broken_projection_parts.emplace(projection_name, it->second);
-    projection_parts.erase(it);
-}
-
-void IMergeTreeDataPart::setBrokenReason(const String & message, int code)
-{
-    std::lock_guard lock(broken_projections_mutex);
-    is_broken = true;
-    exception = message;
-    exception_code = code;
 }
 
 bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) const
 {
-    std::lock_guard lock(broken_projections_mutex);
-    return broken_projection_parts.contains(projection_name);
+    auto it = projection_parts.find(projection_name);
+    if (it == projection_parts.end())
+        return false;
+    return it->second->is_broken;
+}
+
+void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
+{
+    std::lock_guard lock(broken_reason_mutex);
+    if (is_broken)
+        return;
+    is_broken = true;
+    exception = message;
+    exception_code = code;
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

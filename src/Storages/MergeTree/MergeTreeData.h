@@ -489,7 +489,7 @@ public:
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, bool fill_states = false) const;
+        const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)
@@ -501,7 +501,7 @@ public:
     size_t getTotalMarksCount() const;
 
     /// Same as above but only returns projection parts
-    ProjectionPartsVector getAllProjectionPartsVector(bool fill_states = false) const;
+    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
     /// Returns parts in Active state
     DataParts getDataPartsForInternalUsage() const;

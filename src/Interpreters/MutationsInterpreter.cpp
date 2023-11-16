@@ -753,7 +753,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
-            if (!source.hasProjection(projection.name))
+            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
                 for (const auto & column : projection.required_columns)
                     dependencies.emplace(column, ColumnDependency::PROJECTION);
@@ -927,19 +927,17 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_indices.insert(index.name);
     }
 
-    /// Always rebuild broken projections.
-    for (const auto & projection : metadata_snapshot->getProjections())
-    {
-        if (!source.hasBrokenProjection(projection.name))
-            continue;
-
-        materialized_projections.insert(projection.name);
-    }
-
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (!source.hasProjection(projection.name))
             continue;
+
+        /// Always rebuild broken projections.
+        if (source.hasBrokenProjection(projection.name))
+        {
+            materialized_projections.insert(projection.name);
+            continue;
+        }
 
         if (need_rebuild_projections)
         {

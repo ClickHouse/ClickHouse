@@ -97,14 +97,15 @@ void StorageSystemProjectionParts::processNextStorage(
     ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPartState;
-    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(true, has_state_column);
-    auto fill_part_info = [&](size_t part_number, const MergeTreeData::DataPartsVector & parts, const MergeTreeData::DataPartStateVector & states)
+    MergeTreeData::DataPartStateVector all_parts_state;
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
+    for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
-        const auto & part = parts[part_number];
+        const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
         chassert(parent_part);
 
-        auto part_state = states[part_number];
+        auto part_state = all_parts_state[part_number];
 
         ColumnSize columns_size = part->getTotalColumnsSize();
         ColumnSize parent_columns_size = parent_part->getTotalColumnsSize();
@@ -275,7 +276,12 @@ void StorageSystemProjectionParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
+        {
+            if (part->default_codec)
+                columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
+            else
+                columns[res_index++]->insertDefault();
+        }
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
@@ -287,7 +293,7 @@ void StorageSystemProjectionParts::processNextStorage(
 
             if (part->is_broken)
             {
-                std::lock_guard lock(part->broken_projections_mutex);
+                std::lock_guard lock(part->broken_reason_mutex);
                 if (columns_mask[src_index++])
                     columns[res_index++]->insert(part->exception_code);
                 if (columns_mask[src_index++])
@@ -306,18 +312,6 @@ void StorageSystemProjectionParts::processNextStorage(
         /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
             columns[res_index++]->insert(IMergeTreeDataPart::stateString(part_state));
-    };
-
-    for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
-    {
-        auto part = all_parts.projection_parts[part_number];
-        fill_part_info(part_number, all_parts.projection_parts, all_parts.projection_parts_states);
-    }
-
-    for (size_t part_number = 0; part_number < all_parts.broken_projection_parts.size(); ++part_number)
-    {
-        auto part = all_parts.broken_projection_parts[part_number];
-        fill_part_info(part_number, all_parts.broken_projection_parts, all_parts.broken_projection_parts_states);
     }
 }
 

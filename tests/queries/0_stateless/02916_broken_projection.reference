@@ -8,15 +8,15 @@ all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
-16
 12
+16
 used projections
-SELECT c FROM test WHERE d == 12 OR d == 16;	['default.test.proj']
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	['default.test.proj']
 select from projection 'proj_2'
 12
 16
 used projections
-SELECT d FROM test WHERE c == 12 OR c == 16;	['default.test.proj_2']
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	['default.test.proj_2']
 check table
 1
 0
@@ -27,23 +27,20 @@ all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
-16
 12
+16
 used projections
-SELECT c FROM test WHERE d == 12 OR d == 16;	['default.test.proj']
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	['default.test.proj']
 select from projection 'proj_2'
-16
 12
+16
 used projections
-SELECT d FROM test WHERE c == 12 OR c == 16;	['default.test.proj_2']
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	['default.test.proj_2']
 check table
 0
 broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
 check table full
-all_0_0_0	1	
-all_1_1_0	1	
-all_3_3_0	1	
 all_2_2_0	0	Part all_2_2_0 has a broken projection. It will be ignored.
 0
 broke data of part 'proj_2' (parent part: all_2_2_0)
@@ -52,13 +49,13 @@ all_2_2_0	proj	FILE_DOESNT_EXIST
 system.parts
 all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj_2']
+all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
-16
 12
+16
 used projections
-SELECT c FROM test WHERE d == 12 OR d == 16;	['default.test.proj']
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	['default.test.proj']
 select from projection 'proj_2'
 FILE_DOESNT_EXIST
 check table
@@ -69,18 +66,18 @@ all_2_2_0	proj_2	NO_FILE_IN_DATA_PART
 system.parts
 all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	[]
+all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
-16
 12
+16
 used projections
-SELECT c FROM test WHERE d == 12 OR d == 16;	['default.test.proj']
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	['default.test.proj']
 select from projection 'proj_2'
-16
 12
+16
 used projections
-SELECT d FROM test WHERE c == 12 OR c == 16;	['default.test.proj_2']
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	['default.test.proj_2']
 check table
 0
 0
@@ -99,21 +96,21 @@ all_3_3_0	proj_2	NO_FILE_IN_DATA_PART
 system.parts
 all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	[]
-all_3_3_0	0	['proj']
+all_2_2_0	1	['proj','proj_2']
+all_3_3_0	0	['proj','proj_2']
 all_3_5_1	1	['proj']
 all_4_4_0	0	['proj','proj_2']
 all_5_5_0	0	['proj','proj_2']
 select from projection 'proj'
-16
 12
+16
 used projections
-SELECT c FROM test WHERE d == 12 OR d == 16;	['default.test.proj']
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	['default.test.proj']
 select from projection 'proj_2'
-16
 12
+16
 used projections
-SELECT d FROM test WHERE c == 12 OR c == 16;	['default.test.proj_2']
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	['default.test.proj_2']
 check table
 0
 0
@@ -135,76 +132,66 @@ all_2_2_0	proj_2	FILE_DOESNT_EXIST
 all_3_3_0	proj_2	FILE_DOESNT_EXIST
 system.parts
 all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	[]
-all_2_2_0	1	[]
-all_3_3_0	0	['proj']
+all_1_1_0	1	['proj','proj_2']
+all_2_2_0	1	['proj','proj_2']
+all_3_3_0	0	['proj','proj_2']
 all_3_5_1	1	['proj']
 all_4_4_0	0	['proj','proj_2']
 all_5_5_0	0	['proj','proj_2']
 select from projection 'proj'
-16
 12
+16
 used projections
-SELECT c FROM test WHERE d == 12 OR d == 16;	['default.test.proj']
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	['default.test.proj']
 select from projection 'proj_2'
-16
 12
+16
 used projections
-SELECT d FROM test WHERE c == 12 OR c == 16;	['default.test.proj_2']
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	['default.test.proj_2']
 check table
 0
 check table full
-all_3_5_1	1	
-all_0_0_0	1	
-all_1_1_0	0	Part all_1_1_0 has a broken projection. It will be ignored.
 all_2_2_0	0	Part all_2_2_0 has a broken projection. It will be ignored.
+all_1_1_0	0	Part all_1_1_0 has a broken projection. It will be ignored.
 materialize projection proj
 check table full
-all_3_5_1_6	1	
-all_0_0_0_6	1	
-all_2_2_0_6	1	
-all_1_1_0_6	1	
 system.parts
 all_0_0_0	0	['proj','proj_2']
 all_0_0_0_6	1	['proj','proj_2']
-all_1_1_0	0	[]
+all_1_1_0	0	['proj','proj_2']
 all_1_1_0_6	1	['proj','proj_2']
-all_2_2_0	0	[]
+all_2_2_0	0	['proj','proj_2']
 all_2_2_0_6	1	['proj','proj_2']
-all_3_3_0	0	['proj']
+all_3_3_0	0	['proj','proj_2']
 all_3_5_1	0	['proj']
 all_3_5_1_6	1	['proj']
 all_4_4_0	0	['proj','proj_2']
 all_5_5_0	0	['proj','proj_2']
 select from projection 'proj'
-16
 12
+16
 used projections
-SELECT c FROM test WHERE d == 12 OR d == 16;	['default.test.proj']
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	['default.test.proj']
 select from projection 'proj_2'
 12
 16
 used projections
-SELECT d FROM test WHERE c == 12 OR c == 16;	['default.test.proj_2']
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	['default.test.proj_2']
 check table
 1
 materialize projection proj_2
 check table full
-all_3_5_1_7	1	
-all_0_0_0_7	1	
-all_2_2_0_7	1	
-all_1_1_0_7	1	
 system.parts
 all_0_0_0	0	['proj','proj_2']
 all_0_0_0_6	0	['proj','proj_2']
 all_0_0_0_7	1	['proj','proj_2']
-all_1_1_0	0	[]
+all_1_1_0	0	['proj','proj_2']
 all_1_1_0_6	0	['proj','proj_2']
 all_1_1_0_7	1	['proj','proj_2']
-all_2_2_0	0	[]
+all_2_2_0	0	['proj','proj_2']
 all_2_2_0_6	0	['proj','proj_2']
 all_2_2_0_7	1	['proj','proj_2']
-all_3_3_0	0	['proj']
+all_3_3_0	0	['proj','proj_2']
 all_3_5_1	0	['proj']
 all_3_5_1_6	0	['proj']
 all_3_5_1_7	1	['proj','proj_2']
@@ -214,11 +201,11 @@ select from projection 'proj'
 12
 16
 used projections
-SELECT c FROM test WHERE d == 12 OR d == 16;	['default.test.proj']
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	['default.test.proj']
 select from projection 'proj_2'
-16
 12
+16
 used projections
-SELECT d FROM test WHERE c == 12 OR c == 16;	['default.test.proj_2']
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	['default.test.proj_2']
 check table
 1

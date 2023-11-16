@@ -23,7 +23,7 @@ CREATE TABLE test
         SELECT d ORDER BY c
     )
 )
-ENGINE = ReplicatedMergeTree('/test2/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '1') PRIMARY KEY (a)
+ENGINE = ReplicatedMergeTree('/test3/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '1') PRIMARY KEY (a)
 SETTINGS min_bytes_for_wide_part = 0,
     max_parts_to_merge_at_once=3,
     enable_vertical_merge_algorithm=1,
@@ -119,9 +119,9 @@ function check()
 
     if [ "$expect_broken_part" = "proj" ]
         then
-            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT c FROM test WHERE d == 12;" 2>&1 | grep -o $expected_error
+            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT c FROM test WHERE d == 12 ORDER BY c;" 2>&1 | grep -o $expected_error
         else
-            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT c FROM test WHERE d == 12 OR d == 16;"
+            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;"
             echo 'used projections'
             $CLICKHOUSE_CLIENT -nm -q "
             SYSTEM FLUSH LOGS;
@@ -134,9 +134,9 @@ function check()
 
     if [ "$expect_broken_part" = "proj_2" ]
         then
-            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT d FROM test WHERE c == 12;" 2>&1 | grep -o $expected_error
+            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT d FROM test WHERE c == 12 ORDER BY d;" 2>&1 | grep -o $expected_error
         else
-            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT d FROM test WHERE c == 12 OR c == 16;"
+            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;"
             echo 'used projections'
             $CLICKHOUSE_CLIENT -nm -q "
             SYSTEM FLUSH LOGS;
@@ -173,7 +173,7 @@ function materialize_projection
 function check_table_full()
 {
     echo 'check table full'
-    $CLICKHOUSE_CLIENT -q "CHECK TABLE test SETTINGS check_query_single_value_result = 0"
+    $CLICKHOUSE_CLIENT -q "CHECK TABLE test SETTINGS check_query_single_value_result = 0" | grep "broken"
 }
 
 

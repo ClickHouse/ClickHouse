@@ -103,14 +103,15 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
     }
 
     /// Go through the list of projection parts.
-    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(true, has_state_column);
-    auto fill_part_info = [&](size_t part_number, const MergeTreeData::DataPartsVector & parts, const MergeTreeData::DataPartStateVector & states)
+    MergeTreeData::DataPartStateVector all_parts_state;
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
+    for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
-        const auto & part = parts[part_number];
+        const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
         chassert(parent_part);
 
-        auto part_state = states[part_number];
+        auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
         auto parent_columns_size = parent_part->getTotalColumnsSize();
 
@@ -259,18 +260,6 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());
         }
-    };
-
-    for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
-    {
-        auto part = all_parts.projection_parts[part_number];
-        fill_part_info(part_number, all_parts.projection_parts, all_parts.projection_parts_states);
-    }
-
-    for (size_t part_number = 0; part_number < all_parts.broken_projection_parts.size(); ++part_number)
-    {
-        auto part = all_parts.broken_projection_parts[part_number];
-        fill_part_info(part_number, all_parts.broken_projection_parts, all_parts.broken_projection_parts_states);
     }
 }
 
