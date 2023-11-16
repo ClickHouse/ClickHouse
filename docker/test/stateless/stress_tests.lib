@@ -53,7 +53,7 @@ function configure()
       > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
-    function randomize_keeper_config_boolean_value {
+    function randomize_config_boolean_value {
         value=$(($RANDOM % 2))
         sudo cat /etc/clickhouse-server/config.d/$2.xml \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
@@ -63,16 +63,20 @@ function configure()
 
     if [[ -n "$RANDOMIZE_KEEPER_FEATURE_FLAGS" ]] && [[ "$RANDOMIZE_KEEPER_FEATURE_FLAGS" -eq 1 ]]; then
         # Randomize all Keeper feature flags
-        randomize_keeper_config_boolean_value filtered_list keeper_port
-        randomize_keeper_config_boolean_value multi_read keeper_port
-        randomize_keeper_config_boolean_value check_not_exists keeper_port
-        randomize_keeper_config_boolean_value create_if_not_exists keeper_port
+        randomize_config_boolean_value filtered_list keeper_port
+        randomize_config_boolean_value multi_read keeper_port
+        randomize_config_boolean_value check_not_exists keeper_port
+        randomize_config_boolean_value create_if_not_exists keeper_port
     fi
 
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
 
-    randomize_keeper_config_boolean_value use_compression zookeeper
+    if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
+        randomize_config_boolean_value use_compression zookeeper_fault_injection
+    else
+        randomize_config_boolean_value use_compression zookeeper
+    fi
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
