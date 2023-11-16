@@ -6,6 +6,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ThreadFuzzer.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Common/FailPoint.h>
 
 
 namespace ProfileEvents
@@ -22,6 +24,11 @@ namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char replicated_merge_tree_part_check_0[];
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
@@ -433,7 +440,6 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
     }
 
     time_t current_time = time(nullptr);
-    auto zookeeper = storage.getZooKeeper();
     auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
 
     /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
@@ -470,7 +476,19 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkActivePart(MergeTreeDataPartPtr part)
 {
     ReplicatedCheckResult result;
-    auto zookeeper = storage.getZooKeeper();
+    auto origin_zookeeper = storage.getZooKeeper();
+    auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(origin_zookeeper);
+    fiu_do_on(FailPoints::replicated_merge_tree_part_check_0,
+    {
+        if (!zookeeper->fault_policy)
+        {
+            zookeeper->logger = log;
+            zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
+        }
+        zookeeper->fault_policy->must_fail_before_op = true;
+    });
+
+
     const String part_path = storage.replica_path + "/parts/" + part->name;
     bool exists_in_zookeeper = zookeeper->exists(part_path);
     result.exists_in_zookeeper = exists_in_zookeeper;
@@ -741,10 +759,11 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
     }
     catch (const Coordination::Exception & e)
     {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
+        // do not log error in case of zk hardware error
         if (Coordination::isHardwareError(e.code))
-            return;
+            LOG_TRACE(log, "Background part check: ZooKeeper hardware error: {}", e.what());
+        else
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
     catch (...)
     {

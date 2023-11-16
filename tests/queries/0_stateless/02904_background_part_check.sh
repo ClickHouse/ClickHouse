@@ -17,6 +17,7 @@ CREATE TABLE no_part_check_t(k UInt32, v String) ENGINE ReplicatedMergeTree('/{d
 insert into no_part_check_t select number, toString(number) from numbers(1000);
 "
 
+# check that background check succeed
 for _ in {0..10}; do
   count=$($CLICKHOUSE_CLIENT -nm -q "
     SYSTEM FLUSH LOGS;
@@ -27,7 +28,7 @@ for _ in {0..10}; do
     GROUP BY logger_name;
   ")
   if [[ $count -eq 1 ]]; then
-    echo 1;
+    echo "Background part check succeeded";
     break;
   fi
 
@@ -35,6 +36,38 @@ for _ in {0..10}; do
 
 done
 
+# inject zookeeper fault and check that only 1 corresponding error in traces
+${CLICKHOUSE_CLIENT} -nm -q "
+system enable failpoint replicated_merge_tree_part_check_0;
+"
+
+for _ in {0..10}; do
+  count=$($CLICKHOUSE_CLIENT -nm -q "
+    SYSTEM FLUSH LOGS;
+
+    SELECT count() > 0
+    FROM system.text_log
+    WHERE logger_name ILIKE '%' || currentDatabase() || '%enabled_part_check_t%ReplicatedMergeTreePartCheckThread%' AND message ILIKE '%Background part check: ZooKeeper hardware error%' AND event_date >= yesterday()
+    GROUP BY logger_name;
+  ")
+  if [[ $count -gt 0 ]]; then
+    count=$($CLICKHOUSE_CLIENT -nm -q "
+      SYSTEM FLUSH LOGS;
+
+      SELECT count() > 0
+      FROM system.text_log
+      WHERE logger_name ILIKE '%' || currentDatabase() || '%enabled_part_check_t%ReplicatedMergeTreePartCheckThread%' AND level in ('Fatal', 'Critical', 'Error', 'Warning') AND event_date >= yesterday()
+      GROUP BY logger_name;
+    ")
+    echo "No error in traces in case of zookeeper hardware error"
+    break;
+  fi
+
+  sleep 1
+
+done
+
+# check that background part check can be disabled by table setting
 ${CLICKHOUSE_CLIENT} -nm -q "
 SELECT count()
 FROM system.text_log
