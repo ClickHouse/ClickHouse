@@ -2508,7 +2508,10 @@ def get_additional_client_options(args):
 
 def get_additional_client_options_url(args):
     if args.client_option:
-        return "&".join(args.client_option)
+        options = args.client_option
+        if "stacktrace" in options:
+            options[options.index("stacktrace")] = "stacktrace=1"
+        return "&".join(options)
     return ""
 
 
