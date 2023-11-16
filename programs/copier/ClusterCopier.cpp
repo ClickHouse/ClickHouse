@@ -469,14 +469,12 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
 
     try
     {
-        std::vector<zkutil::ZooKeeper::FutureGet> get_futures;
-        for (const String & path : piece_status_paths)
-            get_futures.emplace_back(zookeeper->asyncGet(path));
+        auto statuses = zookeeper->tryGet(piece_status_paths);
 
         // Check that state is Finished and remember zxid
-        for (auto & future : get_futures)
+        for (size_t i = 0; i < piece_status_paths.size(); ++i)
         {
-            auto res = future.get();
+            const auto & res = statuses[i];
 
             TaskStateWithOwner status = TaskStateWithOwner::fromString(res.data);
             if (status.state != TaskState::Finished)
@@ -503,14 +501,12 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
             return false;
         }
 
-        get_futures.clear();
-        for (const String & path : piece_status_paths)
-            get_futures.emplace_back(zookeeper->asyncGet(path));
+        auto new_statuses = zookeeper->tryGet(piece_status_paths);
 
         // Remember zxid of states again
-        for (auto & future : get_futures)
+        for (size_t i = 0; i < piece_status_paths.size(); ++i)
         {
-            auto res = future.get();
+            const auto & res = new_statuses[i];
             zxid2.push_back(res.stat.pzxid);
         }
     }

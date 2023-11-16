@@ -2789,16 +2789,18 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     std::unordered_set<String> exact_part_names;
 
     {
-        std::vector<zkutil::ZooKeeper::FutureGet> queue_get_futures;
-        queue_get_futures.reserve(source_queue_names.size());
+        std::vector<String> queue_get_paths;
+        queue_get_paths.reserve(source_queue_names.size());
 
         for (const String & entry_name : source_queue_names)
-            queue_get_futures.push_back(zookeeper->asyncTryGet(fs::path(source_path) / "queue" / entry_name));
+            queue_get_paths.push_back(fs::path(source_path) / "queue" / entry_name);
+
+        auto queue_get_result = zookeeper->tryGet(queue_get_paths);
 
         source_queue.reserve(source_queue_names.size());
         for (size_t i = 0; i < source_queue_names.size(); ++i)
         {
-            auto res = queue_get_futures[i].get();
+            const auto & res = queue_get_result[i];
             /// It's ok if entry is already executed and removed: we also will get source parts set.
             if (res.error == Coordination::Error::ZNONODE)
                 continue;
@@ -3141,7 +3143,8 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     /// Try choose source replica to clone.
     /// Source replica must not be lost and should have minimal queue size and maximal log pointer.
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
-    std::vector<zkutil::ZooKeeper::FutureGet> futures;
+    Strings replicas_paths;
+
     for (const String & source_replica_name : replicas)
     {
         /// Do not clone from myself.
@@ -3152,14 +3155,12 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
         /// Obviously the following get operations are not atomic, but it's ok to choose good enough replica, not the best one.
         /// NOTE: We may count some entries twice if log_pointer is moved.
-        futures.emplace_back(zookeeper->asyncTryGet(fs::path(source_replica_path) / "is_lost"));
-        futures.emplace_back(zookeeper->asyncTryGet(fs::path(source_replica_path) / "log_pointer"));
-        futures.emplace_back(zookeeper->asyncTryGet(fs::path(source_replica_path) / "queue"));
+        replicas_paths.emplace_back(fs::path(source_replica_path) / "is_lost");
+        replicas_paths.emplace_back(fs::path(source_replica_path) / "log_pointer");
+        replicas_paths.emplace_back(fs::path(source_replica_path) / "queue");
     }
 
-    /// Wait for results before getting log entries
-    for (auto & future : futures)
-        future.wait();
+    auto replicas_info = zookeeper->tryGet(replicas_paths);
 
     Strings log_entries = zookeeper->getChildren(fs::path(zookeeper_path) / "log");
     size_t max_log_entry = 0;
@@ -3174,16 +3175,16 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     size_t min_replication_lag = std::numeric_limits<size_t>::max();
     String source_replica;
     Coordination::Stat source_is_lost_stat;
-    size_t future_num = 0;
+    size_t replicas_info_num = 0;
 
     for (const String & source_replica_name : replicas)
     {
         if (source_replica_name == replica_name)
             continue;
 
-        auto get_is_lost     = futures[future_num++].get();
-        auto get_log_pointer = futures[future_num++].get();
-        auto get_queue       = futures[future_num++].get();
+        auto get_is_lost     = replicas_info[replicas_info_num++];
+        auto get_log_pointer = replicas_info[replicas_info_num++];
+        auto get_queue       = replicas_info[replicas_info_num++];
 
         if (get_is_lost.error != Coordination::Error::ZOK)
         {
@@ -6845,20 +6846,38 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
     bool have_replica_with_nothing_unprocessed = false;
 
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+    Strings replica_paths;
+    replica_paths.reserve(replicas.size() * 2);
+
+    for (const auto & replica : replicas)
+    {
+        replica_paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
+        replica_paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "min_unprocessed_insert_time");
+    }
+
+    auto replica_result = zookeeper->tryGet(replica_paths);
+    auto replica_num = 0;
 
     for (const auto & replica : replicas)
     {
         if (replica == replica_name)
             continue;
 
+        const auto & is_active_path              = replica_paths[replica_num];
+
+        const auto & is_active                   = replica_result[replica_num++];
+        const auto & min_unprocessed_insert_time = replica_result[replica_num++];
+
         /// Skip dead replicas.
-        if (!zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
+        if (is_active.error == Coordination::Error::ZNONODE)
+            continue;
+        else if (is_active.error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(is_active.error, is_active_path);
+
+        if (min_unprocessed_insert_time.error != Coordination::Error::ZOK)
             continue;
 
-        String value;
-        if (!zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "min_unprocessed_insert_time", value))
-            continue;
-
+        const auto & value = min_unprocessed_insert_time.data;
         time_t replica_time = value.empty() ? 0 : parse<time_t>(value);
 
         if (replica_time == 0)

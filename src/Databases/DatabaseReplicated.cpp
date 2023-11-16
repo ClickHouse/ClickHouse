@@ -211,19 +211,22 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
-        std::vector<zkutil::ZooKeeper::FutureGet> futures;
-        futures.reserve(hosts.size());
+        std::vector<String> paths_to_fetch;
+        paths_to_fetch.reserve(hosts.size());
         host_ids.reserve(hosts.size());
+
         for (const auto & host : hosts)
-            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/replicas/" + host));
+            paths_to_fetch.emplace_back(zookeeper_path + "/replicas/" + host);
+
+        auto fetch_result = zookeeper->tryGet(paths_to_fetch);
 
         success = true;
-        for (auto & future : futures)
+        for (size_t i = 0; i < paths_to_fetch.size(); ++i)
         {
-            auto res = future.get();
+            const auto & res = fetch_result[i];
             if (res.error != Coordination::Error::ZOK)
                 success = false;
-            host_ids.emplace_back(res.data);
+            host_ids.emplace_back(std::move(res.data));
         }
 
         zookeeper->get(zookeeper_path + "/replicas", &stat);
@@ -1115,14 +1118,17 @@ std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(co
         LOG_DEBUG(log, "Trying to get consistent metadata snapshot for log pointer {}", max_log_ptr);
         Strings table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
 
-        std::vector<zkutil::ZooKeeper::FutureGet> futures;
-        futures.reserve(table_names.size());
+        std::vector<String> paths_to_fetch;
+        paths_to_fetch.reserve(table_names.size());
+
         for (const auto & table : table_names)
-            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/metadata/" + table));
+            paths_to_fetch.push_back(zookeeper_path + "/metadata/" + table);
+
+        auto table_metadata = zookeeper->tryGet(paths_to_fetch);
 
         for (size_t i = 0; i < table_names.size(); ++i)
         {
-            auto res = futures[i].get();
+            const auto & res = table_metadata[i];
             if (res.error != Coordination::Error::ZOK)
                 break;
             table_name_to_metadata.emplace(unescapeForFileName(table_names[i]), res.data);
