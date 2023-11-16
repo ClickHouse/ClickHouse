@@ -109,7 +109,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     String subquery_alias = subquery.alias;
     bool prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
 
-    auto hash = subquery.getTreeHash();
+    auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
 
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter = nullptr;

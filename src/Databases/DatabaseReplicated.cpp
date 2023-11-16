@@ -1083,12 +1083,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
     LOG_INFO(log, "All tables are created successfully");
 
-    if (max_log_ptr_at_creation != 0)
+    chassert(max_log_ptr_at_creation || our_log_ptr);
+    UInt32 first_entry_to_mark_finished = new_replica ? max_log_ptr_at_creation : our_log_ptr;
+    if (first_entry_to_mark_finished)
     {
         /// If the replica is new and some of the queries applied during recovery
         /// where issued after the replica was created, then other nodes might be
         /// waiting for this node to notify them that the query was applied.
-        for (UInt32 ptr = max_log_ptr_at_creation; ptr <= max_log_ptr; ++ptr)
+        for (UInt32 ptr = first_entry_to_mark_finished; ptr <= max_log_ptr; ++ptr)
         {
             auto entry_name = DDLTaskBase::getLogEntryName(ptr);
             auto path = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();

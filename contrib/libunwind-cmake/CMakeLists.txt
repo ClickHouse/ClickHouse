@@ -1,6 +1,3 @@
-include(CheckCCompilerFlag)
-include(CheckCXXCompilerFlag)
-
 set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libunwind")
 
 set(LIBUNWIND_CXX_SOURCES
@@ -48,27 +45,11 @@ target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG -D_LIB
 # and disable sanitizers (otherwise infinite loop may happen)
 target_compile_options(unwind PRIVATE -O3 -fno-exceptions -funwind-tables -fno-sanitize=all $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++ -fno-rtti>)
 
-check_c_compiler_flag(-Wunused-but-set-variable HAVE_WARNING_UNUSED_BUT_SET_VARIABLE)
-if (HAVE_WARNING_UNUSED_BUT_SET_VARIABLE)
-    target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
-endif ()
-
-check_cxx_compiler_flag(-Wmissing-attributes HAVE_WARNING_MISSING_ATTRIBUTES)
-if (HAVE_WARNING_MISSING_ATTRIBUTES)
-    target_compile_options(unwind PRIVATE -Wno-missing-attributes)
-endif ()
-
-check_cxx_compiler_flag(-Wmaybe-uninitialized HAVE_WARNING_MAYBE_UNINITIALIZED)
-if (HAVE_WARNING_MAYBE_UNINITIALIZED)
-    target_compile_options(unwind PRIVATE -Wno-maybe-uninitialized)
-endif ()
+target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
 
 # The library is using register variables that are bound to specific registers
 # Example: DwarfInstructions.hpp: register unsigned long long x16 __asm("x16") = cfa;
-check_cxx_compiler_flag(-Wregister HAVE_WARNING_REGISTER)
-if (HAVE_WARNING_REGISTER)
-    target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
-endif ()
+target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
 
 install(
     TARGETS unwind
