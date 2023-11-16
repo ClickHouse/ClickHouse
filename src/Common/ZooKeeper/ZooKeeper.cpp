@@ -115,7 +115,7 @@ bool ZooKeeperAvailabilityZoneMap::needTryOtherHost(const std::string &local_az,
         const auto & host = host_az.first;
         const auto & az = host_az.second;
         if ((az == AZ_UNKNWON || az == local_az) && !attempted_host.contains(host))
-            return true; 
+            return true;
     }
     return false;
 }
@@ -131,7 +131,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         if (args.hosts.empty())
             throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts passed to ZooKeeper constructor.");
 
-        if (args.get_priority_load_balancing.load_balancing == DB::LoadBalancing::KEEPER_LOCAL_AVAILABILITY_ZONE)
+        if (!args.availability_zone.empty() && args.get_priority_load_balancing.load_balancing == DB::LoadBalancing::KEEPER_LOCAL_AVAILABILITY_ZONE)
         {
             tryConnectSameAZKeeper();
         }
@@ -265,7 +265,7 @@ void ZooKeeper::tryConnectSameAZKeeper()
             if (!need_try_other_host)
                 return;
         }
-        catch(DB::Exception & ex)
+        catch (DB::Exception& ex)
         {
             LOG_ERROR(log, "Failed to connect to ZooKeeper host {}, error {}", host.host, ex.what());
         }

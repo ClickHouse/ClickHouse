@@ -86,10 +86,6 @@ def test_get_availability_zone():
             client3.get("/keeper/availability_zone")
 
 
-# TODO: more test cases
-# - add another node with different az first.
-# - session_uptime from system.zookeeper_connection: if it's local az, no timeout, otherwise, timeout
-# - session id: from non local az to local, very quick retry, should have different session id. check whether it's feasbile and reliable.
 def test_connect_local_az_keeper(started_cluster: ClickHouseCluster):
     # Initially the node must connect to its own local az keeper host.
     assert_uses_zk_node(node, "zoo2")
