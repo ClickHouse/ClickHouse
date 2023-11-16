@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <re2/re2.h>
 
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -38,14 +39,6 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -478,12 +471,7 @@ StorageAzureBlob::StorageAzureBlob(
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        /// We don't allow special columns in File storage.
-        if (!columns_.hasOnlyOrdinary())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine AzureBlobStorage doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -847,8 +835,6 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
         blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
-        if (file_progress_callback)
-            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
         is_finished = true;
         return;
     }
@@ -1137,6 +1123,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
                 format, *read_buf, sample_block, getContext(), max_block_size,
                 format_settings, max_parsing_threads, std::nullopt,
                 /* is_remote_fs */ true, compression_method);
+        input_format->setQueryInfo(query_info, getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();

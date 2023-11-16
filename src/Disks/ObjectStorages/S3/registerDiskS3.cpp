@@ -57,7 +57,7 @@ public:
             {
                 storage.removeObject(object);
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
             }
             return true; /// We don't have write access, therefore no information about batch remove.
@@ -74,7 +74,7 @@ public:
             {
                 storage.removeObject(object);
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
             }
             return false;

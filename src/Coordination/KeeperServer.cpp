@@ -17,7 +17,6 @@
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/cluster_config.hxx>
 #include <libnuraft/log_val_type.hxx>
-#include <libnuraft/msg_type.hxx>
 #include <libnuraft/ptr.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -29,7 +28,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <fmt/chrono.h>
-#include <libnuraft/req_msg.hxx>
 
 namespace DB
 {
@@ -197,15 +195,6 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         nuraft::raft_server::commit_in_bg();
     }
 
-    void commitLogs(uint64_t index_to_commit, bool initial_commit_exec)
-    {
-        leader_commit_index_.store(index_to_commit);
-        quick_commit_index_ = index_to_commit;
-        lagging_sm_target_index_ = index_to_commit;
-
-        commit_in_bg_exec(0, initial_commit_exec);
-    }
-
     using nuraft::raft_server::raft_server;
 
     // peers are initially marked as responding because at least one cycle
@@ -219,33 +208,28 @@ void KeeperServer::loadLatestConfig()
 {
     auto latest_snapshot_config = state_machine->getClusterConfig();
     auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
-    auto async_replication = coordination_settings->async_replication;
 
     if (latest_snapshot_config && latest_log_store_config)
     {
         if (latest_snapshot_config->get_log_idx() > latest_log_store_config->get_log_idx())
         {
             LOG_INFO(log, "Will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
-            latest_snapshot_config->set_async_replication(async_replication);
             state_manager->save_config(*latest_snapshot_config);
         }
         else
         {
-            LOG_INFO(log, "Will use config from log store with log index {}", latest_log_store_config->get_log_idx());
-            latest_log_store_config->set_async_replication(async_replication);
+            LOG_INFO(log, "Will use config from log store with log index {}", latest_snapshot_config->get_log_idx());
             state_manager->save_config(*latest_log_store_config);
         }
     }
     else if (latest_snapshot_config)
     {
         LOG_INFO(log, "No config in log store, will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
-        latest_snapshot_config->set_async_replication(async_replication);
         state_manager->save_config(*latest_snapshot_config);
     }
     else if (latest_log_store_config)
     {
         LOG_INFO(log, "No config in snapshot, will use config from log store with log index {}", latest_log_store_config->get_log_idx());
-        latest_log_store_config->set_async_replication(async_replication);
         state_manager->save_config(*latest_log_store_config);
     }
     else
@@ -409,14 +393,31 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
     auto log_store = state_manager->load_log_store();
-    last_log_idx_on_disk = log_store->next_slot() - 1;
-    LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk);
-    if (state_machine->last_commit_index() >= last_log_idx_on_disk)
-        keeper_context->local_logs_preprocessed = true;
+    auto next_log_idx = log_store->next_slot();
+    if (next_log_idx > 0 && next_log_idx > state_machine->last_commit_index())
+    {
+        auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, next_log_idx);
+
+        size_t preprocessed = 0;
+        LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
+        auto idx = state_machine->last_commit_index() + 1;
+        for (const auto & entry : *log_entries)
+        {
+            if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
+                state_machine->pre_commit(idx, entry->get_buf());
+
+            ++idx;
+            ++preprocessed;
+
+            if (preprocessed % 50000 == 0)
+                LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
+        }
+        LOG_INFO(log, "Preprocessing done");
+    }
 
     loadLatestConfig();
 
-    last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings->async_replication).cluster_config;
+    last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
 
     launchRaftServer(config, enable_ipv6);
 
@@ -608,84 +609,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // we don't accept requests from our peers or clients
                 // while in recovery mode
                 return nuraft::cb_func::ReturnCode::ReturnNull;
-            default:
-                break;
-        }
-    }
-
-    if (!keeper_context->local_logs_preprocessed)
-    {
-        const auto preprocess_logs = [&]
-        {
-            auto log_store = state_manager->load_log_store();
-            if (last_log_idx_on_disk > 0 && last_log_idx_on_disk > state_machine->last_commit_index())
-            {
-                auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, last_log_idx_on_disk + 1);
-
-                size_t preprocessed = 0;
-                LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
-                auto idx = state_machine->last_commit_index() + 1;
-                for (const auto & entry : *log_entries)
-                {
-                    if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
-                        state_machine->pre_commit(idx, entry->get_buf());
-
-                    ++idx;
-                    ++preprocessed;
-
-                    if (preprocessed % 50000 == 0)
-                        LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
-                }
-                LOG_INFO(log, "Preprocessing done");
-            }
-            else
-            {
-                LOG_INFO(log, "All local log entries preprocessed");
-            }
-            keeper_context->local_logs_preprocessed = true;
-        };
-
-        switch (type)
-        {
-            case nuraft::cb_func::InitialBatchCommited:
-            {
-                preprocess_logs();
-                break;
-            }
-            case nuraft::cb_func::GotAppendEntryReqFromLeader:
-            {
-                auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
-
-                if (req.get_commit_idx() == 0 || req.log_entries().empty())
-                    break;
-
-                auto last_committed_index = state_machine->last_commit_index();
-                // Actual log number.
-                auto index_to_commit = std::min({last_log_idx_on_disk, req.get_last_log_idx(), req.get_commit_idx()});
-
-                if (index_to_commit > last_committed_index)
-                {
-                    LOG_TRACE(log, "Trying to commit local log entries, committing upto {}", index_to_commit);
-                    raft_instance->commitLogs(index_to_commit, true);
-                    /// after we manually committed all the local logs we can, we assert that all of the local logs are either
-                    /// committed or preprocessed
-                    if (!keeper_context->local_logs_preprocessed)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Local logs are not preprocessed");
-                }
-                else if (last_log_idx_on_disk <= last_committed_index)
-                {
-                    keeper_context->local_logs_preprocessed = true;
-                }
-                else if
-                (
-                    index_to_commit == 0 ||
-                    (index_to_commit == last_committed_index && last_log_idx_on_disk > index_to_commit)  /// we need to rollback all the logs so we preprocess all of them
-                )
-                {
-                    preprocess_logs();
-                }
-                break;
-            }
             default:
                 break;
         }
@@ -918,12 +841,12 @@ bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction & action)
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
 {
-    auto diff = state_manager->getRaftConfigurationDiff(config, coordination_settings);
+    auto diff = state_manager->getRaftConfigurationDiff(config);
 
     if (!diff.empty())
     {
         std::lock_guard lock{server_write_mutex};
-        last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings->async_replication).cluster_config;
+        last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
     }
 
     return diff;

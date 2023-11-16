@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <sys/types.h>
 
 
@@ -27,8 +28,6 @@ struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
 class RemoteQueryExecutorReadContext;
-
-class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<String()>;
@@ -286,7 +285,7 @@ private:
     void processReadTaskRequest();
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
-    void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
+    void processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement);
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.

@@ -4,7 +4,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Processors/SourceWithKeyCondition.h>
+#include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
@@ -142,7 +142,7 @@ private:
 };
 
 
-class StorageURLSource : public SourceWithKeyCondition, WithContext
+class StorageURLSource : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -183,16 +183,6 @@ public:
         bool need_only_count_ = false);
 
     String getName() const override { return name; }
-
-    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
-    {
-        setKeyConditionImpl(query_info_, context_, block_for_format);
-    }
-
-    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
-    {
-        setKeyConditionImpl(nodes, context_, block_for_format);
-    }
 
     Chunk generate() override;
 

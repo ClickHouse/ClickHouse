@@ -13,7 +13,9 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths-ignore:
-      - '**.md'
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - 'SECURITY.md'
       - 'docker/docs/**'
       - 'docs/**'
       - 'utils/check-style/aspell-ignore/**'
@@ -5205,16 +5207,9 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
           python3 merge_pr.py --check-approved
-#############################################################################################
-####################################### libFuzzer ###########################################
-#############################################################################################
-  libFuzzer:
-    if: contains(github.event.pull_request.labels.*.name, 'libFuzzer')
-    needs: [DockerHubPush, StyleCheck]
-    uses: ./.github/workflows/libfuzzer.yml
-  ##############################################################################################
-  ############################ SQLLOGIC TEST ###################################################
-  ##############################################################################################
+##############################################################################################
+########################### SQLLOGIC TEST ###################################################
+##############################################################################################
   SQLLogicTestRelease:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]

@@ -610,7 +610,6 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
-// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
     class Call
     {
     public:
@@ -716,7 +715,6 @@ namespace
 
         ThreadFromGlobalPool call_thread;
     };
-// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
@@ -949,7 +947,7 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context).second;
+        io = ::DB::executeQuery(true, query, query_context);
     }
 
     void Call::processInput()
@@ -1340,7 +1338,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
             }
         }

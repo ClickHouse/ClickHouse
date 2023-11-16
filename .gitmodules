@@ -40,6 +40,9 @@
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
+[submodule "contrib/base64"]
+	path = contrib/base64
+	url = https://github.com/ClickHouse/Turbo-Base64
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/ClickHouse/arrow
@@ -184,7 +187,7 @@
 	url = https://github.com/ClickHouse/nanodbc
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
-	url = https://github.com/apache/datasketches-cpp
+	url = https://github.com/ClickHouse/datasketches-cpp
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse/yaml-cpp
@@ -257,9 +260,6 @@
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
 	url = https://github.com/corrosion-rs/corrosion
-[submodule "contrib/libssh"]
-	path = contrib/libssh
-	url = https://github.com/ClickHouse/libssh.git
 [submodule "contrib/morton-nd"]
 	path = contrib/morton-nd
 	url = https://github.com/morton-nd/morton-nd
@@ -348,6 +348,3 @@
 [submodule "contrib/robin-map"]
 	path = contrib/robin-map
 	url = https://github.com/Tessil/robin-map.git
-[submodule "contrib/aklomp-base64"]
-	path = contrib/aklomp-base64
-	url = https://github.com/aklomp/base64.git

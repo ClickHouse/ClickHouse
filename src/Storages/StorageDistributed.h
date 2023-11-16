@@ -28,9 +28,6 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-struct TreeRewriterResult;
-using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
   *
@@ -171,7 +168,7 @@ private:
 
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
-    /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
+    /// Used for the INSERT into Distributed in case of insert_distributed_sync==1, from DistributedSink.
     DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
 
@@ -185,20 +182,9 @@ private:
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(
-        ContextPtr local_context,
-        const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        const TreeRewriterResultPtr & syntax_analyzer_result) const;
+    ClusterPtr getOptimizedCluster(ContextPtr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
     ClusterPtr skipUnusedShards(
-        ClusterPtr cluster,
-        const SelectQueryInfo & query_info,
-        const TreeRewriterResultPtr & syntax_analyzer_result,
-        const StorageSnapshotPtr & storage_snapshot,
-        ContextPtr context) const;
-
-    ClusterPtr skipUnusedShardsWithAnalyzer(
         ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
@@ -218,7 +204,6 @@ private:
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
-    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
@@ -250,7 +235,7 @@ private:
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
 
-    ActionBlocker async_insert_blocker;
+    ActionBlocker monitors_blocker;
 
     String relative_data_path;
 
@@ -266,7 +251,7 @@ private:
 
     struct ClusterNodeData
     {
-        std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
+        std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_monitor;
         ConnectionPoolPtr connection_pool;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;

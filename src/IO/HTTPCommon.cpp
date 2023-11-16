@@ -321,16 +321,8 @@ namespace
             /// To avoid such a deadlock we unlock `lock` before entering `pool_ptr->second->get`.
             lock.unlock();
 
-            auto retry_timeout = timeouts.connection_timeout.totalMilliseconds();
+            auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
-
-            const auto & session_data = session->sessionData();
-            if (session_data.empty() || !Poco::AnyCast<HTTPSessionReuseTag>(&session_data))
-            {
-                /// Reset session if it is not reusable. See comment for HTTPSessionReuseTag.
-                session->reset();
-            }
-            session->attachSessionData({});
 
             setTimeouts(*session, timeouts);
 

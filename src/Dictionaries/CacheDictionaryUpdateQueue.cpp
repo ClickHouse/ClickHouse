@@ -48,7 +48,7 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::~CacheDictionaryUpdateQueue()
     try {
         stopAndWait();
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...)
     {
         /// TODO: Write log
     }

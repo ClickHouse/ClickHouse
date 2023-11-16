@@ -350,10 +350,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
-        user_id = auth_result.user_id;
-        settings_from_auth_server = auth_result.settings;
-
+        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -523,10 +520,6 @@ ContextMutablePtr Session::makeSessionContext()
         *user_id,
         {},
         session_context->getSettingsRef().max_sessions_for_user);
-
-    // Use QUERY source as for SET query for a session
-    session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
-    session_context->applySettingsChanges(settings_from_auth_server);
 
     recordLoginSucess(session_context);
 

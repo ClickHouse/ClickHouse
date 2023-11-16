@@ -26,15 +26,8 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
 #include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+
 #include <boost/algorithm/string.hpp>
 
 static const int SUCCESS_RESPONSE_MIN = 200;
@@ -96,7 +89,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
-        unsigned int s3_retry_attempts_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         const ThrottlerPtr & get_request_throttler_,
@@ -106,7 +98,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
-    , s3_retry_attempts(s3_retry_attempts_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)
@@ -276,7 +267,7 @@ void PocoHTTPClient::makeRequestInternal(
 {
     /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
     const auto request_configuration = per_request_configuration();
-    if (http_connection_pool_size)
+    if (http_connection_pool_size && request_configuration.host.empty())
         makeRequestInternalImpl<true>(request, request_configuration, response, readLimiter, writeLimiter);
     else
         makeRequestInternalImpl<false>(request, request_configuration, response, readLimiter, writeLimiter);

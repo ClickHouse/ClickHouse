@@ -14,7 +14,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -45,7 +44,7 @@ namespace ErrorCodes
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
-using OperationID = BackupOperationID;
+using OperationID = BackupsWorker::OperationID;
 namespace Stage = BackupCoordinationStage;
 
 namespace
@@ -134,7 +133,7 @@ namespace
             if (coordination)
                 coordination->setError(exception);
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
         }
     }
@@ -218,41 +217,13 @@ namespace
 }
 
 
-BackupsWorker::BackupsWorker(
-    ContextPtr global_context,
-    size_t num_backup_threads,
-    size_t num_restore_threads,
-    bool allow_concurrent_backups_,
-    bool allow_concurrent_restores_)
-    : backups_thread_pool(std::make_unique<ThreadPool>(
-        CurrentMetrics::BackupsThreads,
-        CurrentMetrics::BackupsThreadsActive,
-        num_backup_threads,
-        /* max_free_threads = */ 0,
-        num_backup_threads))
-    , restores_thread_pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::RestoreThreads,
-          CurrentMetrics::RestoreThreadsActive,
-          num_restore_threads,
-          /* max_free_threads = */ 0,
-          num_restore_threads))
-    , backup_async_executor_pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::BackupsThreads,
-          CurrentMetrics::BackupsThreadsActive,
-          num_backup_threads,
-          num_backup_threads,
-          num_backup_threads))
-    , restore_async_executor_pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::RestoreThreads,
-          CurrentMetrics::RestoreThreadsActive,
-          num_restore_threads,
-          num_restore_threads,
-          num_restore_threads))
+BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
+    : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
+    , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
 {
-    backup_log = global_context->getBackupLog();
     /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
 }
 
@@ -313,16 +284,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 
         if (backup_settings.async)
         {
-            backup_async_executor_pool->scheduleOrThrowOnError(
-                [this,
-                 backup_query,
-                 backup_id,
-                 backup_name_for_logging,
-                 backup_info,
-                 backup_settings,
-                 backup_coordination,
-                 context_in_use,
-                 mutable_context]
+            backups_thread_pool->scheduleOrThrowOnError(
+                [this, backup_query, backup_id, backup_name_for_logging, backup_info, backup_settings, backup_coordination, context_in_use, mutable_context]
                 {
                     doBackup(
                         backup_query,
@@ -487,10 +450,9 @@ void BackupsWorker::doBackup(
         backup.reset();
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
+        setStatus(backup_id, BackupStatus::BACKUP_CREATED);
         /// NOTE: we need to update metadata again after backup->finalizeWriting(), because backup metadata is written there.
         setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
-        /// NOTE: setStatus is called after setNumFilesAndSize in order to have actual information in a backup log record
-        setStatus(backup_id, BackupStatus::BACKUP_CREATED);
     }
     catch (...)
     {
@@ -666,25 +628,18 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 
         if (restore_settings.async)
         {
-            restore_async_executor_pool->scheduleOrThrowOnError(
-                [this,
-                 restore_query,
-                 restore_id,
-                 backup_name_for_logging,
-                 backup_info,
-                 restore_settings,
-                 restore_coordination,
-                 context_in_use]
-            {
-                doRestore(
-                    restore_query,
-                    restore_id,
-                    backup_name_for_logging,
-                    backup_info,
-                    restore_settings,
-                    restore_coordination,
-                    context_in_use,
-                    /* called_async= */ true);
+            restores_thread_pool->scheduleOrThrowOnError(
+                [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
+                {
+                    doRestore(
+                        restore_query,
+                        restore_id,
+                        backup_name_for_logging,
+                        backup_info,
+                        restore_settings,
+                        restore_coordination,
+                        context_in_use,
+                        /* called_async= */ true);
                 });
         }
         else
@@ -920,7 +875,7 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
 
 void BackupsWorker::addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status)
 {
-    BackupOperationInfo info;
+    Info info;
     info.id = id;
     info.name = name;
     info.internal = internal;
@@ -940,9 +895,6 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, bool in
         if (!isFinalStatus(current_status))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot start a backup or restore: ID {} is already in use", id);
     }
-
-    if (backup_log)
-        backup_log->add(BackupLogElement{info});
 
     infos[id] = std::move(info);
 
@@ -977,9 +929,6 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
         info.exception = std::current_exception();
     }
 
-    if (backup_log)
-        backup_log->add(BackupLogElement{info});
-
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
 }
@@ -989,7 +938,6 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
                                        UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes)
 
 {
-    /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
     if (it == infos.end())
@@ -1022,7 +970,7 @@ void BackupsWorker::wait(const OperationID & id, bool rethrow_exception)
     });
 }
 
-BackupOperationInfo BackupsWorker::getInfo(const OperationID & id) const
+BackupsWorker::Info BackupsWorker::getInfo(const OperationID & id) const
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -1031,9 +979,9 @@ BackupOperationInfo BackupsWorker::getInfo(const OperationID & id) const
     return it->second;
 }
 
-std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
+std::vector<BackupsWorker::Info> BackupsWorker::getAllInfos() const
 {
-    std::vector<BackupOperationInfo> res_infos;
+    std::vector<Info> res_infos;
     std::lock_guard lock{infos_mutex};
     for (const auto & info : infos | boost::adaptors::map_values)
     {
@@ -1051,8 +999,6 @@ void BackupsWorker::shutdown()
 
     backups_thread_pool->wait();
     restores_thread_pool->wait();
-    backup_async_executor_pool->wait();
-    restore_async_executor_pool->wait();
 
     if (has_active_backups_and_restores)
         LOG_INFO(log, "All backup and restore tasks have finished");
