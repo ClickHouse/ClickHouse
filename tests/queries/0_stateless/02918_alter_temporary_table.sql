@@ -1,6 +1,5 @@
 DROP TABLE IF EXISTS alter_test;
 
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TEMPORARY TABLE alter_test (CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32);
 
 INSERT INTO alter_test VALUES (1, '2014-01-01', 2, 3, [1,2,3], ['a','b','c'], 4);
