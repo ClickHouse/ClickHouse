@@ -407,17 +407,29 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 /// This can lead to request signature difference on S3 side.
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, getTimeouts(method, first_attempt), http_connection_pool_size, wait_on_pool_size_limit, proxy_configuration);
+                        target_uri,
+                        getTimeouts(method, first_attempt, /*first_byte*/ true),
+                        http_connection_pool_size,
+                        wait_on_pool_size_limit,
+                        proxy_configuration);
                 else
-                    session = makeHTTPSession(target_uri, getTimeouts(method, first_attempt), proxy_configuration);
+                    session = makeHTTPSession(
+                            target_uri,
+                            getTimeouts(method, first_attempt, /*first_byte*/ true),
+                            proxy_configuration);
             }
             else
             {
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, getTimeouts(method, first_attempt), http_connection_pool_size, wait_on_pool_size_limit);
+                        target_uri,
+                        getTimeouts(method, first_attempt, /*first_byte*/ true),
+                        http_connection_pool_size,
+                        wait_on_pool_size_limit);
                 else
-                    session = makeHTTPSession(target_uri, getTimeouts(method, first_attempt));
+                    session = makeHTTPSession(
+                            target_uri,
+                            getTimeouts(method, first_attempt, /*first_byte*/ true));
             }
 
             /// In case of error this address will be written to logs
