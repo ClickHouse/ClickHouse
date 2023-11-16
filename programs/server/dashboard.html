@@ -514,6 +514,7 @@ const errorMessages = [
 
 /// Query to fill `queries` list for the dashboard
 let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'overview'`;
+let customized = false;
 let queries = [];
 
 /// Query parameters with predefined default values.
@@ -659,9 +660,10 @@ function insertChart(i) {
         title_text.data = '';
         findParamsInQuery(q.query, params);
         buildParams();
+        refreshCustomized(true);
+        saveState();
         const idx = getCurrentIndex();
         draw(idx, chart, getParamsForURL(), q.query);
-        saveState();
     }
 
     query_editor_confirm.addEventListener('click', editConfirm);
@@ -809,6 +811,7 @@ function insertChart(i) {
         findParamsInQueries();
         buildParams();
         resize();
+        refreshCustomized(true);
         saveState();
     });
 
@@ -874,8 +877,9 @@ function massEditorApplyChanges() {
     ({params, queries} = JSON.parse(editor.value));
     hideMassEditor();
     regenerate();
-    drawAll();
+    refreshCustomized(true);
     saveState();
+    drawAll();
 }
 
 document.getElementById('edit').addEventListener('click', e => {
@@ -1182,7 +1186,11 @@ async function reloadAll(do_search) {
     disableButtons();
     try {
         updateParams();
-        search_query = document.getElementById('search-query').value;
+        if (do_search) {
+            search_query = document.getElementById('search-query').value;
+            queries = [];
+            refreshCustomized(false);
+        }
         saveState();
         if (do_search) {
             await searchQueries();
@@ -1202,7 +1210,7 @@ document.getElementById('params').onsubmit = function(event) {
 
 
 function saveState() {
-    const state = { host: host, user: user, queries: queries, params: params, search_query: search_query };
+    const state = { host, user, queries, params, search_query, customized };
     history.pushState(state, '',
         window.location.pathname + (window.location.search || '') + '#' + btoa(JSON.stringify(state)));
 }
@@ -1222,7 +1230,6 @@ async function searchQueries() {
         throw new Error("Wrong data format of the search query.");
     }
 
-    queries = [];
     for (let i = 0; i < data[0].length; i++) {
         queries.push({title: data[0][i], query: data[1][i]});
     }
@@ -1230,11 +1237,19 @@ async function searchQueries() {
     regenerate();
 }
 
+function refreshCustomized(value) {
+    if (value !== undefined) {
+        customized = value;
+    }
+    document.getElementById('search-span').style.opacity = customized ? 0.5 : 1.0;
+}
+
 function regenerate() {
     document.getElementById('url').value = host;
     document.getElementById('user').value = user;
     document.getElementById('password').value = password;
     document.getElementById('search-query').value = search_query;
+    refreshCustomized();
 
     findParamsInQueries();
     buildParams();
@@ -1253,7 +1268,7 @@ function regenerate() {
 
 window.onpopstate = function(event) {
     if (!event.state) { return; }
-    ({host, user, queries, params, search_query} = event.state);
+    ({host, user, queries, params, search_query, customized} = event.state);
 
     regenerate();
     drawAll();
@@ -1261,7 +1276,7 @@ window.onpopstate = function(event) {
 
 if (window.location.hash) {
     try {
-        ({host, user, queries, params, search_query} = JSON.parse(atob(window.location.hash.substring(1))));
+        ({host, user, queries, params, search_query, customized} = JSON.parse(atob(window.location.hash.substring(1))));
     } catch {}
 }
 
