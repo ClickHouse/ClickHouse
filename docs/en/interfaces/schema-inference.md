@@ -834,6 +834,27 @@ $$)
 └──────────────┴───────────────┘
 ```
 
+#### CSV settings {#csv-settings}
+
+##### input_format_csv_try_infer_numbers_from_strings
+
+Enabling this setting allows inferring numbers from string values.
+
+This setting is disabled by default.
+
+**Example:**
+
+```sql
+SET input_format_json_try_infer_numbers_from_strings = 1;
+DESC format(CSV, '"42","42.42"');
+```
+```reponse
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
 ### TSV/TSKV {#tsv-tskv}
 
 In TSV/TSKV formats ClickHouse extracts column value from the row according to tabular delimiters and then parses extracted value using
