@@ -41,6 +41,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int LIMIT_EXCEEDED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TOO_MANY_TEMPORARY_COLUMNS;
     extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
@@ -540,6 +541,15 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                 "Too many temporary non-const columns:{}. Maximum: {}",
                 list_of_non_const_columns.str(), settings.max_temporary_non_const_columns);
         }
+    }
+
+    if (settings.max_block_size)
+    {
+        for (const auto & column : columns)
+            if (column.column && column.column->size() > settings.max_block_size)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many rows {} in column {} in a block. "
+                "The maximum limit is {} which controlled by the setting `max_block_size`",
+                column.column->size(), column.name, settings.max_block_size);
     }
 }
 

@@ -13,6 +13,7 @@ ExpressionActionsSettings ExpressionActionsSettings::fromSettings(const Settings
     settings.min_count_to_compile_expression = from.min_count_to_compile_expression;
     settings.max_temporary_columns = from.max_temporary_columns;
     settings.max_temporary_non_const_columns = from.max_temporary_non_const_columns;
+    settings.max_block_size =  from.max_block_size;
     settings.compile_expressions = compile_expressions;
     settings.short_circuit_function_evaluation = from.short_circuit_function_evaluation;
 

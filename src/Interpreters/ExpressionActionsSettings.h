@@ -23,6 +23,7 @@ struct ExpressionActionsSettings
 
     size_t max_temporary_columns = 0;
     size_t max_temporary_non_const_columns = 0;
+    size_t max_block_size = 0;
 
     CompileExpressions compile_expressions = CompileExpressions::no;
 
