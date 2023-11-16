@@ -41,12 +41,15 @@ void ReplicatedMergeTreeAttachThread::run()
     bool needs_retry{false};
     try
     {
-        // we delay the first reconnect if the storage failed to connect to ZK initially
-        if (!first_try_done && storage.getFaultyZooKeeper()->isNull())
+        if (!first_try_done)
         {
-            needs_retry = true;
+            /// we delay the first reconnect if the storage failed to connect to ZK initially
+            std::lock_guard lock(storage.current_zookeeper_mutex);
+            if (!storage.current_zookeeper)
+                needs_retry = true;
         }
-        else
+
+        if (!needs_retry)
         {
             runImpl();
             finalizeInitialization();

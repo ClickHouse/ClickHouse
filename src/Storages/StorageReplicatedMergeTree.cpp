@@ -361,6 +361,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     mutations_finalizing_task->deactivate();
 
     bool has_zookeeper = getContext()->hasZooKeeper() || getContext()->hasAuxiliaryZooKeeper(zookeeper_name);
+    ZooKeeperWithFaultInjectionPtr keeper;
     if (has_zookeeper)
     {
         /// It's possible for getZooKeeper() to timeout if  zookeeper host(s) can't
@@ -379,6 +380,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         try
         {
             setZooKeeper();
+            keeper = getFaultyZooKeeper();
         }
         catch (...)
         {
@@ -395,7 +397,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
 
-    auto keeper = getFaultyZooKeeper();
     std::optional<std::unordered_set<std::string>> expected_parts_on_this_replica;
     bool skip_sanity_checks = false;
     /// It does not make sense for CREATE query
@@ -403,14 +404,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         try
         {
-            if (!keeper->isNull() && keeper->exists(replica_path + "/host"))
+            if (keeper && keeper->exists(replica_path + "/host"))
             {
                 /// Check it earlier if we can (we don't want incompatible version to start).
                 /// If "/host" doesn't exist, then replica is probably dropped and there's nothing to check.
                 ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(keeper, replica_path);
             }
 
-            if (!keeper->isNull() && keeper->exists(replica_path + "/flags/force_restore_data"))
+            if (keeper && keeper->exists(replica_path + "/flags/force_restore_data"))
             {
                 skip_sanity_checks = true;
                 keeper->remove(replica_path + "/flags/force_restore_data");
@@ -426,7 +427,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
                 LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
             } /// In case of force_restore it doesn't make sense to check anything
-            else if (!keeper->isNull() && keeper->exists(replica_path))
+            else if (keeper && keeper->exists(replica_path))
             {
                 std::vector<std::string> parts_on_replica;
                 if (keeper->tryGetChildren(fs::path(replica_path) / "parts", parts_on_replica) == Coordination::Error::ZOK)
@@ -460,7 +461,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     }
 
-    if (keeper->isNull())
+    if (!keeper)
     {
         if (!attach)
         {

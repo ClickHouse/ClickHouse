@@ -127,7 +127,7 @@ public:
     void setKeeper(zk::Ptr const & keeper_) { keeper = keeper_; }
     zk::Ptr getKeeper() { return keeper; }
     bool isNull() const { return keeper.get() == nullptr; }
-    bool expired() { return keeper->expired(); }
+    bool expired() { return !keeper || keeper->expired(); }
 
     ///
     /// mirror ZooKeeper interface
@@ -186,7 +186,7 @@ public:
         return access("getChildrenWatch", path, [&]() { return keeper->getChildrenWatch(path, stat, watch_callback, list_request_type); });
     }
 
-    zk::FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {})
+    zk::FutureExists asyncExists(std::string path, Coordination::WatchCallback watch_callback = {})
     {
         auto promise = std::make_shared<std::promise<Coordination::ExistsResponse>>();
         auto future = promise->get_future();
@@ -221,7 +221,7 @@ public:
         return future;
     }
 
-    zk::FutureGet asyncTryGet(const std::string & path)
+    zk::FutureGet asyncTryGet(std::string path)
     {
         auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
         auto future = promise->get_future();
@@ -345,6 +345,7 @@ public:
         auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
         auto future = promise->get_future();
         size_t request_size = ops.size();
+        String path = ops.empty() ? "" : ops.front()->getPath();
         if (!keeper || (unlikely(fault_policy) && fault_policy->beforeOperationNoThrow()))
         {
             if (logger)
@@ -352,7 +353,7 @@ public:
                     logger,
                     "ZooKeeperWithFaultInjection injected fault before operation: seed={} func=asyncTryMultiNoThrow path={}",
                     seed,
-                    ops.empty() ? "" : ops.front()->getPath());
+                    path);
             Coordination::MultiResponse errors;
             for (size_t i = 0; i < request_size; i++)
             {
@@ -373,7 +374,7 @@ public:
                         logger,
                         "ZooKeeperWithFaultInjection injected fault after operation: seed={} func=asyncTryMultiNoThrow path={}",
                         seed,
-                        ops.empty() ? "" : ops.front()->getPath());
+                        path);
                 Coordination::MultiResponse errors;
                 for (size_t i = 0; i < request_size; i++)
                 {
@@ -564,7 +565,7 @@ public:
         return access("tryRemove", path, [&]() { return keeper->tryRemove(path, version); });
     }
 
-    zk::FutureRemove asyncTryRemove(const std::string & path, int32_t version = -1)
+    zk::FutureRemove asyncTryRemove(std::string path, int32_t version = -1)
     {
         auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
         auto future = promise->get_future();
