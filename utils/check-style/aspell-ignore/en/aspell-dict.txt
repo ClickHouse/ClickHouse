@@ -261,6 +261,7 @@ FOSDEM
 FQDN
 Failover
 FarmHash
+FileCluster
 FilesystemCacheBytes
 FilesystemCacheElements
 FilesystemCacheFiles
@@ -1470,6 +1471,7 @@ fastops
 fcoverage
 fibonacci
 fifo
+fileCluster
 filesystem
 filesystemAvailable
 filesystemCapacity

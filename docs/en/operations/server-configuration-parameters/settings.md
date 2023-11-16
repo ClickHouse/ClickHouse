@@ -2352,7 +2352,7 @@ Path on the local filesystem to store temporary data for processing large querie
 
 ## user_files_path {#user_files_path}
 
-The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md).
+The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md), [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
 
 **Example**
 

@@ -1,5 +1,6 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/ITableFunctionFileLike.h>
+#include <TableFunctions/TableFunctionFile.h>
 
 #include "Parsers/IAST_fwd.h"
 #include "registerTableFunctions.h"
@@ -20,42 +21,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-namespace
-{
-
-/* file(path, format[, structure, compression]) - creates a temporary storage from file
- *
- * The file must be in the clickhouse data directory.
- * The relative path begins with the clickhouse data directory.
- */
-class TableFunctionFile : public ITableFunctionFileLike
-{
-public:
-    static constexpr auto name = "file";
-    std::string getName() const override
-    {
-        return name;
-    }
-
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
-    {
-        return {"_path", "_file"};
-    }
-
-protected:
-    int fd = -1;
-    void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;
-    String getFormatFromFirstArgument() override;
-
-private:
-    StoragePtr getStorage(
-        const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const std::string & compression_method_) const override;
-    const char * getStorageTypeName() const override { return "File"; }
-};
 
 void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr & context)
 {
@@ -122,7 +87,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
-    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
+    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -146,8 +111,6 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
 
     return parseColumnsListFromString(structure, context);
-}
-
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)
