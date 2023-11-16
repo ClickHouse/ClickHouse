@@ -199,7 +199,7 @@ public:
         const String & to_dir,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook = {});
+        const std::function<void()> & cancellation_hook);
 
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
     virtual void copyFile( /// NOLINT

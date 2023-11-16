@@ -385,7 +385,7 @@ public:
         const String & directory_name,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook = {}) const;
+        const std::function<void()> & cancellation_hook) const;
 
     /// Checks that .bin and .mrk files exist.
     ///

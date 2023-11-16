@@ -24,7 +24,7 @@ bool IDisk::isDirectoryEmpty(const String & path) const
     return !iterateDirectory(path)->isValid();
 }
 
-void IDisk::copyFile(
+void IDisk::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,
     const String & to_file_path,
@@ -160,7 +160,7 @@ void IDisk::copyThroughBuffers(
     for (auto & result : results)
         result.wait();
     for (auto & result : results)
-        result.get(); /// May rethrow an exception
+        result.get();  /// May rethrow an exception
 }
 
 

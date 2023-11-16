@@ -75,7 +75,7 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         Poco::Logger * log,
-        const std::function<void()> & cancellation_hook = {}
+        const std::function<void()> & cancellation_hook
         ) const override;
 
     void rename(

@@ -353,7 +353,7 @@ void DiskEncrypted::copyDirectoryContent(
     }
 
     /// Copy the file through buffers with deciphering.
-    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings);
+    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(

@@ -263,7 +263,7 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         Poco::Logger * log,
-        const std::function<void()> & cancellation_hook = {}
+        const std::function<void()> & cancellation_hook
         ) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.

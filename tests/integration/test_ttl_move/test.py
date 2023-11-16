@@ -1925,5 +1925,8 @@ class TestCancelBackgroundMoving:
             pm.drop_instance_zk_connections(node1)
             # Wait for background moving task to be cancelled
             assert_logs_contain_with_retry(
-                node1, "MergeTreeBackgroundExecutor.*Cancelled moving parts"
+                node1,
+                "MergeTreeBackgroundExecutor.*Cancelled moving parts",
+                retry_count=30,
+                sleep_time=1,
             )

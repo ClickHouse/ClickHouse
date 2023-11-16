@@ -118,7 +118,7 @@ public:
         const String & to_dir,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook = {}) override;
+        const std::function<void()> & cancellation_hook) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
