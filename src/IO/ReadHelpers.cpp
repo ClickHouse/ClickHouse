@@ -8,7 +8,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <base/find_symbols.h>
 #include <cstdlib>
 #include <bit>
 
@@ -173,10 +172,12 @@ bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, 
 
 
 template <typename T>
-static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
+void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 {
     s.append(rb.position(), end - rb.position());
 }
+
+template void appendToStringOrVector<String>(String & s, ReadBuffer & rb, const char * end);
 
 template <>
 inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
@@ -191,21 +192,6 @@ template <>
 inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const char * end)
 {
     s.insert(rb.position(), end);
-}
-
-template <char... chars, typename Vector>
-void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
-{
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
-
-        appendToStringOrVector(s, buf, next_pos);
-        buf.position() = next_pos;
-
-        if (buf.hasPendingData())
-            return;
-    }
 }
 
 template <typename Vector>

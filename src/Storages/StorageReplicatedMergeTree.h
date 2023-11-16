@@ -90,6 +90,7 @@ namespace DB
 
 class ZooKeeperWithFaultInjection;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
+class ReplicatedMergeTreeCurrentlyRestoringFromBackup;
 
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
@@ -399,6 +400,7 @@ private:
     friend class MergeFromLogEntryTask;
     friend class MutateFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
+    friend class ReplicatedMergeTreeCurrentlyRestoringFromBackup;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -455,6 +457,9 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
 
     MergeStrategyPicker merge_strategy_picker;
+
+    /// Protects currently restoring parts from merges and mutations until the restore process is done.
+    std::unique_ptr<ReplicatedMergeTreeCurrentlyRestoringFromBackup> currently_restoring_from_backup;
 
     /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
      * In ZK entries in chronological order. Here it is not necessary.
@@ -842,6 +847,9 @@ private:
         const T & zookeeper_block_id_path,
         const String & zookeeper_path_prefix = "") const;
 
+    Coordination::Requests getPartitionNodeCreateOps(
+        const String & partition_id, const ZooKeeperWithFaultInjectionPtr & zookeeper = {}, const String & zookeeper_path_prefix = "") const;
+
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.
       *
@@ -956,8 +964,12 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
-    /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    scope_guard allocateBlockNumbersForRestoringFromBackup(std::vector<MergeTreePartInfo> & part_infos, std::vector<MutationInfoFromBackup> & mutation_infos, bool check_table_is_empty, ContextMutablePtr local_context) override;
+    void checkTableIsEmptyBeforeRestoringParts();
+    SinkToStoragePtr createSinkForPartsFromBackup() override;
+    void attachPartFromBackup(MutableDataPartPtr && part, SinkToStoragePtr sink, bool check_table_is_empty) override;
+    void attachMutationFromBackup(MutationInfoFromBackup && mutation_info, ContextMutablePtr local_context) override;
+    void startProcessingDataFromBackup() override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

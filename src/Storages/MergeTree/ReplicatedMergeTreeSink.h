@@ -56,7 +56,8 @@ public:
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For ATTACHing existing data on filesystem.
-    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+    /// If `allocate_block_number == true` the part will be renamed according to the current block number in the partition.
+    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool allocate_block_number = true);
 
     /// For proper deduplication in MaterializedViews
     bool lastBlockIsDuplicate() const override
@@ -93,7 +94,8 @@ private:
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
         size_t replicas_num,
-        bool writing_existing_part);
+        bool writing_existing_part,
+        bool allocate_block_number);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.

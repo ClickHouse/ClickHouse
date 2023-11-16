@@ -40,9 +40,11 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
+#include <Storages/MergeTree/MutationInfoFromBackup.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeCurrentlyRestoringFromBackup.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
@@ -50,6 +52,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -96,11 +99,13 @@
 
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Backups/WithRetries.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -316,7 +321,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , writer(*this)
     , merger_mutator(*this)
     , merge_strategy_picker(*this)
-    , queue(*this, merge_strategy_picker)
+    , currently_restoring_from_backup(
+          /// `currently_restoring_from_backup` is required only when the batch allocation for block numbers is enabled.
+          restore_allocates_block_numbers_in_batch ? std::make_unique<ReplicatedMergeTreeCurrentlyRestoringFromBackup>(*this) : nullptr)
+    , queue(*this, merge_strategy_picker, currently_restoring_from_backup.get())
     , fetcher(*this)
     , cleanup_thread(*this)
     , async_block_ids_cache(*this)
@@ -707,6 +715,9 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/async_blocks", String(), zkutil::CreateMode::Persistent));
     /// To track "lost forever" parts count, just for `system.replicas` table
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lost_part_count", String(), zkutil::CreateMode::Persistent));
+
+    /// Parts currently restoring from backup.
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/currently_restoring_from_backup", String(), zkutil::CreateMode::Persistent));
 
     /// As for now, "/temp" node must exist, but we want to be able to remove it in future
     if (zookeeper->exists(zookeeper_path + "/temp"))
@@ -6417,7 +6428,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const ZooKeeperWithFaultInject
             return true;
     }
 
-    bool res = zookeeper->exists(path);
+    bool res = zookeeper && zookeeper->exists(path);
 
     if (res)
     {
@@ -6445,34 +6456,42 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
     const T & zookeeper_block_id_path,
     const String & zookeeper_path_prefix) const
 {
-    String zookeeper_table_path;
-    if (zookeeper_path_prefix.empty())
-        zookeeper_table_path = zookeeper_path;
-    else
-        zookeeper_table_path = zookeeper_path_prefix;
-
-    String block_numbers_path = fs::path(zookeeper_table_path) / "block_numbers";
-    String partition_path = fs::path(block_numbers_path) / partition_id;
-
-    if (!existsNodeCached(zookeeper, partition_path))
+    auto ops = getPartitionNodeCreateOps(partition_id, zookeeper, zookeeper_path_prefix);
+    if (!ops.empty()) /// `ops` is empty if the partition node already exist
     {
-        Coordination::Requests ops;
-        /// Check that table is not being dropped ("host" is the first node that is removed on replica drop)
-        ops.push_back(zkutil::makeCheckRequest(fs::path(replica_path) / "host", -1));
-        ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
-        /// We increment data version of the block_numbers node so that it becomes possible
-        /// to check in a ZK transaction that the set of partitions didn't change
-        /// (unfortunately there is no CheckChildren op).
-        ops.push_back(zkutil::makeSetRequest(block_numbers_path, "", -1));
-
         Coordination::Responses responses;
         Coordination::Error code = zookeeper->tryMulti(ops, responses);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
             zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
+    const String & zookeeper_table_path = zookeeper_path_prefix.empty() ? zookeeper_path : zookeeper_path_prefix;
+    String block_numbers_path = fs::path(zookeeper_table_path) / "block_numbers";
+    String partition_path = fs::path(block_numbers_path) / partition_id;
+
     return createEphemeralLockInZooKeeper(
         fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", zookeeper, zookeeper_block_id_path);
+}
+
+Coordination::Requests StorageReplicatedMergeTree::getPartitionNodeCreateOps(
+    const String & partition_id, const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_path_prefix) const
+{
+    const String & zookeeper_table_path = zookeeper_path_prefix.empty() ? zookeeper_path : zookeeper_path_prefix;
+    String block_numbers_path = fs::path(zookeeper_table_path) / "block_numbers";
+    String partition_path = fs::path(block_numbers_path) / partition_id;
+
+    if (existsNodeCached(zookeeper, partition_path))
+        return {};
+
+    Coordination::Requests ops;
+    /// Check that table is not being dropped ("host" is the first node that is removed on replica drop)
+    ops.push_back(zkutil::makeCheckRequest(fs::path(replica_path) / "host", -1));
+    ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
+    /// We increment data version of the block_numbers node so that it becomes possible
+    /// to check in a ZK transaction that the set of partitions didn't change
+    /// (unfortunately there is no CheckChildren op).
+    ops.push_back(zkutil::makeSetRequest(block_numbers_path, "", -1));
+    return ops;
 }
 
 Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
@@ -10122,6 +10141,7 @@ void StorageReplicatedMergeTree::backupData(
     coordination->addReplicatedPartNames(shared_id, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
 
     /// Send a list of mutations to the coordination too (we need to find the mutations which are not finished for added part names).
+    if (backup_entries_collector.getBackupSettings().with_mutations)
     {
         const fs::path mutations_node_path = fs::path(zookeeper_path) / "mutations";
         zkutil::ZooKeeperPtr zookeeper;
@@ -10195,9 +10215,10 @@ void StorageReplicatedMergeTree::backupData(
         auto mutation_infos = coordination->getReplicatedMutations(shared_id, my_replica_name);
         for (const auto & mutation_info : mutation_infos)
         {
-            auto backup_entry = ReplicatedMergeTreeMutationEntry::parse(mutation_info.entry, mutation_info.id).backup();
+            auto file_name = fmt::format("mutation_{}.txt", parseFromString<Int64>(mutation_info.id));
+            auto backup_entry = std::make_shared<BackupEntryFromMemory>(mutation_info.entry);
             for (const auto & data_path : data_paths_fs)
-                backup_entries_collector.addBackupEntry(data_path / "mutations" / (mutation_info.id + ".txt"), backup_entry);
+                backup_entries_collector.addBackupEntry(data_path / file_name, backup_entry);
         }
     };
 
@@ -10214,33 +10235,120 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
         return;
     }
 
-    if (!restorer.isNonEmptyTableAllowed())
+    MergeTreeData::restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+}
+
+
+scope_guard StorageReplicatedMergeTree::allocateBlockNumbersForRestoringFromBackup(
+    std::vector<MergeTreePartInfo> & part_infos,
+    std::vector<MutationInfoFromBackup> & mutation_infos,
+    bool check_table_is_empty,
+    ContextMutablePtr local_context)
+{
+    if (!restore_allocates_block_numbers_in_batch)
     {
-        bool empty = !getTotalActiveSizeInBytes();
-        if (empty)
-        {
-            /// New parts could be in the replication queue but not fetched yet.
-            /// In that case we consider the table as not empty.
-            ReplicatedTableStatus status;
-            getStatus(status, /* with_zk_fields = */ false);
-            if (status.queue.inserts_in_queue)
-                empty = false;
-        }
-        auto backup = restorer.getBackup();
-        if (!empty && backup->hasFiles(data_path_in_backup))
-            restorer.throwTableIsNotEmpty(getStorageID());
+        if (check_table_is_empty)
+            checkTableIsEmptyBeforeRestoringParts();
+        return {};
     }
 
-    restorePartsFromBackup(restorer, data_path_in_backup, partitions);
+    String zookeeper_path_for_checking;
+    return currently_restoring_from_backup->allocateBlockNumbers(
+        part_infos, mutation_infos, check_table_is_empty, zookeeper_path_for_checking, local_context);
 }
 
-void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
+void StorageReplicatedMergeTree::checkTableIsEmptyBeforeRestoringParts()
+{
+    /// NOTE: If `restore_allocates_block_numbers_in_batch` is true, this check must be performed in
+    /// ReplicatedMergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers().
+    chassert (!restore_allocates_block_numbers_in_batch);
+
+    if (getTotalActiveSizeInBytes())
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+
+    /// New parts could be in the replication queue but not fetched yet.
+    /// In that case we consider the table as not empty.
+    ReplicatedTableStatus status;
+    getStatus(status, /* with_zk_fields = */ false);
+    if (status.queue.inserts_in_queue)
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+}
+
+std::shared_ptr<SinkToStorage> StorageReplicatedMergeTree::createSinkForPartsFromBackup()
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto sink = std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false,  getContext(), /*is_attach*/true);
-    for (auto part : parts)
-        sink->writeExistingPart(part);
+    return std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false, getContext(), /*is_attach*/true);
 }
+
+void StorageReplicatedMergeTree::attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage> sink, bool check_table_is_empty)
+{
+    if (check_table_is_empty)
+        checkTableIsEmptyBeforeRestoringParts();
+
+    if (currently_restoring_from_backup && !currently_restoring_from_backup->containsPart(part->info))
+    {
+        LOG_INFO(log, "Cancelled restoring part {}", part->name);
+        return;
+    }
+
+    auto & replicated_merge_tree_sink = assert_cast<ReplicatedMergeTreeSink &>(*sink);
+
+    /// A block number was allocated already in allocateBlockNumbersForRestoringFromBackup() if `restore_allocates_block_numbers_in_batch == true`.
+    replicated_merge_tree_sink.writeExistingPart(part, /* allocate_block_number= */ !restore_allocates_block_numbers_in_batch);
+}
+
+void StorageReplicatedMergeTree::attachMutationFromBackup(MutationInfoFromBackup && mutation_info, ContextMutablePtr local_context)
+{
+    if (!restore_allocates_block_numbers_in_batch)
+        return;
+
+    if (currently_restoring_from_backup && !currently_restoring_from_backup->containsMutation(mutation_info.name))
+    {
+        LOG_INFO(log, "Cancelled restoring mutation {}", mutation_info.name);
+        return;
+    }
+
+    const String mutation_name = std::move(mutation_info.name);
+    const String mutation_path = fs::path(zookeeper_path) / "mutations" / mutation_name;
+
+    ReplicatedMergeTreeMutationEntry mutation_entry;
+    mutation_entry.source_replica = replica_name;
+    mutation_entry.commands = std::move(mutation_info.commands);
+    mutation_entry.block_numbers = std::move(mutation_info.block_numbers).value();
+
+    auto get_zookeeper = [this] { return getZooKeeper(); };
+    WithRetries with_retries{log, get_zookeeper, WithRetries::KeeperSettings{local_context}};
+    auto holder = with_retries.createRetriesControlHolder("attachMutationFromBackup");
+
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zookeeper);
+
+        mutation_entry.create_time = time(nullptr);
+        String serialized_mutation = mutation_entry.toString();
+
+        auto code = zookeeper->tryCreate(mutation_path, serialized_mutation, zkutil::CreateMode::Persistent);
+
+        if (code == Coordination::Error::ZOK)
+        {
+        }
+        else if (code == Coordination::Error::ZNODEEXISTS)
+        {
+            if (zookeeper->get(mutation_path) != serialized_mutation)
+                throw zkutil::KeeperException::fromPath(code, mutation_path);
+        }
+        else
+            throw zkutil::KeeperException::fromPath(code, mutation_path);
+    });
+}
+
+void StorageReplicatedMergeTree::startProcessingDataFromBackup()
+{
+    background_operations_assignee.trigger();
+    queue_updating_task->schedule();
+    mutations_updating_task->schedule();
+}
+
 
 template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber<String>(
     const String & partition_id,

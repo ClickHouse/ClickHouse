@@ -7,6 +7,9 @@
 
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
+#include <Backups/RestoreSettings.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Databases/IDatabase.h>
 #include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
@@ -37,6 +40,8 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreeCurrentlyRestoringFromBackup.h>
+#include <Storages/MergeTree/MutationInfoFromBackup.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -126,6 +131,12 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
+
+    if (restore_allocates_block_numbers_in_batch)
+    {
+        /// `currently_restoring_from_backup` is required only when the batch allocation for block numbers is enabled.
+        currently_restoring_from_backup = std::make_unique<MergeTreeCurrentlyRestoringFromBackup>(*this);
+    }
 }
 
 
@@ -931,6 +942,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
                 disable_reason = "Some part currently in a merging or mutating process";
                 return false;
             }
+            else if (currently_restoring_from_backup && currently_restoring_from_backup->containsPart(right->info))
+            {
+                /// Restored parts must not participate in merges until the RESTORE process is done
+                /// because there can be other parts to merge which are not attached yet.
+                disable_reason = "Some part are being restored from backup";
+                return false;
+            }
             else
                 return true;
         }
@@ -938,6 +956,15 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         if (currently_merging_mutating_parts.contains(left) || currently_merging_mutating_parts.contains(right))
         {
             disable_reason = "Some part currently in a merging or mutating process";
+            return false;
+        }
+
+        /// Restored parts must not participate in merges until the RESTORE process is done
+        /// because there can be other parts to merge which are not attached yet.
+        if (currently_restoring_from_backup
+            && (currently_restoring_from_backup->containsPart(left->info) || currently_restoring_from_backup->containsPart(right->info)))
+        {
+            disable_reason = "Some part are being restored from backup";
             return false;
         }
 
@@ -1158,6 +1185,14 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     {
         if (currently_merging_mutating_parts.contains(part))
             continue;
+
+        /// Restored parts must not participate in mutations until the RESTORE process is done
+        /// because there can be other parts to merge which are not attached yet.
+        if (currently_restoring_from_backup && currently_restoring_from_backup->containsPart(part->info))
+        {
+            LOG_DEBUG(log, "Part {} is being restored from backup. Will not mutate it yet", part->name);
+            continue;
+        }
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
         if (mutations_begin_it == mutations_end_it)
@@ -1452,6 +1487,11 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         }
 
         if (done_count <= finished_mutations_to_keep)
+            return 0;
+
+        /// We don't want to remove any mutation during an active RESTORE going to attach any parts
+        /// because those new parts should be mutated as well.
+        if (currently_restoring_from_backup && currently_restoring_from_backup->containsAnyParts())
             return 0;
 
         size_t to_delete_count = done_count - finished_mutations_to_keep;
@@ -2296,44 +2336,107 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    Int64 min_data_version = std::numeric_limits<Int64>::max();
-    for (const auto & data_part : data_parts)
-        min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
-
     auto parts_backup_entries = backupParts(data_parts, data_path_in_backup, backup_settings, read_settings, local_context);
     for (auto & part_backup_entries : parts_backup_entries)
         backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
 
-    backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
+    if (backup_entries_collector.getBackupSettings().with_mutations)
+        backup_entries_collector.addBackupEntries(backupMutations(data_path_in_backup));
 }
 
 
-BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & data_path_in_backup) const
+BackupEntries StorageMergeTree::backupMutations(const String & data_path_in_backup) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
-
-    fs::path mutations_path_in_backup = fs::path{data_path_in_backup} / "mutations";
     BackupEntries backup_entries;
-    for (auto it = current_mutations_by_version.lower_bound(version); it != current_mutations_by_version.end(); ++it)
-        backup_entries.emplace_back(mutations_path_in_backup / fmt::format("{:010}.txt", it->first), it->second.backup());
+    for (const auto & [_, mutation_entry] : current_mutations_by_version)
+    {
+        const auto & file_name = mutation_entry.file_name;
+        auto backup_entry = std::make_shared<BackupEntryFromMemory>(mutation_entry.toString());
+        backup_entries.emplace_back(fs::path{data_path_in_backup} / file_name, backup_entry);
+    }
     return backup_entries;
 }
 
 
-void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
+scope_guard StorageMergeTree::allocateBlockNumbersForRestoringFromBackup(
+    std::vector<MergeTreePartInfo> & part_infos,
+    std::vector<MutationInfoFromBackup> & mutation_infos,
+    bool check_table_is_empty,
+    ContextMutablePtr)
 {
-    for (auto part : parts)
+    if (!restore_allocates_block_numbers_in_batch)
     {
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        {
-            auto lock = lockParts();
-            fillNewPartName(part, lock);
-            renameTempPartAndAdd(part, transaction, lock);
-            transaction.commit(&lock);
-        }
+        if (check_table_is_empty)
+            checkTableIsEmptyBeforeRestoringParts();
+        return {};
     }
+
+    return currently_restoring_from_backup->allocateBlockNumbers(part_infos, mutation_infos, check_table_is_empty);
+}
+
+void StorageMergeTree::checkTableIsEmptyBeforeRestoringParts()
+{
+    /// NOTE: If `restore_allocates_block_numbers_in_batch` is true, this check must be performed in
+    /// MergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers().
+    chassert (!restore_allocates_block_numbers_in_batch);
+
+    if (getTotalActiveSizeInBytes())
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+}
+
+void StorageMergeTree::attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage>, bool check_table_is_empty)
+{
+    if (check_table_is_empty)
+        checkTableIsEmptyBeforeRestoringParts();
+
+    if (currently_restoring_from_backup && !currently_restoring_from_backup->containsPart(part->info))
+    {
+        LOG_INFO(log, "Cancelled restoring part {}", part->name);
+        return;
+    }
+
+    /// It's important to create it outside of lock scope because
+    /// otherwise it can lock parts in destructor and deadlock is possible.
+    MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
+
+    {
+        auto lock = lockParts();
+        /// Make a new part name only if `restore_allocates_block_numbers_in_batch == false`.
+        /// (If it's true then it was already made in allocateBlockNumbersForRestoringFromBackup()).
+        if (!restore_allocates_block_numbers_in_batch)
+            fillNewPartName(part, lock);
+        renameTempPartAndAdd(part, transaction, lock);
+        transaction.commit(&lock);
+    }
+}
+
+void StorageMergeTree::attachMutationFromBackup(MutationInfoFromBackup && mutation_info, ContextMutablePtr)
+{
+    if (!restore_allocates_block_numbers_in_batch)
+        return;
+
+    if (currently_restoring_from_backup && !currently_restoring_from_backup->containsMutation(mutation_info.number))
+    {
+        LOG_INFO(log, "Cancelled restoring mutation {}", mutation_info.name);
+        return;
+    }
+
+    Int64 mutation_number = mutation_info.number;
+    auto disk = getStoragePolicy()->getAnyDisk();
+
+    MergeTreeMutationEntry mutation_entry{std::move(mutation_info.commands), disk, relative_data_path, insert_increment.get(), Tx::PrehistoricTID, WriteSettings{}};
+    mutation_entry.commit(mutation_number);
+
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    bool inserted = current_mutations_by_version.try_emplace(mutation_number, std::move(mutation_entry)).second;
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", mutation_number);
+}
+
+void StorageMergeTree::startProcessingDataFromBackup()
+{
+    background_operations_assignee.trigger();
 }
 
 

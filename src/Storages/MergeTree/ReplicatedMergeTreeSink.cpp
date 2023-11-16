@@ -430,7 +430,13 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
         try
         {
-            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false).second;
+            bool deduplicated = commitPart(
+                zookeeper,
+                part,
+                partition.block_id,
+                delayed_chunk->replicas_num,
+                /* writing_existing_part= */ false,
+                /* allocate_block_number= */ true).second;
 
             last_block_is_duplicate = last_block_is_duplicate || deduplicated;
 
@@ -474,7 +480,15 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         while (true)
         {
             partition.temp_part.finalize();
-            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false).first;
+
+            auto conflict_block_ids = commitPart(
+                zookeeper,
+                partition.temp_part.part,
+                partition.block_id,
+                delayed_chunk->replicas_num,
+                /* writing_existing_part= */ false,
+                /* allocate_block_number= */ true).first;
+
             if (conflict_block_ids.empty())
                 break;
             ++retry_times;
@@ -493,7 +507,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
 }
 
 template<>
-bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
+bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool allocate_block_number)
 {
     /// NOTE: No delay in this case. That's Ok.
     auto origin_zookeeper = storage.getZooKeeper();
@@ -529,7 +543,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         String block_id = deduplicate ? fmt::format("{}_{}", part->info.partition_id, part->checksums.getTotalChecksumHex()) : "";
-        bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num, /* writing_existing_part */ true).second;
+        bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num, /* writing_existing_part */ true, allocate_block_number).second;
 
         /// Set a special error code if the block is duplicate
         int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
@@ -550,8 +564,12 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     MergeTreeData::MutableDataPartPtr & part,
     const BlockIDsType & block_id,
     size_t replicas_num,
-    bool writing_existing_part)
+    bool writing_existing_part,
+    bool allocate_block_number)
 {
+    if (!writing_existing_part && !allocate_block_number)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only existing part can be written without allocating a block number");
+
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
     /// For now, consider it is ok. See 02461_alter_update_respect_part_column_type_bug for an example.
@@ -628,7 +646,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
         /// Allocate new block number and check for duplicates
         bool deduplicate_block = !block_id.empty();
-        BlockIDsType block_id_path ;
+        if (deduplicate_block && !allocate_block_number)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Deduplication check can only be used with allocating a block number");
+        BlockIDsType block_id_path;
         if constexpr (async_insert)
         {
             /// prefilter by cache
@@ -643,16 +663,30 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else if (deduplicate_block)
             block_id_path = storage.zookeeper_path + "/blocks/" + block_id;
-        auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
+
+        std::optional<Int64> block_number;
+        std::optional<EphemeralLockInZooKeeper> block_number_lock;
+
+        if (allocate_block_number)
+        {
+            /// Allocate new block number.
+            block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
+        }
+        else
+        {
+            /// Block number is already known.
+            block_number = part->info.min_block;
+        }
+
         ThreadFuzzer::maybeInjectSleep();
 
         /// Prepare transaction to ZooKeeper
         /// It will simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.
         Coordination::Requests ops;
 
-        Int64 block_number = 0;
         size_t block_unlock_op_idx = std::numeric_limits<size_t>::max();
         String existing_part_name;
+
         if (block_number_lock)
         {
             if constexpr (async_insert)
@@ -669,18 +703,22 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     return;
                 }
             }
+
             is_already_existing_part = false;
             block_number = block_number_lock->getNumber();
 
-            /// Set part attributes according to part_number. Prepare an entry for log.
-
-            part->info.min_block = block_number;
-            part->info.max_block = block_number;
+            /// Set part attributes according to block_number.
+            part->info.min_block = *block_number;
+            part->info.max_block = *block_number;
             part->info.level = 0;
             part->info.mutation = 0;
 
             part->setName(part->getNewName(part->info));
+        }
 
+        if (block_number)
+        {
+            /// Prepare an entry for log.
             StorageReplicatedMergeTree::LogEntry log_entry;
 
             if (is_attach)
@@ -711,8 +749,11 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 zkutil::CreateMode::PersistentSequential));
 
             /// Deletes the information that the block number is used for writing.
-            block_unlock_op_idx = ops.size();
-            block_number_lock->getUnlockOp(ops);
+            if (block_number_lock)
+            {
+                block_unlock_op_idx = ops.size();
+                block_number_lock->getUnlockOp(ops);
+            }
 
             /** If we need a quorum - create a node in which the quorum is monitored.
               * (If such a node already exists, then someone has managed to make another quorum record at the same time,
@@ -812,6 +853,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                             "Conflict block ids and block number lock should not "
                             "be empty at the same time for async inserts");
 
+        /// Block number should be assigned by this point, one way or another.
+        chassert(block_number);
+
         if constexpr (!async_insert)
         {
             if (!existing_part_name.empty())
@@ -857,7 +901,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             chassert(existing_part_name.empty());
             storage.getCommitPartOps(ops, part, block_id_path);
         }
-
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -1042,7 +1085,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 throw Exception(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                     "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
-                    block_number,
+                    *block_number,
                     toString(block_id),
                     multi_code,
                     failed_op_path);
@@ -1055,7 +1098,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             throw Exception(
                 ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                 "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
-                block_number,
+                *block_number,
                 toString(block_id),
                 multi_code);
         }

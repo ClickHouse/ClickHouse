@@ -16,6 +16,8 @@ columns
 columns
 columns
 columns
+currently_restoring_from_backup
+currently_restoring_from_backup
 failed_parts
 failed_parts
 flags

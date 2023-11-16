@@ -77,6 +77,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MutationInfoFromBackup.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -354,6 +355,7 @@ MergeTreeData::MergeTreeData(
     , log_name(std::make_shared<String>(table_id_.getNameForLogs()))
     , log(&Poco::Logger::get(*log_name))
     , storage_settings(std::move(storage_settings_))
+    , restore_allocates_block_numbers_in_batch(context_->shouldRestoreAllocateBlockNumbersInBatch())
     , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
@@ -5159,273 +5161,413 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     return res;
 }
 
+namespace
+{
+    /// Read part infos from a backup and filter them by using specified `partion_ids`.
+    std::vector<MergeTreePartInfo> readPartInfosFromBackup(const IBackup & backup,
+                                                           const String & data_path_in_backup,
+                                                           MergeTreeDataFormatVersion format_version,
+                                                           const std::optional<std::unordered_set<String>> & partition_ids,
+                                                           Strings & part_names_in_backup,
+                                                           Strings & mutation_names_in_backup)
+    {
+        Strings file_names = backup.listFiles(data_path_in_backup);
+
+        std::vector<MergeTreePartInfo> part_infos;
+        part_infos.reserve(file_names.size());
+        part_names_in_backup.reserve(file_names.size());
+
+        for (const auto & file_name : file_names)
+        {
+            if (file_name.starts_with("mutation_") || (file_name == "mutations"))
+            {
+                mutation_names_in_backup.emplace_back(file_name);
+                continue;
+            }
+
+            auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
+            if (!part_info)
+            {
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} is not a part's name",
+                                String{fs::path{data_path_in_backup} / file_name});
+            }
+
+            if (partition_ids && !partition_ids->contains(part_info->partition_id))
+                continue;
+
+            part_infos.emplace_back(*std::move(part_info));
+            part_names_in_backup.emplace_back(file_name);
+        }
+
+        return part_infos;
+    }
+
+    /// Keeps a temporary folder on one or multiple disks.
+    class TemporaryFolderForRestoredParts
+    {
+    public:
+        String getPath(const DiskPtr & disk)
+        {
+            std::lock_guard lock{mutex};
+            auto it = temp_dirs.find(disk);
+            if (it == temp_dirs.end())
+                it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
+            return it->second->getRelativePath();
+        }
+
+    private:
+        std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
+        mutable std::mutex mutex;
+    };
+
+    /// Restores a data part from a backup and attach it to the storage.
+    std::pair<DiskPtr, String> copyPartFromBackup(
+        const MergeTreeData & storage,
+        const IBackup & backup,
+        const String & part_path_in_backup,
+        std::shared_ptr<TemporaryFolderForRestoredParts> temporary_folder)
+    {
+        UInt64 size_of_part = 0;
+        Strings filenames = backup.listFiles(part_path_in_backup, /* recursive= */ true);
+        fs::path part_path_in_backup_fs = part_path_in_backup;
+        for (const String & filename : filenames)
+            size_of_part += backup.getFileSize(part_path_in_backup_fs / filename);
+
+        std::shared_ptr<IReservation> reservation = storage.getStoragePolicy()->reserveAndCheck(size_of_part);
+        auto disk = reservation->getDisk();
+
+        /// Example of these paths:
+        /// part_path_in_backup = /data/test/table/0_1_1_0
+        /// temp_dir = tmp/1aaaaaa
+        /// temp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0
+        fs::path temp_dir = temporary_folder->getPath(disk);
+        fs::path temp_part_dir = temp_dir / part_path_in_backup_fs.relative_path();
+        disk->createDirectories(temp_part_dir);
+
+        /// Subdirectories in the part's directory. It's used to restore projections.
+        std::unordered_set<String> subdirs;
+
+        for (const String & filename : filenames)
+        {
+            /// Needs to create subdirectories before copying the files. Subdirectories are used to represent projections.
+            auto separator_pos = filename.rfind('/');
+            if (separator_pos != String::npos)
+            {
+                String subdir = filename.substr(0, separator_pos);
+                if (subdirs.emplace(subdir).second)
+                    disk->createDirectories(temp_part_dir / subdir);
+            }
+
+            /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
+            if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME))
+                continue;
+
+            size_t file_size = backup.copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename);
+            reservation->update(reservation->getSize() - file_size);
+        }
+
+        return {disk, temp_part_dir};
+    }
+
+    MergeTreeMutableDataPartPtr loadPartCopiedFromBackup(const MergeTreeData & storage, const MergeTreePartInfo & part_info, const DiskPtr & disk, const String & part_dir, bool detach_if_broken)
+    {
+        MergeTreeMutableDataPartPtr part;
+
+        fs::path part_dir_fs{part_dir};
+        String part_path = part_dir_fs.parent_path();
+        String part_name = part_dir_fs.filename();
+        auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
+
+        /// Load this part from the directory `part_dir`.
+        auto load_part = [&]
+        {
+            MergeTreeDataPartBuilder builder(storage, part_name, single_disk_volume, part_path, part_name);
+            builder.withPartFormatFromDisk().withPartInfo(part_info);
+            part = std::move(builder).build();
+            part->setName(part->getNewName(part_info));
+            part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+            part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
+        };
+
+        /// Broken parts can appear in a backup sometimes.
+        auto mark_broken = [&](const std::exception_ptr error)
+        {
+            tryLogException(error, &Poco::Logger::get(storage.getLogName()),
+                            fmt::format("Part {} will be restored as detached because it's broken. You need to resolve this manually", part_name));
+            if (!part)
+            {
+                /// Make a fake data part only to copy its files to /detached/.
+                part = MergeTreeDataPartBuilder{storage, part_name, single_disk_volume, part_path, part_name}
+                        .withPartStorageType(MergeTreeDataPartStorageType::Full)
+                        .withPartType(MergeTreeDataPartType::Wide)
+                        .build();
+            }
+            part->renameToDetached("broken-from-backup");
+        };
+
+        /// Try to load this part multiple times.
+        auto backoff_ms = loading_parts_initial_backoff_ms;
+        for (size_t try_no = 0; try_no < loading_parts_max_tries; ++try_no)
+        {
+            std::exception_ptr error;
+            bool retryable = false;
+            try
+            {
+                load_part();
+            }
+            catch (const Poco::Net::NetException &)
+            {
+                error = std::current_exception();
+                retryable = true;
+            }
+            catch (const Poco::TimeoutException &)
+            {
+                error = std::current_exception();
+                retryable = true;
+            }
+            catch (...)
+            {
+                error = std::current_exception();
+                retryable = isRetryableException(std::current_exception());
+            }
+
+            if (!error)
+                return part;
+
+            if (!retryable && detach_if_broken)
+            {
+                mark_broken(error);
+                return nullptr;
+            }
+
+            if (!retryable)
+            {
+                LOG_ERROR(&Poco::Logger::get(storage.getLogName()),
+                          "Failed to restore part {} because it's broken. You can skip broken parts while restoring by setting "
+                          "'restore_broken_parts_as_detached = true'",
+                          part_name);
+            }
+
+            if (!retryable || (try_no + 1 == loading_parts_max_tries))
+            {
+                if (Exception * e = exception_cast<Exception *>(error))
+                    e->addMessage("while restoring part {} of table {}", part->name, storage.getStorageID());
+                std::rethrow_exception(error);
+            }
+
+            tryLogException(error, &Poco::Logger::get(storage.getLogName()),
+                            fmt::format("Failed to load part {} at try {} with a retryable error. Will retry in {} ms", part_name, try_no, backoff_ms));
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+            backoff_ms = std::min(backoff_ms * 2, loading_parts_max_backoff_ms);
+        }
+
+        UNREACHABLE();
+    }
+
+    /// Parts from a backup are collected before attaching them to the table to preserve the same order of parts.
+    class PartsFromBackupCollector
+    {
+    public:
+        void addPart(std::shared_ptr<IMergeTreeDataPart> && part)
+        {
+            std::lock_guard lock{mutex};
+            parts.emplace_back(std::move(part));
+        }
+
+        /// Returns a list of all added parts sorted by `min_block`.
+        /// (The list is sorted because we need to preserve the order of parts.)
+        std::vector<std::shared_ptr<IMergeTreeDataPart>> getParts()
+        {
+            std::lock_guard lock{mutex};
+            std::vector<std::shared_ptr<IMergeTreeDataPart>> res;
+            std::swap(parts, res);
+            auto less_by_min_block = [](const std::shared_ptr<IMergeTreeDataPart> & left, const std::shared_ptr<IMergeTreeDataPart> & right)
+            { return left->info.min_block < right->info.min_block; };
+            std::sort(res.begin(), res.end(), less_by_min_block);
+            return res;
+        }
+
+    private:
+        std::vector<std::shared_ptr<IMergeTreeDataPart>> parts TSA_GUARDED_BY(mutex);
+        std::mutex mutex;
+    };
+}
+
 void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
-        return;
+        return; /// Nothing to restore.
 
-    if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
-        restorer.throwTableIsNotEmpty(getStorageID());
+    bool check_table_is_empty = !restorer.isNonEmptyTableAllowed();
+    auto local_context = restorer.getContext();
 
-    restorePartsFromBackup(restorer, data_path_in_backup, partitions);
-}
-
-class MergeTreeData::RestoredPartsHolder
-{
-public:
-    RestoredPartsHolder(const std::shared_ptr<MergeTreeData> & storage_, const BackupPtr & backup_)
-        : storage(storage_), backup(backup_)
-    {
-    }
-
-    BackupPtr getBackup() const { return backup; }
-
-    void setNumParts(size_t num_parts_)
-    {
-        std::lock_guard lock{mutex};
-        num_parts = num_parts_;
-        attachIfAllPartsRestored();
-    }
-
-    void increaseNumBrokenParts()
-    {
-        std::lock_guard lock{mutex};
-        ++num_broken_parts;
-        attachIfAllPartsRestored();
-    }
-
-    void addPart(MutableDataPartPtr part)
-    {
-        std::lock_guard lock{mutex};
-        parts.emplace_back(part);
-        attachIfAllPartsRestored();
-    }
-
-    String getTemporaryDirectory(const DiskPtr & disk)
-    {
-        std::lock_guard lock{mutex};
-        auto it = temp_dirs.find(disk);
-        if (it == temp_dirs.end())
-            it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
-        return it->second->getRelativePath();
-    }
-
-private:
-    void attachIfAllPartsRestored()
-    {
-        if (!num_parts || (parts.size() + num_broken_parts < num_parts))
-            return;
-
-        /// Sort parts by min_block (because we need to preserve the order of parts).
-        std::sort(
-            parts.begin(),
-            parts.end(),
-            [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
-
-        storage->attachRestoredParts(std::move(parts));
-        parts.clear();
-        temp_dirs.clear();
-        num_parts = 0;
-    }
-
-    const std::shared_ptr<MergeTreeData> storage;
-    const BackupPtr backup;
-    size_t num_parts = 0;
-    size_t num_broken_parts = 0;
-    MutableDataPartsVector parts;
-    std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
-    mutable std::mutex mutex;
-};
-
-void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
-{
     std::optional<std::unordered_set<String>> partition_ids;
     if (partitions)
-        partition_ids = getPartitionIDsFromQuery(*partitions, restorer.getContext());
+        partition_ids = getPartitionIDsFromQuery(*partitions, local_context);
 
-    auto backup = restorer.getBackup();
-    Strings part_names = backup->listFiles(data_path_in_backup);
-    boost::remove_erase(part_names, "mutations");
+    /// Read part infos from backup.
+    Strings part_names_in_backup;
+    Strings mutation_names_in_backup;
+    auto part_infos = readPartInfosFromBackup(*backup, data_path_in_backup, format_version, partition_ids, part_names_in_backup, mutation_names_in_backup);
+
+    /// Read mutations from backup.
+    if (!restorer.getRestoreSettings().with_mutations)
+        mutation_names_in_backup.clear();
+    if (!mutation_names_in_backup.empty() && !restore_allocates_block_numbers_in_batch)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Enable 'restore_allocates_block_numbers_in_batch' in the configuration to restore mutations");
+
+    std::vector<MutationInfoFromBackup> mutation_infos;
+    if (!mutation_names_in_backup.empty())
+        mutation_infos = readMutationsFromBackup(*backup, data_path_in_backup, mutation_names_in_backup);
+
+    /// Allocate block numbers and recalculate part infos extracted from backup.
+    auto unlock_block_numbers = allocateBlockNumbersForRestoringFromBackup(part_infos, mutation_infos, check_table_is_empty, local_context);
+
+    /// At the end of the restoring we'll need to unlock block numbers and awake restored mutations.
+    scope_guard unlock_table_and_start_bg_processing;
+    if (unlock_block_numbers)
+    {
+        unlock_table_and_start_bg_processing = [this, unlock_block_numbers_ = std::make_shared<scope_guard>(std::move(unlock_block_numbers))]
+        {
+            /// Invoke `unlock_block_numbers` : remove protection from restored parts from merging and mutations.
+            *unlock_block_numbers_ = {};
+
+            try
+            {
+                /// Awake restored mutations and/or start merges on restored parts.
+                startProcessingDataFromBackup();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "startProcessingDataFromBackup");
+            }
+        };
+    }
+
+    for (size_t i = 0; i != part_infos.size(); ++i)
+        LOG_TRACE(log, "Will restore part {} as {}", part_names_in_backup[i], part_infos[i].getPartNameForLogs());
+    for (size_t i = 0; i != mutation_infos.size(); ++i)
+        LOG_TRACE(log, "Will restore mutation {} as {} ({})", mutation_names_in_backup[i], mutation_infos[i].name, mutation_infos[i].toString(/* one_line= */ true));
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
-    auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup);
+    std::shared_ptr<SinkToStorage> sink;
+    if (!part_infos.empty())
+        sink = createSinkForPartsFromBackup();
 
-    fs::path data_path_in_backup_fs = data_path_in_backup;
-    size_t num_parts = 0;
-
-    for (const String & part_name : part_names)
+    /// The parts collector is used to collect parts before attaching them to the table.
+    std::shared_ptr<PartsFromBackupCollector> parts_collector;
+    if (!part_infos.empty() && !restore_allocates_block_numbers_in_batch)
     {
-        const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
-        if (!part_info)
+        /// If `restore_allocates_block_numbers_in_batch == true` we don't have to use the parts collector,
+        /// we can just attach any parts when they're ready (because they already have properly adjusted block numbers).
+        parts_collector = std::make_shared<PartsFromBackupCollector>();
+    }
+
+    /// In order to restore the table's data we have to restore its parts and its mutations.
+    size_t num_tasks_total = part_infos.size() + mutation_infos.size();
+    auto num_tasks_processed = std::make_shared<std::atomic<size_t>>(0); /// will be shared between multiple threads
+
+    /// `finalize()` will attach restored parts from the parts collector or unlock block numbers and awake restored mutations.
+    auto finalize = [this,
+                     parts_collector,
+                     sink,
+                     check_table_is_empty,
+                     unlock_table_and_start_bg_processing_ = std::make_shared<scope_guard>(std::move(unlock_table_and_start_bg_processing))]
+    {
+        if (parts_collector)
         {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} is not a part's name",
-                            String{data_path_in_backup_fs / part_name});
+            auto parts = parts_collector->getParts();
+            for (size_t j = 0; j != parts.size(); ++j)
+            {
+                /// Check if the table is empty only when attaching the first part.
+                LOG_INFO(log, "Attaching part {} restored from backup", parts[j]->name);
+                attachPartFromBackup(std::move(parts[j]), sink, check_table_is_empty && (j == 0));
+            }
         }
+        /// Invoke `unlock_table_and_start_bg_processing`.
+        *unlock_table_and_start_bg_processing_ = {};
+    };
 
-        if (partition_ids && !partition_ids->contains(part_info->partition_id))
-            continue;
-
+    /// Helper function to add a data restoring task.
+    auto add_data_restore_task = [&](std::function<void()> && task)
+    {
         restorer.addDataRestoreTask(
-            [storage = std::static_pointer_cast<MergeTreeData>(shared_from_this()),
-             backup,
-             part_path_in_backup = data_path_in_backup_fs / part_name,
-             my_part_info = *part_info,
-             restore_broken_parts_as_detached,
-             restored_parts_holder]
-            { storage->restorePartFromBackup(restored_parts_holder, my_part_info, part_path_in_backup, restore_broken_parts_as_detached); });
+            [this, keep_storage = shared_from_this(), num_tasks_processed, num_tasks_total, finalize, task_ = std::move(task)]
+            {
+                try
+                {
+                    task_();
 
-        ++num_parts;
-    }
-
-    restored_parts_holder->setNumParts(num_parts);
-}
-
-void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const
-{
-    String part_name = part_info.getPartNameAndCheckFormat(format_version);
-    auto backup = restored_parts_holder->getBackup();
-
-    /// Calculate the total size of the part.
-    UInt64 total_size_of_part = 0;
-    Strings filenames = backup->listFiles(part_path_in_backup, /* recursive= */ true);
-    fs::path part_path_in_backup_fs = part_path_in_backup;
-    for (const String & filename : filenames)
-        total_size_of_part += backup->getFileSize(part_path_in_backup_fs / filename);
-
-    std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
-
-    /// Calculate paths, for example:
-    /// part_name = 0_1_1_0
-    /// part_path_in_backup = /data/test/table/0_1_1_0
-    /// tmp_dir = tmp/1aaaaaa
-    /// tmp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0
-    auto disk = reservation->getDisk();
-    fs::path temp_dir = restored_parts_holder->getTemporaryDirectory(disk);
-    fs::path temp_part_dir = temp_dir / part_path_in_backup_fs.relative_path();
-
-    /// Subdirectories in the part's directory. It's used to restore projections.
-    std::unordered_set<String> subdirs;
-
-    /// Copy files from the backup to the directory `tmp_part_dir`.
-    disk->createDirectories(temp_part_dir);
-
-    for (const String & filename : filenames)
-    {
-        /// Needs to create subdirectories before copying the files. Subdirectories are used to represent projections.
-        auto separator_pos = filename.rfind('/');
-        if (separator_pos != String::npos)
-        {
-            String subdir = filename.substr(0, separator_pos);
-            if (subdirs.emplace(subdir).second)
-                disk->createDirectories(temp_part_dir / subdir);
-        }
-
-        /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
-        if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME))
-            continue;
-
-        size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename);
-        reservation->update(reservation->getSize() - file_size);
-    }
-
-    if (auto part = loadPartRestoredFromBackup(disk, temp_part_dir.parent_path(), part_name, detach_if_broken))
-        restored_parts_holder->addPart(part);
-    else
-        restored_parts_holder->increaseNumBrokenParts();
-}
-
-MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const DiskPtr & disk, const String & temp_dir, const String & part_name, bool detach_if_broken) const
-{
-    MutableDataPartPtr part;
-
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-
-    /// Load this part from the directory `tmp_part_dir`.
-    auto load_part = [&]
-    {
-        MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, temp_dir, part_name);
-        builder.withPartFormatFromDisk();
-        part = std::move(builder).build();
-        part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
+                    if (++*num_tasks_processed == num_tasks_total)
+                    {
+                        finalize();
+                        LOG_INFO(log, "Table {} restored successfully from backup", getStorageID().getFullTableName());
+                    }
+                }
+                catch (...)
+                {
+                    LOG_ERROR(log, "Failed to restore table {} from backup", getStorageID().getFullTableName());
+                    throw;
+                }
+            });
     };
 
-    /// Broken parts can appear in a backup sometimes.
-    auto mark_broken = [&](const std::exception_ptr error)
+    /// Start reading and attaching parts (RestorerFromBackup will execute these tasks in parallel).
+    if (!part_infos.empty())
     {
-        tryLogException(error, log,
-                        fmt::format("Part {} will be restored as detached because it's broken. You need to resolve this manually", part_name));
-        if (!part)
-        {
-            /// Make a fake data part only to copy its files to /detached/.
-            part = MergeTreeDataPartBuilder{*this, part_name, single_disk_volume, temp_dir, part_name}
-                       .withPartStorageType(MergeTreeDataPartStorageType::Full)
-                       .withPartType(MergeTreeDataPartType::Wide)
-                       .build();
-        }
-        part->renameToDetached("broken-from-backup");
-    };
+        auto temporary_folder = std::make_shared<TemporaryFolderForRestoredParts>();
 
-    /// Try to load this part multiple times.
-    auto backoff_ms = loading_parts_initial_backoff_ms;
-    for (size_t try_no = 0; try_no < loading_parts_max_tries; ++try_no)
-    {
-        std::exception_ptr error;
-        bool retryable = false;
-        try
+        for (size_t i = 0; i != part_infos.size(); ++i)
         {
-            load_part();
+            add_data_restore_task(
+                [this,
+                 backup,
+                 data_path_in_backup,
+                 part_name_in_backup = part_names_in_backup[i],
+                 part_info = part_infos[i],
+                 parts_collector,
+                 sink,
+                 temporary_folder,
+                 restore_broken_parts_as_detached]
+                {
+                    LOG_INFO(log, "Reading part {} from backup and rename it to {}", part_name_in_backup, part_info.getPartNameForLogs());
+                    auto [part_disk, part_dir] = copyPartFromBackup(*this, *backup, fs::path{data_path_in_backup} / part_name_in_backup, temporary_folder);
+                    if (auto part = loadPartCopiedFromBackup(*this, part_info, part_disk, part_dir, restore_broken_parts_as_detached))
+                    {
+                        if (parts_collector)
+                        {
+                            /// Add a restored part to the parts collector (the part will be attached later by finalize()).
+                            parts_collector->addPart(std::move(part));
+                        }
+                        else
+                        {
+                            LOG_INFO(log, "Attaching part {} restored from backup (former name: {})", part->name, part_name_in_backup);
+                            attachPartFromBackup(std::move(part), sink, false);
+                        }
+                    }
+                });
         }
-        catch (const Poco::Net::NetException &)
-        {
-            error = std::current_exception();
-            retryable = true;
-        }
-        catch (const Poco::TimeoutException &)
-        {
-            error = std::current_exception();
-            retryable = true;
-        }
-        catch (...)
-        {
-            error = std::current_exception();
-            retryable = isRetryableException(std::current_exception());
-        }
-
-        if (!error)
-            return part;
-
-        if (!retryable && detach_if_broken)
-        {
-            mark_broken(error);
-            return nullptr;
-        }
-
-        if (!retryable)
-        {
-            LOG_ERROR(log,
-                      "Failed to restore part {} because it's broken. You can skip broken parts while restoring by setting "
-                      "'restore_broken_parts_as_detached = true'",
-                      part_name);
-        }
-
-        if (!retryable || (try_no + 1 == loading_parts_max_tries))
-        {
-            if (Exception * e = exception_cast<Exception *>(error))
-                e->addMessage("while restoring part {} of table {}", part->name, getStorageID());
-            std::rethrow_exception(error);
-        }
-
-        tryLogException(error, log,
-                        fmt::format("Failed to load part {} at try {} with a retryable error. Will retry in {} ms", part_name, try_no, backoff_ms));
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
-        backoff_ms = std::min(backoff_ms * 2, loading_parts_max_backoff_ms);
     }
 
-    UNREACHABLE();
+    /// Start attaching mutations (RestorerFromBackup will execute these tasks in parallel).
+    if (!mutation_infos.empty())
+    {
+        for (size_t i = 0; i != mutation_infos.size(); ++i)
+        {
+            add_data_restore_task(
+                [this,
+                 mutation_name_in_backup = mutation_names_in_backup[i],
+                 mutation_info = std::move(mutation_infos[i]),
+                 local_context] mutable
+                {
+                    LOG_INFO(log, "Attaching mutation {} restored from backup (former name: {})", mutation_info.name, mutation_name_in_backup);
+                    attachMutationFromBackup(std::move(mutation_info), local_context);
+                });
+        }
+    }
 }
 
 

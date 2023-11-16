@@ -62,6 +62,8 @@ struct ZeroCopyLock;
 
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
+struct MutationInfoFromBackup;
+struct RestoreSettings;
 
 class MergeTreeTransaction;
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
@@ -1124,6 +1126,10 @@ protected:
     /// Use get and set to receive readonly versions.
     MultiVersion<MergeTreeSettings> storage_settings;
 
+    /// Should RESTORE allocate all block numbers in a batch before attaching any restored parts.
+    /// This mode allows to restore mutations from backup.
+    bool restore_allocates_block_numbers_in_batch = true;
+
     /// Used to determine which UUIDs to send to root query executor for deduplication.
     mutable SharedMutex pinned_part_uuids_mutex;
     PinnedPartUUIDsPtr pinned_part_uuids;
@@ -1373,15 +1379,22 @@ protected:
     /// Makes backup entries to backup the parts of this table.
     PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
 
-    class RestoredPartsHolder;
+    /// Allocates block numbers for restoring parts and mutations.
+    /// This function also adjusts block numbers in `part_infos` and `mutation_infos`.
+    virtual scope_guard allocateBlockNumbersForRestoringFromBackup(std::vector<MergeTreePartInfo> & part_infos, std::vector<MutationInfoFromBackup> & mutation_infos, bool check_table_is_empty, ContextMutablePtr local_context) = 0;
 
-    /// Restores the parts of this table from backup.
-    void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
-    void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const;
-    MutableDataPartPtr loadPartRestoredFromBackup(const DiskPtr & disk, const String & temp_dir, const String & part_name, bool detach_if_broken) const;
+    /// Creates a sink to attach parts from backup.
+    virtual std::shared_ptr<SinkToStorage> createSinkForPartsFromBackup() { return nullptr; }
 
-    /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
+    /// Attaches a restored part with already assigned block number to the storage.
+    virtual void attachPartFromBackup(MutableDataPartPtr && part, std::shared_ptr<SinkToStorage> sink, bool check_table_is_empty) = 0;
+
+    /// Attaches a restored mutation with already assigned block number to the storage.
+    virtual void attachMutationFromBackup(MutationInfoFromBackup && mutation_info, ContextMutablePtr local_context) = 0;
+
+    /// After the table is restored from backup, this function is called to let the table know it can process the restored data
+    /// (i.e. schedule merges and mutations).
+    virtual void startProcessingDataFromBackup() = 0;
 
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);

@@ -25,8 +25,12 @@ class MergeTreeDataMergerMutator;
 
 class ReplicatedMergeTreeMergePredicate;
 class ReplicatedMergeTreeMergeStrategyPicker;
+class ReplicatedMergeTreeCurrentlyRestoringFromBackup;
 
 using PartitionIdsHint = std::unordered_set<String>;
+
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
 class ReplicatedMergeTreeQueue
 {
@@ -66,6 +70,7 @@ private:
 
     StorageReplicatedMergeTree & storage;
     ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker;
+    ReplicatedMergeTreeCurrentlyRestoringFromBackup * currently_restoring_from_backup = nullptr;
     MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
@@ -293,7 +298,9 @@ private:
     size_t current_multi_batch_size = 1;
 
 public:
-    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
+    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_,
+                             ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_,
+                             ReplicatedMergeTreeCurrentlyRestoringFromBackup * currently_restoring_from_backup_);
     ~ReplicatedMergeTreeQueue() = default;
 
     /// Clears queue state
@@ -322,6 +329,7 @@ public:
         UPDATE,
         MERGE_PREDICATE,
         SYNC,
+        CHECK_EMPTY,
         OTHER,
     };
 
@@ -332,10 +340,12 @@ public:
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
     std::pair<int32_t, int32_t> pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
+    std::pair<int32_t, int32_t> pullLogsToQueue(const ZooKeeperWithFaultInjectionPtr & zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
     int32_t updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback = {});
+    int32_t updateMutations(const ZooKeeperWithFaultInjectionPtr & zookeeper, Coordination::WatchCallbackPtr watch_callback = {});
 
     /// Remove a mutation from ZooKeeper and from the local set. Returns the removed entry or nullptr
     /// if it could not be found. Called during KILL MUTATION query execution.
@@ -541,6 +551,9 @@ protected:
 
     /// An object that provides current mutation version for a part
     const MutationsStateT * mutations_state_ = nullptr;
+
+    /// Protects currently restoring parts from merges and mutations until the restore process is done.
+    const ReplicatedMergeTreeCurrentlyRestoringFromBackup * currently_restoring_from_backup = nullptr;
 
     std::mutex * virtual_parts_mutex = nullptr;
 };
