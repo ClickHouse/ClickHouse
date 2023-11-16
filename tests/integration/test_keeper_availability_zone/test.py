@@ -1,4 +1,5 @@
 import pytest
+import time
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.keeper_utils import KeeperClient
 from helpers.network import PartitionManager
@@ -44,6 +45,21 @@ def assert_uses_zk_node(node: ClickHouseInstance, zk_node):
     assert host.strip() == zk_node
 
 
+def assert_session_id_increase(value, timeout):
+    start_session_id_str = node.query_with_retry(
+        "select client_id from system.zookeeper_connection"
+    )
+    start = int(start_session_id_str)
+    def check_session_id(xid):
+        return int(xid) >= value + start
+    session_id = node.query_with_retry(
+        "select client_id from system.zookeeper_connection",
+        check_callback=check_session_id,
+        timeout=timeout,
+    )
+    assert int(session_id) >= value + start
+
+
 def assert_not_uses_zk_node(node: ClickHouseInstance, zk_node):
     def check_callback(host):
         return host.strip() != zk_node
@@ -74,7 +90,6 @@ def test_get_availability_zone():
 # - add another node with different az first.
 # - session_uptime from system.zookeeper_connection: if it's local az, no timeout, otherwise, timeout
 # - session id: from non local az to local, very quick retry, should have different session id. check whether it's feasbile and reliable.
-# - no host available, should still be able to serve `select 1`, no crash.
 def test_connect_local_az_keeper(started_cluster: ClickHouseCluster):
     # Initially the node must connect to its own local az keeper host.
     assert_uses_zk_node(node, "zoo2")
@@ -105,13 +120,55 @@ def test_connect_local_az_keeper(started_cluster: ClickHouseCluster):
     assert_uses_zk_node(node, "zoo2")
     node.query_with_retry("INSERT INTO simple VALUES ({0}, {0})".format(2))
 
-    # This is to double the replication logic.
-    # TODO: add this, consider.
-    # for node in [node2, node3]:
-    #     assert (
-    #         node.query_with_retry(
-    #             "SELECT count() from simple",
-    #             check_callback=lambda count: count.strip() == "2",
-    #         )
-    #         == "2\n"
-    #     )
+
+def test_stay_connected_non_local_keeper_unavailable():
+    assert_uses_zk_node(node, "zoo2")
+    with PartitionManager() as pm:
+        pm._add_rule(
+            {
+                "source": node.ip_address,
+                "destination": cluster.get_instance_ip("zoo1"),
+                "action": "REJECT --reject-with tcp-reset",
+            }
+        )
+        # Ensure that clickhouse stay connected to zoo2. zoo1's unavailability should be irrelevant.
+        # Check 5 seconds since we configure the fallback session max time 4 seconds.
+        for i in range(5):
+            assert_uses_zk_node(node, "zoo2")
+            time.sleep(1)
+        assert_uses_zk_node(node, "zoo2")
+
+
+def test_retry_unknown_keeper():
+    with PartitionManager() as pm:
+        pm._add_rule(
+            {
+                "source": node.ip_address,
+                "destination": cluster.get_instance_ip("zoo2"),
+                "action": "REJECT --reject-with tcp-reset",
+            }
+        )
+        # Restart the server to make it forget about the mapping from keeper host to the availabilit zone.
+        node.stop_clickhouse()
+        node.start_clickhouse()
+        assert_not_uses_zk_node(node, 'zoo2')
+
+        # Check a few times that node is disconnecting and reconnecting, because zoo2 availability zone is still unresolved yet.
+        # 2 * 3 (fallback session max time) = 6 seconds, so 8 seconds should be enough for us to observe two new sessions.
+        assert_session_id_increase(2, timeout=8)
+        # Still not using zoo2.
+        assert_not_uses_zk_node(node, 'zoo2')
+    assert_uses_zk_node(node, "zoo2")
+
+
+def test_basics_when_no_keeper_available():
+    with PartitionManager() as pm:
+        for keeper in ["zoo1", "zoo2", "zoo3"]:
+            pm._add_rule(
+                {
+                    "source": node.ip_address,
+                    "destination": cluster.get_instance_ip(keeper),
+                    "action": "REJECT --reject-with tcp-reset",
+                }
+            )
+        assert(node.query_with_retry("SELECT 1") == "1\n")

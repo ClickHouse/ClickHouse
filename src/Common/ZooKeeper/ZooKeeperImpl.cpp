@@ -1280,13 +1280,14 @@ void ZooKeeper::initAvailabilityZone()
         }
         else if (response.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Failed to get {}: {}", az_zk_path, response.error);
+            LOG_TRACE(log, "Failed to get {}: {}", az_zk_path, response.error);
             return std::nullopt;
         }
         return std::move(response.data);
     };
     if (auto az = try_get(); az.has_value())
     {
+        LOG_INFO(log, "Set keeper availability zone: {}", *az);
         availability_zone = std::move(*az);
         return;
     }
