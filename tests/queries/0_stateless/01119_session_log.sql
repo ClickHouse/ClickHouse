@@ -4,7 +4,7 @@ select * from remote('127.0.0.2', system, one, 'default', '');
 select * from remote('127.0.0.2', system, one, 'default', 'wrong password'); -- { serverError AUTHENTICATION_FAILED }
 select * from remote('127.0.0.2', system, one, 'nonexistsnt_user_1119', ''); -- { serverError AUTHENTICATION_FAILED }
 set receive_timeout=1;
-select * from remote('127.0.0.2', system, one, ' INTERSERVER SECRET ', ''); -- { serverError AUTHENTICATION_FAILED }
+select * from remote('127.0.0.2', system, one, ' INTERSERVER SECRET ', ''); -- { serverError NO_REMOTE_SHARD_AVAILABLE }
 set receive_timeout=300;
 select * from remote('127.0.0.2', system, one, '   ', ''); -- { serverError AUTHENTICATION_FAILED }
 
