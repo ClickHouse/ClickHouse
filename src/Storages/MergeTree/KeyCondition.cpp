@@ -1,6 +1,9 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
@@ -10,7 +13,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
@@ -18,6 +20,7 @@
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
@@ -1842,7 +1845,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                         ColumnsWithTypeAndName arguments{
                             {nullptr, key_expr_type, ""},
                             {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
-                        FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+                        FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.

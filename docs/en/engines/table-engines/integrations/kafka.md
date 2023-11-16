@@ -238,19 +238,19 @@ Example:
 
 ## Virtual Columns {#virtual-columns}
 
-- `_topic` — Kafka topic.
-- `_key` — Key of the message.
-- `_offset` — Offset of the message.
-- `_timestamp` — Timestamp of the message.
-- `_timestamp_ms` — Timestamp in milliseconds of the message.
-- `_partition` — Partition of Kafka topic.
-- `_headers.name` — Array of message's headers keys.
-- `_headers.value` — Array of message's headers values.
+- `_topic` — Kafka topic. Data type: `LowCardinality(String)`.
+- `_key` — Key of the message. Data type: `String`.
+- `_offset` — Offset of the message. Data type: `UInt64`.
+- `_timestamp` — Timestamp of the message Data type: `Nullable(DateTime)`.
+- `_timestamp_ms` — Timestamp in milliseconds of the message. Data type: `Nullable(DateTime64(3))`.
+- `_partition` — Partition of Kafka topic. Data type: `UInt64`.
+- `_headers.name` — Array of message's headers keys. Data type: `Array(String)`.
+- `_headers.value` — Array of message's headers values. Data type: `Array(String)`.
 
 Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
-- `_raw_message` - Raw message that couldn't be parsed successfully.
-- `_error` - Exception message happened during failed parsing.
+- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `String`.
+- `_error` - Exception message happened during failed parsing. Data type: `String`.
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
 

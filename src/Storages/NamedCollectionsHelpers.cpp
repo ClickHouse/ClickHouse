@@ -92,14 +92,23 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.size() == 1)
         return collection_copy;
 
+    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
+
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
         auto value_override = getKeyValueFromAST(*it, /* fallback_to_ast_value */complex_args != nullptr, context);
 
-        if (!value_override && !(*it)->as<ASTFunction>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
         if (!value_override)
-            continue;
+        {
+            if (!(*it)->as<ASTFunction>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
+            if (allow_override_by_default)
+                continue;
+            // if allow_override_by_default is false we don't allow extra arguments
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed");
+        }
+        else if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
         {
@@ -108,7 +117,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value_override->second)));
+        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)), {});
     }
 
     return collection_copy;
@@ -128,8 +137,14 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
+    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
     for (const auto & key : keys)
-        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key));
+    {
+        if (collection_copy->isOverridable(key, allow_override_by_default))
+            collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+    }
 
     return collection_copy;
 }

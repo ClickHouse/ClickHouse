@@ -575,7 +575,6 @@ class ClickHouseCluster:
 
         # available when with_ldap == True
         self.ldap_host = "openldap"
-        self.ldap_ip = None
         self.ldap_container = None
         self.ldap_port = 1389
         self.ldap_id = self.get_instance_docker_id(self.ldap_host)
@@ -2619,20 +2618,17 @@ class ClickHouseCluster:
         raise Exception("Can't wait Cassandra to start")
 
     def wait_ldap_to_start(self, timeout=180):
-        self.ldap_ip = self.get_instance_ip(self.ldap_host)
         self.ldap_container = self.get_docker_handle(self.ldap_id)
         start = time.time()
         while time.time() - start < timeout:
             try:
-                logging.info(
-                    f"Check LDAP Online {self.ldap_id} {self.ldap_ip} {self.ldap_port}"
-                )
+                logging.info(f"Check LDAP Online {self.ldap_host} {self.ldap_port}")
                 self.exec_in_container(
                     self.ldap_id,
                     [
                         "bash",
                         "-c",
-                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_ip}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org",
+                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org",
                     ],
                     user="root",
                 )
@@ -2970,7 +2966,8 @@ class ClickHouseCluster:
                 self.wait_cassandra_to_start()
 
             if self.with_ldap and self.base_ldap_cmd:
-                subprocess_check_call(self.base_ldap_cmd + ["up", "-d"])
+                ldap_start_cmd = self.base_ldap_cmd + common_opts
+                subprocess_check_call(ldap_start_cmd)
                 self.up_called = True
                 self.wait_ldap_to_start()
 

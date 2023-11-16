@@ -483,7 +483,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
     if (bytes_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not multiplier of {}",
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec, data size {} is not multiplier of {}",
                         bytes_size, sizeof(T));
 
     UInt32 src_size = bytes_size / sizeof(T);
@@ -538,11 +538,11 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
     if (bytes_size < header_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size ({}) is less than the size of T64 header",
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is less than the size of T64 header",
                         bytes_size);
 
     if (uncompressed_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, unexpected uncompressed size ({})"
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, unexpected uncompressed size ({})"
                         " isn't a multiple of the data type size ({})",
                         uncompressed_size, sizeof(T));
 
@@ -571,7 +571,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     UInt32 dst_shift = sizeof(T) * matrix_size;
 
     if (!bytes_size || bytes_size % src_shift)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size ({}) is not a multiplier of {}",
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is not a multiplier of {}",
                         bytes_size, src_shift);
 
     UInt32 num_full = bytes_size / src_shift;
@@ -666,13 +666,13 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
             break;
     }
 
-    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64");
+    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec");
 }
 
 void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const
 {
     if (!src_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with T64");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
 
     UInt8 cookie = unalignedLoad<UInt8>(src);
     src += 1;
@@ -703,7 +703,7 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
             break;
     }
 
-    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with T64");
+    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
 }
 
 uint8_t CompressionCodecT64::getMethodByte() const
@@ -723,7 +723,7 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
 
 void CompressionCodecT64::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(type_idx.value_or(TypeIndex::Nothing));
     hash.update(variant);
 }
