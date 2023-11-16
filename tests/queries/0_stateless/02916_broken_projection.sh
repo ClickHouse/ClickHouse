@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2046
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -125,7 +126,7 @@ function check()
             echo 'used projections'
             $CLICKHOUSE_CLIENT -nm -q "
             SYSTEM FLUSH LOGS;
-            SELECT query, projections FROM system.query_log WHERE query_id='$query_id' and type='QueryFinish'
+            SELECT query, projections FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
             "
     fi
 
@@ -140,7 +141,7 @@ function check()
             echo 'used projections'
             $CLICKHOUSE_CLIENT -nm -q "
             SYSTEM FLUSH LOGS;
-            SELECT query, projections FROM system.query_log WHERE query_id='$query_id' and type='QueryFinish'
+            SELECT query, projections FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
             "
     fi
 
@@ -148,10 +149,20 @@ function check()
     $CLICKHOUSE_CLIENT -q "CHECK TABLE test"
 }
 
-function optimize_no_wait()
+function optimize()
 {
+    final=$1
+    no_wait=$2
+
     echo 'optimize'
-    $CLICKHOUSE_CLIENT -nm -q "OPTIMIZE TABLE test SETTINGS alter_sync=0;"
+    query="OPTIMIZE TABLE test"
+
+    if [ $final -eq 1 ]; then
+        query="$query FINAL"
+    if [ $no_wait -eq 1 ]; then
+        query="$query SETTINGS alter_sync=0"
+
+    $CLICKHOUSE_CLIENT -nm -q $query
 }
 
 function reattach()
@@ -234,7 +245,7 @@ insert 25 5
 # Merge will be retried and on second attempt it will succeed.
 # The result part all_3_5_1 will have only 1 projection - 'proj', because
 # it will skip 'proj_2' as it will see that one part does not have it anymore in the set of valid projections.
-optimize_no_wait
+optimize 0 1
 sleep 2
 
 $CLICKHOUSE_CLIENT -nm -q "
@@ -275,6 +286,16 @@ check
 materialize_projection proj_2
 
 check_table_full
+
+break_projection proj all_3_5_1_7 data
+
+insert 30 5
+
+optimize 1 0
+
+insert 35 5
+
+optimize 1 0
 
 check
 
