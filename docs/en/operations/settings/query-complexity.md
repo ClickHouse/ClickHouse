@@ -172,7 +172,27 @@ If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use c
 
 ## timeout_overflow_mode {#timeout-overflow-mode}
 
-What to do if the query is run longer than ‘max_execution_time’: ‘throw’ or ‘break’. By default, throw.
+What to do if the query is run longer than `max_execution_time`: `throw` or `break`. By default, `throw`.
+
+# max_execution_time_leaf
+
+Similar semantic to `max_execution_time` but only apply on leaf node for distributed or remote queries.
+
+For example, if we want to limit execution time on leaf node to `10s` but no limit on the initial node, instead of having `max_execution_time` in the nested subquery settings:
+
+``` sql
+SELECT count() FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
+```
+
+We can use `max_execution_time_leaf` as the query settings:
+
+``` sql
+SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
+```
+
+# timeout_overflow_mode_leaf
+
+What to do when the query in leaf node run longer than `max_execution_time_leaf`: `throw` or `break`. By default, `throw`.
 
 ## min_execution_speed {#min-execution-speed}
 
