@@ -28,7 +28,7 @@ public:
 private:
     DiskObjectStorageVFS & storage;
     const String log_name;
-    Poco::Logger const * const log;
+    Poco::Logger * const log;
     BackgroundSchedulePool::TaskHolder task;
     std::unique_ptr<zkutil::ZooKeeperLock> zookeeper_lock;
     UInt64 sleep_ms;

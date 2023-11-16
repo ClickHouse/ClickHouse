@@ -54,19 +54,28 @@ VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactio
         switch (item.type)
         {
             case CreateInode: {
-                chassert(!items.contains(item.remote_path));
+                if (auto it = items.find(item.remote_path); it != items.end()) [[unlikely]]
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Items with same remote path found in snapshot ({}) and log ({})",
+                        it->second.second,
+                        item);
                 items.emplace(item.remote_path, ObjectWithRefcount{0, item});
                 break;
             }
             case Link: {
                 auto it = items.find(item.remote_path);
-                chassert(it != items.end());
+                if (it == items.end()) [[unlikely]]
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Item {} not found in snapshot", item);
+
                 ++it->second.first;
                 break;
             }
             case Unlink: {
                 auto it = items.find(item.remote_path);
-                chassert(it != items.end());
+                if (it == items.end()) [[unlikely]]
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Item {} not found in snapshot", item);
+
                 if (--it->second.first == 0)
                 {
                     out.emplace_back(it->second.second);

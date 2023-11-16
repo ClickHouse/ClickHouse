@@ -15,17 +15,30 @@ namespace DB
 {
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
     : storage(storage_)
-    , log_name("ObjectStorageVFS (GC thread)")
+    , log_name("DiskObjectStorageVFSGC")
     , log(&Poco::Logger::get(log_name))
     , zookeeper_lock(zkutil::createSimpleZooKeeperLock(storage.zookeeper, VFS_BASE_NODE, "lock", ""))
     , sleep_ms(10'000) // TODO myrrc should pick this from settings
 {
-    task = context->getSchedulePool().createTask(log_name, [this] { run(); });
+    task = context->getSchedulePool().createTask(
+        log_name,
+        [this]
+        {
+            try
+            {
+                run();
+            }
+            catch (...)
+            {
+                LOG_DEBUG(log, "Task threw an exception, rescheduling");
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                task->scheduleAfter(sleep_ms);
+            }
+        });
 }
 
 ObjectStorageVFSGCThread::~ObjectStorageVFSGCThread() = default;
 
-// TODO myrrc handle exceptions -- reschedule task if interrupted
 void ObjectStorageVFSGCThread::run()
 {
     if (!zookeeper_lock->tryLock())
@@ -75,37 +88,40 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
         ops.emplace_back(zkutil::makeGetRequest(getNode(i)));
 
     std::vector<VFSTransactionLogItem> logs;
-    String previous_snapshot_remote_path;
+    StoredObject previous_snapshot;
 
     for (const auto & item : storage.zookeeper->multi(ops))
     {
         auto log_item = VFSTransactionLogItem{}.deserialize(dynamic_cast<const Coordination::GetResponse &>(*item).data);
 
-        if (log_item.type == VFSTransactionLogItem::Type::CreateInode //NOLINT
-            && log_item.local_path.starts_with(VFS_SNAPSHOT_PREFIX))
-            previous_snapshot_remote_path = log_item.remote_path;
+        if (log_item.type == VFSTransactionLogItem::Type::CreateInode && log_item.local_path.starts_with(VFS_SNAPSHOT_PREFIX))
+            previous_snapshot = log_item;
 
         logs.emplace_back(std::move(log_item));
     }
 
-    if (previous_snapshot_remote_path.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No shapshot for {} found in log entries [{};{}]",
-            end_logpointer - 1, start_logpointer, end_logpointer);
+    if (previous_snapshot.remote_path.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "No shapshot for {} found in log entries [{};{}]",
+            end_logpointer - 1,
+            start_logpointer,
+            end_logpointer);
 
-    const StoredObject previous_snapshot{previous_snapshot_remote_path};
+    auto remove_previous_snapshot = static_cast<const VFSTransactionLogItem &>(previous_snapshot);
+    remove_previous_snapshot.type = VFSTransactionLogItem::Type::Unlink;
+    // TODO myrrc this won't remove local metadata file from disk
+    logs.emplace_back(std::move(remove_previous_snapshot));
+
     auto snapshot_buf = storage.readObject(previous_snapshot);
     String snapshot_str;
     readStringUntilEOF(snapshot_str, *snapshot_buf);
 
     out.snapshot = VFSSnapshot{}.deserialize(snapshot_str);
 
-    LOG_TRACE(log, "Loaded snapshot {}", out.snapshot);
-    LOG_TRACE(log, "Got log batch\n{}", fmt::join(logs, "\n"));
+    LOG_TRACE(log, "Loaded snapshot {}\nGot log batch\n{}", out.snapshot, fmt::join(logs, "\n"));
 
     out.obsolete_objects = out.snapshot.update(logs);
-
-    // TODO myrrc this won't remove local metadata file from disk
-    out.obsolete_objects.emplace_back(previous_snapshot);
 
     return out;
 }
