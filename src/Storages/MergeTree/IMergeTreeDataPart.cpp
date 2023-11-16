@@ -104,13 +104,11 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
     initialized = true;
 }
 
-Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) const
+Block IMergeTreeDataPart::MinMaxIndex::buildBlockWithMinAndMaxIndexes(
+    const DB::MergeTreeData & data,
+    std::vector<Range> hyperrectangle
+)
 {
-    if (!initialized)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Attempt to get block from uninitialized MinMax index.");
-
     Block block;
 
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
@@ -135,10 +133,20 @@ Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) cons
 
         auto column_with_type_and_name = ColumnWithTypeAndName(column->getPtr(), data_type, column_name);
 
-        block.insert(column_with_type_and_name);
+        block.insert(std::move(column_with_type_and_name));
     }
 
     return block;
+}
+
+Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) const
+{
+    if (!initialized)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempt to get block from uninitialized MinMax index.");
+
+    return buildBlockWithMinAndMaxIndexes(data, hyperrectangle);
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(

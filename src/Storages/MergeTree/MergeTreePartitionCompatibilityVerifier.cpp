@@ -12,36 +12,6 @@ namespace ErrorCodes
 
 namespace
 {
-    Block buildBlockWithMinAndMaxIdx(const MergeTreeData & data, const Field & min, const Field & max)
-    {
-        Block block;
-
-        auto metadata_snapshot = data.getInMemoryMetadataPtr();
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
-
-        auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
-        auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
-        const size_t minmax_idx_size = minmax_column_types.size();
-
-        assert(minmax_idx_size == 1u);
-
-        for (size_t i = 0; i < minmax_idx_size; ++i)
-        {
-            const auto data_type = minmax_column_types[i];
-            const auto column_name = minmax_column_names[i];
-
-            auto column = data_type->createColumn();
-
-            column->insert(min);
-            column->insert(max);
-
-            auto column_with_type_and_name = ColumnWithTypeAndName(column->getPtr(), data_type, column_name);
-
-            block.insert(std::move(column_with_type_and_name));
-        }
-
-        return block;
-    }
 }
 
 void MergeTreePartitionCompatibilityVerifier::verify(
@@ -77,7 +47,11 @@ void MergeTreePartitionCompatibilityVerifier::validatePartitionIds(
     ContextPtr context
 )
 {
-    auto block_with_min_and_max_idx = buildBlockWithMinAndMaxIdx(source_table_info.storage, source_table_info.min_idx, source_table_info.max_idx);
+    auto hyperrectangle = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
+    auto block_with_min_and_max_idx = IMergeTreeDataPart::MinMaxIndex::buildBlockWithMinAndMaxIndexes(
+        source_table_info.storage,
+        {hyperrectangle}
+    );
 
     MergeTreePartition().createAndValidateMinMaxPartitionIds(metadata, block_with_min_and_max_idx, context);
 }

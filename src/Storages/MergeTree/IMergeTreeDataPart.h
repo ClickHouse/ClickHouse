@@ -340,6 +340,7 @@ public:
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
         static void appendFiles(const MergeTreeData & data, Strings & files);
+        static Block buildBlockWithMinAndMaxIndexes(const DB::MergeTreeData & data, std::vector<Range> hyperrectangle);
     };
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
