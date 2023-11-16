@@ -111,29 +111,27 @@ Block IMergeTreeDataPart::MinMaxIndex::buildBlockWithMinAndMaxIndexes(
 {
     Block block;
 
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
-    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
-    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
-    size_t minmax_idx_size = minmax_column_types.size();
+    const auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    const auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
+    const auto minmax_idx_size = minmax_column_types.size();
 
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
-        auto data_type = minmax_column_types[i];
-        auto column_name = minmax_column_names[i];
+        const auto & data_type = minmax_column_types[i];
+        const auto & column_name = minmax_column_names[i];
 
-        auto column = data_type->createColumn();
+        const auto column = data_type->createColumn();
 
-        auto min_val = hyperrectangle.at(i).left;
-        auto max_val = hyperrectangle.at(i).right;
+        const auto min_val = hyperrectangle.at(i).left;
+        const auto max_val = hyperrectangle.at(i).right;
 
         column->insert(min_val);
         column->insert(max_val);
 
-        auto column_with_type_and_name = ColumnWithTypeAndName(column->getPtr(), data_type, column_name);
-
-        block.insert(std::move(column_with_type_and_name));
+        block.insert(ColumnWithTypeAndName(column->getPtr(), data_type, column_name));
     }
 
     return block;
