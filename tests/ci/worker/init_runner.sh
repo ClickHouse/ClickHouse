@@ -5,10 +5,10 @@ The following content is embedded into the s3 object via the script
 deploy-runner-init.sh {staging,production}
 with additional helping information
 
-In the `user data` you should define as the following
-with appropriate <ENVIRONMENT> as 'staging' or 'production':
+In the `user data` you should define as the following text
+between `### COPY BELOW` and `### COPY ABOVE`
 
-### COPY AFTER
+### COPY BELOW
 Content-Type: multipart/mixed; boundary="//"
 MIME-Version: 1.0
 
@@ -29,11 +29,14 @@ Content-Transfer-Encoding: 7bit
 Content-Disposition: attachment; filename="userdata.txt"
 
 #!/bin/bash
-aws s3 cp s3://github-runners-data/cloud-init/<ENVIRONMENT>.sh /tmp/cloud-init.sh
+INSTANCE_ID=$(ec2metadata --instance-id)
+INIT_ENVIRONMENT=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:init-environment'].Value" --output text)
+echo "Downloading and using $INIT_ENVIRONMENT cloud-init.sh"
+aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT:-production}.sh" /tmp/cloud-init.sh
 chmod 0700 /tmp/cloud-init.sh
 exec bash /tmp/cloud-init.sh
 --//
-### COPY BEFORE
+### COPY ABOVE
 EOF
 
 # THE SCRIPT START
