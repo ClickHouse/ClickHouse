@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: json type needs rapidjson library, geo types need s2 geometry
 
--- not tested here: (Simple)AggregateFunction, Nested
-
 SET allow_experimental_object_type = 1;
 SET allow_suspicious_low_cardinality_types=1;
 
@@ -33,11 +31,12 @@ SELECT concat('With ', materialize('bar' :: LowCardinality(FixedString(3))));
 SELECT concat('With ', materialize('foo' :: LowCardinality(Nullable(String))));
 SELECT concat('With ', materialize('bar' :: LowCardinality(Nullable(FixedString(3)))));
 SELECT concat('With ', materialize(42 :: LowCardinality(Nullable(UInt32))));
+SELECT concat('With ', materialize(42 :: LowCardinality(UInt32)));
 SELECT concat('With ', materialize('fae310ca-d52a-4923-9e9b-02bf67f4b009' :: UUID));
 SELECT concat('With ', materialize('2023-11-14' :: Date));
 SELECT concat('With ', materialize('2123-11-14' :: Date32));
-SELECT concat('With ', materialize('2023-11-14 05:50:12' :: DateTime));
-SELECT concat('With ', materialize('2023-11-14 05:50:12.123' :: DateTime64(3)));
+SELECT concat('With ', materialize('2023-11-14 05:50:12' :: DateTime('Europe/Amsterdam')));
+SELECT concat('With ', materialize('2023-11-14 05:50:12.123' :: DateTime64(3, 'Europe/Amsterdam')));
 SELECT concat('With ', materialize('hallo' :: Enum('hallo' = 1)));
 SELECT concat('With ', materialize(['foo', 'bar'] :: Array(String)));
 SELECT concat('With ', materialize('{"foo": "bar"}' :: JSON));
@@ -50,14 +49,23 @@ SELECT concat('With ', materialize([(0,0),(10,0),(10,10),(0,10)] :: Ring));
 SELECT concat('With ', materialize([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]] :: Polygon));
 SELECT concat('With ', materialize([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]] :: MultiPolygon));
 
+SELECT '-- SimpleAggregateFunction';
+CREATE OR REPLACE TABLE concat_saf_test(x SimpleAggregateFunction(max, Int32)) ENGINE=MergeTree ORDER BY tuple();
+INSERT INTO concat_saf_test VALUES (42);
+INSERT INTO concat_saf_test SELECT max(number) FROM numbers(5);
+SELECT concat('With ', x) FROM concat_saf_test ORDER BY x DESC;
+
+SELECT '-- Nested';
+CREATE OR REPLACE TABLE concat_nested_test(kv Nested(k String, v String)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO concat_nested_test VALUES (['foo', 'bar'], ['qaz', 'qux']);
+SELECT concat('With ', kv) FROM concat_nested_test;
+
 SELECT '-- NULL arguments';
 SELECT concat(NULL, NULL);
 SELECT concat(NULL, materialize(NULL :: Nullable(UInt64)));
 SELECT concat(materialize(NULL :: Nullable(UInt64)), materialize(NULL :: Nullable(UInt64)));
-
 SELECT concat(42, materialize(NULL :: Nullable(UInt64)));
 SELECT concat('42', materialize(NULL :: Nullable(UInt64)));
-
 SELECT concat(42, materialize(NULL :: Nullable(UInt64)), materialize(NULL :: Nullable(UInt64)));
 SELECT concat('42', materialize(NULL :: Nullable(UInt64)), materialize(NULL :: Nullable(UInt64)));
 
@@ -72,3 +80,6 @@ SELECT concat(42, 144);
 SELECT concat(42, 144, 255);
 
 SELECT CONCAT('Testing the ', 'alias');
+
+SELECT concat();  -- { serverError 42 }
+SELECT concat(1); -- { serverError 42 }
