@@ -217,35 +217,33 @@ static size_t getPartitionAstFieldsCount(const ASTPartition & partition_ast, AST
 
     if (tuple_ast->name != "tuple")
     {
-        if (isFunctionCast(tuple_ast))
+        if (!isFunctionCast(tuple_ast))
         {
-            if (tuple_ast->arguments->as<ASTExpressionList>()->children.empty())
-            {
-                throw Exception(
-                    ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-            }
-            auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
-            if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
-            {
-                const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-                return arguments_ast ? arguments_ast->children.size() : 0;
-            }
-            else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
-            {
-                return inner_literal_tuple->value.getType() == Field::Types::Tuple
-                        ? inner_literal_tuple->value.safeGet<Tuple>().size()
-                        : 1;
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-            }
+            throw Exception(
+                ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
         }
-        else
+
+        if (tuple_ast->arguments->as<ASTExpressionList>()->children.empty())
         {
-            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+            throw Exception(
+                ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
         }
+
+        auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
+        if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
+        {
+            const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+            return arguments_ast ? arguments_ast->children.size() : 0;
+        }
+        else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
+        {
+            return inner_literal_tuple->value.getType() == Field::Types::Tuple
+                ? inner_literal_tuple->value.safeGet<Tuple>().size()
+                : 1;
+        }
+
+        throw Exception(
+            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
     }
     else
     {
