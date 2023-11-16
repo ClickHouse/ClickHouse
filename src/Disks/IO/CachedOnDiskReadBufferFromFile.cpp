@@ -116,18 +116,19 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
 
 bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
 {
+    chassert(!file_segments || file_segments->empty());
     size_t size = getRemainingSizeToRead();
     if (!size)
         return false;
 
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
-        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_getorset_batch_size);
+        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size);
     }
     else
     {
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
-        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), create_settings, settings.filesystem_cache_getorset_batch_size);
+        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), create_settings, settings.filesystem_cache_segments_batch_size);
     }
     return !file_segments->empty();
 }
