@@ -163,14 +163,14 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 ## Virtual Columns {#virtual-columns}
 
-- `_subject` - NATS message subject.
+- `_subject` - NATS message subject. Data type: `String`.
 
 Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
-- `_raw_message` - Raw message that couldn't be parsed successfully.
-- `_error` - Exception message happened during failed parsing.
+- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
+- `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
 
-Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
+Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
 
 
 ## Data formats support {#data-formats-support}
