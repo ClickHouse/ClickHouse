@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <base/types.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -17,11 +18,18 @@ class ReadBuffer;
  */
 struct ReplicatedMergeTreeTableMetadata
 {
+    static constexpr int REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS = 2; /// first version = 1
+
+    int version = REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS;
     String date_column;
     String sampling_expression;
     UInt64 index_granularity;
+    /// Merging related params
     int merging_params_mode;
     String sign_column;
+    String version_column;
+    String is_deleted_column;
+    String columns_to_sum;
     String primary_key;
     MergeTreeDataFormatVersion data_format_version;
     String partition_key;
@@ -35,7 +43,7 @@ struct ReplicatedMergeTreeTableMetadata
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
-    void read(ReadBuffer & in);
+    void read(ReadBufferFromString & in);
     static ReplicatedMergeTreeTableMetadata parse(const String & s);
 
     void write(WriteBuffer & out) const;

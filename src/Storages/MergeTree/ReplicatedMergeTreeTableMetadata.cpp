@@ -36,6 +36,21 @@ static String formattedASTNormalized(const ASTPtr & ast)
     return buf.str();
 }
 
+static bool peekString(const char * s, ReadBufferFromString & buf)
+{
+    auto * current_pos = buf.position();
+    for (; *s; ++s)
+    {
+        if (buf.eof() || *buf.position() != *s)
+        {
+            buf.position() = current_pos;
+            return false;
+        }
+        ++buf.position();
+    }
+    return true;
+}
+
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -49,6 +64,9 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
+    is_deleted_column = data.merging_params.is_deleted_column;
+    columns_to_sum = fmt::format("{}", fmt::join(data.merging_params.columns_to_sum.begin(), data.merging_params.columns_to_sum.end(), ","));
+    version_column = data.merging_params.version_column;
 
     /// This code may looks strange, but previously we had only one entity: PRIMARY KEY (or ORDER BY, it doesn't matter)
     /// Now we have two different entities ORDER BY and it's optional prefix -- PRIMARY KEY.
@@ -90,13 +108,21 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 {
-    out << "metadata format version: 1\n"
+    out << "metadata format version: " << version << "\n"
         << "date column: " << date_column << "\n"
         << "sampling expression: " << sampling_expression << "\n"
         << "index granularity: " << index_granularity << "\n"
         << "mode: " << merging_params_mode << "\n"
-        << "sign column: " << sign_column << "\n"
-        << "primary key: " << primary_key << "\n";
+        << "sign column: " << sign_column << "\n";
+
+    if (version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
+    {
+        out << "version column: " << version_column << "\n";
+        out << "is delete column: " << is_deleted_column << "\n";
+        out << "columns to sum: " << columns_to_sum << "\n";
+    }
+
+    out << "primary key: " << primary_key << "\n";
 
     if (data_format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -130,37 +156,43 @@ String ReplicatedMergeTreeTableMetadata::toString() const
     return out.str();
 }
 
-void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
+void ReplicatedMergeTreeTableMetadata::read(ReadBufferFromString & in)
 {
-    in >> "metadata format version: 1\n";
+    in >> "metadata format version: " >> version >> "\n";
     in >> "date column: " >> date_column >> "\n";
     in >> "sampling expression: " >> sampling_expression >> "\n";
     in >> "index granularity: " >> index_granularity >> "\n";
     in >> "mode: " >> merging_params_mode >> "\n";
     in >> "sign column: " >> sign_column >> "\n";
+    if (version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
+    {
+        in >> "version column: " >> version_column >> "\n";
+        in >> "is delete column: " >> is_deleted_column >> "\n";
+        in >> "columns to sum: " >> columns_to_sum >> "\n";
+    }
     in >> "primary key: " >> primary_key >> "\n";
 
     if (in.eof())
         data_format_version = 0;
-    else if (checkString("data format version: ", in))
+    else if (peekString("data format version: ", in))
         in >> data_format_version.toUnderType() >> "\n";
 
     if (data_format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         in >> "partition key: " >> partition_key >> "\n";
 
-    if (checkString("sorting key: ", in))
+    if (peekString("sorting key: ", in))
         in >> sorting_key >> "\n";
 
-    if (checkString("ttl: ", in))
+    if (peekString("ttl: ", in))
         in >> ttl_table >> "\n";
 
-    if (checkString("indices: ", in))
+    if (peekString("indices: ", in))
         in >> skip_indices >> "\n";
 
-    if (checkString("projections: ", in))
+    if (peekString("projections: ", in))
         in >> projections >> "\n";
 
-    if (checkString("granularity bytes: ", in))
+    if (peekString("granularity bytes: ", in))
     {
         in >> index_granularity_bytes >> "\n";
         index_granularity_bytes_found_in_zk = true;
@@ -168,7 +200,7 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     else
         index_granularity_bytes = 0;
 
-    if (checkString("constraints: ", in))
+    if (peekString("constraints: ", in))
         in >> constraints >> "\n";
 }
 
@@ -209,6 +241,21 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
     if (sign_column != from_zk.sign_column)
         throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in sign column. "
             "Stored in ZooKeeper: {}, local: {}", from_zk.sign_column, sign_column);
+
+    if (version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS && from_zk.version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
+    {
+        if (version_column != from_zk.version_column)
+            throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in version column. "
+                "Stored in ZooKeeper: {}, local: {}", from_zk.version_column, version_column);
+
+        if (is_deleted_column != from_zk.is_deleted_column)
+            throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in is_deleted column. "
+                "Stored in ZooKeeper: {}, local: {}", from_zk.is_deleted_column, is_deleted_column);
+
+        if (columns_to_sum != from_zk.columns_to_sum)
+            throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in sum columns. "
+                "Stored in ZooKeeper: {}, local: {}", from_zk.columns_to_sum, columns_to_sum);
+    }
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
