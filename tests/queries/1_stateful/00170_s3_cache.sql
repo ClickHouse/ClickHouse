@@ -17,7 +17,7 @@ SELECT AdvEngineID, count() FROM test.hits_s3 WHERE AdvEngineID != 0 GROUP BY Ad
 SELECT RegionID, uniq(UserID) AS u FROM test.hits_s3 GROUP BY RegionID ORDER BY u DESC LIMIT 10;
 SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM test.hits_s3 GROUP BY RegionID ORDER BY c DESC LIMIT 10;
 SELECT MobilePhoneModel, uniq(UserID) AS u FROM test.hits_s3 WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
-SELECT MobilePhone, MobilePhoneModel, uniq(UserID) AS u FROM test.hits_s3 WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC;
+SELECT MobilePhone, MobilePhoneModel, uniq(UserID) AS u FROM test.hits_s3 WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
 SELECT uniq(SearchPhrase), count() AS c FROM test.hits_s3 WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
 SELECT uniq(SearchPhrase), uniq(UserID) AS u FROM test.hits_s3 WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
 SELECT SearchEngineID, uniq(SearchPhrase), count() AS c FROM test.hits_s3 WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10;

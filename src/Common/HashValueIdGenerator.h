@@ -27,9 +27,6 @@
 #    include <immintrin.h>
 #endif
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -186,8 +183,6 @@ inline bool quickLookupValueId(HashValueIdCacheLine & cache,
 }
 )
 
-#define INNER_ENABLE_AVX512 1
-
 class IHashValueIdGenerator
 {
 public:
@@ -213,7 +208,6 @@ public:
                 /// need to pad the address.
                 auto * range_values_ptr = pool.alloc(alloc_size) + pad_left;
                 UInt64 value_id = i - range_min + is_nullable;
-                // LOG_ERROR(&Poco::Logger::get("IHashValueIdGenerator"), "xxx switch to normal mode. range: {} -> {}, value id: {}, row_bytes: {}", range_min, range_max, value_id, row_bytes);
                 memcpy(range_values_ptr, reinterpret_cast<const UInt8 *>(&i), sizeof(UInt64));
                 StringRef raw_value(range_values_ptr, row_bytes);
                 emplaceValueId(raw_value, value_id);
@@ -313,7 +307,7 @@ protected:
 
     ALWAYS_INLINE void getValueId(const StringRef &raw_value, UInt64 serialized_value [[maybe_unused]], UInt64 & value_id)
     {
-#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
+#if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX512BW))
         {
             if (enable_value_id_cache_line)
@@ -355,7 +349,7 @@ protected:
         else
             TargetSpecific::Default::shortValuesToUInt64(data_pos, element_bytes, value_ids, n);
 
-#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
+#if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX512BW))
             TargetSpecific::AVX512BW::getValueIdsByRange(value_ids, range_delta, n);
         else
@@ -401,7 +395,6 @@ private:
 
     void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
     {
-        // LOG_ERROR(&Poco::Logger::get("StringHashValueIdGenerator"), "xxx input rows: {}", col->size());
         if (col->empty())
             return;
         const auto * nested_col = col;
@@ -434,7 +427,7 @@ private:
         const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() : nullptr;
         for (; i + batch_size < n; i += batch_size)
         {
-#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
+#if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
             else
@@ -444,27 +437,13 @@ private:
             }
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
             computeValueIdForString(char_pos, str_lens, batch_size, tmp_value_ids, null_map_pos);
-#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
+#if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_size);
             else
 #endif
             {
                 TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_size);
-            }
-            for (size_t j = 0; j < batch_size; ++j)
-            {
-                #if 0
-                LOG_ERROR(
-                    &Poco::Logger::get("StringHashValueIdGenerator"),
-                    "xxx 1). get value id: {} for {} @ {}, str len: {}, offset: {}/{}",
-                    value_ids_pos[j],
-                    StringRef(chars.data() + offsets[i + j - 1], str_lens[j] - 1).toString(),
-                    i + j,
-                    str_lens[j],
-                    offsets[i + j - 1],
-                    char_pos - chars.data());
-                #endif
             }
             value_ids_pos += batch_size;
             char_pos += offsets[i + batch_size - 1] - prev_offset;
@@ -478,19 +457,6 @@ private:
             TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, remained, str_lens);
             computeValueIdForString(char_pos, str_lens, remained, tmp_value_ids, null_map_pos);
             TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, remained);
-            #if 0
-            for (size_t j = 0; j < remained; ++j)
-            {
-                LOG_ERROR(
-                    &Poco::Logger::get("StringHashValueIdGenerator"),
-                    "xxx 2). get value id: {} for {} @ {}, str len: {}, offset: {}",
-                    value_ids_pos[j],
-                    StringRef(chars.data() + offsets[i + j - 1], str_lens[j] - 1).toString(),
-                    i + j,
-                    str_lens[j],
-                    offsets[i + j - 1]);
-            }
-            #endif
         }
     }
 
@@ -601,7 +567,7 @@ private:
             else
                 computeValueIdsInNormalMode(tmp_value_ids, batch_step, char_pos, str_len, null_map_pos);
 
-#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
+#if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
             else
@@ -683,12 +649,10 @@ private:
         {
             allocated_value_id = is_nullable;
         }
-        // LOG_ERROR(&Poco::Logger::get("NumericHashValueIdGenerator"), "xxx setup. range: {} -> {}, allocated_value_id: {}, row_bytes: {}", range_min, range_max, allocated_value_id, row_bytes);
     }
 
     void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
     {
-        // LOG_ERROR(&Poco::Logger::get("StringHashValueIdGenerator"), "xxx input rows: {}", col->size());
         const auto * nested_col = col;
         const ColumnUInt8 * null_map = nullptr;
         if (col->isNullable())
@@ -708,7 +672,6 @@ private:
 
         constexpr size_t batch_step = 32;
         alignas(64) UInt64 tmp_value_ids[batch_step] = {0};
-        // LOG_ERROR(&Poco::Logger::get("NumericHashValueIdGenerator"), "xxx computeValueIdImpl. range: {} -> {}, allocated_value_id: {}, enable_range_mode: {}", range_min, range_max, allocated_value_id, enable_range_mode);
         for (; i + batch_step < n; i += batch_step)
         {
             const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
@@ -721,7 +684,7 @@ private:
             else
                 computeValueIdsInNormalMode(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
 
-#if USE_MULTITARGET_CODE && INNER_ENABLE_AVX512
+#if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
                 TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
             else
@@ -729,21 +692,6 @@ private:
             {
                 TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
             }
-            #if 0
-            if constexpr (is_basic_number)
-            {
-                for (size_t j = 0; j < batch_step; ++j)
-                {
-                    auto value = static_cast<UInt64>(num_col->getData()[i + j]);
-                    LOG_ERROR(
-                        &Poco::Logger::get("NumericHashValueIdGenerator"),
-                        "xxx 1). get value id: {} for {} at {}",
-                        value_ids_pos[j],
-                        value,
-                        i + j);
-                }
-            }
-            #endif
 
             data_pos += element_bytes * batch_step;
             value_ids_pos += batch_step;
@@ -760,21 +708,6 @@ private:
             else
                 computeValueIdsInNormalMode(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
             TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, n - i);
-            #if 0
-            if constexpr (is_basic_number)
-            {
-                for (size_t j = 0; j < n - i; ++j)
-                {
-                    auto value = static_cast<UInt64>(num_col->getData()[i + j]);
-                    LOG_ERROR(
-                        &Poco::Logger::get("NumericHashValueIdGenerator"),
-                        "xxx 2). get value id: {} for {} at {}",
-                        value_ids_pos[j],
-                        value,
-                        i + j);
-                }
-            }
-            #endif
         }
     }
 };
