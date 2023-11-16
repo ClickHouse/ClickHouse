@@ -1657,16 +1657,17 @@ Possible values:
 
 Default value: `1`.
 
-## query_cache_store_results_of_queries_with_nondeterministic_functions {#query-cache-store-results-of-queries-with-nondeterministic-functions}
+## query_cache_nondeterministic_function_handling {#query-cache-nondeterministic-function-handling}
 
-If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
 
-- 0 - Disabled
-- 1 - Enabled
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
 
-Default value: `0`.
+Default value: `throw`.
 
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
@@ -2473,7 +2474,7 @@ See also:
 - [distributed_replica_error_cap](#distributed_replica_error_cap)
 - [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
 Base interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
@@ -2483,9 +2484,9 @@ Possible values:
 
 Default value: 100 milliseconds.
 
-## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
 
-Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) setting.
 
 Possible values:
 
@@ -2493,7 +2494,7 @@ Possible values:
 
 Default value: 30000 milliseconds (30 seconds).
 
-## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_background_insert_batch {#distributed_background_insert_batch}
 
 Enables/disables inserted data sending in batches.
 
@@ -2506,13 +2507,13 @@ Possible values:
 
 Default value: 0.
 
-## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
+## distributed_background_insert_split_batch_on_failure {#distributed_background_insert_split_batch_on_failure}
 
 Enables/disables splitting batches on failures.
 
 Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
 
-So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_background_insert_batch` for failed batches).
 
 Possible values:
 
@@ -2695,15 +2696,15 @@ Possible values:
 
 Default value: 0.
 
-## insert_distributed_sync {#insert_distributed_sync}
+## distributed_foreground_insert {#distributed_foreground_insert}
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
 
-By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in background mode. When `distributed_foreground_insert=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
 
 Possible values:
 
-- 0 — Data is inserted in asynchronous mode.
+- 0 — Data is inserted in background mode.
 - 1 — Data is inserted in synchronous mode.
 
 Default value: `0`.
@@ -2762,7 +2763,7 @@ Result:
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
-Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
+Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
 
 Possible values:
 
@@ -2772,7 +2773,7 @@ Possible values:
 Default value: `1`.
 
 :::note
-- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for background INSERT.
 - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
 :::
 
@@ -3310,22 +3311,11 @@ Possible values:
 
 Default value: `0`.
 
-## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
-
-Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Possible values:
-
-- 0 - Show names of native ClickHouse data types.
-- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
-
-Default value: `0`.
-
 ## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
 
 When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+Has an effect only when the connection is made through the MySQL wire protocol.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3336,7 +3326,7 @@ Default value: `0`.
 
 When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+Has an effect only when the connection is made through the MySQL wire protocol.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3944,6 +3934,27 @@ Possible values:
 
 Default value: `0`.
 
+## force_optimize_projection_name {#force-optimize-projection_name}
+
+If it is set to a non-empty string, check that this projection is used in the query at least once.
+
+Possible values:
+
+- string: name of projection that used in a query
+
+Default value: `''`.
+
+## preferred_optimize_projection_name {#preferred_optimize_projection_name}
+
+If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
+
+
+Possible values:
+
+- string: name of preferred projection
+
+Default value: `''`.
+
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -3955,6 +3966,10 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
+
+:::note
+`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
+:::
 
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
@@ -4780,6 +4795,10 @@ a	Tuple(
 )
 ```
 
+## analyze_index_with_space_filling_curves
+
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+
 ## dictionary_use_async_executor {#dictionary_use_async_executor}
 
 Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
@@ -4794,3 +4813,10 @@ LIFETIME(MIN 0 MAX 3600)
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```
+
+## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
+
+When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
+
+Default value: `false`.
