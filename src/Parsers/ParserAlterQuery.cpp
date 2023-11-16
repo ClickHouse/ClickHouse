@@ -898,12 +898,13 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = query;
 
     ParserKeyword s_alter_table("ALTER TABLE");
+    ParserKeyword s_alter_temporary_table("ALTER TEMPORARY TABLE");
     ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
     ParserKeyword s_alter_database("ALTER DATABASE");
 
     ASTAlterQuery::AlterObjectType alter_object_type;
 
-    if (s_alter_table.ignore(pos, expected))
+    if (s_alter_table.ignore(pos, expected) || s_alter_temporary_table.ignore(pos, expected))
     {
         alter_object_type = ASTAlterQuery::AlterObjectType::TABLE;
     }
