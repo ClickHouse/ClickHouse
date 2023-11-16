@@ -370,7 +370,9 @@ if args.report == "main":
     if args.no_tests_run:
         for t in tables:
             print(t)
-        print("<h2>No tests to run. Only changed tests were run, but all changed tests are from another batch.</h2>")
+        print(
+            "<h2>No tests to run. Only changed tests were run, but all changed tests are from another batch.</h2>"
+        )
         print(
             f"""
         </div>
