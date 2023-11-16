@@ -19,13 +19,16 @@ class MergeTreePartitionGlobalMinMaxIdxCalculator
 public:
     static std::vector<std::pair<Field, Field>> calculate(
         const MergeTreeData & storage,
-        const DataPartsVector & parts,
-        const std::vector<std::size_t> & column_indexes
+        const DataPartsVector & parts
     );
 
 private:
-    static std::vector<std::pair<Field, Field>> extractMinMaxIndexesFromBlock(const Block & block,
-                                                                              const std::vector<size_t> & column_indexes);
+    static std::vector<std::pair<Field, Field>> extractMinMaxIndexesFromBlock(const Block & block_with_min_max_idx);
+    static std::vector<std::pair<Field, Field>> calculateMinMaxIndexesForPart(const MergeTreeData & storage, const DataPartPtr & part);
+    static void updateGlobalMinMaxIndexes(
+        std::vector<std::pair<Field, Field>> & global_min_max_indexes,
+        const std::vector<std::pair<Field, Field>> & local_min_max_indexes);
+
 };
 
 }
