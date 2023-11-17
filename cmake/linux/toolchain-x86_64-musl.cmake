@@ -9,10 +9,6 @@ set (CMAKE_C_COMPILER_TARGET "x86_64-linux-musl")
 set (CMAKE_CXX_COMPILER_TARGET "x86_64-linux-musl")
 set (CMAKE_ASM_COMPILER_TARGET "x86_64-linux-musl")
 
-# Will be changed later, but somehow needed to be set here.
-set (CMAKE_AR "ar")
-set (CMAKE_RANLIB "ranlib")
-
 set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-x86_64-musl")
 
 set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}")

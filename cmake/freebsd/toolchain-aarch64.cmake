@@ -9,7 +9,3 @@ set (CMAKE_ASM_COMPILER_TARGET "aarch64-unknown-freebsd12")
 set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/freebsd-aarch64")
 
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)  # disable linkage check - it doesn't work in CMake
-
-# Will be changed later, but somehow needed to be set here.
-set (CMAKE_AR "ar")
-set (CMAKE_RANLIB "ranlib")
