@@ -121,6 +121,7 @@ Coordination::ZooKeeper::Node makeZooKeeperNode(const ShuffleHost& shuffle_host)
     auto host_result = parseForSocketAddress(shuffle_host.host);
     node.address = Poco::Net::SocketAddress(host_result.first);
     node.secure = host_result.second;
+    node.original_index = shuffle_host.original_index;
     return node;
 }
 
@@ -181,7 +182,7 @@ std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger
     return shuffled_hosts;
 }
 
-void throwWhenNoHostAvailable(const bool& dns_error)
+[[noreturn]] void throwWhenNoHostAvailable(const bool& dns_error)
 {
     if (dns_error)
         throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
