@@ -135,7 +135,7 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
             start_logpointer,
             end_logpointer);
 
-    previous_snapshot_log_item.type = VFSTransactionLogItem::Type::Unlink;
+    previous_snapshot_log_item.type = Unlink;
     // Issue previous snapshot remote file for removal (no local metadata file as we use direct readObject)
     log_batch.emplace_back(previous_snapshot_log_item);
 
@@ -169,10 +169,12 @@ void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const Stri
 void ObjectStorageVFSGCThread::removeLogEntries(size_t start_logpointer, size_t end_logpointer)
 {
     LOG_DEBUG(log, "Removing log range [{};{}]", start_logpointer, end_logpointer);
+
     const size_t log_batch_length = end_logpointer - start_logpointer + 1;
     Coordination::Requests requests(log_batch_length);
     for (size_t i = 0; i < log_batch_length; ++i)
         requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), -1);
+
     storage.zookeeper->multi(requests);
 }
 }

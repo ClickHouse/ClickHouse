@@ -216,82 +216,93 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     future_merged_part->updatePath(storage, reserved_space.get());
     future_merged_part->merge_type = entry.merge_type;
 
-    if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
+    auto disk = reserved_space->getDisk();
+    const bool is_zerocopy = storage_settings_ptr->allow_remote_fs_zero_copy_replication
+        && disk->supportZeroCopyReplication();
+    const bool is_vfs = disk->isObjectStorageVFS();
+    if (is_zerocopy || is_vfs)
     {
-        if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
+        if (storage.findReplicaHavingCoveringPart(entry.new_part_name, true))
         {
-            if (storage.findReplicaHavingCoveringPart(entry.new_part_name, true))
-            {
-                LOG_DEBUG(log, "Merge of part {} finished by some other replica, will fetch merged part", entry.new_part_name);
-                /// We found covering part, no checks for missing part.
-                return PrepareResult{
-                    .prepared_successfully = false,
-                    .need_to_check_missing_part_in_fetch = false,
-                    .part_log_writer = {}
-                };
-            }
+            LOG_DEBUG(log, "Merge of part {} finished by some other replica, will fetch merged part",
+                entry.new_part_name);
+            /// We found covering part, no checks for missing part.
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = false,
+                .part_log_writer = {}
+            };
+        }
 
-            if (storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0 &&
-                estimated_space_for_merge >= storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock)
-            {
-                /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
-                /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
-                /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
-                /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
-                /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
-                ///
-                /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
-                /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
-                double start_to_sleep_seconds = std::logf(storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock.value);
-                uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_merge) - start_to_sleep_seconds + 0.5) * 1000);
-                uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
+        // TODO myrrc probably shouldn't reuse this setting for DiskObjectStorageVFS
+        const size_t min_size_sleep =
+            storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
 
-                LOG_INFO(log, "Merge size is {} bytes (it's more than sleep threshold {}) so will intentionally sleep for {} ms to allow other replicas to took this big merge",
-                    estimated_space_for_merge, storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock, time_to_sleep_milliseconds);
+        /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
+        /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
+        /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
+        /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
+        /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
+        ///
+        /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
+        /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
+        if (min_size_sleep != 0 && estimated_space_for_merge >= min_size_sleep)
+        {
+            double start_to_sleep_seconds = std::logf(min_size_sleep);
+            uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_merge) - start_to_sleep_seconds + 0.5) * 1000);
+            uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
-            }
+            LOG_INFO(log,
+                "Merge size is {} bytes (it's more than sleep threshold {}) so we will intentionally "
+                "sleep for {} ms to allow other replicas to take this big merge",
+                estimated_space_for_merge, min_size_sleep, time_to_sleep_milliseconds);
 
+            std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
+        }
+
+        if (is_zerocopy)
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
-            if (!zero_copy_lock || !zero_copy_lock->isLocked())
-            {
-                LOG_DEBUG(
-                    log,
-                    "Merge of part {} started by some other replica, will wait for it and fetch merged part. Number of tries {}",
-                    entry.new_part_name,
-                    entry.num_tries);
-                storage.watchZeroCopyLock(entry.new_part_name, disk);
-                /// Don't check for missing part -- it's missing because other replica still not
-                /// finished merge.
-                return PrepareResult{
-                    .prepared_successfully = false,
-                    .need_to_check_missing_part_in_fetch = false,
-                    .part_log_writer = {}
-                };
-            }
-            else if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
-            {
-                /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
-                /// and exclusive zero copy lock will be released. We will take the lock and execute merge one more time, while it was possible just to download the part from other replica.
-                ///
-                /// It's also possible just because reads in [Zoo]Keeper are not lineariazable.
-                ///
-                /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
-                zero_copy_lock->lock->unlock();
-
-                LOG_DEBUG(log, "We took zero copy lock, but merge of part {} finished by some other replica, will release lock and download merged part to avoid data duplication", entry.new_part_name);
-                return PrepareResult{
-                    .prepared_successfully = false,
-                    .need_to_check_missing_part_in_fetch = true,
-                    .part_log_writer = {}
-                };
-            }
-            else
-            {
-                LOG_DEBUG(log, "Zero copy lock taken, will merge part {}", entry.new_part_name);
-            }
+        if (is_zerocopy && (!zero_copy_lock || !zero_copy_lock->isLocked()))
+        {
+            LOG_DEBUG(
+                log,
+                "Merge of part {} started by some other replica, will wait for it and fetch merged part. Number of tries {}",
+                entry.new_part_name,
+                entry.num_tries);
+            storage.watchZeroCopyLock(entry.new_part_name, disk);
+            /// Don't check for missing part -- it's missing because other replica still not
+            /// finished merge.
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = false,
+                .part_log_writer = {}
+            };
         }
+
+        if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
+        {
+            /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
+            /// and exclusive zero copy lock will be released. We will take the lock and execute merge one more time, while it was possible just to download the part from other replica.
+            ///
+            /// It's also possible just because reads in [Zoo]Keeper are not lineariazable.
+            ///
+            /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
+            zero_copy_lock->lock->unlock();
+
+            LOG_DEBUG(log,
+                "We took lock but merge of part {} finished by some other replica, will "
+                "release lock and download merged part to avoid data duplication",
+                entry.new_part_name);
+
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = {}
+            };
+        }
+
+        LOG_DEBUG(log, "Lock taken, will merge part {}", entry.new_part_name);
     }
 
     /// Account TTL merge

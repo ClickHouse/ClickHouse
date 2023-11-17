@@ -393,6 +393,11 @@ public:
     /// Required for remote disk to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
+    // TODO myrrc not sure we need a generic locking interface similar to flock/fcntl as this
+    // will be used only for remote disks with VFS support for merges and mutations.
+    enum class LockMode { Set, SetBlocking, Unlock };
+    virtual bool lock(const String & path, LockMode mode);
+
     /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }
 
