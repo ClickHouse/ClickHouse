@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Functions/IFunction.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/Context_fwd.h>
-#include <Core/Field.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
 {
+
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 /*
  * Code adapted from Storages/MergeTree/KeyCondition.
