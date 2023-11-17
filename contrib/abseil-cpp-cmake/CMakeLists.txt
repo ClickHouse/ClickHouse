@@ -2683,6 +2683,7 @@ absl_cc_library(
     "${DIR}/status.h"
   SRCS
     "${DIR}/internal/status_internal.h"
+    "${DIR}/internal/status_internal.cc"
     "${DIR}/status.cc"
     "${DIR}/status_payload_printer.h"
     "${DIR}/status_payload_printer.cc"
@@ -2761,7 +2762,6 @@ absl_cc_library(
     "${DIR}/has_absl_stringify.h"
     "${DIR}/internal/damerau_levenshtein_distance.h"
     "${DIR}/internal/string_constant.h"
-    "${DIR}/internal/has_absl_stringify.h"
     "${DIR}/match.h"
     "${DIR}/numbers.h"
     "${DIR}/str_cat.h"
