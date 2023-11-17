@@ -107,6 +107,7 @@ class FilesystemReadPrefetchesLog;
 class S3QueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
+class PipelineLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
@@ -1057,9 +1058,9 @@ public:
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
-
+    std::shared_ptr<PipelineLog> getPipelineTraceLog() const;
     std::vector<ISystemLog *> getSystemLogs() const;
-
+    
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database) const;

@@ -22,6 +22,7 @@
 #include <Interpreters/S3QueueLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/BackupLog.h>
+#include <Interpreters/PipelineTrace.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -291,6 +292,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log");
     backup_log = createSystemLog<BackupLog>(global_context, "system", "backup_log", config, "backup_log");
     s3_queue_log = createSystemLog<S3QueueLog>(global_context, "system", "s3queue_log", config, "s3queue_log");
+    pipeline_trace_log = createSystemLog<PipelineLog>(global_context, "system", "pipeline_trace_log", config, "pipeline_trace_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -333,6 +335,11 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(backup_log.get());
     if (s3_queue_log)
         logs.emplace_back(s3_queue_log.get());
+    if (pipeline_trace_log) 
+    {
+        logs.emplace_back(pipeline_trace_log.get());
+        global_context->addWarningMessage("Table system.pipeline_trace_log is enabled. It may consume additional memory during query execution and disk spaces over the time.");
+    }
 
     try
     {

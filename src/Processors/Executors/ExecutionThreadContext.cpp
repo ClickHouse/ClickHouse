@@ -2,6 +2,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/Stopwatch.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/PipelineTrace.h>
 
 namespace DB
 {
@@ -92,7 +93,11 @@ bool ExecutionThreadContext::executeTask()
 
     try
     {
+        UInt64 start_ns = PipelineLog::now_ns();
         executeJob(node, read_progress_callback);
+        UInt64 end_ns = PipelineLog::now_ns();
+
+        PipelineLog::record(start_ns, end_ns, PipelineStageType::Execute, node);
         ++node->num_executed_jobs;
     }
     catch (...)
