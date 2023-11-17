@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
 
 namespace DB
 {
@@ -31,9 +32,9 @@ void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr
 {
     const Array & a = field.get<const Array &>();
     writeVarUInt(a.size(), ostr);
-    for (const auto & i : a)
+    for (size_t i = 0; i < a.size(); ++i)
     {
-        nested->serializeBinary(i, ostr, settings);
+        nested->serializeBinary(a[i], ostr, settings);
     }
 }
 
@@ -128,7 +129,7 @@ namespace
         for (size_t i = offset; i < end; ++i)
         {
             ColumnArray::Offset current_offset = offset_values[i];
-            writeBinaryLittleEndian(current_offset - prev_offset, ostr);
+            writeIntBinary(current_offset - prev_offset, ostr);
             prev_offset = current_offset;
         }
     }
@@ -144,7 +145,7 @@ namespace
         while (i < initial_size + limit && !istr.eof())
         {
             ColumnArray::Offset current_size = 0;
-            readBinaryLittleEndian(current_size, istr);
+            readIntBinary(current_size, istr);
 
             if (unlikely(current_size > MAX_ARRAY_SIZE))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size is too large: {}", current_size);
@@ -492,10 +493,7 @@ void SerializationArray::deserializeText(IColumn & column, ReadBuffer & istr, co
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextQuotedImpl(nested_column, istr, settings, nested);
-            else
-                nested->deserializeTextQuoted(nested_column, istr, settings);
+            nested->deserializeTextQuoted(nested_column, istr, settings);
         }, false);
 
     if (whole && !istr.eof())
@@ -519,35 +517,6 @@ void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_nu
             writeChar(',', ostr);
         nested->serializeTextJSON(nested_column, i, ostr, settings);
     }
-    writeChar(']', ostr);
-}
-
-void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
-{
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const IColumn & nested_column = column_array.getData();
-
-    if (offset == next_offset)
-    {
-        writeCString("[]", ostr);
-        return;
-    }
-
-    writeCString("[\n", ostr);
-    for (size_t i = offset; i < next_offset; ++i)
-    {
-        if (i != offset)
-            writeCString(",\n", ostr);
-        writeChar(' ', (indent + 1) * 4, ostr);
-        nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
-    }
-    writeChar('\n', ostr);
-    writeChar(' ', indent * 4, ostr);
     writeChar(']', ostr);
 }
 
@@ -606,10 +575,7 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)
             {
-                if (settings.null_as_default)
-                    SerializationNullable::deserializeTextCSVImpl(nested_column, rb, settings, nested);
-                else
-                    nested->deserializeTextCSV(nested_column, rb, settings);
+                nested->deserializeTextCSV(nested_column, rb, settings);
             }, true);
     }
     else
@@ -617,10 +583,7 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)
             {
-                if (settings.null_as_default)
-                    SerializationNullable::deserializeTextQuotedImpl(nested_column, rb, settings, nested);
-                else
-                    nested->deserializeTextQuoted(nested_column, rb, settings);
+                nested->deserializeTextQuoted(nested_column, rb, settings);
             }, true);
     }
 }

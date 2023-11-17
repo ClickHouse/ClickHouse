@@ -87,27 +87,27 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         size_t current_index = index++;
 
         bool inserted_value = false;
-        if (element.value && !element.setting_name.empty())
+        if (!element.value.isNull() && !element.setting_name.empty())
         {
-            String str = Settings::valueToStringUtil(element.setting_name, *element.value);
+            String str = Settings::valueToStringUtil(element.setting_name, element.value);
             column_value.insertData(str.data(), str.length());
             column_value_null_map.push_back(false);
             inserted_value = true;
         }
 
         bool inserted_min = false;
-        if (element.min_value && !element.setting_name.empty())
+        if (!element.min_value.isNull() && !element.setting_name.empty())
         {
-            String str = Settings::valueToStringUtil(element.setting_name, *element.min_value);
+            String str = Settings::valueToStringUtil(element.setting_name, element.min_value);
             column_min.insertData(str.data(), str.length());
             column_min_null_map.push_back(false);
             inserted_min = true;
         }
 
         bool inserted_max = false;
-        if (element.max_value && !element.setting_name.empty())
+        if (!element.max_value.isNull() && !element.setting_name.empty())
         {
-            String str = Settings::valueToStringUtil(element.setting_name, *element.max_value);
+            String str = Settings::valueToStringUtil(element.setting_name, element.max_value);
             column_max.insertData(str.data(), str.length());
             column_max_null_map.push_back(false);
             inserted_max = true;

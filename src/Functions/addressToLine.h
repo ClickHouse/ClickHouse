@@ -90,7 +90,8 @@ protected:
 
     ResultT impl(uintptr_t addr) const
     {
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
+        auto symbol_index_ptr = SymbolIndex::instance();
+        const SymbolIndex & symbol_index = *symbol_index_ptr;
 
         if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {

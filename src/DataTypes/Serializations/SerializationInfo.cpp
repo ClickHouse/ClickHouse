@@ -246,8 +246,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     return writeString(oss.str(), out);
 }
 
-SerializationInfoByName SerializationInfoByName::readJSON(
-    const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in)
+void SerializationInfoByName::readJSON(ReadBuffer & in)
 {
     String json_str;
     readString(json_str, in);
@@ -263,13 +262,8 @@ SerializationInfoByName SerializationInfoByName::readJSON(
             "Unknown version of serialization infos ({}). Should be less or equal than {}",
             object->getValue<size_t>(KEY_VERSION), SERIALIZATION_INFO_VERSION);
 
-    SerializationInfoByName infos;
     if (object->has(KEY_COLUMNS))
     {
-        std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
-        for (const auto & [name, type] : columns)
-            column_type_by_name.emplace(name, type.get());
-
         auto array = object->getArray(KEY_COLUMNS);
         for (const auto & elem : *array)
         {
@@ -277,22 +271,13 @@ SerializationInfoByName SerializationInfoByName::readJSON(
 
             if (!elem_object->has(KEY_NAME))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Missed field '{}' in serialization infos", KEY_NAME);
+                    "Missed field '{}' in SerializationInfo of columns", KEY_NAME);
 
             auto name = elem_object->getValue<String>(KEY_NAME);
-            auto it = column_type_by_name.find(name);
-
-            if (it == column_type_by_name.end())
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Found unexpected column '{}' in serialization infos", name);
-
-            auto info = it->second->createSerializationInfo(settings);
-            info->fromJSON(*elem_object);
-            infos.emplace(name, std::move(info));
+            if (auto it = find(name); it != end())
+                it->second->fromJSON(*elem_object);
         }
     }
-
-    return infos;
 }
 
 }

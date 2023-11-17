@@ -5,10 +5,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
-#include <Common/logger_useful.h>
 
 #include <Processors/Transforms/SquashingChunksTransform.h>
-
 
 namespace ProfileEvents
 {
@@ -623,9 +621,7 @@ IProcessor::Status AggregatingTransform::prepare()
 void AggregatingTransform::work()
 {
     if (is_consume_finished)
-    {
         initGenerate();
-    }
     else
     {
         consume(std::move(current_chunk));
@@ -676,10 +672,10 @@ void AggregatingTransform::consume(Chunk chunk)
 
 void AggregatingTransform::initGenerate()
 {
-    if (is_generate_initialized.load(std::memory_order_acquire))
+    if (is_generate_initialized)
         return;
 
-    is_generate_initialized.store(true, std::memory_order_release);
+    is_generate_initialized = true;
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.

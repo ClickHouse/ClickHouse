@@ -193,7 +193,7 @@ public:
         return true;
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!isEnabled())
             return;

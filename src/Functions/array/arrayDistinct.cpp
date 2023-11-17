@@ -268,9 +268,10 @@ void FunctionArrayDistinct::executeHashed(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
+            UInt128 hash;
             SipHash hash_function;
             src_data.updateHashWithValue(j, hash_function);
-            const auto hash = hash_function.get128();
+            hash_function.get128(hash);
 
             if (!set.find(hash))
             {

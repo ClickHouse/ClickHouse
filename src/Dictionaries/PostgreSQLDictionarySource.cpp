@@ -13,7 +13,6 @@
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Common/logger_useful.h>
 #endif
 
 

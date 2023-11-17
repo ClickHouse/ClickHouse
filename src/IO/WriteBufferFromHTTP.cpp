@@ -13,10 +13,9 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     const std::string & content_encoding,
     const HTTPHeaderEntries & additional_headers,
     const ConnectionTimeouts & timeouts,
-    size_t buffer_size_,
-    ProxyConfiguration proxy_configuration)
+    size_t buffer_size_)
     : WriteBufferFromOStream(buffer_size_)
-    , session{makeHTTPSession(uri, timeouts, proxy_configuration)}
+    , session{makeHTTPSession(uri, timeouts)}
     , request{method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
 {
     request.setHost(uri.getHost());

@@ -30,6 +30,9 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#if !defined(POCO_NO_LOCALE)
+#    include <locale>
+#endif
 
 
 // binary numbers are supported, thus 64 (bits) + 1 (string terminating zero)
@@ -50,7 +53,11 @@ inline char decimalSeparator()
 /// Returns decimal separator from global locale or
 /// default '.' for platforms where locale is unavailable.
 {
+#if !defined(POCO_NO_LOCALE)
+    return std::use_facet<std::numpunct<char>>(std::locale()).decimal_point();
+#else
     return '.';
+#endif
 }
 
 
@@ -58,7 +65,11 @@ inline char thousandSeparator()
 /// Returns thousand separator from global locale or
 /// default ',' for platforms where locale is unavailable.
 {
+#if !defined(POCO_NO_LOCALE)
+    return std::use_facet<std::numpunct<char>>(std::locale()).thousands_sep();
+#else
     return ',';
+#endif
 }
 
 
