@@ -49,7 +49,7 @@ private:
         const DataPartPtr & src_part
     );
 
-    static std::pair<MutableDataPartPtr , scope_guard> cloneSourcePart(
+    static std::pair<MutableDataPartPtr, scope_guard> cloneSourcePart(
         MergeTreeData * merge_tree_data,
         const DataPartPtr & src_part,
         const StorageMetadataPtr & metadata_snapshot,
