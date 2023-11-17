@@ -112,7 +112,6 @@ public:
     zkutil::ZooKeeper::Ptr getKeeper() const { return keeper; }
     bool isNull() const { return keeper.get() == nullptr; }
     bool expired() const { return !keeper || keeper->expired(); }
-
     bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const { return keeper->isFeatureEnabled(feature_flag); }
 
     void forceFailureBeforeOperation()
@@ -199,19 +198,26 @@ public:
 
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths);
 
-    /// These used to handle deletion of ephemeral nodes because of faults, but that is wrong as it should be handled by
-    /// the caller in the retries, as an injected fault is the same as a normal fault
     std::string create(const std::string & path, const std::string & data, int32_t mode);
+
     Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
+
     Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode);
+
     Coordination::Responses multi(const Coordination::Requests & requests);
 
     void createIfNotExists(const std::string & path, const std::string & data);
+
     void createOrUpdate(const std::string & path, const std::string & data, int32_t mode);
+
     void createAncestors(const std::string & path);
+
     Coordination::Error tryRemove(const std::string & path, int32_t version = -1);
+
     void removeRecursive(const std::string & path);
+
     void tryRemoveRecursive(const std::string & path);
+
     void removeChildren(const std::string & path);
 
     bool tryRemoveChildrenRecursive(
@@ -225,8 +231,11 @@ public:
     trySet(const std::string & path, const std::string & data, int32_t version = -1, Coordination::Stat * stat = nullptr);
 
     void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests);
+
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
+
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
+
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
 
     ///
@@ -236,9 +245,13 @@ public:
     ///
 
     zkutil::ZooKeeper::FutureExists asyncExists(std::string path, Coordination::WatchCallback watch_callback = {});
+
     zkutil::ZooKeeper::FutureGet asyncTryGet(std::string path);
+
     zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+
     zkutil::ZooKeeper::FutureRemove asyncTryRemove(std::string path, int32_t version = -1);
+
     zkutil::ZooKeeper::FutureRemove asyncTryRemoveNoThrow(const std::string & path, int32_t version = -1);
 };
 
