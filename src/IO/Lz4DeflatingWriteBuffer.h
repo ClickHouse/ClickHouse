@@ -33,10 +33,9 @@ private:
     LZ4F_compressionContext_t ctx;
 
     void * in_data;
-    void * out_data;
-
     size_t in_capacity;
-    size_t out_capacity;
+
+    Memory<> tmp_memory;
 
     bool first_time = true;
 };

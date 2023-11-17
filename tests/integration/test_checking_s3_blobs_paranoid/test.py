@@ -97,9 +97,8 @@ def get_counters(node, query_id, log_type="ExceptionWhileProcessing"):
     ]
 
 
-#  Add "lz4" compression method in the list after https://github.com/ClickHouse/ClickHouse/issues/50975 is fixed
 @pytest.mark.parametrize(
-    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate"]
+    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate", "lz4"]
 )
 def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression):
     node = cluster.instances["node"]
@@ -137,9 +136,8 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
     assert count_s3_errors == 1
 
 
-#  Add "lz4" compression method in the list after https://github.com/ClickHouse/ClickHouse/issues/50975 is fixed
 @pytest.mark.parametrize(
-    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate"]
+    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate", "lz4"]
 )
 def test_upload_s3_fail_upload_part_when_multi_part_upload(
     cluster, broken_s3, compression
