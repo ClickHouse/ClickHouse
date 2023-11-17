@@ -536,11 +536,21 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
-            ContextPtr context;
+            ContextPtr context = getContext();
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-            interpreter.buildQueryPlan(plan);
-            context = interpreter.getContext();
+            if (context->getSettingsRef().allow_experimental_analyzer)
+            {
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                context = interpreter.getContext();
+                plan = std::move(interpreter).extractQueryPlan();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                context = interpreter.getContext();
+                interpreter.buildQueryPlan(plan);
+            }
+
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).

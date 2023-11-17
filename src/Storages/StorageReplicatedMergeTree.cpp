@@ -19,6 +19,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadFuzzer.h>
 
+#include <Core/ServerUUID.h>
+
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
 #include <base/sort.h>
@@ -848,6 +850,9 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
             zkutil::CreateMode::Persistent));
 
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()),
+            zkutil::CreateMode::Persistent));
+
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
@@ -874,6 +879,80 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
     auto zookeeper = getZooKeeper();
 
     LOG_DEBUG(log, "Creating replica {}", replica_path);
+
+    const String local_metadata = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
+    const String local_columns = metadata_snapshot->getColumns().toString();
+    const String local_metadata_version = toString(metadata_snapshot->getMetadataVersion());
+    const String creator_info = toString(getStorageID().uuid) + "|" + toString(ServerUUID::get());
+
+    /// It is possible for the replica to fail after creating ZK nodes without saving local metadata.
+    /// Because of that we need to check whether the replica exists and is newly created.
+    /// For this we check that all nodes exist, the metadata of the table is the same, and other nodes are not modified.
+
+    std::vector<String> paths_exists = {
+        replica_path + "/host",
+        replica_path + "/log_pointer",
+        replica_path + "/queue",
+        replica_path + "/parts",
+        replica_path + "/flags",
+        replica_path + "/is_lost",
+        replica_path + "/metadata",
+        replica_path + "/columns",
+        replica_path + "/metadata_version",
+        replica_path + "/min_unprocessed_insert_time",
+        replica_path + "/max_processed_insert_time",
+        replica_path + "/mutation_pointer",
+        replica_path + "/creator_info"
+    };
+
+    auto response_exists = zookeeper->tryGet(paths_exists);
+    bool all_nodes_exist = true;
+
+    for (size_t i = 0; i < response_exists.size(); ++i)
+    {
+        if (response_exists[i].error != Coordination::Error::ZOK)
+        {
+            all_nodes_exist = false;
+            break;
+        }
+    }
+
+    if (all_nodes_exist)
+    {
+        size_t response_num = 0;
+
+        const auto & zk_host                        = response_exists[response_num++].data;
+        const auto & zk_log_pointer                 = response_exists[response_num++].data;
+        const auto & zk_queue                       = response_exists[response_num++].data;
+        const auto & zk_parts                       = response_exists[response_num++].data;
+        const auto & zk_flags                       = response_exists[response_num++].data;
+        const auto & zk_is_lost                     = response_exists[response_num++].data;
+        const auto & zk_metadata                    = response_exists[response_num++].data;
+        const auto & zk_columns                     = response_exists[response_num++].data;
+        const auto & zk_metadata_version            = response_exists[response_num++].data;
+        const auto & zk_min_unprocessed_insert_time = response_exists[response_num++].data;
+        const auto & zk_max_processed_insert_time   = response_exists[response_num++].data;
+        const auto & zk_mutation_pointer            = response_exists[response_num++].data;
+        const auto & zk_creator_info                = response_exists[response_num++].data;
+
+        if (zk_host.empty() &&
+            zk_log_pointer.empty() &&
+            zk_queue.empty() &&
+            zk_parts.empty() &&
+            zk_flags.empty() &&
+            (zk_is_lost == "0" || zk_is_lost == "1") &&
+            zk_metadata == local_metadata &&
+            zk_columns == local_columns &&
+            zk_metadata_version == local_metadata_version &&
+            zk_min_unprocessed_insert_time.empty() &&
+            zk_max_processed_insert_time.empty() &&
+            zk_mutation_pointer.empty() &&
+            zk_creator_info == creator_info)
+        {
+            LOG_DEBUG(log, "Empty replica {} exists, will use it", replica_path);
+            return;
+        }
+    }
 
     Coordination::Error code;
 
@@ -906,11 +985,11 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", is_lost_value,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", local_metadata,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", metadata_snapshot->getColumns().toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", local_columns,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(metadata_snapshot->getMetadataVersion()),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", local_metadata_version,
             zkutil::CreateMode::Persistent));
 
         /// The following 3 nodes were added in version 1.1.xxx, so we create them here, not in createNewZooKeeperNodes()
@@ -919,6 +998,9 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/max_processed_insert_time", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
+            zkutil::CreateMode::Persistent));
+
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", creator_info,
             zkutil::CreateMode::Persistent));
 
         /// Check version of /replicas to see if there are any replicas created at the same moment of time.
@@ -1328,6 +1410,20 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
 
 void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 {
+    if (checkPartsImpl(skip_sanity_checks))
+        return;
+
+    /// We failed to check parts in an optimistic way, and now we need all the parts including Outdated parts to check them correctly.
+    waitForOutdatedPartsToBeLoaded();
+
+    if (checkPartsImpl(skip_sanity_checks))
+        return;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "checkPartsImpl returned false after loading Outdated parts");
+}
+
+bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
+{
     auto zookeeper = getZooKeeper();
 
     Strings expected_parts_vec = zookeeper->getChildren(fs::path(replica_path) / "parts");
@@ -1422,6 +1518,18 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
             continue;
         }
 
+        /// We have uncovered unexpected parts, and we are not sure if we can restore them or not.
+        /// So we have to exit, load all Outdated parts, and check again.
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            if (!outdated_data_parts_loading_finished)
+            {
+                LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to check if unexpected parts can be recovered. "
+                              "Need retry.");
+                return false;
+            }
+        }
+
         /// Part is unexpected and we don't have covering part: it's suspicious
         uncovered_unexpected_parts.insert(part->name);
         uncovered_unexpected_parts_rows += part->rows_count;
@@ -1478,7 +1586,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
                         unexpected_parts_rows - uncovered_unexpected_parts_rows);
     }
 
-    if (unexpected_parts_nonnew_rows > 0 || uncovered_unexpected_parts_rows > 0)
+    if (unexpected_parts_nonnew_rows > 0 || uncovered_unexpected_parts_rows > 0 || !restorable_unexpected_parts.empty())
     {
         LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(restorable_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
                   fmt::join(covered_unexpected_parts, ", "), fmt::join(expected_parts, ", "));
@@ -1503,6 +1611,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}{}", part->name, part->name, restore_covered ? ", restoring covered parts" : "");
         forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", restore_covered);
     }
+
+    return true;
 }
 
 
@@ -8862,7 +8972,7 @@ void StorageReplicatedMergeTree::createTableSharedID() const
         else if (code == Coordination::Error::ZNONODE) /// table completely dropped, we can choose any id we want
         {
             id = toString(UUIDHelpers::Nil);
-            LOG_DEBUG(log, "Table was completely drop, we can use anything as ID (will use {})", id);
+            LOG_DEBUG(log, "Table was completely dropped, and we can use anything as ID (will use {})", id);
         }
         else if (code != Coordination::Error::ZOK)
         {
