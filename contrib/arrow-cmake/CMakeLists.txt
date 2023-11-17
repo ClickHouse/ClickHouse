@@ -127,7 +127,6 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/BpackingDefault.hh"
         "${ORC_SOURCE_SRC_DIR}/ByteRLE.cc"
         "${ORC_SOURCE_SRC_DIR}/ByteRLE.hh"
-        "${ORC_SOURCE_SRC_DIR}/CMakeLists.txt"
         "${ORC_SOURCE_SRC_DIR}/ColumnPrinter.cc"
         "${ORC_SOURCE_SRC_DIR}/ColumnReader.cc"
         "${ORC_SOURCE_SRC_DIR}/ColumnReader.hh"
