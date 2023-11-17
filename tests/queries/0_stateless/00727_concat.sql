@@ -50,15 +50,19 @@ SELECT concat('With ', materialize([[(20, 20), (50, 20), (50, 50), (20, 50)], [(
 SELECT concat('With ', materialize([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]] :: MultiPolygon));
 
 SELECT '-- SimpleAggregateFunction';
-CREATE OR REPLACE TABLE concat_saf_test(x SimpleAggregateFunction(max, Int32)) ENGINE=MergeTree ORDER BY tuple();
+DROP TABLE IF EXISTS concat_saf_test;
+CREATE TABLE concat_saf_test(x SimpleAggregateFunction(max, Int32)) ENGINE=MergeTree ORDER BY tuple();
 INSERT INTO concat_saf_test VALUES (42);
 INSERT INTO concat_saf_test SELECT max(number) FROM numbers(5);
 SELECT concat('With ', x) FROM concat_saf_test ORDER BY x DESC;
+DROP TABLE concat_saf_test;
 
 SELECT '-- Nested';
-CREATE OR REPLACE TABLE concat_nested_test(kv Nested(k String, v String)) ENGINE = MergeTree ORDER BY tuple();
+DROP TABLE IF EXISTS concat_nested_test;
+CREATE TABLE concat_nested_test(attrs Nested(k String, v String)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO concat_nested_test VALUES (['foo', 'bar'], ['qaz', 'qux']);
-SELECT concat('With ', kv) FROM concat_nested_test;
+SELECT concat('With ', attrs.k, attrs.v) FROM concat_nested_test;
+DROP TABLE concat_nested_test;
 
 SELECT '-- NULL arguments';
 SELECT concat(NULL, NULL);
