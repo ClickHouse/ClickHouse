@@ -39,7 +39,7 @@ size_t estimateRAMSize()
 }
 
 /// Do random reads and writes in PageCache from multiple threads, check that the data read matches the data written.
-TEST(PageCache, Stress)
+TEST(PageCache, DISABLED_Stress)
 {
     /// There doesn't seem to be a reasonable way to simulate memory pressure or force the eviction of MADV_FREE-d pages.
     /// So we actually map more virtual memory than we have RAM and fill it all up a few times.

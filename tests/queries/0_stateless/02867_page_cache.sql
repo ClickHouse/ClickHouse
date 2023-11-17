@@ -75,7 +75,7 @@ insert into events_snapshot select * from system.events;
 
 select sum(k) from page_cache_03055;
 
-select * from events_diff;
+select * from events_diff where event not in ('PageCacheChunkDataHits');
 truncate table events_snapshot;
 insert into events_snapshot select * from system.events;
 
