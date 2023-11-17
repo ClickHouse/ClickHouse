@@ -128,12 +128,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
     // and add a Link entry
     if (is_metadata_file_for_vfs)
     {
-        const String path_without_prefix = path.substr(4);
+        const String path_without_tag = path.substr(0, path.size() - 4);
         return std::make_unique<WriteBufferWithFinalizeCallback>(
-            std::make_unique<WriteBufferFromFile>(path_without_prefix, buf_size),
-            [tx = shared_from_this(), path_without_prefix](size_t)
+            std::make_unique<WriteBufferFromFile>(path_without_tag, buf_size),
+            [tx = shared_from_this(), path_without_tag](size_t)
             {
-                const StoredObjects objects = tx->metadata_storage.getStorageObjects(path_without_prefix);
+                const StoredObjects objects = tx->metadata_storage.getStorageObjects(path_without_tag);
                 tx->addStoredObjectsOp(VFSTransactionLogItem::Type::Link, objects);
                 tx->commit();
             },

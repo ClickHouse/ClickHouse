@@ -762,13 +762,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 "Got '{}' cookie for in-memory part",
                 OBJECT_STORAGE_VFS);
 
-        auto output_buffer_getter = [](
+        auto output_buffer_getter = [disk](
             IDataPartStorage & part_storage, const String & file_name, size_t file_size)
         {
             // Alternative is altering WriteSettings but this also is a bad solution
-            return part_storage.writeFile(file_name + ":vfs",
-                std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE),
-                {});
+            auto path = fs::path(part_storage.getFullPath()) / (file_name + ":vfs");
+            return disk->writeFile(path, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
         };
 
         return

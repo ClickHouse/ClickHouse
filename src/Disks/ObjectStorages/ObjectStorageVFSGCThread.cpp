@@ -65,6 +65,8 @@ void ObjectStorageVFSGCThread::run()
         auto [snapshot, obsolete_objects] = getSnapshotWithLogEntries(start_logpointer, end_logpointer);
 
         const String snapshot_name = fmt::format("{}{}", VFS_SNAPSHOT_PREFIX, end_logpointer);
+        // TODO myrrc sometimes the snapshot is empty, maybe we shouldn't write it and add a special
+        // tombstone CreateInode entry to log (e.g. with empty remote_path
         writeSnapshot(std::move(snapshot), snapshot_name);
 
         removeObjectsFromObjectStorage(obsolete_objects);
@@ -142,7 +144,7 @@ void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const Stri
 
 void ObjectStorageVFSGCThread::removeObjectsFromObjectStorage(const VFSSnapshot::ObsoleteObjects & objects)
 {
-    LOG_DEBUG(log, "Removing objects {} from storage", fmt::join(objects, ", "));
+    LOG_DEBUG(log, "Removing objects from storage: {}", fmt::join(objects, "\n"));
     storage.removeObjects(objects);
 }
 
