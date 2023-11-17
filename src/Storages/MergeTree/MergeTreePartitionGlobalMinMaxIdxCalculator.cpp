@@ -56,12 +56,12 @@ void MergeTreePartitionGlobalMinMaxIdxCalculator::updateGlobalMinMaxIndexes(
 
         const auto & [global_min_idx, global_max_idx] = global_min_max_indexes[i];
 
-        if (global_min_idx.isNull() || local_min_idx < global_min_idx)
+        if (local_min_idx < global_min_idx)
         {
             global_min_max_indexes[i].first = local_min_idx;
         }
 
-        if (global_max_idx.isNull() || local_max_idx > global_max_idx)
+        if (local_max_idx > global_max_idx)
         {
             global_min_max_indexes[i].second = local_max_idx;
         }
