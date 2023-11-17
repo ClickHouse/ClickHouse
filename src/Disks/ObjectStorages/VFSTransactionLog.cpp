@@ -19,25 +19,27 @@ String VFSTransactionLogItem::serialize() const
     return fmt::format("{} {}", type, remote_path);
 }
 
-VFSTransactionLogItem & VFSTransactionLogItem::deserialize(std::string_view str)
+VFSTransactionLogItem VFSTransactionLogItem::deserialize(std::string_view str)
 {
+    VFSTransactionLogItem out;
+
     // TODO myrrc proper checking
     std::vector<std::string_view> parts;
     splitInto<' '>(parts, str);
 
     if (parts.size() == 4)
     {
-        type = Type::CreateInode;
-        remote_path = parts[1];
-        local_path = parts[2];
-        bytes_size = parseFromString<size_t>(parts[3]);
-        return *this;
+        out.type = Type::CreateInode;
+        out.remote_path = parts[1];
+        out.local_path = parts[2];
+        out.bytes_size = parseFromString<size_t>(parts[3]);
+        return out;
     }
 
     chassert(parts.size() == 2);
-    type = *magic_enum::enum_cast<Type>(parts[0]);
-    remote_path = parts[1];
-    return *this;
+    out.type = *magic_enum::enum_cast<Type>(parts[0]);
+    out.remote_path = parts[1];
+    return out;
 }
 
 void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type, const StoredObjects & objects, Coordination::Requests & ops)
@@ -90,8 +92,10 @@ VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactio
     return out;
 }
 
-VFSSnapshot & VFSSnapshot::deserialize(std::string_view str)
+VFSSnapshot VFSSnapshot::deserialize(std::string_view str)
 {
+    VFSSnapshot out;
+
     // TODO myrrc proper checking and proper code
     std::vector<std::string_view> objects;
     splitInto<'\n'>(objects, str);
@@ -102,7 +106,7 @@ VFSSnapshot & VFSSnapshot::deserialize(std::string_view str)
         splitInto<' '>(object_parts, object);
         chassert(object_parts.size() == 4);
         const size_t links = parseFromString<size_t>(object_parts[0]);
-        items.emplace(
+        out.items.emplace(
             object_parts[2],
             ObjectWithRefcount{
                 StoredObject(
@@ -112,7 +116,7 @@ VFSSnapshot & VFSSnapshot::deserialize(std::string_view str)
                 links});
     }
 
-    return *this;
+    return out;
 }
 
 String VFSSnapshot::serialize() const

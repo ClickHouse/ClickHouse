@@ -71,7 +71,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageVFS::readObject(const S
     return object_storage->readObject(object);
 }
 
-void DiskObjectStorageVFS::removeObjects(const StoredObjects & objects)
+void DiskObjectStorageVFS::removeObjects(StoredObjects && objects)
 {
     object_storage->removeObjects(objects);
 }

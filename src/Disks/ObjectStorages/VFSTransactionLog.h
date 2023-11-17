@@ -21,14 +21,11 @@ struct VFSTransactionLogItem : StoredObject
     } type;
 
     String serialize() const;
-    VFSTransactionLogItem & deserialize(std::string_view str);
+    static VFSTransactionLogItem deserialize(std::string_view str);
 };
 
 // For every object in objects, add a Keeper log entry create request with corresponding type to ops
-void getStoredObjectsVFSLogOps( //NOLINT
-    VFSTransactionLogItem::Type type,
-    const StoredObjects & objects,
-    Coordination::Requests & ops);
+void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type, const StoredObjects & objects, Coordination::Requests & ops);
 
 struct VFSSnapshot
 {
@@ -43,7 +40,7 @@ struct VFSSnapshot
 
     // Update snapshot with logs, return a list of objects that have zero references
     ObsoleteObjects update(const std::vector<VFSTransactionLogItem> & logs);
-    VFSSnapshot & deserialize(std::string_view str);
+    static VFSSnapshot deserialize(std::string_view str);
     String serialize() const;
 };
 
@@ -64,7 +61,6 @@ struct fmt::formatter<DB::VFSTransactionLogItem>
     }
 };
 
-// TODO myrrc for logging purposes only
 template <>
 struct fmt::formatter<DB::VFSSnapshot>
 {

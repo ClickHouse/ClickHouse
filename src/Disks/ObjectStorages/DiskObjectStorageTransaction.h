@@ -3,6 +3,7 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <base/FnTraits.h>
 
 namespace DB
 {
@@ -32,6 +33,22 @@ public:
     virtual ~IDiskObjectStorageOperation() = default;
 
     virtual std::string getInfoForLog() const = 0;
+};
+
+template <Fn<void()> Callback>
+struct CallbackOperation : public IDiskObjectStorageOperation
+{
+    Callback callback;
+
+    CallbackOperation(IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, Callback && cb_)
+        : IDiskObjectStorageOperation(object_storage_, metadata_storage_), callback(std::move(cb_))
+    {
+    }
+
+    void execute(MetadataTransactionPtr) override { std::move(callback)(); }
+    void undo() override { }
+    void finalize() override { }
+    String getInfoForLog() const override { return "CallbackOperation"; }
 };
 
 using DiskObjectStorageOperation = std::unique_ptr<IDiskObjectStorageOperation>;

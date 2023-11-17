@@ -40,7 +40,6 @@ private:
     VFSSnapshotWithObsoleteObjects getSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
 
     void writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name);
-    void removeObjectsFromObjectStorage(const VFSSnapshot::ObsoleteObjects & objects);
     void removeLogEntries(size_t start_logpointer, size_t end_logpointer);
 };
 }

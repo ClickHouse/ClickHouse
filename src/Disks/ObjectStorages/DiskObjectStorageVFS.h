@@ -47,6 +47,6 @@ private:
     DiskTransactionPtr createObjectStorageTransaction() final;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject(const StoredObject& object);
-    void removeObjects(const StoredObjects & objects);
+    void removeObjects(StoredObjects && objects);
 };
 }
