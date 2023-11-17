@@ -101,7 +101,7 @@ ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr co
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
 
     /** All the hassle below is to make sure the special kind of database has been indeed filtered
-      * out when requested by user, but not incorrectly filter out other databases, becasue queries
+      * out when requested by user, but not incorrectly filter out other databases, because queries
       * like engine = 'View', whose storage might be 'atomic' would be filtered out as well as its
       * engine name != storage name. Filter for other databases happens at the execution stage.
       */
