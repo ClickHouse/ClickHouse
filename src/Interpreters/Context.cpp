@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
 #include <Common/Stopwatch.h>
@@ -195,6 +196,8 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
+
+    ConfigurationPtr sensitive_data_masker_config;
 
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
@@ -2324,6 +2327,25 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
     shared->dictionaries_xmls = external_dictionaries_loader.addConfigRepository(std::move(repository));
 }
 
+void Context::waitForDictionariesLoad() const
+{
+    LOG_TRACE(shared->log, "Waiting for dictionaries to be loaded");
+    auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
+    bool all_dictionaries_loaded = true;
+    for (const auto & result : results)
+    {
+        if ((result.status != ExternalLoaderStatus::LOADED) && (result.status != ExternalLoaderStatus::LOADED_AND_RELOADING))
+        {
+            LOG_WARNING(shared->log, "Dictionary {} was not loaded ({})", result.name, result.status);
+            all_dictionaries_loaded = false;
+        }
+    }
+    if (all_dictionaries_loaded)
+        LOG_INFO(shared->log, "All dictionaries have been loaded");
+    else
+        LOG_INFO(shared->log, "Some dictionaries were not loaded");
+}
+
 void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
 {
     auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
@@ -3196,6 +3218,16 @@ bool Context::hasZooKeeper() const
 bool Context::hasAuxiliaryZooKeeper(const String & name) const
 {
     return getConfigRef().has("auxiliary_zookeepers." + name);
+}
+
+void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
+{
+    const auto old_config = shared->sensitive_data_masker_config;
+    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
+        return;
+
+    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
+    shared->sensitive_data_masker_config = config;
 }
 
 InterserverCredentialsPtr Context::getInterserverCredentials() const
