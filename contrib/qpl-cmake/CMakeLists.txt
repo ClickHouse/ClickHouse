@@ -16,8 +16,7 @@ function(GetLibraryVersion _content _outputVar)
     SET(${_outputVar} ${CMAKE_MATCH_1} PARENT_SCOPE)
 endfunction()
 
-FILE(READ "${QPL_PROJECT_DIR}/CMakeLists.txt" HEADER_CONTENT)
-GetLibraryVersion("${HEADER_CONTENT}" QPL_VERSION)
+set (QPL_VERSION 1.2.0)
 
 message(STATUS "Intel QPL version: ${QPL_VERSION}")
 

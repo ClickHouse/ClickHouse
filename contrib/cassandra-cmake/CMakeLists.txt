@@ -83,10 +83,6 @@ set(HAVE_MEMCPY 1)
 set(HAVE_LONG_LONG 1)
 set(HAVE_UINT16_T 1)
 
-configure_file("${CASS_SRC_DIR}/third_party/sparsehash/config.h.cmake" "${CMAKE_CURRENT_BINARY_DIR}/sparsehash/internal/sparseconfig.h")
-
-
-
 # Determine random availability
 if (OS_LINUX)
   #set (HAVE_GETRANDOM 1) - not on every Linux kernel
