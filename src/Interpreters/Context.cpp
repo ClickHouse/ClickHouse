@@ -3666,7 +3666,7 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<PipelineLog> Context::getPipelineTraceLog() const
 {
-    auto lock = getLock();
+    SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};

@@ -7,12 +7,12 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
-namespace DB 
+namespace DB
 {
 
 using PipelineLogStageType = PipelineLogElement::PipelineLogStageType;
 
-const PipelineLogStageType::Values PipelineLogElement::pipeline_stage_values = 
+const PipelineLogStageType::Values PipelineLogElement::pipeline_stage_values =
 {
     {"Prepare", static_cast<UInt8>(PipelineStageType::Prepare)},
     {"Execute", static_cast<UInt8>(PipelineStageType::Execute)},
@@ -39,7 +39,7 @@ NamesAndTypesList PipelineLogElement::getNamesAndTypes()
 void PipelineLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
-    
+
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
@@ -57,31 +57,31 @@ static const unsigned int UUID_LEN = 36;
 
 void PipelineLog::record(UInt64 start_ns, UInt64 end_ns, PipelineStageType stage, ExecutingGraph::Node* node)
 {
-    if (!CurrentThread::isInitialized()) 
+    if (!CurrentThread::isInitialized())
     {
         return;
     }
 
     ContextPtr query_context = CurrentThread::get().getQueryContext() ;
-    
-    if (!query_context) 
+
+    if (!query_context)
     {
         return;
     }
 
     const Settings & settings = query_context->getSettingsRef();
     auto trace_pipeline = settings.trace_pipeline;
-    if (!trace_pipeline) 
+    if (!trace_pipeline)
     {
         return;
     }
 
     auto log = query_context->getPipelineTraceLog();
-    if (!log) 
+    if (!log)
     {
         return;
     }
-    
+
     UInt64 time = now_ns();
     UInt64 time_in_microseconds = time / 1000;
 
@@ -92,7 +92,7 @@ void PipelineLog::record(UInt64 start_ns, UInt64 end_ns, PipelineStageType stage
 
     PipelineLogElement element {
         time_t(time / 1000000000),
-        time_in_microseconds, 
+        time_in_microseconds,
         std::string(query_id),
         thread_id,
         node->processor->getName(),
@@ -107,22 +107,22 @@ void PipelineLog::record(UInt64 start_ns, UInt64 end_ns, PipelineStageType stage
 }
 
 UInt64 PipelineLog::now_ns()
-{    
-    if (!CurrentThread::isInitialized()) 
+{
+    if (!CurrentThread::isInitialized())
     {
         return 0;
     }
 
     ContextPtr query_context = CurrentThread::get().getQueryContext() ;
-    
-    if (!query_context) 
+
+    if (!query_context)
     {
         return 0;
     }
 
     const Settings & settings = query_context->getSettingsRef();
     auto trace_pipeline = settings.trace_pipeline;
-    if (!trace_pipeline) 
+    if (!trace_pipeline)
     {
         return 0;
     }
@@ -130,6 +130,6 @@ UInt64 PipelineLog::now_ns()
     std::chrono::time_point<std::chrono::system_clock> point = std::chrono::system_clock::now();
 
     return timeInNanoseconds(point);
-} 
+}
 
 }

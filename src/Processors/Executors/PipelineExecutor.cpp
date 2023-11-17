@@ -198,7 +198,8 @@ void PipelineExecutor::finalizeExecution()
     if (process_list_element)
     {
         auto pipeline_trace_log = process_list_element->getContext()->getPipelineTraceLog();
-        if (pipeline_trace_log) {
+        if (pipeline_trace_log)
+        {
             pipeline_trace_log->flush(true);
         }
     }

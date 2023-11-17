@@ -335,7 +335,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(backup_log.get());
     if (s3_queue_log)
         logs.emplace_back(s3_queue_log.get());
-    if (pipeline_trace_log) 
+    if (pipeline_trace_log)
     {
         logs.emplace_back(pipeline_trace_log.get());
         global_context->addWarningMessage("Table system.pipeline_trace_log is enabled. It may consume additional memory during query execution and disk spaces over the time.");

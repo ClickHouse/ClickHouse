@@ -34,7 +34,7 @@ struct PipelineLogElement
     PipelineStageType stage_type{};
     UInt64 start_ns{};
     UInt64 end_ns{};
-    
+
 
     static std::string name() { return "PipelineLog"; }
     static NamesAndTypesList getNamesAndTypes() ;
