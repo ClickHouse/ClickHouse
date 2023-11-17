@@ -38,7 +38,7 @@ rm -f CMakeCache.txt
 # To check it, find and delete them.
 
 grep -o -P '"contrib/[^"]+"' ../.gitmodules |
-  grep -v -P 'llvm-project|abseil-cpp|qpl|grpc|corrosion' |
+  grep -v -P 'llvm-project|abseil-cpp|grpc|corrosion' |
   xargs -I@ find ../@ -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' |
   xargs rm
 
