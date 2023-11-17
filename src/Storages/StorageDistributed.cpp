@@ -335,8 +335,8 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(distributed_settings_)
     , rng(randomSeed())
 {
-    if (!distributed_settings.flush_on_detach && distributed_settings.monitor_batch_inserts)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and monitor_batch_inserts=1 are incompatible");
+    if (!distributed_settings.flush_on_detach && distributed_settings.background_insert_batch)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
@@ -531,9 +531,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
-
-    // std::cerr << query_node.dumpTree() << std::endl;
-    // std::cerr << query_info.table_expression->dumpTree() << std::endl;
 
     auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
     {
@@ -938,8 +935,8 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
-    auto timeout = settings.insert_distributed_timeout;
+    bool insert_sync = settings.distributed_foreground_insert || settings.insert_shard_id || owned_cluster;
+    auto timeout = settings.distributed_background_insert_timeout;
 
     Names columns_to_send;
     if (settings.insert_allow_materialized_columns)
@@ -1248,9 +1245,9 @@ void StorageDistributed::initializeFromDisk()
 }
 
 
-void StorageDistributed::shutdown()
+void StorageDistributed::shutdown(bool)
 {
-    monitors_blocker.cancelForever();
+    async_insert_blocker.cancelForever();
 
     std::lock_guard lock(cluster_nodes_mutex);
 
@@ -1267,9 +1264,9 @@ void StorageDistributed::drop()
     // parallel.
     //
     // And second time shutdown() should be fast, since none of
-    // DirectoryMonitor should do anything, because ActionBlocker is canceled
-    // (in shutdown()).
-    shutdown();
+    // DirectoryMonitor should not do anything, because ActionBlocker is
+    // canceled (in shutdown()).
+    shutdown(true);
 
     // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())
@@ -1313,7 +1310,7 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
 
     for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
     {
-        it->second.directory_monitor->shutdownAndDropAllData();
+        it->second.directory_queue->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
 
@@ -1368,16 +1365,16 @@ DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(con
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    if (!node_data.directory_monitor)
+    if (!node_data.directory_queue)
     {
         node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(name, *this);
-        node_data.directory_monitor = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
+        node_data.directory_queue = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
-            monitors_blocker,
+            async_insert_blocker,
             getContext()->getDistributedSchedulePool());
     }
-    return *node_data.directory_monitor;
+    return *node_data.directory_queue;
 }
 
 std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::getDirectoryQueueStatuses() const
@@ -1386,7 +1383,7 @@ std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::ge
     std::lock_guard lock(cluster_nodes_mutex);
     statuses.reserve(cluster_nodes_data.size());
     for (const auto & node : cluster_nodes_data)
-        statuses.push_back(node.second.directory_monitor->getStatus());
+        statuses.push_back(node.second.directory_queue->getStatus());
     return statuses;
 }
 
@@ -1614,7 +1611,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
 ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
 {
     if (type == ActionLocks::DistributedSend)
-        return monitors_blocker.cancel();
+        return async_insert_blocker.cancel();
     return {};
 }
 
@@ -1635,14 +1632,14 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
     /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
     auto table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
-    std::vector<std::shared_ptr<DistributedAsyncInsertDirectoryQueue>> directory_monitors;
+    std::vector<std::shared_ptr<DistributedAsyncInsertDirectoryQueue>> directory_queues;
 
     {
         std::lock_guard lock(cluster_nodes_mutex);
 
-        directory_monitors.reserve(cluster_nodes_data.size());
+        directory_queues.reserve(cluster_nodes_data.size());
         for (auto & node : cluster_nodes_data)
-            directory_monitors.push_back(node.second.directory_monitor);
+            directory_queues.push_back(node.second.directory_queue);
     }
 
     bool need_flush = getDistributedSettingsRef().flush_on_detach;
@@ -1650,7 +1647,7 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
         LOG_INFO(log, "Skip flushing data (due to flush_on_detach=0)");
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto & node : directory_monitors)
+    for (auto & node : directory_queues)
     {
         if (need_flush)
             node->flushAllData();
@@ -1706,7 +1703,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 
         std::lock_guard lock(cluster_nodes_mutex);
         for (auto & node : cluster_nodes_data)
-            node.second.directory_monitor->updatePath(new_path_to_table_data);
+            node.second.directory_queue->updatePath(new_path_to_table_data);
     }
 
     relative_data_path = new_path_to_table_data;
@@ -1842,15 +1839,15 @@ void registerStorageDistributed(StorageFactory & factory)
                 "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
         }
 
-        /// Set default values from the distributed_directory_monitor_* global context settings.
-        if (!distributed_settings.monitor_batch_inserts.changed)
-            distributed_settings.monitor_batch_inserts = context->getSettingsRef().distributed_directory_monitor_batch_inserts;
-        if (!distributed_settings.monitor_split_batch_on_failure.changed)
-            distributed_settings.monitor_split_batch_on_failure = context->getSettingsRef().distributed_directory_monitor_split_batch_on_failure;
-        if (!distributed_settings.monitor_sleep_time_ms.changed)
-            distributed_settings.monitor_sleep_time_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
-        if (!distributed_settings.monitor_max_sleep_time_ms.changed)
-            distributed_settings.monitor_max_sleep_time_ms = context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms;
+        /// Set default values from the distributed_background_insert_* global context settings.
+        if (!distributed_settings.background_insert_batch.changed)
+            distributed_settings.background_insert_batch = context->getSettingsRef().distributed_background_insert_batch;
+        if (!distributed_settings.background_insert_split_batch_on_failure.changed)
+            distributed_settings.background_insert_split_batch_on_failure = context->getSettingsRef().distributed_background_insert_split_batch_on_failure;
+        if (!distributed_settings.background_insert_sleep_time_ms.changed)
+            distributed_settings.background_insert_sleep_time_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms;
+        if (!distributed_settings.background_insert_max_sleep_time_ms.changed)
+            distributed_settings.background_insert_max_sleep_time_ms = context->getSettingsRef().distributed_background_insert_max_sleep_time_ms;
 
         return std::make_shared<StorageDistributed>(
             args.table_id,
@@ -1875,4 +1872,19 @@ void registerStorageDistributed(StorageFactory & factory)
     });
 }
 
+bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
+{
+    if (!data_volume)
+        return true;
+
+    for (auto & disk : data_volume->getDisks())
+    {
+        if (new_added_disks.contains(disk->getName()))
+        {
+            initializeDirectoryQueuesForDisk(disk);
+        }
+    }
+
+    return true;
+}
 }

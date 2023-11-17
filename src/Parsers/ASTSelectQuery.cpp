@@ -42,14 +42,14 @@ ASTPtr ASTSelectQuery::clone() const
 }
 
 
-void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
+void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(distinct);
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
     hash_state.update(limit_with_ties);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 

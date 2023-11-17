@@ -13,7 +13,7 @@ concat(\'Value_1\', \'Value_2\')	String
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)'));
-CAST(tuple(1, \'Value\'), \'Tuple (id UInt64, value String)\')	Tuple(id UInt64, value String)					
+CAST((1, \'Value\'), \'Tuple (id UInt64, value String)\')	Tuple(id UInt64, value String)					
 SELECT 'Columns';
 Columns
 DESCRIBE (SELECT test_table.id, test_table.id, id FROM test_table);
@@ -737,3 +737,18 @@ t2.id	UInt64
 t2.value	String					
 t3.id	UInt64					
 t3.value	String					
+SELECT 'Special functions array, tuple';
+Special functions array, tuple
+DESCRIBE (SELECT [], array(), [1], array(1), [1, 2], array(1, 2), tuple(1), (1, 2), [[], []], [([], [])], ([], []), ([([], []), ([], [])]));
+[]	Array(Nothing)					
+[]	Array(Nothing)					
+[1]	Array(UInt8)					
+[1]	Array(UInt8)					
+[1, 2]	Array(UInt8)					
+[1, 2]	Array(UInt8)					
+(1)	Tuple(UInt8)					
+(1, 2)	Tuple(UInt8, UInt8)					
+[[], []]	Array(Array(Nothing))					
+[([], [])]	Array(Tuple(Array(Nothing), Array(Nothing)))					
+([], [])	Tuple(Array(Nothing), Array(Nothing))					
+[([], []), ([], [])]	Array(Tuple(Array(Nothing), Array(Nothing)))					

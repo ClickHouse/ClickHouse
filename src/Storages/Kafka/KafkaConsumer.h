@@ -104,7 +104,7 @@ public:
     auto currentPartition() const { return current[-1].get_partition(); }
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
-    String currentPayload() const { return current[-1].get_payload(); }
+    const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
     void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
     void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
     void setRDKafkaStat(const std::string & stat_json_string)
