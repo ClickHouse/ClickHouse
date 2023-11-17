@@ -149,15 +149,15 @@ def test_s3_vfs(started_cluster, policy):
     for item in log_items:
         logging.info(item)
 
-# Merges don't work as for now
-#     node1.query("OPTIMIZE TABLE s3_test FINAL")
-# 
-#     # Based on version 21.x - after merge, two old parts and one merged
-#     wait_for_large_objects_count(cluster, 3)
-# 
-#     # Based on version 21.x - after cleanup - only one merged part
-#     wait_for_large_objects_count(cluster, 1, timeout=60)
-# 
-#     node1.query("DROP TABLE IF EXISTS s3_test SYNC")
-#     node2.query("DROP TABLE IF EXISTS s3_test SYNC")
+    # Merges don't work as for now
+    #     node1.query("OPTIMIZE TABLE s3_test FINAL")
+    #
+    #     # Based on version 21.x - after merge, two old parts and one merged
+    #     wait_for_large_objects_count(cluster, 3)
+    #
+    #     # Based on version 21.x - after cleanup - only one merged part
+    #     wait_for_large_objects_count(cluster, 1, timeout=60)
+    #
+    #     node1.query("DROP TABLE IF EXISTS s3_test SYNC")
+    #     node2.query("DROP TABLE IF EXISTS s3_test SYNC")
     assert False

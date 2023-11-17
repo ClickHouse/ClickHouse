@@ -92,8 +92,8 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
     const size_t log_batch_length = end_logpointer - start_logpointer + 1;
 
     Coordination::Requests requests(log_batch_length);
-    for (size_t i = start_logpointer; i <= end_logpointer; ++i)
-        requests[i] = zkutil::makeGetRequest(getNode(i));
+    for (size_t i = 0; i < log_batch_length; ++i)
+        requests[i] = zkutil::makeGetRequest(getNode(start_logpointer + i));
 
     std::vector<VFSTransactionLogItem> log_batch(log_batch_length);
     VFSTransactionLogItem previous_snapshot_log_item;
@@ -102,6 +102,7 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
     /// put in log, so when we process next batch, we can get the snapshot remote path from log. Then we
     /// construct a StoredObject and read directly from it.
     const Coordination::Responses responses = storage.zookeeper->multi(requests);
+
     for (size_t i = 0; i < log_batch_length; ++i)
     {
         const String & log_item_str = dynamic_cast<const Coordination::GetResponse &>(*responses[i]).data;
@@ -159,8 +160,7 @@ void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const Stri
     writeString(snapshot.serialize(), *buf);
     buf->finalize();
 
-    // We have local metadata file which we don't need (snapshot will be deleted by replica processing
-    // next batch)
+    // Local metadata file which we don't need (snapshot will be deleted by replica processing next batch)
     auto tx = storage.metadata_storage->createTransaction();
     tx->unlinkFile(snapshot_name);
     tx->commit();
@@ -169,9 +169,10 @@ void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const Stri
 void ObjectStorageVFSGCThread::removeLogEntries(size_t start_logpointer, size_t end_logpointer)
 {
     LOG_DEBUG(log, "Removing log range [{};{}]", start_logpointer, end_logpointer);
-    Coordination::Requests requests;
-    for (size_t i = start_logpointer; i <= end_logpointer; ++i)
-        requests.emplace_back(zkutil::makeRemoveRequest(getNode(i), -1));
+    const size_t log_batch_length = end_logpointer - start_logpointer + 1;
+    Coordination::Requests requests(log_batch_length);
+    for (size_t i = 0; i < log_batch_length; ++i)
+        requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), -1);
     storage.zookeeper->multi(requests);
 }
 }
