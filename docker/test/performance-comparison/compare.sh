@@ -189,6 +189,8 @@ function run_tests
         test_prefix=right/performance
     fi
 
+    run_only_changed_tests=0
+
     # Determine which tests to run.
     if [ -v CHPC_TEST_GREP ]
     then
@@ -203,6 +205,7 @@ function run_tests
         # tests. The lists of changed files are prepared in entrypoint.sh because
         # it has the repository.
         test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
+        run_only_changed_tests=1
     else
         # The default -- run all tests found in the test dir.
         test_files=($(ls "$test_prefix"/*.xml))
@@ -224,6 +227,13 @@ function run_tests
         done
         # to have sequential indexes...
         test_files=("${test_files[@]}")
+    fi
+
+    if [ "$run_only_changed_tests" -ne 0 ]; then
+        if [ ${#test_files[@]} -eq 0 ]; then
+            time "$script_dir/report.py" --no-tests-run > report.html
+            exit 0
+        fi
     fi
 
     # For PRs w/o changes in test definitons, test only a subset of queries,
