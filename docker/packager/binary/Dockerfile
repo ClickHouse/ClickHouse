@@ -10,7 +10,7 @@ ENV CXX=clang++-${LLVM_VERSION}
 # THE MOST HEAVY OPERATION MUST BE THE FIRST IN THE CACHE
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # libtapi is required to support .tbh format from recent MacOS SDKs
-RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
+RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
     && git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9 \
     && INSTALLPREFIX=/cctools ./build.sh \
@@ -20,9 +20,9 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
 
 # Build and install tools for cross-linking to Darwin (x86-64)
 # Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
+RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
-    && git checkout 2ea20c36c10fa1ec70ada3d5aeb2c205d4aa591e \
+    && git checkout 319ef50ea51a73acfc3d691396c05005e48647da \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
     && make install -j$(nproc) \
