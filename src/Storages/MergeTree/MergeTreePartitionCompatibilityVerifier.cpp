@@ -10,10 +10,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-}
-
 void MergeTreePartitionCompatibilityVerifier::verify(
     const SourceTableInfo & source_table_info,
     const StorageMetadataPtr & destination_table_metadata,

@@ -4827,7 +4827,6 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
     }
 
-
     Row partition_row(fields_count);
     MergeTreePartition partition(std::move(partition_row));
     String partition_id = partition.getID(*this);

@@ -106,7 +106,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
 
 Block IMergeTreeDataPart::MinMaxIndex::buildBlockWithMinAndMaxIndexes(
     const DB::MergeTreeData & data,
-    std::vector<Range> hyperrectangle
+    const std::vector<Range> & hyperrectangle
 )
 {
     Block block;
