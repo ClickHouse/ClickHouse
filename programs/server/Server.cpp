@@ -1372,6 +1372,8 @@ try
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
+                global_context->reloadQueryMaskingRulesIfChanged(config);
+
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
@@ -1816,6 +1818,9 @@ try
         try
         {
             global_context->loadOrReloadDictionaries(config());
+
+            if (config().getBool("wait_dictionaries_load_at_startup", false))
+                global_context->waitForDictionariesLoad();
         }
         catch (...)
         {
