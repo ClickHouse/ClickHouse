@@ -44,8 +44,6 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
  - [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
  - [clickhouse-client](https://github.com/depyronick/clickhouse-client)
  - [node-clickhouse-orm](https://github.com/zimv/node-clickhouse-orm)
- - [clickhouse-ts](https://github.com/bytadaniel/clickhouse-ts)
- - [clickcache](https://github.com/bytadaniel/clickcache)
 ### Perl
  - [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
  - [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -74,7 +72,6 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
 ### Elixir
  - [clickhousex](https://github.com/appodeal/clickhousex/)
  - [pillar](https://github.com/sofakingworld/pillar)
- - [ecto_ch](https://github.com/plausible/ecto_ch)
 ### Nim
  - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 ### Haskell

@@ -175,6 +175,7 @@ function run_cmake
         "-DENABLE_LIBRARIES=0"
         "-DENABLE_TESTS=0"
         "-DENABLE_UTILS=0"
+        "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
         "-DENABLE_NURAFT=1"
         "-DENABLE_SIMDJSON=1"

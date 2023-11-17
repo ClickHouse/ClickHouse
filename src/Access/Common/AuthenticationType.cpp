@@ -67,11 +67,6 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info("SSH_KEY");
             return info;
         }
-        case AuthenticationType::HTTP:
-        {
-            static const auto info = make_info("HTTP");
-            return info;
-        }
         case AuthenticationType::MAX:
             break;
     }

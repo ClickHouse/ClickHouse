@@ -126,7 +126,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -431,9 +430,10 @@ mapUpdate
 match
 materialize
 max2
+meiliMatch
 metroHash64
 min2
-minSampleSizeContinuous
+minSampleSizeContinous
 minSampleSizeConversion
 minus
 modulo

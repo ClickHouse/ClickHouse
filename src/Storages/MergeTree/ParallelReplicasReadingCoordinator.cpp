@@ -15,7 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <base/types.h>
 #include "IO/WriteBufferFromString.h"
-#include <IO/Progress.h>
 #include "Storages/MergeTree/RangesInDataPart.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include <Storages/MergeTree/MarkRange.h>
@@ -79,7 +78,6 @@ public:
     Stats stats;
     size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
-    ProgressCallback progress_callback;
 
     explicit ImplInterface(size_t replicas_count_)
         : stats{replicas_count_}
@@ -90,8 +88,6 @@ public:
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
-
-    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
 
 using Parts = std::set<Part>;
@@ -138,7 +134,7 @@ public:
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
 
-    void updateReadingState(InitialAllRangesAnnouncement announcement);
+    void updateReadingState(const InitialAllRangesAnnouncement & announcement);
     void finalizeReadingState();
 
     size_t computeConsistentHash(const MergeTreePartInfo & info) const
@@ -156,12 +152,12 @@ DefaultCoordinator::~DefaultCoordinator()
     LOG_DEBUG(log, "Coordination done: {}", toString(stats));
 }
 
-void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announcement)
+void DefaultCoordinator::updateReadingState(const InitialAllRangesAnnouncement & announcement)
 {
     PartRefs parts_diff;
 
     /// To get rid of duplicates
-    for (auto && part: announcement.description)
+    for (const auto & part: announcement.description)
     {
         auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info.getPartNameV1() == part.info.getPartNameV1(); });
@@ -180,7 +176,12 @@ void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announc
         if (covering_or_the_same_it != all_parts_to_read.end())
             continue;
 
-        auto [insert_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        auto new_part = Part{
+            .description = part,
+            .replicas = {announcement.replica_num}
+        };
+
+        auto [insert_it, _] = all_parts_to_read.insert(new_part);
         parts_diff.push_back(insert_it);
     }
 
@@ -235,34 +236,18 @@ void DefaultCoordinator::finalizeReadingState()
         delayed_parts.pop_front();
     }
 
-    // update progress with total rows
-    if (progress_callback)
-    {
-        size_t total_rows_to_read = 0;
-        for (const auto & part : all_parts_to_read)
-            total_rows_to_read += part.description.rows;
-
-        Progress progress;
-        progress.total_rows_to_read = total_rows_to_read;
-        progress_callback(progress);
-
-        LOG_DEBUG(log, "Total rows to read: {}", total_rows_to_read);
-    }
-
     LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
 }
 
 
 void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    const auto replica_num = announcement.replica_num;
+    updateReadingState(announcement);
 
-    updateReadingState(std::move(announcement));
+    if (announcement.replica_num >= stats.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", announcement.replica_num, stats.size());
 
-    if (replica_num >= stats.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
-
-    ++stats[replica_num].number_of_requests;
+    stats[announcement.replica_num].number_of_requests +=1;
 
     ++sent_initial_requests;
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
@@ -379,7 +364,6 @@ public:
     void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
-    size_t total_rows_to_read = 0;
 
     Poco::Logger * log = &Poco::Logger::get(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
@@ -400,10 +384,8 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
 {
     LOG_TRACE(log, "Received an announcement {}", announcement.describe());
 
-    size_t new_rows_to_read = 0;
-
     /// To get rid of duplicates
-    for (auto && part: announcement.description)
+    for (const auto & part: announcement.description)
     {
         auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info == part.info; });
@@ -422,22 +404,14 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
         if (covering_or_the_same_it != all_parts_to_read.end())
             continue;
 
-        new_rows_to_read += part.rows;
+        auto new_part = Part{
+            .description = part,
+            .replicas = {announcement.replica_num}
+        };
 
-        auto [inserted_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
-        auto & ranges = inserted_it->description.ranges;
+        auto insert_it = all_parts_to_read.insert(new_part);
+        auto & ranges = insert_it.first->description.ranges;
         std::sort(ranges.begin(), ranges.end());
-    }
-
-    if (new_rows_to_read > 0)
-    {
-        Progress progress;
-        progress.total_rows_to_read = new_rows_to_read;
-        progress_callback(progress);
-
-        total_rows_to_read += new_rows_to_read;
-
-        LOG_DEBUG(log, "Updated total rows to read: added {} rows, total {} rows", new_rows_to_read, total_rows_to_read);
     }
 }
 
@@ -542,7 +516,8 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
         initialize();
     }
 
-    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
+
+    return pimpl->handleInitialAllRangesAnnouncement(announcement);
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
@@ -576,28 +551,18 @@ void ParallelReplicasReadingCoordinator::initialize()
     {
         case CoordinationMode::Default:
             pimpl = std::make_unique<DefaultCoordinator>(replicas_count);
-            break;
+            return;
         case CoordinationMode::WithOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::WithOrder>>(replicas_count);
-            break;
+            return;
         case CoordinationMode::ReverseOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::ReverseOrder>>(replicas_count);
-            break;
+            return;
     }
-    if (progress_callback)
-        pimpl->setProgressCallback(std::move(progress_callback));
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_) {}
 
 ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = default;
-
-void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
-{
-    // store callback since pimpl can be not instantiated yet
-    progress_callback = std::move(callback);
-    if (pimpl)
-        pimpl->setProgressCallback(std::move(progress_callback));
-}
 
 }

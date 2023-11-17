@@ -19,11 +19,6 @@ dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
-# Check that the tools are available under short names
-ch --query "SELECT 1" || exit 1
-chl --query "SELECT 1" || exit 1
-chc --version || exit 1
-
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # shellcheck disable=SC1091
@@ -67,23 +62,13 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
     mkdir -p /var/run/clickhouse-server
-    # simplest way to forward env variables to server
+    # simpliest way to forward env variables to server
     sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
 else
     sudo clickhouse start
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    sudo cat /etc/clickhouse-server1/config.d/filesystem_caches_path.xml \
-    | sed "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" \
-    > /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp
-    mv /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server1/config.d/filesystem_caches_path.xml
-
-    sudo cat /etc/clickhouse-server2/config.d/filesystem_caches_path.xml \
-    | sed "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_2/</filesystem_caches_path>|" \
-    > /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp
-    mv /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server2/config.d/filesystem_caches_path.xml
-
     mkdir -p /var/run/clickhouse-server1
     sudo chown clickhouse:clickhouse /var/run/clickhouse-server1
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \

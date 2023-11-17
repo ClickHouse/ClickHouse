@@ -252,6 +252,8 @@ struct SelectQueryInfo
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 
+    bool parallel_replicas_disabled = false;
+
     bool is_parameterized_view = false;
 
     bool optimize_trivial_count = false;

@@ -27,7 +27,6 @@
 #include <Common/logger_useful.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 
 using namespace std::literals;
 
@@ -663,26 +662,6 @@ public:
             }
             else
             {
-                /// enable using subscript operator for kql_array_sort
-                if (cur_op.function_name == "arrayElement" && !operands.empty())
-                {
-                    auto* first_arg_as_node = operands.front()->as<ASTFunction>();
-                    if (first_arg_as_node)
-                    {
-                        if (first_arg_as_node->name == "kql_array_sort_asc" || first_arg_as_node->name == "kql_array_sort_desc")
-                        {
-                            cur_op.function_name = "tupleElement";
-                            cur_op.type = OperatorType::TupleElement;
-                        }
-                        else if (first_arg_as_node->name == "arrayElement" && !first_arg_as_node->arguments->children.empty())
-                        {
-                            auto *arg_inside = first_arg_as_node->arguments->children[0]->as<ASTFunction>();
-                            if (arg_inside && (arg_inside->name == "kql_array_sort_asc" || arg_inside->name == "kql_array_sort_desc"))
-                                first_arg_as_node->name = "tupleElement";
-                        }
-                    }
-                }
-
                 function = makeASTFunction(cur_op);
 
                 if (!popLastNOperands(function->children[0]->children, cur_op.arity))
@@ -2184,56 +2163,6 @@ private:
     bool if_permitted;
 };
 
-/// Layer for table function 'kql'
-class KustoLayer : public Layer
-{
-public:
-
-    KustoLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
-
-    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
-    {
-        /// kql(table|project ...)
-        /// 0. Parse the kql query
-        /// 1. Parse closing token
-        if (state == 0)
-        {
-            ASTPtr query;
-            --pos;
-            if (!ParserKQLTableFunction().parse(pos, query, expected))
-                return false;
-            --pos;
-            pushResult(query);
-
-            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-                return false;
-
-            finished = true;
-            state = 1;
-            return true;
-        }
-
-        if (state == 1)
-        {
-            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            {
-                if (!mergeElement())
-                    return false;
-
-                finished = true;
-            }
-        }
-
-        return true;
-    }
-
-protected:
-    bool getResultImpl(ASTPtr & node) override
-    {
-        node = makeASTFunction("view", std::move(elements)); // reuse view function for kql
-        return true;
-    }
-};
 
 std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool allow_function_parameters_ = true)
 {
@@ -2270,8 +2199,6 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
             return std::make_unique<ViewLayer>(false);
         else if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
-        else if (function_name_lowercase == "kql")
-            return std::make_unique<KustoLayer>();
     }
 
     if (function_name == "tuple")
@@ -2435,7 +2362,6 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
-    {"−",             Operator("minus",           11, 2)},
     {"*",             Operator("multiply",        12, 2)},
     {"/",             Operator("divide",          12, 2)},
     {"%",             Operator("modulo",          12, 2)},
@@ -2449,8 +2375,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
     {"NOT",           Operator("not",             5,  1)},
-    {"-",             Operator("negate",          13, 1)},
-    {"−",             Operator("negate",          13, 1)}
+    {"-",             Operator("negate",          13, 1)}
 };
 
 const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
@@ -2529,7 +2454,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (layers.front()->is_table_function)
     {
-        if (typeid_cast<ViewLayer *>(layers.back().get()) || typeid_cast<KustoLayer *>(layers.back().get()))
+        if (typeid_cast<ViewLayer *>(layers.back().get()))
         {
             if (identifier_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
@@ -2667,7 +2592,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     }
     else if (pos->type == TokenType::OpeningRoundBracket)
     {
-
         if (subquery_parser.parse(pos, tmp, expected))
         {
             layers.back()->pushOperand(std::move(tmp));

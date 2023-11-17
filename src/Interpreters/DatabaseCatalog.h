@@ -166,7 +166,7 @@ public:
 
     void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
-    void startupBackgroundTasks();
+    void startupBackgroundCleanup();
     void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
@@ -286,9 +286,6 @@ public:
         std::lock_guard lock(tables_marked_dropped_mutex);
         return tables_marked_dropped;
     }
-
-    void triggerReloadDisksTask(const Strings & new_added_disks);
-
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -321,8 +318,6 @@ private:
 
     void cleanupStoreDirectoryTask();
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
-
-    void reloadDisksTask();
 
     static constexpr size_t reschedule_time_ms = 100;
 
@@ -385,13 +380,7 @@ private:
 
     static constexpr time_t default_drop_error_cooldown_sec = 5;
     time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
-
-    std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
-    std::mutex reload_disks_mutex;
-    std::set<String> disks_to_reload;
-    static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
 };
-
 
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.

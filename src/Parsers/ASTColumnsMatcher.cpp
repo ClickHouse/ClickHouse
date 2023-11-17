@@ -46,11 +46,11 @@ void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(original_pattern.size());
     hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -201,11 +201,11 @@ const std::shared_ptr<re2::RE2> & ASTQualifiedColumnsRegexpMatcher::getMatcher()
     return column_matcher;
 }
 
-void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(original_pattern.size());
     hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

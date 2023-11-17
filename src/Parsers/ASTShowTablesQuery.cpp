@@ -78,12 +78,6 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
             (settings.hilite ? hilite_none : "");
         formatLike(settings);
     }
-    else if (merges)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW MERGES" << (settings.hilite ? hilite_none : "");
-        formatLike(settings);
-        formatLimit(settings, state, frame);
-    }
     else
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (temporary ? "TEMPORARY " : "") <<

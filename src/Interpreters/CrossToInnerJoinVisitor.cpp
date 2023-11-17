@@ -1,8 +1,13 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
+#include <Functions/FunctionsComparison.h>
+#include <Functions/FunctionsLogical.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -10,10 +15,10 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 
 #include <Common/logger_useful.h>
-
 
 namespace DB
 {
@@ -112,7 +117,7 @@ std::map<size_t, std::vector<ASTPtr>> moveExpressionToJoinOn(
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
     for (const auto & node : splitConjunctionsAst(ast))
     {
-        if (const auto * func = node->as<ASTFunction>(); func && func->name == "equals")
+        if (const auto * func = node->as<ASTFunction>(); func && func->name == NameEquals::name)
         {
             if (!func->arguments || func->arguments->children.size() != 2)
                 return {};
@@ -149,7 +154,7 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());
 
-    return makeASTFunction("and", std::move(arguments));
+    return makeASTFunction(NameAnd::name, std::move(arguments));
 }
 
 std::vector<JoinedElement> getTables(const ASTSelectQuery & select)

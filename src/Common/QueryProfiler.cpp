@@ -22,7 +22,6 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event QueryProfilerSignalOverruns;
-    extern const Event QueryProfilerConcurrencyOverruns;
     extern const Event QueryProfilerRuns;
 }
 
@@ -41,19 +40,8 @@ namespace
     /// to ignore delivered signals after timer_delete().
     thread_local bool signal_handler_disarmed = true;
 
-    /// Don't permit too many threads be busy inside profiler,
-    /// which could slow down the system in some environments.
-    std::atomic<Int64> concurrent_invocations = 0;
-
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
-        SCOPE_EXIT({ concurrent_invocations.fetch_sub(1, std::memory_order_relaxed); });
-        if (concurrent_invocations.fetch_add(1, std::memory_order_relaxed) > 100)
-        {
-            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerConcurrencyOverruns);
-            return;
-        }
-
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
 #if defined(OS_LINUX)
