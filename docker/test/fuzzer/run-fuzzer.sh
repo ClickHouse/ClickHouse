@@ -231,7 +231,7 @@ quit
          $NEW_TESTS_OPT \
         --client-option receive_timeout=10 receive_data_timeout_ms=1000 stacktrace \
         --global_time_limit=1800 \
-        --jobs=8 \
+        --jobs=16 \
         --order=random \
         > >(tail -n 100000 > fuzzer.log) 2>&1
 
