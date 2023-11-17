@@ -525,7 +525,7 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_metadata_selection_" + format_version
+    TABLE_NAME = "test_metadata_selection_with_uuid_" + format_version
 
     spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
