@@ -910,15 +910,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
         ThreadFuzzer::maybeInjectSleep();
 
-        fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op,
-        {
-            if (!zookeeper->fault_policy)
-            {
-                zookeeper->logger = log;
-                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
-            }
-            zookeeper->fault_policy->must_fail_after_op = true;
-        });
+        fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op, { zookeeper->forceFailureAfterOperation(); });
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
@@ -1059,8 +1051,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 toString(block_id),
                 multi_code);
         }
-    },
-    [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
+    });
 
     if (!conflict_block_ids.empty())
         return {conflict_block_ids, part_was_deduplicated};
@@ -1111,15 +1102,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     try
     {
-        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0,
-        {
-            if (!zookeeper->fault_policy)
-            {
-                zookeeper->logger = log;
-                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
-            }
-            zookeeper->fault_policy->must_fail_before_op = true;
-        });
+        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0, { zookeeper->forceFailureBeforeOperation(); });
 
         while (true)
         {

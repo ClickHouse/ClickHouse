@@ -1159,6 +1159,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncRemove(const std::stri
     return future;
 }
 
+/// Needs to match ZooKeeperWithInjection::asyncTryRemove implementation
 std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemove(const std::string & path, int32_t version)
 {
     auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
