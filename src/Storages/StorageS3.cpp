@@ -739,7 +739,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, /* local_path */ "", object_size}},
         read_settings,
-        /* cache_log */nullptr, /* use_external_buffer */true);
+        /* cache_log */nullptr);
 
     auto modified_settings{read_settings};
     /// FIXME: Changing this setting to default value breaks something around parquet reading

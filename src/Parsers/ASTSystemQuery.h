@@ -33,6 +33,7 @@ public:
 #endif
         DROP_FILESYSTEM_CACHE,
         DROP_DISK_METADATA_CACHE,
+        DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
         DROP_FORMAT_SCHEMA_CACHE,
 #if USE_AWS_S3

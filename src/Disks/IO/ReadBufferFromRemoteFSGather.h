@@ -23,12 +23,14 @@ friend class ReadIndirectBufferFromRemoteFS;
 public:
     using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
 
+    /// Supports both external buffer mode (when the caller always assigns internal_buffer before each
+    /// nextImpl() call) and owned buffer mode. Automatically detects which one to use (lazily
+    /// allocates own memory when nextImpl() is called with no buffer assigned).
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
         const ReadSettings & settings_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_,
-        bool use_external_buffer_);
+        std::shared_ptr<FilesystemCacheLog> cache_log_);
 
     ~ReadBufferFromRemoteFSGather() override;
 
@@ -67,12 +69,14 @@ private:
 
     void reset();
 
+    /// If internal_buffer is empty, point it to own memory. Resets working_buffer.
+    void ensureInternalBuffer();
+
     const ReadSettings settings;
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
     const std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
-    const bool use_external_buffer;
     const bool with_cache;
 
     size_t read_until_position = 0;

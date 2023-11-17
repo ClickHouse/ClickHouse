@@ -71,7 +71,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
     };
 
     return std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator), objects, disk_read_settings, nullptr, /* use_external_buffer */false);
+        std::move(read_buffer_creator), objects, disk_read_settings, nullptr);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT

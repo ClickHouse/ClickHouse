@@ -45,16 +45,13 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
     const ReadSettings & settings_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_,
-    bool use_external_buffer_)
-    : ReadBufferFromFileBase(
-        use_external_buffer_ ? 0 : chooseBufferSizeForRemoteReading(settings_, getTotalSize(blobs_to_read_)), nullptr, 0)
+    std::shared_ptr<FilesystemCacheLog> cache_log_)
+    : ReadBufferFromFileBase(0, nullptr, 0)
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , query_id(CurrentThread::getQueryId())
-    , use_external_buffer(use_external_buffer_)
     , with_cache(withCache(settings))
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
@@ -185,6 +182,7 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 
 bool ReadBufferFromRemoteFSGather::readImpl()
 {
+    ensureInternalBuffer();
     SwapHelper swap(*this, *current_buf);
 
     bool result = current_buf->next();
@@ -216,6 +214,15 @@ void ReadBufferFromRemoteFSGather::reset()
     current_buf.reset();
 }
 
+void ReadBufferFromRemoteFSGather::ensureInternalBuffer()
+{
+    if (!internal_buffer.empty())
+        return;
+    if (memory.size() == 0)
+        memory.resize(chooseBufferSizeForRemoteReading(settings, getTotalSize(blobs_to_read)));
+    set(memory.data(), memory.size());
+}
+
 off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
 {
     if (offset == getPosition() && whence == SEEK_SET)
@@ -224,38 +231,30 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
-    if (use_external_buffer)
+    if (!working_buffer.empty()
+        && static_cast<size_t>(offset) >= file_offset_of_buffer_end - working_buffer.size()
+        && static_cast<size_t>(offset) < file_offset_of_buffer_end)
     {
-        /// In case use_external_buffer == true, the buffer manages seeks itself.
-        reset();
+        pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
+        assert(pos >= working_buffer.begin());
+        assert(pos < working_buffer.end());
+
+        return getPosition();
     }
-    else
+
+    off_t position = getPosition();
+    if (current_buf && offset > position && !internal_buffer.empty())
     {
-        if (!working_buffer.empty()
-            && static_cast<size_t>(offset) >= file_offset_of_buffer_end - working_buffer.size()
-            && static_cast<size_t>(offset) < file_offset_of_buffer_end)
+        size_t diff = offset - position;
+        if (diff < settings.remote_read_min_bytes_for_seek)
         {
-            pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
-
-            return getPosition();
+            ignore(diff);
+            return offset;
         }
-
-        off_t position = getPosition();
-        if (current_buf && offset > position)
-        {
-            size_t diff = offset - position;
-            if (diff < settings.remote_read_min_bytes_for_seek)
-            {
-                ignore(diff);
-                return offset;
-            }
-        }
-
-        resetWorkingBuffer();
-        reset();
     }
+
+    resetWorkingBuffer();
+    reset();
 
     file_offset_of_buffer_end = offset;
     return file_offset_of_buffer_end;

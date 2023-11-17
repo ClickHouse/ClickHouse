@@ -18,6 +18,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/PageCache.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -295,6 +296,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
+    mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -2680,6 +2682,29 @@ void Context::clearUncompressedCache() const
 
     if (shared->uncompressed_cache)
         shared->uncompressed_cache->clear();
+}
+
+void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
+{
+    auto lock = getLock();
+
+    if (shared->page_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
+
+    shared->page_cache = std::make_shared<PageCache>(bytes_per_chunk, bytes_per_mmap, bytes_total, use_madv_free, use_huge_pages);
+}
+
+PageCachePtr Context::getPageCache() const
+{
+    auto lock = getLock();
+    return shared->page_cache;
+}
+
+void Context::dropPageCache() const
+{
+    auto lock = getLock();
+    if (shared->page_cache)
+        shared->page_cache->dropCache();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -5096,6 +5121,11 @@ ReadSettings Context::getReadSettings() const
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
+
+    res.page_cache = getPageCache();
+    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings.read_from_page_cache_if_exists_otherwise_bypass_cache;
+    res.force_enable_page_cache = settings.force_enable_page_cache;
+    res.page_cache_inject_eviction = settings.page_cache_inject_eviction;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
