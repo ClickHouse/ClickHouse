@@ -679,7 +679,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
-        .supports_settings = true
+        .supports_settings = true,
+        .source_access_type = AccessType::STRIPELOG
     };
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
