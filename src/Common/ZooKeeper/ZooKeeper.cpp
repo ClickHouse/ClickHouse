@@ -385,7 +385,6 @@ void ZooKeeper::createAncestors(const std::string & path)
     size_t last_pos = path.rfind('/');
     if (last_pos == std::string::npos || last_pos == 0)
         return;
-
     std::string current_node = path.substr(0, last_pos);
 
     while (true)

@@ -763,28 +763,29 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
     auto post_collecting_task = [my_table_id = std::move(table_id), coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
-        if (path_with_data == my_data_path_in_backup)
+        if (path_with_data != my_data_path_in_backup)
         {
-            auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
-            auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
-
-            auto with_retries = std::make_shared<WithRetries>
-            (
-                &Poco::Logger::get(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
-                [&] { return getClient(); },
-                WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
-                [](WithRetries::FaultyKeeper &) {}
-            );
-
-            backup_entries_collector.addBackupEntries(
-                std::make_shared<KeeperMapBackup>(this->zk_data_path, path_with_data, temp_disk, max_compress_block_size, std::move(with_retries))
-                    ->getBackupEntries());
+            std::string source_path = fs::path(my_data_path_in_backup) / backup_data_filename;
+            std::string target_path = fs::path(path_with_data) / backup_data_filename;
+            backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
             return;
         }
 
-        std::string source_path = fs::path(my_data_path_in_backup) / backup_data_filename;
-        std::string target_path = fs::path(path_with_data) / backup_data_filename;
-        backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
+        auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
+        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
+
+        auto with_retries = std::make_shared<WithRetries>
+        (
+            &Poco::Logger::get(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
+            [&] { return getClient(); },
+            WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
+            [](WithRetries::FaultyKeeper &) {}
+        );
+
+        backup_entries_collector.addBackupEntries(
+            std::make_shared<KeeperMapBackup>(
+                this->zk_data_path, path_with_data, temp_disk, max_compress_block_size, std::move(with_retries))
+                ->getBackupEntries());
     };
 
     backup_entries_collector.addPostTask(post_collecting_task);
@@ -796,7 +797,8 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
-    auto table_id = toString(getStorageID().uuid); if (!restorer.getRestoreCoordination()->acquireInsertingDataForKeeperMap(zk_root_path, table_id))
+    auto table_id = toString(getStorageID().uuid);
+    if (!restorer.getRestoreCoordination()->acquireInsertingDataForKeeperMap(zk_root_path, table_id))
     {
         /// Other table is already restoring the data for this Keeper path.
         /// Tables defined on the same path share data
