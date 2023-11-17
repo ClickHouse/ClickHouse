@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFixedString.h>

@@ -22,6 +22,7 @@
 #    include <DataTypes/DataTypesDecimal.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/NestedUtils.h>
+#    include <DataTypes/DataTypeNested.h>
 #    include <Formats/FormatFactory.h>
 #    include <Formats/SchemaInferenceUtils.h>
 #    include <Formats/insertNullAsDefaultIfNeeded.h>
