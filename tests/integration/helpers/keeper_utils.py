@@ -143,6 +143,12 @@ class KeeperClient(object):
     def find_super_nodes(self, threshold: int, timeout: float = 60.0) -> str:
         return self.execute_query(f"find_super_nodes {threshold}", timeout)
 
+    def get_direct_children_number(self, path: str, timeout: float = 60.0) -> str:
+        return self.execute_query(f"get_direct_children_number {path}", timeout)
+
+    def get_all_children_number(self, path: str, timeout: float = 60.0) -> str:
+        return self.execute_query(f"get_all_children_number {path}", timeout)
+
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)
 
@@ -240,6 +246,11 @@ def wait_nodes(cluster, nodes):
 def is_leader(cluster, node, port=9181):
     stat = send_4lw_cmd(cluster, node, "stat", port)
     return "Mode: leader" in stat
+
+
+def is_follower(cluster, node, port=9181):
+    stat = send_4lw_cmd(cluster, node, "stat", port)
+    return "Mode: follower" in stat
 
 
 def get_leader(cluster, nodes):

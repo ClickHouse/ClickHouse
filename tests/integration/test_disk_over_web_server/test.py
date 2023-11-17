@@ -142,6 +142,9 @@ def test_usage(cluster, node_name):
             )
         )
 
+        # to check right handling of paths in disk web
+        node2.query("SELECT count() FROM system.remote_data_paths")
+
         node2.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
 

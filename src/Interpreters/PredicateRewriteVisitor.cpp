@@ -159,14 +159,14 @@ static void getConjunctionHashesFrom(const ASTPtr & ast, std::set<IAST::Hash> & 
         /// Clone not to modify `ast`
         ASTPtr pred_copy = pred->clone();
         useAliasInsteadOfIdentifier(pred_copy);
-        hashes.emplace(pred_copy->getTreeHash());
+        hashes.emplace(pred_copy->getTreeHash(/*ignore_aliases=*/ true));
     }
 }
 
 bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns)
 {
     if ((!optimize_final && subquery.final())
-        || (!optimize_with && subquery.with())
+        || (subquery.with() && (!optimize_with || hasNonRewritableFunction(subquery.with(), getContext())))
         || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength() || subquery.limitByLength() || subquery.limitByOffset()
         || hasNonRewritableFunction(subquery.select(), getContext())
@@ -188,7 +188,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         ASTPtr optimize_predicate = predicate->clone();
         cleanAliasAndCollectIdentifiers(optimize_predicate, identifiers);
 
-        auto predicate_hash = optimize_predicate->getTreeHash();
+        auto predicate_hash = optimize_predicate->getTreeHash(/*ignore_aliases=*/ true);
         if (hashes.contains(predicate_hash))
             continue;
 

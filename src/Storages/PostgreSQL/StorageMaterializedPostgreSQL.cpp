@@ -74,13 +74,13 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
     setInMemoryMetadata(storage_metadata);
 
-    String replication_identifier = remote_database_name + "_" + remote_table_name_;
     replication_settings->materialized_postgresql_tables_list = remote_table_name_;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
-            replication_identifier,
             remote_database_name,
+            remote_table_name_,
             table_id_.database_name,
+            toString(table_id_.uuid),
             connection_info,
             getContext(),
             is_attach,
@@ -228,7 +228,7 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 }
 
 
-void StorageMaterializedPostgreSQL::shutdown()
+void StorageMaterializedPostgreSQL::shutdown(bool)
 {
     if (replication_handler)
         replication_handler->shutdown();

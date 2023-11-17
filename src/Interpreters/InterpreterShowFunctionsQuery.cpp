@@ -15,7 +15,7 @@ InterpreterShowFunctionsQuery::InterpreterShowFunctionsQuery(const ASTPtr & quer
 
 BlockIO InterpreterShowFunctionsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true);
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 String InterpreterShowFunctionsQuery::getRewrittenQuery()

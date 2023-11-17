@@ -409,7 +409,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
             {
                 for (auto & elem : set->children)
                 {
-                    const auto hash = elem->getTreeHash();
+                    const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
                     const auto key = toString(hash);
                     group_by_hashes.insert(key);
                 }
@@ -419,7 +419,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         {
             for (auto & elem : group_by->children)
             {
-                const auto hash = elem->getTreeHash();
+                const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
                 const auto key = toString(hash);
                 group_by_hashes.insert(key);
             }

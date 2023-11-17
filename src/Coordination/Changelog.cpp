@@ -476,6 +476,9 @@ struct ChangelogReadResult
 
     /// last offset we were able to read from log
     off_t last_position;
+
+    /// Whether the changelog file was written using compression
+    bool compressed_log;
     bool error;
 };
 
@@ -484,7 +487,7 @@ class ChangelogReader
 public:
     explicit ChangelogReader(DiskPtr disk_, const std::string & filepath_) : disk(disk_), filepath(filepath_)
     {
-        auto compression_method = chooseCompressionMethod(filepath, "");
+        compression_method = chooseCompressionMethod(filepath, "");
         auto read_buffer_from_file = disk->readFile(filepath);
         read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
@@ -493,6 +496,7 @@ public:
     ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, Poco::Logger * log)
     {
         ChangelogReadResult result{};
+        result.compressed_log = compression_method != CompressionMethod::None;
         try
         {
             while (!read_buf->eof())
@@ -583,6 +587,7 @@ public:
 private:
     DiskPtr disk;
     std::string filepath;
+    CompressionMethod compression_method;
     std::unique_ptr<ReadBuffer> read_buf;
 };
 
@@ -590,6 +595,7 @@ Changelog::Changelog(
     Poco::Logger * log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
+    , compress_logs(log_file_settings.compress_logs)
     , log(log_)
     , write_operations(std::numeric_limits<size_t>::max())
     , append_completion_queue(std::numeric_limits<size_t>::max())
@@ -707,6 +713,8 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     else
         start_to_read_from = 1;
 
+    uint64_t last_read_index = 0;
+
     /// Got through changelog files in order of start_index
     for (const auto & [changelog_start_index, changelog_description_ptr] : existing_changelogs)
     {
@@ -747,27 +755,29 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                         changelog_description.from_log_index);
                 }
             }
-            else if ((changelog_description.from_log_index - last_log_read_result->last_read_index) > 1)
+            else if ((changelog_description.from_log_index - last_read_index) > 1)
             {
-                LOG_ERROR(
-                    log,
-                    "Some records were lost, last found log index {}, while the next log index on disk is {}. Hopefully will receive "
-                    "missing records from leader.",
-                    last_log_read_result->last_read_index,
-                    changelog_description.from_log_index);
-                removeAllLogsAfter(last_log_read_result->log_start_index);
+                if (!last_log_read_result->error)
+                {
+                    LOG_ERROR(
+                        log,
+                        "Some records were lost, last found log index {}, while the next log index on disk is {}. Hopefully will receive "
+                        "missing records from leader.",
+                        last_read_index,
+                        changelog_description.from_log_index);
+                    removeAllLogsAfter(last_log_read_result->log_start_index);
+                }
                 break;
             }
 
             ChangelogReader reader(changelog_description.disk, changelog_description.path);
             last_log_read_result = reader.readChangelog(logs, start_to_read_from, log);
+
+            if (last_log_read_result->last_read_index != 0)
+                last_read_index = last_log_read_result->last_read_index;
+
             last_log_read_result->log_start_index = changelog_description.from_log_index;
 
-            if (last_log_read_result->error)
-            {
-                last_log_is_not_complete = true;
-                break;
-            }
             /// Otherwise we have already initialized it
             if (min_log_id == 0)
                 min_log_id = last_log_read_result->first_read_index;
@@ -779,13 +789,19 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             uint64_t log_count = changelog_description.expectedEntriesCountInLog();
 
             /// Unfinished log
-            if (last_log_read_result->error || last_log_read_result->total_entries_read_from_log < log_count)
-            {
-                last_log_is_not_complete = true;
-                break;
-            }
+            last_log_is_not_complete = last_log_read_result->error || last_log_read_result->total_entries_read_from_log < log_count;
         }
     }
+
+    const auto move_from_latest_logs_disks = [&](auto & description)
+    {
+        /// check if we need to move completed log to another disk
+        auto latest_log_disk = getLatestLogDisk();
+        auto disk = getDisk();
+
+        if (latest_log_disk != disk && latest_log_disk == description->disk)
+            moveFileBetweenDisks(latest_log_disk, description, disk, description->path);
+    };
 
     /// we can have empty log (with zero entries) and last_log_read_result will be initialized
     if (!last_log_read_result || min_log_id == 0) /// We just may have no logs (only snapshot or nothing)
@@ -813,37 +829,43 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         assert(last_log_read_result != std::nullopt);
         assert(!existing_changelogs.empty());
 
-        /// Actually they shouldn't exist, but to be sure we remove them
-        removeAllLogsAfter(last_log_read_result->log_start_index);
-
-        /// This log, even if it finished with error shouldn't be removed
-        assert(existing_changelogs.find(last_log_read_result->log_start_index) != existing_changelogs.end());
-        assert(existing_changelogs.find(last_log_read_result->log_start_index)->first == existing_changelogs.rbegin()->first);
-
         /// Continue to write into incomplete existing log if it didn't finish with error
         const auto & description = existing_changelogs[last_log_read_result->log_start_index];
 
-        if (last_log_read_result->last_read_index == 0 || last_log_read_result->error) /// If it's broken log then remove it
+        const auto remove_invalid_logs = [&]
         {
-            LOG_INFO(log, "Removing chagelog {} because it's empty or read finished with error", description->path);
+            /// Actually they shouldn't exist, but to be sure we remove them
+            removeAllLogsAfter(last_log_read_result->log_start_index);
+
+            /// This log, even if it finished with error shouldn't be removed
+            chassert(existing_changelogs.find(last_log_read_result->log_start_index) != existing_changelogs.end());
+            chassert(existing_changelogs.find(last_log_read_result->log_start_index)->first == existing_changelogs.rbegin()->first);
+        };
+
+        if (last_log_read_result->last_read_index == 0) /// If it's broken or empty log then remove it
+        {
+            LOG_INFO(log, "Removing chagelog {} because it's empty", description->path);
+            remove_invalid_logs();
             description->disk->removeFile(description->path);
             existing_changelogs.erase(last_log_read_result->log_start_index);
             std::erase_if(logs, [last_log_read_result](const auto & item) { return item.first >= last_log_read_result->log_start_index; });
         }
-        else
+        else if (last_log_read_result->error)
+        {
+            LOG_INFO(log, "Chagelog {} read finished with error but some logs were read from it, file will not be removed", description->path);
+            remove_invalid_logs();
+            std::erase_if(logs, [last_log_read_result](const auto & item) { return item.first > last_log_read_result->last_read_index; });
+            move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
+        }
+        /// don't mix compressed and uncompressed writes
+        else if (compress_logs == last_log_read_result->compressed_log)
         {
             initWriter(description);
         }
     }
     else if (last_log_read_result.has_value())
     {
-        /// check if we need to move completed log to another disk
-        auto latest_log_disk = getLatestLogDisk();
-        auto disk = getDisk();
-
-        auto & description = existing_changelogs.at(last_log_read_result->log_start_index);
-        if (latest_log_disk != disk && latest_log_disk == description->disk)
-            moveFileBetweenDisks(latest_log_disk, description, disk, description->path);
+        move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
     }
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
@@ -927,17 +949,19 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 
     for (auto itr = begin; itr != end;)
     {
+        auto & changelog_description = itr->second;
+
         if (!disk->exists(timestamp_folder))
         {
             LOG_WARNING(log, "Moving broken logs to {}", timestamp_folder);
             disk->createDirectories(timestamp_folder);
         }
 
-        LOG_WARNING(log, "Removing changelog {}", itr->second->path);
-        const std::filesystem::path & path = itr->second->path;
+        LOG_WARNING(log, "Removing changelog {}", changelog_description->path);
+        const std::filesystem::path & path = changelog_description->path;
         const auto new_path = timestamp_folder / path.filename();
 
-        auto changelog_disk = itr->second->disk;
+        auto changelog_disk = changelog_description->disk;
         if (changelog_disk == disk)
         {
             try
@@ -947,11 +971,11 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
             catch (const DB::Exception & e)
             {
                 if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
-                    moveFileBetweenDisks(changelog_disk, itr->second, disk, new_path);
+                    moveFileBetweenDisks(changelog_disk, changelog_description, disk, new_path);
             }
         }
         else
-            moveFileBetweenDisks(changelog_disk, itr->second, disk, new_path);
+            moveFileBetweenDisks(changelog_disk, changelog_description, disk, new_path);
 
         itr = existing_changelogs.erase(itr);
     }

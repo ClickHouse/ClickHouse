@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Common/OptimizedRegularExpression.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/IStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/IStorage.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Common/OptimizedRegularExpression.h>
 
 
 namespace DB
@@ -146,6 +147,8 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
 
+    void applyFilters() override;
+
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
@@ -178,11 +181,9 @@ private:
     using Aliases = std::vector<AliasData>;
 
     class RowPolicyData;
+    // using RowPolicyDataPtr = std::unique_ptr<RowPolicyData>;
+    using RowPolicyDataOpt = std::optional<RowPolicyData>;
 
-    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
-        const ContextPtr & modified_context,
-        const StorageWithLockAndName & storage_with_lock_and_name,
-        const StorageSnapshotPtr & storage_snapshot);
 
     /// Populates AliasData structures for further processing
     ///   using types from result query if possible
@@ -194,22 +195,47 @@ private:
         const Block & sample_block,
         ContextMutablePtr modified_context);
 
-    QueryPipelineBuilderPtr createSources(
-        QueryProcessingStage::Enum processed_stage,
+    std::vector<Aliases> table_aliases;
+
+    std::vector<RowPolicyDataOpt> table_row_policy_data_opts;
+
+    void createChildPlans();
+
+    void applyFilters(const QueryPlan & plan) const;
+
+    QueryPlan createPlanForTable(
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        const QueryProcessingStage::Enum & processed_stage,
         UInt64 max_block_size,
-        const Block & header,
         const StorageWithLockAndName & storage_with_lock,
-        Names real_column_names,
-        const Block & sample_block,
+        Names && real_column_names,
+        RowPolicyDataOpt & row_policy_data_ptr,
         ContextMutablePtr modified_context,
-        size_t streams_num,
-        bool concat_streams = false);
+        size_t streams_num);
+
+    QueryPipelineBuilderPtr createSources(
+        QueryPlan & plan,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & modified_query_info,
+        const QueryProcessingStage::Enum & processed_stage,
+        const Block & header,
+        const Aliases & aliases,
+        RowPolicyDataOpt & row_policy_data_ptr,
+        const StorageWithLockAndName & storage_with_lock,
+        ContextMutablePtr modified_context,
+        bool concat_streams = false) const;
+
+    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
+        const ContextPtr & modified_context,
+        const StorageWithLockAndName & storage_with_lock_and_name,
+        const StorageSnapshotPtr & storage_snapshot);
 
     static void convertAndFilterSourceStream(
         const Block & header,
         const StorageMetadataPtr & metadata_snapshot,
         const Aliases & aliases,
-        std::unique_ptr<RowPolicyData> row_policy_data_ptr,
+        RowPolicyDataOpt & row_policy_data_ptr,
         ContextPtr context,
         QueryPipelineBuilder & builder,
         QueryProcessingStage::Enum processed_stage);

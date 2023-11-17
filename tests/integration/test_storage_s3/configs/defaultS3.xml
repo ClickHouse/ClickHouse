@@ -1,4 +1,9 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <s3_retry_attempts>5</s3_retry_attempts>
+        </default>
+    </profiles>
     <s3>
         <s3_mock>
             <endpoint>http://resolver:8080</endpoint>
