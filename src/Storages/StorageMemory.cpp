@@ -43,6 +43,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class MemorySink : public SinkToStorage
@@ -494,7 +495,7 @@ void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
             && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
-            && command.type != AlterCommand::Type::RENAME_COLUMN)
+            && command.type != AlterCommand::Type::COMMENT_TABLE && command.type != AlterCommand::Type::RENAME_COLUMN)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
     }
