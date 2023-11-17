@@ -226,8 +226,10 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     for (const auto & [name, db_path] : databases)
     {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
-        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
+
         auto database = DatabaseCatalog::instance().getDatabase(name);
+        loaded_databases.insert({name, database});
+        
 
         if (database->getEngineName() == "Ordinary")
             has_ordinary_databases = true;
