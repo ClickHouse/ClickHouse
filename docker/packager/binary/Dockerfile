@@ -22,7 +22,7 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
 # Build and install tools for cross-linking to Darwin (aarch64)
 RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
-    && git checkout 59f5fb87a3d2c6fd2ba3df6533015cd6172001c6 \
+    && git checkout 2ea20c36c10fa1ec70ada3d5aeb2c205d4aa591e \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
     && make install -j$(nproc) \
