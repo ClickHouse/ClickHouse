@@ -206,7 +206,7 @@ function build
     (
         cd "$FASTTEST_BUILD"
         TIMEFORMAT=$'\nreal\t%3R\nuser\t%3U\nsys\t%3S'
-        ( time ninja clickhouse-bundle) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        ( time ninja clickhouse-bundle clickhouse-stripped) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         BUILD_SECONDS_ELAPSED=$(awk '/^....-..-.. ..:..:.. real\t[0-9]/ {print $4}' < "$FASTTEST_OUTPUT/build_log.txt")
         echo "build_clickhouse_fasttest_binary: [ OK ] $BUILD_SECONDS_ELAPSED sec." \
           | ts '%Y-%m-%d %H:%M:%S' \
@@ -215,7 +215,6 @@ function build
             mkdir -p "$FASTTEST_OUTPUT/binaries/"
             cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
 
-            strip programs/clickhouse -o programs/clickhouse-stripped
             zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
         fi
         ccache_status
