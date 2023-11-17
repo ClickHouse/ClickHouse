@@ -3,12 +3,10 @@
 #include <Storages/KeyDescription.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Functions/IFunction.h>
 
 namespace DB
 {
-
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
-class IFunction;
 
 /*
  * Code adapted from Storages/MergeTree/KeyCondition.
