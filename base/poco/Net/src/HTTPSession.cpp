@@ -113,13 +113,12 @@ void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco
      }
      catch (NetException &)
      {
-
 #ifndef NDEBUG
+         throw;
+#else
          // mute exceptions in release
          // just in case when changing settings on socket is not allowed
          // however it should be OK for timeouts
-#else
-         throw;
 #endif
      }
 }
