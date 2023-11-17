@@ -77,7 +77,7 @@ ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr co
     /** Engine in ststem.tables actually represents storage name. Some types of databases have their
       * engine name same as their storage name, and it is time-consuming to connect to these kind of
       * databases without a valid URL. So we use the engine name (storgae name) to avoid access to
-      * these kind of databases as much as possible. For example, when engine != 'PostgreSQL', we 
+      * these kind of databases as much as possible. For example, when engine != 'PostgreSQL', we
       * don't need to connect to the corresponding postgres database.
       */
     MutableColumnPtr database_column = ColumnString::create();
@@ -100,10 +100,10 @@ ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr co
     };
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
 
-    /** All the hassle below is to make sure the special kind of database has been indeed filtered 
+    /** All the hassle below is to make sure the special kind of database has been indeed filtered
       * out when requested by user, but not incorrectly filter out other databases, becasue queries
-      * like engine = 'View', whose storage might be 'atomic' would be filtered out as well as its 
-      * engine name != storage name. Filter for other databases happens at the execution stage.  
+      * like engine = 'View', whose storage might be 'atomic' would be filtered out as well as its
+      * engine name != storage name. Filter for other databases happens at the execution stage.
       */
     const ColumnPtr & filtered_databases_column = block.getByPosition(0).column;
     std::unordered_set<String> filtered_databases_set;
