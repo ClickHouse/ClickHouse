@@ -1,3 +1,5 @@
+add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
@@ -293,7 +295,8 @@ set_source_files_properties(
         Common/Elf.cpp
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE}")
+        Common/ThreadFuzzer.cpp
+        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE

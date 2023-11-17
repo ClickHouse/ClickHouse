@@ -57,6 +57,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ThreadFuzzer.h>
+#include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
 #include <unistd.h>
@@ -687,6 +688,12 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::RESET_COVERAGE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM);
+            resetCoverage();
+            break;
+        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -1301,6 +1308,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
         case Type::END: break;
     }
