@@ -130,7 +130,7 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
     if (previous_snapshot_log_item.remote_path.empty())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "No shapshot for {} found in log entries [{};{}]",
+            "No snapshot for {} found in log entries [{};{}]",
             start_logpointer - 1,
             start_logpointer,
             end_logpointer);
