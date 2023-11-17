@@ -8,6 +8,7 @@ namespace DB
 {
 
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+class IFunction;
 
 /*
  * Code adapted from Storages/MergeTree/KeyCondition.
