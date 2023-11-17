@@ -72,14 +72,14 @@ public:
     {
         writeBinary(has(), buf);
         if (has())
-            writeBinaryLittleEndian(value, buf);
+            writeBinary(value, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena *)
     {
         readBinary(has_value, buf);
         if (has())
-            readBinaryLittleEndian(value, buf);
+            readBinary(value, buf);
     }
 
 
@@ -1275,13 +1275,13 @@ struct AggregateFunctionAnyHeavyData : Data
     void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
         Data::write(buf, serialization);
-        writeBinaryLittleEndian(counter, buf);
+        writeBinary(counter, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
     {
         Data::read(buf, serialization, arena);
-        readBinaryLittleEndian(counter, buf);
+        readBinary(counter, buf);
     }
 
     static const char * name() { return "anyHeavy"; }

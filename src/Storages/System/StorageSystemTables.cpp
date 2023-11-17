@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -69,10 +70,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 }
 
 
-namespace
-{
-
-ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
+static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -90,7 +88,7 @@ ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr co
     return block.getByPosition(0).column;
 }
 
-ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
+static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -112,7 +110,7 @@ ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_dat
 
 /// Avoid heavy operation on tables if we only queried columns that we can get without table object.
 /// Otherwise it will require table initialization for Lazy database.
-bool needTable(const DatabasePtr & database, const Block & header)
+static bool needTable(const DatabasePtr & database, const Block & header)
 {
     if (database->getEngineName() != "Lazy")
         return true;
@@ -603,8 +601,6 @@ private:
     DatabasePtr database;
     std::string database_name;
 };
-
-}
 
 
 Pipe StorageSystemTables::read(
