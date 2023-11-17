@@ -229,7 +229,7 @@ quit
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
          $NEW_TESTS_OPT \
-        --client-option receive_timeout=10 receive_data_timeout_ms=1000 stacktrace max_execution_time=300 \
+        --client-option receive_timeout=10 receive_data_timeout_ms=1000 stacktrace \
         --global_time_limit=1800 \
         --jobs=8 \
         --order=random \
