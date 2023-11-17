@@ -45,6 +45,7 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
         std::cerr << "Error (ZSTD):" << decompressed_size << " " << ZSTD_getErrorName(decompressed_size) << std::endl;
         return 1;
     }
+    std::cerr << "." << std::flush;
     return 0;
 }
 
@@ -173,7 +174,7 @@ bool isSudo()
     return geteuid() == 0;
 }
 
-/// Read data about files and decomrpess them.
+/// Read data about files and decompress them.
 int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
@@ -243,27 +244,27 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         memset(file_name, '\0', file_path_len);
         if (path)
         {
-            strcat(file_name, path);
-            strcat(file_name, "/");
+            strcat(file_name, path); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
+            strcat(file_name, "/"); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
 
         bool same_name = false;
         if (file_info.exec)
         {
             has_exec = true;
-            strcat(file_name, name);
+            strcat(file_name, name); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
         else
         {
             if (strcmp(name, input + files_pointer) == 0)
                 same_name = true;
-            strcat(file_name, input + files_pointer);
+            strcat(file_name, input + files_pointer); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
 
         files_pointer += le64toh(file_info.name_length);
         if (file_info.exec || same_name)
         {
-            strcat(file_name, ".decompressed.XXXXXX");
+            strcat(file_name, ".decompressed.XXXXXX"); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
             int fd = mkstemp(file_name);
             if (fd == -1)
             {
@@ -332,6 +333,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
     if (0 != munmap(input, info_in.st_size))
         perror("munmap");
+
+    std::cerr << std::endl;
     return 0;
 }
 
@@ -411,7 +414,7 @@ int main(int/* argc*/, char* argv[])
     }
 
     char file_path[strlen(self) + 1];
-    strcpy(file_path, self);
+    strcpy(file_path, self); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
 
     char * path = nullptr;
     char * name = strrchr(file_path, '/');
@@ -439,6 +442,8 @@ int main(int/* argc*/, char* argv[])
         std::cerr << "Unable to obtain inode for exe '" << self << "'." << std::endl;
         return 1;
     }
+
+    std::cerr << "Decompressing the binary" << std::flush;
 
     std::stringstream lock_path; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     lock_path << "/tmp/" << name << ".decompression." << inode << ".lock";

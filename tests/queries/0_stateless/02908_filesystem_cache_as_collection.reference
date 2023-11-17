@@ -1,0 +1,2 @@
+1048576	10000000	33554432	4194304	0	0	0	0	/var/lib/clickhouse/filesystem_caches/collection_sql	2	0	1
+1048576	10000000	33554432	4194304	0	0	0	0	/var/lib/clickhouse/filesystem_caches/collection	2	0	1

@@ -28,6 +28,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char replicated_merge_tree_commit_zk_fail_after_op[];
+    extern const char replicated_merge_tree_insert_quorum_fail_0[];
 }
 
 namespace ErrorCodes
@@ -130,8 +131,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     bool majority_quorum,
     ContextPtr context_,
     bool is_attach_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock(),
-                    IOutputChunkGenerator::createCopyRanges(context_->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views))
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , required_quorum_size(majority_quorum ? std::nullopt : std::make_optional<size_t>(quorum_size))
@@ -165,6 +165,16 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
         [&]()
         {
             zookeeper->setKeeper(storage.getZooKeeper());
+
+            /// Stop retries if in shutdown, note that we need to check
+            /// shutdown_prepared_called, not shutdown_called, since the table
+            /// will be marked as readonly after calling
+            /// StorageReplicatedMergeTree::flushAndPrepareForShutdown(), and
+            /// the final shutdown() can not be called if you have Buffer table
+            /// that writes to this replicated table, until all the retries
+            /// will be made.
+            if (storage.is_readonly && storage.shutdown_prepared_called)
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 
             quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
@@ -320,8 +330,12 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         if constexpr (async_insert)
         {
-            block_id = AsyncInsertBlockInfo::getHashesForBlocks(unmerged_block.has_value() ? *unmerged_block : current_block, temp_part.part->info.partition_id);
-            LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets), current_block.offsets.size());
+            auto get_block_id = [&](BlockWithPartition & block_)
+            {
+                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part.part->info.partition_id);
+                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(block_.offsets), block_.offsets.size());
+            };
+            get_block_id(unmerged_block ? *unmerged_block : current_block);
         }
         else
         {
@@ -387,7 +401,13 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     finishDelayedChunk(zookeeper);
     delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
-    finishDelayedChunk(zookeeper);
+
+    /// If deduplicated data should not be inserted into MV, we need to set proper
+    /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
+    /// Othervide we can delay commit.
+    /// TODO: we can also delay commit if there is no MVs.
+    if (!settings.deduplicate_blocks_in_dependent_materialized_views)
+        finishDelayedChunk(zookeeper);
 
     ++num_blocks_processed;
 }
@@ -397,6 +417,8 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 {
     if (!delayed_chunk)
         return;
+
+    last_block_is_duplicate = false;
 
     for (auto & partition : delayed_chunk->partitions)
     {
@@ -408,10 +430,9 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
         try
         {
-            const size_t rowsCount = partition.temp_part.part->rows_count;
-            const bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false).second;
+            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false).second;
 
-            getOutputGenerator().onRowsProcessed(rowsCount, !deduplicated);
+            last_block_is_duplicate = last_block_is_duplicate || deduplicated;
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
@@ -460,7 +481,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             LOG_DEBUG(log, "Found duplicate block IDs: {}, retry times {}", toString(conflict_block_ids), retry_times);
             /// partition clean conflict
             partition.filterBlockDuplicate(conflict_block_ids, false);
-            if (partition.block_id.empty())
+            if (partition.block_with_partition.block.rows() == 0)
                 break;
             partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
             /// partition.temp_part is already finalized, no need to call cancel
@@ -559,7 +580,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         if (storage.is_readonly)
         {
             /// stop retries if in shutdown
-            if (storage.shutdown_called)
+            if (storage.shutdown_prepared_called)
                 throw Exception(
                     ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 
@@ -761,13 +782,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     else
                         quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                    if (!retries_ctl.callAndCatchAll(
-                            [&]()
-                            {
-                                waitForQuorum(
-                                    zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
-                            }))
-                        return;
+                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
                 }
                 else
                 {
@@ -807,6 +822,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     NameSet unused;
                     /// if we found part in deduplication hashes part must exists on some replica
                     storage.checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, existing_part_name, unused);
+
+                    /// We have to check that the block_id still exists to avoid a race condition with DROP_RANGE
+                    block_unlock_op_idx = ops.size();
+                    ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/blocks/" + block_id, -1));
                 }
                 catch (const zkutil::KeeperException &)
                 {
@@ -915,8 +934,13 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else if (multi_code == Coordination::Error::ZNONODE && zkutil::getFailedOpIndex(multi_code, responses) == block_unlock_op_idx)
         {
+            if (block_number_lock)
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                            "Insert query (for block {}) was canceled by concurrent ALTER PARTITION or TRUNCATE", block_number_lock->getPath());
+
+            chassert(!existing_part_name.empty());
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                            "Insert query (for block {}) was cancelled by concurrent ALTER PARTITION", block_number_lock->getPath());
+                            "Insert query (for existing part {}, deduplicated) was canceled by concurrent ALTER PARTITION, TRUNCATE, or the part became outdated", existing_part_name);
         }
         else if (Coordination::isHardwareError(multi_code))
         {
@@ -1043,38 +1067,19 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     if (isQuorumEnabled())
     {
-        ZooKeeperRetriesControl quorum_retries_ctl("waitForQuorum", zookeeper_retries_info, context->getProcessListElement());
-        quorum_retries_ctl.retryLoop([&]()
+        if (is_already_existing_part)
         {
-            if (storage.is_readonly)
-            {
-                /// stop retries if in shutdown
-                if (storage.shutdown_called)
-                    throw Exception(
-                        ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+            /// We get duplicate part without fetch
+            /// Check if this quorum insert is parallel or not
+            if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name))
+                storage.updateQuorum(part->name, true);
+            else if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
+                storage.updateQuorum(part->name, false);
+        }
 
-                quorum_retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
-                return;
-            }
-
-            zookeeper->setKeeper(storage.getZooKeeper());
-
-            if (is_already_existing_part)
-            {
-                /// We get duplicate part without fetch
-                /// Check if this quorum insert is parallel or not
-                if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name))
-                    storage.updateQuorum(part->name, true);
-                else if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
-                    storage.updateQuorum(part->name, false);
-            }
-
-            if (!quorum_retries_ctl.callAndCatchAll(
-                    [&]()
-                    { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_version, replicas_num); }))
-                return;
-        });
+        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_version, replicas_num);
     }
+
     return {conflict_block_ids, part_was_deduplicated};
 }
 
@@ -1084,6 +1089,13 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
     /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
     storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true);
+}
+
+template<bool async_insert>
+void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
+{
+    auto zookeeper = storage.getZooKeeper();
+    finishDelayedChunk(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper));
 }
 
 template<bool async_insert>
@@ -1099,6 +1111,16 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     try
     {
+        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0,
+        {
+            if (!zookeeper->fault_policy)
+            {
+                zookeeper->logger = log;
+                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
+            }
+            zookeeper->fault_policy->must_fail_before_op = true;
+        });
+
         while (true)
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();

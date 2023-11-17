@@ -5,6 +5,7 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -59,7 +60,7 @@ void ClusterCopier::init()
     getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
-    task_cluster->random_engine.seed(task_cluster->random_device());
+    task_cluster->random_engine.seed(randomSeed());
     for (auto & task_table : task_cluster->table_tasks)
     {
         task_table.cluster_pull = getContext()->getCluster(task_table.cluster_pull_name);
@@ -391,7 +392,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
             auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
-                return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
+                return zkutil::EphemeralNodeHolder::existing(current_worker_path, *zookeeper);
 
             if (code == Coordination::Error::ZBADVERSION)
             {
@@ -2025,7 +2026,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             {
                 connections.emplace_back(std::make_shared<Connection>(
                     node.host_name, node.port, node.default_database,
-                    node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                    node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                     "ClusterCopier", node.compression, node.secure
                 ));
 

@@ -1,18 +1,15 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
-#include <list>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
 #include <boost/functional/hash.hpp>
 
 #include <IO/ReadSettings.h>
 
 #include <Common/ThreadPool.h>
+#include <Common/StatusFile.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -158,7 +155,7 @@ private:
     const size_t max_file_segment_size;
     const size_t bypass_cache_threshold = 0;
     const size_t boundary_alignment;
-    const size_t background_download_threads;
+    const size_t background_download_threads; /// 0 means background download is disabled.
     const size_t metadata_download_threads;
 
     Poco::Logger * log;
@@ -166,6 +163,7 @@ private:
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
+    std::unique_ptr<StatusFile> status_file;
 
     CacheMetadata metadata;
 

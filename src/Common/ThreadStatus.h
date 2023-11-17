@@ -48,6 +48,8 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
 using ThreadStatusPtr = ThreadStatus *;
 
+using QueryIsCanceledPredicate = std::function<bool()>;
+
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
   *
@@ -87,6 +89,8 @@ public:
 
         String query_for_logs;
         UInt64 normalized_query_hash = 0;
+
+        QueryIsCanceledPredicate query_is_canceled_predicate = {};
     };
 
     SharedData getSharedData()
@@ -283,6 +287,8 @@ public:
 
     void attachQueryForLog(const String & query_);
     const String & getQueryForLog() const;
+
+    bool isQueryCanceled() const;
 
     /// Proper cal for fatal_error_callback
     void onFatalError();

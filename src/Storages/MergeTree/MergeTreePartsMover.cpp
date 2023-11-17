@@ -229,10 +229,16 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         String relative_path = part->getDataPartStorage().getPartDirectory();
         if (disk->exists(path_to_clone + relative_path))
         {
-            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
-                "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
-                part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
+            // If setting is on, we should've already cleaned moving/ dir on startup
+            if (data->allowRemoveStaleMovingParts())
+                throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                    "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
+                    part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
+                    fullPath(disk, path_to_clone + relative_path));
+
+            LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
                 fullPath(disk, path_to_clone + relative_path));
+            disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
 
         disk->createDirectories(path_to_clone);

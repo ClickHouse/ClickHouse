@@ -67,10 +67,11 @@ void BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
 }
 
 
-void BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
+bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 {
     bool res = getContext()->getMovesExecutor()->trySchedule(move_task);
     res ? trigger() : postpone();
+    return res;
 }
 
 

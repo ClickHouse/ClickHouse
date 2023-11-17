@@ -21,6 +21,7 @@
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 
 namespace ProfileEvents
@@ -87,9 +88,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
-    : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
-    , extension(extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
     create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
@@ -104,9 +103,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
-    : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
-    , extension(extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
     create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
@@ -573,7 +570,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
-    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(announcement);
+    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 void RemoteQueryExecutor::finish()
@@ -770,6 +767,14 @@ bool RemoteQueryExecutor::isQueryPending() const
 bool RemoteQueryExecutor::hasThrownException() const
 {
     return got_exception_from_replica || got_unknown_packet_from_replica;
+}
+
+void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
+{
+    progress_callback = std::move(callback);
+
+    if (extension && extension->parallel_reading_coordinator)
+        extension->parallel_reading_coordinator->setProgressCallback(progress_callback);
 }
 
 }

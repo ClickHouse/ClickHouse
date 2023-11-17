@@ -461,7 +461,7 @@ SSOCredentialsProvider::SSOCredentialsProvider(DB::S3::PocoHTTPClientConfigurati
     , expiration_window_seconds(expiration_window_seconds_)
     , logger(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG))
 {
-    LOG_INFO(logger, "Setting sso credentials provider to read config from {}", profile_to_use);
+    LOG_TRACE(logger, "Setting sso credentials provider to read config from {}", profile_to_use);
 }
 
 Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
@@ -491,16 +491,14 @@ void SSOCredentialsProvider::Reload()
         ss_token << profile_directory;
         ss_token << Aws::FileSystem::PATH_DELIM << "sso"  << Aws::FileSystem::PATH_DELIM << "cache" << Aws::FileSystem::PATH_DELIM << hashed_start_url << ".json";
         auto sso_token_path = ss_token.str();
-        LOG_INFO(logger, "Loading token from: {}", sso_token_path);
+        LOG_TEST(logger, "Loading token from: {}", sso_token_path);
         sso_region = profile.GetSsoRegion();
         return loadAccessTokenFile(sso_token_path);
     }();
 
     if (access_token.empty())
-    {
-        LOG_TRACE(logger, "Access token for SSO not available");
         return;
-    }
+
     if (expires_at < Aws::Utils::DateTime::Now())
     {
         LOG_TRACE(logger, "Cached Token expired at {}", expires_at.ToGmtString(Aws::Utils::DateFormat::ISO_8601));
@@ -514,7 +512,7 @@ void SSOCredentialsProvider::Reload()
 
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = sso_region;
-    LOG_TRACE(logger, "Passing config to client for region: {}", sso_region);
+    LOG_TEST(logger, "Passing config to client for region: {}", sso_region);
 
     Aws::Vector<Aws::String> retryable_errors;
     retryable_errors.push_back("TooManyRequestsException");
@@ -545,13 +543,13 @@ void SSOCredentialsProvider::refreshIfExpired()
 
 Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_access_token_path)
 {
-    LOG_TRACE(logger, "Preparing to load token from: {}", sso_access_token_path);
+    LOG_TEST(logger, "Preparing to load token from: {}", sso_access_token_path);
 
     Aws::IFStream input_file(sso_access_token_path.c_str());
 
     if (input_file)
     {
-        LOG_TRACE(logger, "Reading content from token file: {}", sso_access_token_path);
+        LOG_TEST(logger, "Reading content from token file: {}", sso_access_token_path);
 
         Aws::Utils::Json::JsonValue token_doc(input_file);
         if (!token_doc.WasParseSuccessful())
@@ -565,11 +563,10 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
         expiration_str = token_view.GetString("expiresAt");
         Aws::Utils::DateTime expiration(expiration_str, Aws::Utils::DateFormat::ISO_8601);
 
-        LOG_TRACE(logger, "Token cache file contains accessToken [{}], expiration [{}]", tmp_access_token, expiration_str);
+        LOG_TEST(logger, "Token cache file contains accessToken [{}], expiration [{}]", tmp_access_token, expiration_str);
 
         if (tmp_access_token.empty() || !expiration.WasParseSuccessful())
         {
-            LOG_TRACE(logger, R"(The SSO session associated with this profile has expired or is otherwise invalid. To refresh this SSO session run aws sso login with the corresponding profile.)");
             LOG_TRACE(
                 logger,
                 "Token cache file failed because {}{}",

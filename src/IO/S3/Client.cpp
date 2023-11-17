@@ -27,6 +27,8 @@
 #include <Common/logger_useful.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <base/sleep.h>
+
 
 namespace ProfileEvents
 {
@@ -65,6 +67,9 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
 
     if (attemptedRetries >= maxRetries)
         return false;
+
+    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            return false;
 
     return error.ShouldRetry();
 }
@@ -382,27 +387,44 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const Comp
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
-    if (!outcome.IsSuccess() || provider_type != ProviderType::GCS)
-        return outcome;
-
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
-    /// for the object (e.g. for backups)
-    /// We don't care if the compose fails, because the upload was still successful, only the
-    /// performance for copying the object will be affected
-    S3::ComposeObjectRequest compose_req;
-    compose_req.SetBucket(bucket);
-    compose_req.SetKey(key);
-    compose_req.SetComponentNames({key});
-    compose_req.SetContentType("binary/octet-stream");
-    auto compose_outcome = ComposeObject(compose_req);
+    if (!outcome.IsSuccess()
+        && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
+    {
+        auto check_request = HeadObjectRequest()
+                                 .WithBucket(bucket)
+                                 .WithKey(key);
+        auto check_outcome = HeadObject(check_request);
 
-    if (compose_outcome.IsSuccess())
-        LOG_TRACE(log, "Composing object was successful");
-    else
-        LOG_INFO(log, "Failed to compose object. Message: {}, Key: {}, Bucket: {}", compose_outcome.GetError().GetMessage(), key, bucket);
+        /// if the key exists, than MultipartUpload has been completed at some of the retries
+        /// rewrite outcome with success status
+        if (check_outcome.IsSuccess())
+            outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+    }
+
+    if (outcome.IsSuccess() && provider_type == ProviderType::GCS)
+    {
+        /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
+        /// for the object (e.g. for backups)
+        /// We don't care if the compose fails, because the upload was still successful, only the
+        /// performance for copying the object will be affected
+        S3::ComposeObjectRequest compose_req;
+        compose_req.SetBucket(bucket);
+        compose_req.SetKey(key);
+        compose_req.SetComponentNames({key});
+        compose_req.SetContentType("binary/octet-stream");
+        auto compose_outcome = ComposeObject(compose_req);
+
+        if (compose_outcome.IsSuccess())
+            LOG_TRACE(log, "Composing object was successful");
+        else
+            LOG_INFO(
+                log,
+                "Failed to compose object. Message: {}, Key: {}, Bucket: {}",
+                compose_outcome.GetError().GetMessage(), key, bucket);
+    }
 
     return outcome;
 }
@@ -599,7 +621,15 @@ Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn r
                 last_exception = std::current_exception();
 
                 auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
-                client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+
+                /// Check if query is canceled
+                if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
+                    break;
+
+                auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+                LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
+                sleepForMilliseconds(sleep_ms);
+
                 continue;
             }
         }

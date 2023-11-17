@@ -98,7 +98,7 @@
 #include <unordered_set>
 
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_LINUX)
 #    include <cstdlib>
@@ -492,7 +492,7 @@ static void sanityChecks(Server & server)
         if (!fastClockSources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -502,7 +502,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) == 2)
             server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -512,7 +512,7 @@ static void sanityChecks(Server & server)
         if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -522,7 +522,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -532,7 +532,17 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/proc/sys/kernel/task_delayacct";
+        if (readNumber(filename) == 0)
+            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. Check " + String(filename));
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -546,7 +556,7 @@ static void sanityChecks(Server & server)
         if (getAvailableMemoryAmount() < (2l << 30))
             server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -555,7 +565,7 @@ static void sanityChecks(Server & server)
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
             server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -568,7 +578,7 @@ static void sanityChecks(Server & server)
                 server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -664,6 +674,10 @@ try
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
+#endif
+
+#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
+    global_context->addWarningMessage("Server was built with code coverage. It will work slowly.");
 #endif
 
     const size_t physical_server_memory = getMemoryAmount();
@@ -1362,6 +1376,8 @@ try
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
+                global_context->reloadQueryMaskingRulesIfChanged(config);
+
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
@@ -1474,7 +1490,7 @@ try
 
     {
         std::lock_guard lock(servers_lock);
-        /// We should start interserver communications before (and more imporant shutdown after) tables.
+        /// We should start interserver communications before (and more important shutdown after) tables.
         /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
         /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
         /// communicate with zookeeper, execute merges, etc.
@@ -1681,7 +1697,7 @@ try
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
-        database_catalog.startupBackgroundCleanup();
+        database_catalog.startupBackgroundTasks();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
@@ -1806,6 +1822,9 @@ try
         try
         {
             global_context->loadOrReloadDictionaries(config());
+
+            if (config().getBool("wait_dictionaries_load_at_startup", false))
+                global_context->waitForDictionariesLoad();
         }
         catch (...)
         {

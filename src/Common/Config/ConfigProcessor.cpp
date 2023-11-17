@@ -330,6 +330,12 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 {
                     Element & config_element = dynamic_cast<Element &>(*config_node);
 
+                    /// Remove substitution attributes from the merge target node if source node already has a value
+                    bool source_has_value = with_element.hasChildNodes();
+                    if (source_has_value)
+                        for (const auto & attr_name: SUBSTITUTION_ATTRS)
+                            config_element.removeAttribute(attr_name);
+
                     mergeAttributes(config_element, with_element);
                     mergeRecursive(config, config_node, with_node);
                 }
@@ -513,6 +519,9 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_zk"]) /// we have zookeeper subst
     {
+        if (node->hasChildNodes()) /// only allow substitution for nodes with no value
+            throw Poco::Exception("Element <" + node->nodeName() + "> has value, can't process from_zk substitution");
+
         contributing_zk_paths.insert(attr_nodes["from_zk"]->getNodeValue());
 
         if (zk_node_cache)
@@ -535,6 +544,9 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_env"]) /// we have env subst
     {
+        if (node->hasChildNodes()) /// only allow substitution for nodes with no value
+            throw Poco::Exception("Element <" + node->nodeName() + "> has value, can't process from_env substitution");
+
         XMLDocumentPtr env_document;
         auto get_env_node = [&](const std::string & name) -> const Node *
         {

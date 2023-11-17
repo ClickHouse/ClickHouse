@@ -26,6 +26,7 @@ class Context;
 class StorageEmbeddedRocksDB final : public IStorage, public IKeyValueEntity, WithContext
 {
     friend class EmbeddedRocksDBSink;
+    friend class ReadFromEmbeddedRocksDB;
 public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
@@ -39,7 +40,8 @@ public:
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -82,6 +84,10 @@ public:
         PaddedPODArray<UInt8> * out_null_map) const;
 
     bool supportsDelete() const override { return true; }
+
+    bool supportsTrivialCountOptimization() const override { return true; }
+
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
 
 private:
     const String primary_key;

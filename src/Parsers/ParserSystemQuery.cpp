@@ -7,11 +7,6 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 
 #include <magic_enum.hpp>
-#include <base/EnumReflection.h>
-
-namespace ErrorCodes
-{
-}
 
 
 namespace DB
@@ -451,7 +446,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             break;
         }
-
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+            if (ParserKeyword{"FOR"}.ignore(pos, expected))
+            {
+                if (ParserKeyword{"Protobuf"}.ignore(pos, expected))
+                    res->schema_cache_format = "Protobuf";
+                else
+                    return false;
+            }
+            break;
+        }
         case Type::UNFREEZE:
         {
             ASTPtr ast;

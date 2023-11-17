@@ -34,6 +34,7 @@ class Context;
 namespace DB::S3
 {
 class ClientFactory;
+class PocoHTTPClient;
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
@@ -55,9 +56,9 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     /// See PoolBase::BehaviourOnLimit
     bool wait_on_pool_size_limit = true;
 
-    void updateSchemeAndRegion();
-
     std::function<void(const DB::ProxyConfiguration &)> error_report;
+
+    void updateSchemeAndRegion();
 
 private:
     PocoHTTPClientConfiguration(
@@ -163,7 +164,7 @@ private:
     template <bool pooled>
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
-        const DB::ProxyConfiguration & per_request_configuration,
+        const DB::ProxyConfiguration & proxy_configuration,
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
