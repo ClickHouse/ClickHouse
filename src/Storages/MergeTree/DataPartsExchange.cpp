@@ -398,7 +398,8 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     if (!pred_result)
         throw Exception(
                 ErrorCodes::ABORTED,
-                "Part {} is in PreActive state for {} ms. Another host has to be asked.",
+                "Could not exchange part {} as it's in preActive state ({} ms) and it uses zero copy replication. "
+                "This is expected behaviour and the client will retry fetching the part automatically.",
                 name, wait_timeout_ms);
 
     return part;
