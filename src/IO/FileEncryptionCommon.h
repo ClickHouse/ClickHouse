@@ -1,7 +1,5 @@
 #pragma once
-
 #include "config.h"
-
 #include <memory>
 
 namespace DB
@@ -14,14 +12,15 @@ using EncryptedObjectStorageSettingsPtr = std::shared_ptr<EncryptedObjectStorage
 #    include <map>
 
 #    include <Core/Types.h>
-#    include <IO/ReadBufferFromFileBase.h>
 #    include <openssl/evp.h>
 #    include <Poco/Util/AbstractConfiguration.h>
+
 
 namespace DB
 {
 class ReadBuffer;
 class WriteBuffer;
+class ReadBufferFromFileBase;
 
 
 namespace FileEncryption

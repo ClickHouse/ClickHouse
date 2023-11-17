@@ -44,9 +44,9 @@ DataSourceDescription EncryptedObjectStorage::getDataSourceDescription() const
     return wrapped_object_storage_data_source;
 }
 
-std::string EncryptedObjectStorage::generateBlobNameForPath(const std::string & path)
+ObjectStorageKey EncryptedObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    return object_storage->generateBlobNameForPath(path);
+    return object_storage->generateObjectKeyForPath(path);
 }
 
 ReadSettings EncryptedObjectStorage::patchSettings(const ReadSettings & read_settings) const
@@ -109,7 +109,8 @@ std::unique_ptr<WriteBufferFromFileBase> EncryptedObjectStorage::writeObject( //
             implementation_buffer->getFileName(),
             cache_key,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
-            modified_write_settings);
+            modified_write_settings,
+            Context::getGlobalContextInstance()->getFilesystemCacheLog());
         header.write(cache);
         cache.finalize();
     }
@@ -145,9 +146,11 @@ void EncryptedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 void EncryptedObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    object_storage->copyObject(object_from, object_to, object_to_attributes);
+    object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 }
 
 std::unique_ptr<IObjectStorage> EncryptedObjectStorage::cloneObjectStorage(

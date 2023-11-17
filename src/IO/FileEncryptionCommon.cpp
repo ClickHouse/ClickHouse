@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/safe_cast.h>

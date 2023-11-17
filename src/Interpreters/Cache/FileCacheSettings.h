@@ -31,13 +31,15 @@ struct FileCacheSettings
 
     size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
 
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-    void loadFromCollection(const NamedCollection & collection);
+    void load(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
 private:
     using FuncHas = std::function<bool(std::string_view)>;
     using FuncGetUInt = std::function<size_t(std::string_view)>;
     using FuncGetString = std::function<std::string(std::string_view)>;
+
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+    void loadFromCollection(const NamedCollection & collection);
     void loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetString get_string);
 };
 

@@ -40,11 +40,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         }
 
         FileCacheSettings file_cache_settings;
-        auto predefined_configuration = config.has("cache_name") ? NamedCollectionFactory::instance().tryGet(config.getString("cache_name")) : nullptr;
-        if (predefined_configuration)
-            file_cache_settings.loadFromCollection(*predefined_configuration);
-        else
-            file_cache_settings.loadFromConfig(config, config_prefix);
+        file_cache_settings.load(config, config_prefix);
 
         auto config_fs_caches_dir = context->getFilesystemCachesPath();
         if (config_fs_caches_dir.empty())
