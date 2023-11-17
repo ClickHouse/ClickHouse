@@ -2836,7 +2836,7 @@ void Context::clearMMappedFileCache() const
 
 void Context::setSecondaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->mutex);
 
     if (shared->secondary_index_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Secondary index cache has been already created.");
@@ -2846,7 +2846,7 @@ void Context::setSecondaryIndexCache(const String & cache_policy, size_t max_siz
 
 void Context::updateSecondaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->mutex);
 
     if (!shared->secondary_index_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Secondary index cache was not created yet.");
@@ -2857,13 +2857,13 @@ void Context::updateSecondaryIndexCacheConfiguration(const Poco::Util::AbstractC
 
 SecondaryIndexCachePtr Context::getSecondaryIndexCache() const
 {
-    auto lock = getLock();
+    SharedLockGuard lock(shared->mutex);
     return shared->secondary_index_cache;
 }
 
 void Context::clearSecondaryIndexCache() const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->mutex);
 
     if (shared->secondary_index_cache)
         shared->secondary_index_cache->clear();
