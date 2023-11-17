@@ -75,13 +75,13 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     void drop() override;
 
     void startup() override;
 
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     Pipe read(
         const Names & column_names,

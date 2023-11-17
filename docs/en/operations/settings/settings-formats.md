@@ -381,6 +381,13 @@ Enabled by default.
 
 Allow parsing numbers as strings in JSON input formats.
 
+Enabled by default.
+
+## input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
+
+If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
+It can be useful if JSON data contains quoted UInt64 numbers.
+
 Disabled by default.
 
 ## input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
@@ -404,7 +411,76 @@ Result:
 └────┴──────────────────────────┴────────────┘
 ```
 
-Disabled by default.
+Enabled by default.
+
+## input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
+
+If enabled, during schema inference ClickHouse will try to infer named Tuple from JSON objects.
+The resulting named Tuple will contain all elements from all corresponding JSON objects from sample data.
+
+Example:
+
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+Result:
+
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Enabled by default.
+
+## input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
+
+Allow parsing JSON arrays as strings in JSON input formats.
+
+Example:
+
+```sql
+SET input_format_json_read_arrays_as_strings = 1;
+SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
+```
+
+Result:
+```
+┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
+│ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
+└───────────────────────┴─────────────────┴───────────────────────────────────────────┘
+```
+
+Enabled by default.
+
+## input_format_json_infer_incomplete_types_as_strings {#input_format_json_infer_incomplete_types_as_strings}
+
+Allow to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
+In JSON formats any value can be read as String, and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
+by using String type for keys with unknown types. 
+
+Example:
+
+```sql
+SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
+DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+```
+
+Result:
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+┌─obj────────────────────────────┐
+│ ([1,2,3],'hello',NULL,'{}',[]) │
+└────────────────────────────────┘
+```
+
+Enabled by default.
 
 ## input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
 
@@ -627,6 +703,30 @@ Column type should be String. If value is empty, default names `row_{i}`will be 
 
 Default value: ''.
 
+### input_format_json_compact_allow_variable_number_of_columns {#input_format_json_compact_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
+
+### output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
+
+When enabled, escape special characters in Markdown.
+
+[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
+
+```
+! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
+```
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
+
+Default value: 0.
+
 ## TSV format settings {#tsv-format-settings}
 
 ### input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
@@ -764,6 +864,13 @@ When enabled, trailing empty lines at the end of TSV file will be skipped.
 
 Disabled by default.
 
+### input_format_tsv_allow_variable_number_of_columns {#input_format_tsv_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in TSV input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
+
 ## CSV format settings {#csv-format-settings}
 
 ### format_csv_delimiter {#format_csv_delimiter}
@@ -787,6 +894,12 @@ Enabled by default.
 ### output_format_csv_crlf_end_of_line {#output_format_csv_crlf_end_of_line}
 
 Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
+
+Disabled by default.
+
+### input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
+
+If it is set true, CR(\\r) will be allowed at end of line not followed by LF(\\n)
 
 Disabled by default.
 
@@ -955,9 +1068,11 @@ Result
 ```text
 "  string  "
 ```
+
 ### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
 
-ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
+Allow variable number of columns in rows in CSV input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
 
 Disabled by default.
 
@@ -1222,6 +1337,12 @@ Disabled by default.
 Allow skipping columns with unsupported types while schema inference for format Parquet.
 
 Disabled by default.
+
+### input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
+
+min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format.
+
+Default value - `8192`.
 
 ### output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
@@ -1562,6 +1683,13 @@ Default value: `''`.
 ### input_format_custom_skip_trailing_empty_lines {input_format_custom_skip_trailing_empty_lines}
 
 When enabled, trailing empty lines at the end of file in CustomSeparated format will be skipped.
+
+Disabled by default.
+
+### input_format_custom_allow_variable_number_of_columns {#input_format_custom_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in CustomSeparated input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
 
 Disabled by default.
 

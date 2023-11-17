@@ -19,7 +19,7 @@ halfMD5(par1, ...)
 ```
 
 The function is relatively slow (5 million short strings per second per processor core).
-Consider using the [sipHash64](#hash_functions-siphash64) function instead.
+Consider using the [sipHash64](#siphash64) function instead.
 
 **Arguments**
 
@@ -45,13 +45,13 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 
 Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
 
-## MD5 {#hash_functions-md5}
+## MD5 {#md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64 (#hash_functions-siphash64)
+## sipHash64 {#siphash64}
 
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
@@ -59,13 +59,13 @@ Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 sipHash64(par1,...)
 ```
 
-This is a cryptographic hash function. It works at least three times faster than the [MD5](#hash_functions-md5) hash function.
+This is a cryptographic hash function. It works at least three times faster than the [MD5](#md5) hash function.
 
 The function [interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
 
-1.  The first and the second hash value are concatenated to an array which is hashed.
-2.  The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
-3.  This calculation is repeated for all remaining hash values of the original input.
+1. The first and the second hash value are concatenated to an array which is hashed.
+2. The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
+3. This calculation is repeated for all remaining hash values of the original input.
 
 **Arguments**
 
@@ -91,7 +91,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## sipHash64Keyed
 
-Same as [sipHash64](#hash_functions-siphash64) but additionally takes an explicit key argument instead of using a fixed key.
+Same as [sipHash64](#siphash64) but additionally takes an explicit key argument instead of using a fixed key.
 
 **Syntax**
 
@@ -101,7 +101,7 @@ sipHash64Keyed((k0, k1), par1,...)
 
 **Arguments**
 
-Same as [sipHash64](#hash_functions-siphash64), but the first argument is a tuple of two UInt64 values representing the key.
+Same as [sipHash64](#siphash64), but the first argument is a tuple of two UInt64 values representing the key.
 
 **Returned value**
 
@@ -123,12 +123,12 @@ SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','
 
 ## sipHash128
 
-Like [sipHash64](#hash_functions-siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
+Like [sipHash64](#siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
 :::note
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects should probably use [sipHash128Reference](#hash_functions-siphash128reference).
+New projects should probably use [sipHash128Reference](#siphash128reference).
 :::
 
 **Syntax**
@@ -139,7 +139,7 @@ sipHash128(par1,...)
 
 **Arguments**
 
-Same as for [sipHash64](#hash_functions-siphash64).
+Same as for [sipHash64](#siphash64).
 
 **Returned value**
 
@@ -163,12 +163,12 @@ Result:
 
 ## sipHash128Keyed
 
-Same as [sipHash128](#hash_functions-siphash128) but additionally takes an explicit key argument instead of using a fixed key.
+Same as [sipHash128](#siphash128) but additionally takes an explicit key argument instead of using a fixed key.
 
 :::note
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects should probably use [sipHash128ReferenceKeyed](#hash_functions-siphash128referencekeyed).
+New projects should probably use [sipHash128ReferenceKeyed](#siphash128referencekeyed).
 :::
 
 **Syntax**
@@ -179,7 +179,7 @@ sipHash128Keyed((k0, k1), par1,...)
 
 **Arguments**
 
-Same as [sipHash128](#hash_functions-siphash128), but the first argument is a tuple of two UInt64 values representing the key.
+Same as [sipHash128](#siphash128), but the first argument is a tuple of two UInt64 values representing the key.
 
 **Returned value**
 
@@ -203,7 +203,7 @@ Result:
 
 ## sipHash128Reference
 
-Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
+Like [sipHash128](#siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
 
 **Syntax**
 
@@ -213,7 +213,7 @@ sipHash128Reference(par1,...)
 
 **Arguments**
 
-Same as for [sipHash128](#hash_functions-siphash128).
+Same as for [sipHash128](#siphash128).
 
 **Returned value**
 
@@ -237,7 +237,7 @@ Result:
 
 ## sipHash128ReferenceKeyed
 
-Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.
+Same as [sipHash128Reference](#siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.
 
 **Syntax**
 
@@ -247,7 +247,7 @@ sipHash128ReferenceKeyed((k0, k1), par1,...)
 
 **Arguments**
 
-Same as [sipHash128Reference](#hash_functions-siphash128reference), but the first argument is a tuple of two UInt64 values representing the key.
+Same as [sipHash128Reference](#siphash128reference), but the first argument is a tuple of two UInt64 values representing the key.
 
 **Returned value**
 
@@ -536,7 +536,7 @@ Calculates `HiveHash` from a string.
 SELECT hiveHash('')
 ```
 
-This is just [JavaHash](#hash_functions-javahash) with zeroed out sign bit. This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
+This is just [JavaHash](#javahash) with zeroed out sign bit. This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
 **Returned value**
 

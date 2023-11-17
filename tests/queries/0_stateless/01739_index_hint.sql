@@ -18,7 +18,7 @@ drop table tbl;
 
 drop table if exists XXXX;
 
-create table XXXX (t Int64, f Float64) Engine=MergeTree order by t settings index_granularity=128;
+create table XXXX (t Int64, f Float64) Engine=MergeTree order by t settings index_granularity=128, index_granularity_bytes = '10Mi';
 
 insert into XXXX select number*60, 0 from numbers(100000);
 
@@ -26,7 +26,7 @@ SELECT sum(t) FROM XXXX WHERE indexHint(t = 42);
 
 drop table if exists XXXX;
 
-create table XXXX (t Int64, f Float64) Engine=MergeTree order by t settings index_granularity=8192;
+create table XXXX (t Int64, f Float64) Engine=MergeTree order by t settings index_granularity=8192, index_granularity_bytes = '10Mi';
 
 insert into XXXX select number*60, 0 from numbers(100000);
 

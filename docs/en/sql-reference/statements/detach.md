@@ -5,17 +5,17 @@ sidebar_label: DETACH
 title: "DETACH Statement"
 ---
 
-Makes the server "forget" about the existence of a table, a materialized view, or a dictionary.
+Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
 
 **Syntax**
 
 ``` sql
-DETACH TABLE|VIEW|DICTIONARY [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
+DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
 ```
 
-Detaching does not delete the data or metadata of a table, a materialized view or a dictionary. If an entity was not detached `PERMANENTLY`, on the next server launch the server will read the metadata and recall the table/view/dictionary again. If an entity was detached `PERMANENTLY`, there will be no automatic recall.
+Detaching does not delete the data or metadata of a table, a materialized view, a dictionary or a database. If an entity was not detached `PERMANENTLY`, on the next server launch the server will read the metadata and recall the table/view/dictionary/database again. If an entity was detached `PERMANENTLY`, there will be no automatic recall.
 
-Whether a table or a dictionary was detached permanently or not, in both cases you can reattach them using the [ATTACH](../../sql-reference/statements/attach.md) query.
+Whether a table, a dictionary or a database was detached permanently or not, in both cases you can reattach them using the [ATTACH](../../sql-reference/statements/attach.md) query.
 System log tables can be also attached back (e.g. `query_log`, `text_log`, etc). Other system tables can't be reattached. On the next server launch the server will recall those tables again.
 
 `ATTACH MATERIALIZED VIEW` does not work with short syntax (without `SELECT`), but you can attach it using the `ATTACH TABLE` query.

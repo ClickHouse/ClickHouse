@@ -88,8 +88,9 @@ public:
         }
     }
 
-    template <typename T, typename ... Args, typename = std::enable_if_t<!std::is_same_v<T, DateTime64>>>
-    inline auto execute(const T & t, Args && ... args) const
+    template <typename T, typename... Args>
+    requires(!std::same_as<T, DateTime64>)
+    inline auto execute(const T & t, Args &&... args) const
     {
         return wrapped_transform.execute(t, std::forward<Args>(args)...);
     }
@@ -128,7 +129,8 @@ public:
         }
     }
 
-    template <typename T, typename ... Args, typename = std::enable_if_t<!std::is_same_v<T, DateTime64>>>
+    template <typename T, typename ... Args>
+    requires (!std::same_as<T, DateTime64>)
     inline auto executeExtendedResult(const T & t, Args && ... args) const
     {
         return wrapped_transform.executeExtendedResult(t, std::forward<Args>(args)...);

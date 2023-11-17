@@ -19,10 +19,12 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowEngineQuery.h>
+#include <Parsers/ASTShowFunctionsQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowSettingQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
@@ -39,6 +41,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ASTShowAccessQuery.h>
@@ -79,10 +82,12 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowEngineQuery.h>
+#include <Interpreters/InterpreterShowFunctionsQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterShowColumnsQuery.h>
 #include <Interpreters/InterpreterShowIndexesQuery.h>
+#include <Interpreters/InterpreterShowSettingQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -96,6 +101,7 @@
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
+#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Access/InterpreterShowAccessEntitiesQuery.h>
 #include <Interpreters/Access/InterpreterShowAccessQuery.h>
@@ -197,9 +203,17 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterShowIndexesQuery>(query, context);
     }
+    else if (query->as<ASTShowSettingQuery>())
+    {
+        return std::make_unique<InterpreterShowSettingQuery>(query, context);
+    }
     else if (query->as<ASTShowEnginesQuery>())
     {
         return std::make_unique<InterpreterShowEnginesQuery>(query, context);
+    }
+    else if (query->as<ASTShowFunctionsQuery>())
+    {
+        return std::make_unique<InterpreterShowFunctionsQuery>(query, context);
     }
     else if (query->as<ASTUseQuery>())
     {
@@ -274,7 +288,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterAlterNamedCollectionQuery>(query, context);
     }
-    else if (query->as<ASTCheckQuery>())
+    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>())
     {
         return std::make_unique<InterpreterCheckQuery>(query, context);
     }
@@ -313,6 +327,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDropAccessEntityQuery>())
     {
         return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
+    }
+    else if (query->as<ASTMoveAccessEntityQuery>())
+    {
+        return std::make_unique<InterpreterMoveAccessEntityQuery>(query, context);
     }
     else if (query->as<ASTDropNamedCollectionQuery>())
     {

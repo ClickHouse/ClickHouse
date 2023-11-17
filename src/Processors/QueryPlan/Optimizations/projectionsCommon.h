@@ -19,6 +19,7 @@ using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelect
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using DataPartsVector = std::vector<DataPartPtr>;
+struct RangesInDataParts;
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
@@ -71,7 +72,7 @@ bool analyzeProjectionCandidate(
     const ReadFromMergeTree & reading,
     const MergeTreeDataSelectExecutor & reader,
     const Names & required_column_names,
-    const DataPartsVector & parts,
+    const RangesInDataParts & parts_with_ranges,
     const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,

@@ -49,6 +49,8 @@ class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
+class BackupLog;
+class S3QueueLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -69,6 +71,7 @@ struct SystemLogs
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     std::shared_ptr<FilesystemCacheLog> filesystem_cache_log;
     std::shared_ptr<FilesystemReadPrefetchesLog> filesystem_read_prefetches_log;
+    std::shared_ptr<S3QueueLog> s3_queue_log;
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.
@@ -84,6 +87,8 @@ struct SystemLogs
     /// Used to log processors profiling
     std::shared_ptr<ProcessorsProfileLog> processors_profile_log;
     std::shared_ptr<AsynchronousInsertLog> asynchronous_insert_log;
+    /// Backup and restore events
+    std::shared_ptr<BackupLog> backup_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -111,7 +116,7 @@ public:
       *   and new table get created - as if previous table was not exist.
       */
     SystemLog(ContextPtr context_,
-              const SystemLogSettings& settings_,
+              const SystemLogSettings & settings_,
               std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
     /** Append a record into log.
@@ -131,12 +136,10 @@ protected:
     using Base::queue;
 
 private:
-
-
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    String create_query;
+    const String create_query;
     String old_create_query;
     bool is_prepared = false;
 

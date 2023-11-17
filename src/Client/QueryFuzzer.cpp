@@ -517,12 +517,11 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     SipHash sip_hash;
     sip_hash.update(original_name);
     if (create.columns_list)
-        create.columns_list->updateTreeHash(sip_hash);
+        create.columns_list->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
     if (create.storage)
-        create.storage->updateTreeHash(sip_hash);
+        create.storage->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
 
-    IAST::Hash hash;
-    sip_hash.get128(hash);
+    const auto hash = getSipHash128AsPair(sip_hash);
 
     /// Save only tables with unique definition.
     if (created_tables_hashes.insert(hash).second)

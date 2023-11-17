@@ -2,6 +2,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -12,45 +13,67 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetString get_string)
 {
-    if (!config.has(config_prefix + ".path"))
+    auto config_parse_size = [&](std::string_view key) { return parseWithSizeSuffix<uint64_t>(get_string(key)); };
+
+    if (!has("path"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected cache path (`path`) in configuration");
 
-    base_path = config.getString(config_prefix + ".path");
+    base_path = get_string("path");
 
-    if (!config.has(config_prefix + ".max_size"))
+    if (!has("max_size"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected cache size (`max_size`) in configuration");
 
-    max_size = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".max_size"));
+    max_size = config_parse_size("max_size");
     if (max_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected non-zero size for cache configuration");
 
-    auto path = config.getString(config_prefix + ".path", "");
-    if (path.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk Cache requires non-empty `path` field (cache base path) in config");
+    if (has("max_elements"))
+        max_elements = get_uint("max_elements");
 
-    max_elements = config.getUInt64(config_prefix + ".max_elements", FILECACHE_DEFAULT_MAX_ELEMENTS);
+    if (has("max_file_segment_size"))
+        max_file_segment_size = config_parse_size("max_file_segment_size");
 
-    if (config.has(config_prefix + ".max_file_segment_size"))
-        max_file_segment_size = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".max_file_segment_size"));
+    if (has("cache_on_write_operations"))
+        cache_on_write_operations = get_uint("cache_on_write_operations");
 
-    cache_on_write_operations = config.getUInt64(config_prefix + ".cache_on_write_operations", false);
-    enable_filesystem_query_cache_limit = config.getUInt64(config_prefix + ".enable_filesystem_query_cache_limit", false);
-    cache_hits_threshold = config.getUInt64(config_prefix + ".cache_hits_threshold", FILECACHE_DEFAULT_HITS_THRESHOLD);
+    if (has("enable_filesystem_query_cache_limit"))
+        enable_filesystem_query_cache_limit = get_uint("enable_filesystem_query_cache_limit");
 
-    enable_bypass_cache_with_threashold = config.getUInt64(config_prefix + ".enable_bypass_cache_with_threashold", false);
+    if (has("cache_hits_threshold"))
+        cache_hits_threshold = get_uint("cache_hits_threshold");
 
-    if (config.has(config_prefix + ".bypass_cache_threashold"))
-        bypass_cache_threashold = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".bypass_cache_threashold"));
+    if (has("enable_bypass_cache_with_threshold"))
+        enable_bypass_cache_with_threshold = get_uint("enable_bypass_cache_with_threshold");
 
-    if (config.has(config_prefix + ".boundary_alignment"))
-        boundary_alignment = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".boundary_alignment"));
+    if (has("bypass_cache_threshold"))
+        bypass_cache_threshold = config_parse_size("bypass_cache_threshold");
 
-    if (config.has(config_prefix + ".background_download_threads"))
-        background_download_threads = config.getUInt(config_prefix + ".background_download_threads");
+    if (has("boundary_alignment"))
+        boundary_alignment = config_parse_size("boundary_alignment");
 
-    delayed_cleanup_interval_ms = config.getUInt64(config_prefix + ".delayed_cleanup_interval_ms", FILECACHE_DELAYED_CLEANUP_INTERVAL_MS);
+    if (has("background_download_threads"))
+        background_download_threads = get_uint("background_download_threads");
+
+    if (has("load_metadata_threads"))
+        load_metadata_threads = get_uint("load_metadata_threads");
+}
+
+void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    auto config_has = [&](std::string_view key) { return config.has(fmt::format("{}.{}", config_prefix, key)); };
+    auto config_get_uint = [&](std::string_view key) { return config.getUInt(fmt::format("{}.{}", config_prefix, key)); };
+    auto config_get_string = [&](std::string_view key) { return config.getString(fmt::format("{}.{}", config_prefix, key)); };
+    loadImpl(std::move(config_has), std::move(config_get_uint), std::move(config_get_string));
+}
+
+void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
+{
+    auto config_has = [&](std::string_view key) { return collection.has(std::string(key)); };
+    auto config_get_uint = [&](std::string_view key) { return collection.get<UInt64>(std::string(key)); };
+    auto config_get_string = [&](std::string_view key) { return collection.get<String>(std::string(key)); };
+    loadImpl(std::move(config_has), std::move(config_get_uint), std::move(config_get_string));
 }
 
 }

@@ -97,6 +97,8 @@ public:
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
+    void recordLoginSucess(ContextPtr login_context) const;
+
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
@@ -115,6 +117,10 @@ private:
     bool named_session_created = false;
 
     SessionTracker::SessionTrackerHandle session_tracker_handle;
+
+    /// Settings received from authentication server during authentication process
+    /// to set when creating a session context
+    SettingsChanges settings_from_auth_server;
 
     Poco::Logger * log = nullptr;
 };

@@ -27,7 +27,7 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header_
     serializer = std::make_unique<CapnProtoSerializer>(header.getDataTypes(), header.getNames(), schema, format_settings.capn_proto);
 }
 
-kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
+std::pair<kj::Array<capnp::word>, size_t> CapnProtoRowInputFormat::readMessagePrefix()
 {
     uint32_t segment_count;
     in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
@@ -48,6 +48,14 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
     for (size_t i = 0; i <= segment_count; ++i)
         in->readStrict(prefix_chars.begin() + ((i + 1) * sizeof(uint32_t)), sizeof(uint32_t));
 
+    return {std::move(prefix), prefix_size};
+}
+
+kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
+{
+    auto [prefix, prefix_size] = readMessagePrefix();
+    auto prefix_chars = prefix.asChars();
+
     // calculate size of message
     const auto expected_words = capnp::expectedSizeInWordsFromPrefix(prefix);
     const auto expected_bytes = expected_words * sizeof(capnp::word);
@@ -60,6 +68,18 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
     in->readStrict(msg_chars.begin() + prefix_size, data_size);
 
     return msg;
+}
+
+void CapnProtoRowInputFormat::skipMessage()
+{
+    auto [prefix, prefix_size] = readMessagePrefix();
+
+    // calculate size of message
+    const auto expected_bytes = capnp::expectedSizeInWordsFromPrefix(prefix) * sizeof(capnp::word);
+    const auto data_size = expected_bytes - prefix_size;
+
+    // skip full message
+    in->ignore(data_size);
 }
 
 bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
@@ -80,6 +100,18 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     }
 
     return true;
+}
+
+size_t CapnProtoRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (!in->eof() && num_rows < max_block_size)
+    {
+        skipMessage();
+        ++num_rows;
+    }
+
+    return num_rows;
 }
 
 CapnProtoSchemaReader::CapnProtoSchemaReader(const FormatSettings & format_settings_) : format_settings(format_settings_)

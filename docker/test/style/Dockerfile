@@ -1,5 +1,5 @@
 # docker build -t clickhouse/style-test .
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 ARG ACT_VERSION=0.2.33
 ARG ACTIONLINT_VERSION=1.6.22
 

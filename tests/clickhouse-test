@@ -383,19 +383,19 @@ def get_stacktraces_from_clickhouse(args):
     )
     replicated_msg = (
         f"{args.client} {settings_str} --query "
-        '"SELECT materialize((hostName(), tcpPort())) as host, thread_id, '
+        '"SELECT materialize((hostName(), tcpPort())) as host, thread_name, thread_id, query_id, trace, '
         "arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
         "arrayMap(x -> addressToLine(x), trace), "
-        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
+        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
         "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
         'ORDER BY host, thread_id FORMAT Vertical"'
     )
 
     msg = (
         f"{args.client} {settings_str} --query "
-        "\"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
+        "\"SELECT thread_name, thread_id, query_id, trace, arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
         "arrayMap(x -> addressToLine(x), trace), "
-        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
+        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
         'FROM system.stack_trace FORMAT Vertical"'
     )
 
@@ -618,6 +618,9 @@ class SettingsRandomizer:
                 "America/Mazatlan",
                 "America/Hermosillo",
                 "Mexico/BajaSur",
+                # These timezones had DST transitions on some unusual dates (e.g. 2000-01-15 12:00:00).
+                "Africa/Khartoum",
+                "Africa/Juba",
                 # server default that is randomized across all timezones
                 # NOTE: due to lots of trickery we cannot use empty timezone here, but this should be the same.
                 get_localzone(),
@@ -668,6 +671,8 @@ class MergeTreeSettingsRandomizer:
         "compress_primary_key": lambda: random.randint(0, 1),
         "marks_compress_block_size": lambda: random.randint(8000, 100000),
         "primary_key_compress_block_size": lambda: random.randint(8000, 100000),
+        "replace_long_file_name_to_hash": lambda: random.randint(0, 1),
+        "max_file_name_length": threshold_generator(0.3, 0.3, 0, 128),
     }
 
     @staticmethod
@@ -1168,6 +1173,25 @@ class TestCase:
             description_full += result.reason.value
 
         description_full += result.description
+
+        if (
+            args.collect_per_test_coverage
+            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        ):
+            clickhouse_execute(
+                args,
+                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
+                retry_error_codes=True,
+            )
+
+            coverage = clickhouse_execute(
+                args,
+                "SELECT length(coverage())",
+                retry_error_codes=True,
+            ).decode()
+
+            description_full += f" Coverage: {coverage}"
+
         description_full += "\n"
 
         if result.status == TestStatus.FAIL and self.testcase_args:
@@ -1196,8 +1220,18 @@ class TestCase:
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
+        query_params = ""
+        if "need-query-parameters" in self.tags:
+            query_params = (
+                " --param_CLICKHOUSE_DATABASE="
+                + database
+                + " --param_CLICKHOUSE_DATABASE_1="
+                + database
+                + "_1"
+            )
+
         params = {
-            "client": client + " --database=" + database,
+            "client": client + " --database=" + database + query_params,
             "logs_level": server_logs_level,
             "options": client_options,
             "test": self.case_file,
@@ -1216,6 +1250,17 @@ class TestCase:
                 + pattern
             )
 
+        # We want to calculate per-test code coverage. That's why we reset it before each test.
+        if (
+            args.collect_per_test_coverage
+            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        ):
+            clickhouse_execute(
+                args,
+                "SYSTEM RESET COVERAGE",
+                retry_error_codes=True,
+            )
+
         command = pattern.format(**params)
 
         proc = Popen(command, shell=True, env=os.environ)
@@ -1225,80 +1270,12 @@ class TestCase:
         ).total_seconds() < args.timeout and proc.poll() is None:
             sleep(0.01)
 
-        need_drop_database = not args.database
-        if need_drop_database and args.no_drop_if_fail:
-            maybe_passed = (
-                (proc.returncode == 0)
-                and (proc.stderr is None)
-                and (proc.stdout is None or "Exception" not in proc.stdout)
-            )
-            need_drop_database = maybe_passed
-
         debug_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
                 debug_log += self.testcase_args.debug_log_file + ":\n"
                 debug_log += str(stream.read(), errors="replace", encoding="utf-8")
                 debug_log += "\n"
-
-        if need_drop_database:
-            seconds_left = max(
-                args.timeout - (datetime.now() - start_time).total_seconds(), 20
-            )
-
-            # Check if the test does not cleanup its tables.
-            # Only for newly added tests. Please extend this check to the old tests as well.
-            if self.case_file >= "02800":
-                leftover_tables = (
-                    clickhouse_execute(
-                        args,
-                        f"SHOW TABLES FROM {database}",
-                        timeout=seconds_left,
-                        settings={
-                            "log_comment": args.testcase_basename,
-                        },
-                    )
-                    .decode()
-                    .replace("\n", ", ")
-                )
-
-                if len(leftover_tables) != 0:
-                    raise Exception(
-                        f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
-                    )
-
-            drop_database_query = f"DROP DATABASE IF EXISTS {database}"
-            if args.replicated_database:
-                drop_database_query += " ON CLUSTER test_cluster_database_replicated"
-
-            try:
-                # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
-                for _ in range(1, 60):
-                    try:
-                        clickhouse_execute(
-                            args,
-                            drop_database_query,
-                            timeout=seconds_left,
-                            settings={
-                                "log_comment": args.testcase_basename,
-                            },
-                        )
-                    except HTTPError as e:
-                        if need_retry(args, e.message, e.message, 0):
-                            continue
-                        raise
-                    break
-
-            except socket.timeout:
-                total_time = (datetime.now() - start_time).total_seconds()
-                return (
-                    None,
-                    "",
-                    f"Timeout dropping database {database} after test",
-                    debug_log,
-                    total_time,
-                )
-            shutil.rmtree(args.test_tmp_dir)
 
         total_time = (datetime.now() - start_time).total_seconds()
 
@@ -1328,6 +1305,8 @@ class TestCase:
         return proc, stdout, stderr, debug_log, total_time
 
     def run(self, args, suite, client_options, server_logs_level):
+        start_time = datetime.now()
+
         try:
             skip_reason = self.should_skip_test(suite)
             if skip_reason is not None:
@@ -1363,39 +1342,117 @@ class TestCase:
 
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
+
+            self._cleanup(result.status == TestStatus.OK)
+
             return result
         except KeyboardInterrupt as e:
             raise e
         except HTTPError:
+            total_time = (datetime.now() - start_time).total_seconds()
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
                 FailureReason.INTERNAL_QUERY_FAIL,
-                0.0,
+                total_time,
+                self.add_info_about_settings(
+                    self.get_description_from_exception_info(sys.exc_info())
+                ),
+            )
+        except socket.timeout:
+            total_time = (datetime.now() - start_time).total_seconds()
+            return TestResult(
+                self.name,
+                TestStatus.FAIL,
+                FailureReason.INTERNAL_QUERY_FAIL,
+                total_time,
                 self.add_info_about_settings(
                     self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
         except (ConnectionError, http.client.ImproperConnectionState):
+            total_time = (datetime.now() - start_time).total_seconds()
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
                 FailureReason.SERVER_DIED,
-                0.0,
+                total_time,
                 self.add_info_about_settings(
                     self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
         except Exception:
+            total_time = (datetime.now() - start_time).total_seconds()
             return TestResult(
                 self.name,
                 TestStatus.UNKNOWN,
                 FailureReason.INTERNAL_ERROR,
-                0.0,
+                total_time,
                 self.get_description_from_exception_info(sys.exc_info()),
             )
         finally:
             self.remove_random_settings_from_env()
+
+    def _cleanup(self, passed):
+        args = self.testcase_args
+
+        need_cleanup = not args.database
+        if need_cleanup and args.no_drop_if_fail:
+            need_cleanup = passed
+
+        if not need_cleanup:
+            return
+
+        time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
+        timeout = max(args.timeout - time_passed, 20)
+
+        self._cleanup_database(args, timeout)
+        shutil.rmtree(args.test_tmp_dir)
+
+    def _cleanup_database(self, args, timeout):
+        database = args.testcase_database
+
+        # Check if the test does not cleanup its tables.
+        # Only for newly added tests. Please extend this check to the old tests as well.
+        if self.case_file >= "02800":
+            leftover_tables = (
+                clickhouse_execute(
+                    args,
+                    f"SHOW TABLES FROM {database}",
+                    timeout=timeout,
+                    settings={
+                        "log_comment": args.testcase_basename,
+                    },
+                )
+                .decode()
+                .replace("\n", ", ")
+            )
+
+            if len(leftover_tables) != 0:
+                raise Exception(
+                    f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
+                )
+
+        drop_database_query = f"DROP DATABASE IF EXISTS {database}"
+        if args.replicated_database:
+            drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+
+        # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
+        for _ in range(1, 60):
+            try:
+                clickhouse_execute(
+                    args,
+                    drop_database_query,
+                    timeout=timeout,
+                    settings={
+                        "log_comment": args.testcase_basename,
+                    },
+                )
+            except HTTPError as e:
+                if need_retry(args, e.message, e.message, 0):
+                    continue
+                raise
+            break
 
 
 class TestSuite:
@@ -1457,13 +1514,13 @@ class TestSuite:
             else:
                 raise Exception(f"Unknown file_extension: {filename}")
 
-        def parse_tags_from_line(line, comment_sign):
+        def parse_tags_from_line(line, comment_sign) -> Set[str]:
             if not line.startswith(comment_sign):
-                return None
+                return set()
             tags_str = line[len(comment_sign) :].lstrip()  # noqa: ignore E203
             tags_prefix = "Tags:"
             if not tags_str.startswith(tags_prefix):
-                return None
+                return set()
             tags_str = tags_str[len(tags_prefix) :]  # noqa: ignore E203
             tags = tags_str.split(",")
             tags = {tag.strip() for tag in tags}
@@ -1481,12 +1538,23 @@ class TestSuite:
 
         def load_tags_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
+            need_query_params = False
             with open(filepath, "r", encoding="utf-8") as file:
                 try:
-                    line = find_tag_line(file)
+                    tag_line = find_tag_line(file)
                 except UnicodeDecodeError:
                     return []
-            return parse_tags_from_line(line, comment_sign)
+                try:
+                    if filepath.endswith(".sql"):
+                        for line in file:
+                            if "{CLICKHOUSE_DATABASE" in line:
+                                need_query_params = True
+                except UnicodeDecodeError:
+                    pass
+            parsed_tags = parse_tags_from_line(tag_line, comment_sign)
+            if need_query_params:
+                parsed_tags.add("need-query-parameters")
+            return parsed_tags
 
         all_tags = {}
         start_time = datetime.now()
@@ -1834,6 +1902,7 @@ class BuildFlags:
     UNDEFINED = "ubsan"
     MEMORY = "msan"
     DEBUG = "debug"
+    SANITIZE_COVERAGE = "sanitize-coverage"
     RELEASE = "release"
     ORDINARY_DATABASE = "ordinary-database"
     POLYMORPHIC_PARTS = "polymorphic-parts"
@@ -1853,6 +1922,8 @@ def collect_build_flags(args):
         result.append(BuildFlags.UNDEFINED)
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
+    elif b"-DSANITIZE_COVERAGE=1" in value:
+        result.append(BuildFlags.SANITIZE_COVERAGE)
 
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'"
@@ -2034,6 +2105,8 @@ def reportCoverageFor(args, what, query, permissive=False):
     return True
 
 
+# This is high-level coverage on per-component basis (functions, data types, etc.)
+# Don't be confused with the code coverage.
 def reportCoverage(args):
     clickhouse_execute(args, "SYSTEM FLUSH LOGS")
 
@@ -2152,7 +2225,7 @@ def reportLogStats(args):
     print("\n")
 
     query = """
-        SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
+        SELECT message_format_string, count(), any(message) AS any_message
         FROM system.text_log
         WHERE (now() - toIntervalMinute(240)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
@@ -2295,6 +2368,28 @@ def main(args):
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
+
+    if (
+        args.collect_per_test_coverage
+        and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+    ):
+        clickhouse_execute(
+            args,
+            """
+                CREATE TABLE IF NOT EXISTS system.coverage
+                (
+                    time DateTime,
+                    test_name String,
+                    coverage Array(UInt64)
+                ) ENGINE = MergeTree ORDER BY test_name;
+            """,
+        )
+
+        # Coverage collected at the system startup before running any tests:
+        clickhouse_execute(
+            args,
+            "INSERT INTO system.coverage SELECT now(), '', coverage()",
+        )
 
     total_tests_run = 0
 
@@ -2481,7 +2576,7 @@ def parse_args():
     parser.add_argument(
         "--no-drop-if-fail",
         action="store_true",
-        help="Do not drop database for test if test has failed (does not work if reference file mismatch)",
+        help="Do not drop database for test if test has failed",
     )
     parser.add_argument(
         "--hide-db-name",
@@ -2639,6 +2734,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Check what high-level server components were covered by tests",
+    )
+    parser.add_argument(
+        "--collect-per-test-coverage",
+        action="store_true",
+        default=False,
+        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
     )
     parser.add_argument(
         "--report-logs-stats",

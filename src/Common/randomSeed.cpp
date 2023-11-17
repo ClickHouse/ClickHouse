@@ -13,10 +13,10 @@
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_CLOCK_GETTIME;
-    }
+namespace ErrorCodes
+{
+    extern const int CANNOT_CLOCK_GETTIME;
+}
 }
 
 
@@ -39,7 +39,7 @@ DB::UInt64 randomSeed()
 #if defined(__linux__)
     struct utsname sysinfo;
     if (uname(&sysinfo) == 0)
-        hash.update(sysinfo);
+        hash.update<std::identity>(sysinfo);
 #endif
 
     return hash.get64();

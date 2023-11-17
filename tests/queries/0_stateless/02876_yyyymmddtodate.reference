@@ -1,0 +1,86 @@
+--- YYYYMMDDToDate
+Invalid input types are rejected
+Result type is Date
+Date
+Nullable(Date)
+Check correctness, integer arguments
+1970-01-01
+1970-01-01
+2020-02-29
+2023-09-11
+2149-06-06
+1970-01-01
+1970-01-01
+Check correctness, float arguments
+1970-01-01
+1970-01-01
+2020-02-29
+2023-09-11
+2149-06-06
+1970-01-01
+Check correctness, decimal arguments
+1970-01-01
+1970-01-01
+2020-02-29
+2023-09-11
+2149-06-06
+1970-01-01
+Special cases
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+2023-02-28
+1970-01-01
+1970-01-01
+\N
+1984-01-21
+2023-09-11
+--- YYYYMMDDToDate32
+Invalid input types are rejected
+Result type is Date32
+Date32
+Nullable(Date32)
+Check correctness, integer arguments
+1970-01-01
+1900-01-01
+2020-02-29
+2023-09-11
+2299-12-31
+1970-01-01
+1970-01-01
+Check correctness, float arguments
+1970-01-01
+1900-01-01
+2020-02-29
+2023-09-11
+2299-12-31
+1970-01-01
+Check correctness, decimal arguments
+1970-01-01
+1900-01-01
+2020-02-29
+2023-09-11
+2299-12-31
+1970-01-01
+Special cases
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+1970-01-01
+2023-02-28
+1970-01-01
+1970-01-01
+\N
+1984-01-21
+2023-09-11

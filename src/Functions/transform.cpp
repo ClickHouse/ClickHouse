@@ -154,7 +154,7 @@ namespace
         ColumnPtr executeImpl(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
-            initialize(arguments, result_type);
+            std::call_once(once, [&] { initialize(arguments, result_type); });
 
             const auto * in = arguments[0].column.get();
 
@@ -163,7 +163,16 @@ namespace
 
             ColumnPtr default_non_const;
             if (!cache.default_column && arguments.size() == 4)
+            {
                 default_non_const = castColumn(arguments[3], result_type);
+                if (in->size() > default_non_const->size())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Fourth argument of function {} must be a constant or a column at least as big as the second and third arguments",
+                        getName());
+                }
+            }
 
             ColumnPtr in_casted = arguments[0].column;
             if (arguments.size() == 3)
@@ -490,7 +499,7 @@ namespace
                     else if (cache.default_column)
                         column_result.insertFrom(*cache.default_column, 0);
                     else if (default_non_const)
-                        column_result.insertFrom(*default_non_const, 0);
+                        column_result.insertFrom(*default_non_const, i);
                     else
                         column_result.insertFrom(in_casted, i);
                 }
@@ -663,11 +672,9 @@ namespace
             ColumnPtr default_column;
 
             bool is_empty = false;
-            bool initialized = false;
-
-            std::mutex mutex;
         };
 
+        mutable std::once_flag once;
         mutable Cache cache;
 
 
@@ -697,10 +704,6 @@ namespace
         /// Can be called from different threads. It works only on the first call.
         void initialize(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
         {
-            std::lock_guard lock(cache.mutex);
-            if (cache.initialized)
-                return;
-
             const DataTypePtr & from_type = arguments[0].type;
 
             if (from_type->onlyNull())
@@ -764,9 +767,8 @@ namespace
             }
 
             /// Note: Doesn't check the duplicates in the `from` array.
-
-            WhichDataType which(from_type);
-            if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64())
+            /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
+            if (WhichDataType which(from_type); isNativeNumber(which) || which.isDecimal32() || which.isDecimal64())
             {
                 cache.table_num_to_idx = std::make_unique<Cache::NumToIdx>();
                 auto & table = *cache.table_num_to_idx;
@@ -774,10 +776,17 @@ namespace
                 {
                     if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
                     {
-                        /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
-                        StringRef ref = cache.from_column->getDataAt(i);
                         UInt64 key = 0;
-                        memcpy(&key, ref.data, ref.size);
+                        auto * dst = reinterpret_cast<char *>(&key);
+                        const auto ref = cache.from_column->getDataAt(i);
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+                        if constexpr (std::endian::native == std::endian::big)
+                            dst += sizeof(key) - ref.size;
+#pragma clang diagnostic pop
+
+                        memcpy(dst, ref.data, ref.size);
                         table[key] = i;
                     }
                 }
@@ -809,8 +818,6 @@ namespace
                     }
                 }
             }
-
-            cache.initialized = true;
         }
     };
 

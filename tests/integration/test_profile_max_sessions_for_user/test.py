@@ -9,6 +9,13 @@ import threading
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 from helpers.test_tools import assert_logs_contain_with_retry
+from helpers.uclient import client, prompt
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
+if grpc_protocol_pb2_dir not in sys.path:
+    sys.path.append(grpc_protocol_pb2_dir)
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
 
 
 MAX_SESSIONS_FOR_USER = 2
@@ -19,25 +26,8 @@ GRPC_PORT = 9100
 TEST_USER = "test_user"
 TEST_PASSWORD = "123"
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-proto_dir = os.path.join(SCRIPT_DIR, "./protos")
-gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
-os.makedirs(gen_dir, exist_ok=True)
-run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
-    shell=True,
-)
-
-sys.path.append(gen_dir)
-
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -98,7 +88,10 @@ def threaded_run_test(sessions):
         thread.start()
 
     if len(sessions) > MAX_SESSIONS_FOR_USER:
-        assert_logs_contain_with_retry(instance, "overflown session count")
+        # High retry amount to avoid flakiness in ASAN (+Analyzer) tests
+        assert_logs_contain_with_retry(
+            instance, "overflown session count", retry_count=60
+        )
 
     instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
 
@@ -110,6 +103,10 @@ def threaded_run_test(sessions):
 def started_cluster():
     try:
         cluster.start()
+        # Wait for the PostgreSQL handler to start.
+        # Cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        instance.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
     finally:
         cluster.shutdown()
@@ -209,3 +206,36 @@ def test_profile_max_sessions_for_user_tcp_and_others(started_cluster):
 
 def test_profile_max_sessions_for_user_setting_in_query(started_cluster):
     instance.query_and_get_error("SET max_sessions_for_user = 10")
+
+
+def test_profile_max_sessions_for_user_client_suggestions_connection(started_cluster):
+    command_text = f"{started_cluster.get_client_cmd()} --host {instance.ip_address} --port 9000 -u {TEST_USER} --password {TEST_PASSWORD}"
+    command_text_without_suggestions = command_text + " --disable_suggestion"
+
+    # Launch client1 without suggestions to avoid a race condition:
+    # Client1 opens a session.
+    # Client1 opens a session for suggestion connection.
+    # Client2 fails to open a session and gets the USER_SESSION_LIMIT_EXCEEDED error.
+    #
+    # Expected order:
+    # Client1 opens a session.
+    # Client2 opens a session.
+    # Client2 fails to open a session for suggestions and with USER_SESSION_LIMIT_EXCEEDED (No error printed).
+    # Client3 fails to open a session.
+    # Client1 executes the query.
+    # Client2 loads suggestions from the server using the main connection and executes a query.
+    with client(
+        name="client1>", log=None, command=command_text_without_suggestions
+    ) as client1:
+        client1.expect(prompt)
+        with client(name="client2>", log=None, command=command_text) as client2:
+            client2.expect(prompt)
+            with client(name="client3>", log=None, command=command_text) as client3:
+                client3.expect("USER_SESSION_LIMIT_EXCEEDED")
+
+            client1.send("SELECT 'CLIENT_1_SELECT' FORMAT CSV")
+            client1.expect("CLIENT_1_SELECT")
+            client1.expect(prompt)
+            client2.send("SELECT 'CLIENT_2_SELECT' FORMAT CSV")
+            client2.expect("CLIENT_2_SELECT")
+            client2.expect(prompt)

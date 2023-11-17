@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -exu
 trap "exit" INT TERM
 

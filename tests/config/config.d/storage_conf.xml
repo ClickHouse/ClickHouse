@@ -113,6 +113,12 @@
             </s3_encrypted_cached>
         </disks>
         <policies>
+            <local_remote>
+                <volumes>
+                    <local><disk>default</disk></local>
+                    <remote><disk>s3_disk</disk></remote>
+                </volumes>
+            </local_remote>
             <s3_cache>
                 <volumes>
                     <main>

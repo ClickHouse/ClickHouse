@@ -40,6 +40,15 @@ public:
         const Settings & settings_,
         bool optimize_sorting_by_input_stream_properties_);
 
+    /// Full with partitioning
+    SortingStep(
+        const DataStream & input_stream,
+        const SortDescription & description_,
+        const SortDescription & partition_by_description_,
+        UInt64 limit_,
+        const Settings & settings_,
+        bool optimize_sorting_by_input_stream_properties_);
+
     /// FinishSorting
     SortingStep(
         const DataStream & input_stream_,
@@ -83,14 +92,24 @@ public:
         bool skip_partial_sort = false);
 
 private:
+    void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputStream() override;
 
-    static void
-    mergeSorting(QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_);
+    static void mergeSorting(
+        QueryPipelineBuilder & pipeline,
+        const Settings & sort_settings,
+        const SortDescription & result_sort_desc,
+        UInt64 limit_);
 
-    void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
+    void mergingSorted(
+        QueryPipelineBuilder & pipeline,
+        const SortDescription & result_sort_desc,
+        UInt64 limit_);
     void finishSorting(
-        QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, UInt64 limit_);
+        QueryPipelineBuilder & pipeline,
+        const SortDescription & input_sort_desc,
+        const SortDescription & result_sort_desc,
+        UInt64 limit_);
     void fullSort(
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
@@ -101,6 +120,9 @@ private:
 
     SortDescription prefix_description;
     const SortDescription result_description;
+
+    SortDescription partition_by_description;
+
     UInt64 limit;
     bool always_read_till_end = false;
 

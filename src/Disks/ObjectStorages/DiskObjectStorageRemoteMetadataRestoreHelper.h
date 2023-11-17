@@ -24,9 +24,10 @@ public:
     static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();
     static constexpr UInt64 UNKNOWN_REVISION = 0;
 
-    DiskObjectStorageRemoteMetadataRestoreHelper(DiskObjectStorage * disk_, ReadSettings read_settings_)
+    DiskObjectStorageRemoteMetadataRestoreHelper(DiskObjectStorage * disk_, ReadSettings read_settings_, WriteSettings write_settings_)
         : disk(disk_)
         , read_settings(std::move(read_settings_))
+        , write_settings(std::move(write_settings_))
         , operation_log_suffix("-" + getFQDNOrHostName())
     {
     }
@@ -94,6 +95,7 @@ private:
     ObjectStoragePtr object_storage_from_another_namespace;
 
     ReadSettings read_settings;
+    WriteSettings write_settings;
 
     String operation_log_suffix;
 };

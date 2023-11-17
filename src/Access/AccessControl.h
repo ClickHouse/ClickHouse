@@ -118,7 +118,7 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
 
     /// Makes a backup of access entities.
     void restoreFromBackup(RestorerFromBackup & restorer) override;
@@ -232,7 +232,7 @@ private:
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
 
-    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 

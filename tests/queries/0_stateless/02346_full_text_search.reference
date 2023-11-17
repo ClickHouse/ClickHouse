@@ -46,3 +46,6 @@ Test inverted(2) on UTF-8 data
 af	inverted
 102	clickhouse你好
 1
+AST Fuzzer crash, issue #54541
+Test max_rows_per_postings_list
+1

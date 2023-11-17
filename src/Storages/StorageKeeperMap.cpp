@@ -419,7 +419,7 @@ StorageKeeperMap::StorageKeeperMap(
             }
             else if (code != Coordination::Error::ZOK)
             {
-                throw Coordination::Exception(code, dropped_lock_path);
+                throw Coordination::Exception::fromPath(code, dropped_lock_path);
             }
             else
             {
@@ -918,7 +918,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             {
                 auto code = client->tryRemove(delete_request->getPath());
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                    throw zkutil::KeeperException(code, delete_request->getPath());
+                    throw zkutil::KeeperException::fromPath(code, delete_request->getPath());
             }
         }
 

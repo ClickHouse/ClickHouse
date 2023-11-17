@@ -28,6 +28,7 @@ import logging
 import os
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from subprocess import CalledProcessError
 from typing import List, Optional
 
@@ -288,16 +289,19 @@ close it.
             "Checking if cherry-pick PR #%s needs to be pinged",
             self.cherrypick_pr.number,
         )
-        since_updated = datetime.now() - self.cherrypick_pr.updated_at
+        # The `updated_at` is Optional[datetime]
+        cherrypick_updated_ts = (
+            self.cherrypick_pr.updated_at or datetime.now()
+        ).timestamp()
+        since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
         since_updated_str = (
-            f"{since_updated.days}d{since_updated.seconds // 3600}"
-            f"h{since_updated.seconds // 60 % 60}m{since_updated.seconds % 60}s"
+            f"{since_updated // 86400}d{since_updated // 3600}"
+            f"h{since_updated // 60 % 60}m{since_updated % 60}s"
         )
-        if since_updated < timedelta(days=1):
+        if since_updated < 86400:
             logging.info(
-                "The cherry-pick PR was updated at %s %s ago, "
+                "The cherry-pick PR was updated %s ago, "
                 "waiting for the next running",
-                self.cherrypick_pr.updated_at.isoformat(),
                 since_updated_str,
             )
             return
@@ -397,12 +401,7 @@ class Backport:
 
     def receive_release_prs(self):
         logging.info("Getting release PRs")
-        self.release_prs = self.gh.get_pulls_from_search(
-            query=f"type:pr repo:{self._repo_name} is:open",
-            sort="created",
-            order="asc",
-            label="release",
-        )
+        self.release_prs = self.gh.get_release_pulls(self._repo_name)
         self.release_branches = [pr.head.ref for pr in self.release_prs]
         self.labels_to_backport = [
             f"v{branch}-must-backport" for branch in self.release_branches
@@ -622,8 +621,8 @@ def stash():
 
 
 def main():
-    if not os.path.exists(TEMP_PATH):
-        os.makedirs(TEMP_PATH)
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     args = parse_args()
     if args.debug_helpers:
@@ -641,7 +640,7 @@ def main():
         args.backport_created_label,
     )
     # https://github.com/python/mypy/issues/3004
-    bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore
+    bp.gh.cache_path = temp_path / "gh_cache"
     bp.receive_release_prs()
     bp.update_local_release_branches()
     bp.receive_prs_for_backport()

@@ -281,7 +281,7 @@ def test_reload_after_fail_in_cache_dictionary(started_cluster):
     query_and_get_error = instance.query_and_get_error
 
     # Can't get a value from the cache dictionary because the source (table `test.xypairs`) doesn't respond.
-    expected_error = "Table test.xypairs doesn't exist"
+    expected_error = "Table test.xypairs does not exist"
     update_error = "Could not update cache dictionary cache_xypairs now"
     assert expected_error in query_and_get_error(
         "SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(1))"

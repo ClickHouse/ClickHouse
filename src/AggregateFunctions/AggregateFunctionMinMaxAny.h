@@ -72,14 +72,14 @@ public:
     {
         writeBinary(has(), buf);
         if (has())
-            writeBinary(value, buf);
+            writeBinaryLittleEndian(value, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena *)
     {
         readBinary(has_value, buf);
         if (has())
-            readBinary(value, buf);
+            readBinaryLittleEndian(value, buf);
     }
 
 
@@ -547,7 +547,7 @@ public:
 
         /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
         Int32 size_to_write = size ? size : -1;
-        writeBinary(size_to_write, buf);
+        writeBinaryLittleEndian(size_to_write, buf);
         if (has())
             buf.write(getData(), size);
     }
@@ -573,7 +573,7 @@ public:
     {
         /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
         Int32 rhs_size_signed;
-        readBinary(rhs_size_signed, buf);
+        readBinaryLittleEndian(rhs_size_signed, buf);
 
         if (rhs_size_signed < 0)
         {
@@ -1275,13 +1275,13 @@ struct AggregateFunctionAnyHeavyData : Data
     void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
         Data::write(buf, serialization);
-        writeBinary(counter, buf);
+        writeBinaryLittleEndian(counter, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
     {
         Data::read(buf, serialization, arena);
-        readBinary(counter, buf);
+        readBinaryLittleEndian(counter, buf);
     }
 
     static const char * name() { return "anyHeavy"; }

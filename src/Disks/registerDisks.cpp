@@ -35,7 +35,7 @@ void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_acce
 void registerDiskEncryptedOS(DiskFactory & factory, bool global_skip_access_check);
 #endif
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 void registerDisks(bool global_skip_access_check)
 {

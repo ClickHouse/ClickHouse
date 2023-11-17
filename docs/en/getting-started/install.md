@@ -380,7 +380,7 @@ build.
 
 ### macOS-only: Install with Homebrew
 
-To install ClickHouse using the popular `brew` package manager, follow the instructions listed in the [ClickHouse Homebrew tap](https://github.com/ClickHouse/homebrew-clickhouse).
+To install ClickHouse using [homebrew](https://brew.sh/), see [here](https://formulae.brew.sh/cask/clickhouse).
 
 ## Launch {#launch}
 

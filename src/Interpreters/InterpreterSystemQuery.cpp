@@ -17,12 +17,10 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
-#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
@@ -36,6 +34,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
+#include <Interpreters/BackupLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -52,14 +51,20 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ThreadFuzzer.h>
+#include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
 #include <unistd.h>
+
+#if USE_PROTOBUF
+#include <Formats/ProtobufSchemas.h>
+#endif
 
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
@@ -84,6 +89,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int ABORTED;
 }
 
 
@@ -97,46 +103,41 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType PullReplicationLog;
+    extern const StorageActionBlockType Cleanup;
 }
 
 
 namespace
 {
 
-ExecutionStatus getOverallExecutionStatusOfCommands()
+/// Sequentially tries to execute all commands and throws exception with info about failed commands
+void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 {
-    return ExecutionStatus(0);
-}
-
-/// Consequently tries to execute all commands and generates final exception message for failed commands
-template <typename Callable, typename ... Callables>
-ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callables && ... commands)
-{
-    ExecutionStatus status_head(0);
-    try
+    ExecutionStatus result(0);
+    for (auto & command : commands)
     {
-        command();
+        try
+        {
+            command();
+        }
+        catch (...)
+        {
+            ExecutionStatus current_result = ExecutionStatus::fromCurrentException();
+
+            if (result.code == 0)
+                result.code = current_result.code;
+
+            if (!current_result.message.empty())
+            {
+                if (!result.message.empty())
+                    result.message += '\n';
+                result.message += current_result.message;
+            }
+        }
     }
-    catch (...)
-    {
-        status_head = ExecutionStatus::fromCurrentException();
-    }
 
-    ExecutionStatus status_tail = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
-
-    auto res_status = status_head.code != 0 ? status_head.code : status_tail.code;
-    auto res_message = status_head.message + (status_tail.message.empty() ? "" : ("\n" + status_tail.message));
-
-    return ExecutionStatus(res_status, res_message);
-}
-
-/// Consequently tries to execute all commands and throws exception with info about failed commands
-template <typename ... Callables>
-void executeCommandsAndThrowIfError(Callables && ... commands)
-{
-    auto status = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
-    if (status.code != 0)
-        throw Exception::createDeprecated(status.message, status.code);
+    if (result.code != 0)
+        throw Exception::createDeprecated(result.message, result.code);
 }
 
 
@@ -158,6 +159,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_MOVES;
     else if (action_type == ActionLocks::PullReplicationLog)
         return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
+    else if (action_type == ActionLocks::Cleanup)
+        return AccessType::SYSTEM_CLEANUP;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -325,33 +328,33 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::DROP_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropMarkCache();
+            system_context->clearMarkCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropUncompressedCache();
+            system_context->clearUncompressedCache();
             break;
         case Type::DROP_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropIndexMarkCache();
+            system_context->clearIndexMarkCache();
             break;
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropIndexUncompressedCache();
+            system_context->clearIndexUncompressedCache();
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
-            system_context->dropMMappedFileCache();
+            system_context->clearMMappedFileCache();
             break;
         case Type::DROP_QUERY_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->dropQueryCache();
+            getContext()->clearQueryCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
+                cache->clear();
             break;
 #endif
 #if USE_AWS_S3
@@ -389,12 +392,60 @@ BlockIO InterpreterSystemQuery::execute()
             }
             break;
         }
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
+
+            ColumnsDescription columns{NamesAndTypesList{
+                {"cache_name", std::make_shared<DataTypeString>()},
+                {"path", std::make_shared<DataTypeString>()},
+                {"size", std::make_shared<DataTypeUInt64>()},
+            }};
+            Block sample_block;
+            for (const auto & column : columns)
+                sample_block.insert({column.type->createColumn(), column.type, column.name});
+
+            MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const FileSegments & file_segments)
+            {
+                for (const auto & file_segment : file_segments)
+                {
+                    size_t i = 0;
+                    const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
+                    res_columns[i++]->insert(cache_name);
+                    res_columns[i++]->insert(path);
+                    res_columns[i++]->insert(file_segment->getDownloadedSize());
+                }
+            };
+
+            if (query.filesystem_cache_name.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [cache_name, cache_data] : caches)
+                {
+                    auto file_segments = cache_data->cache->sync();
+                    fill_data(cache_name, cache_data->cache, file_segments);
+                }
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                auto file_segments = cache->sync();
+                fill_data(query.filesystem_cache_name, cache, file_segments);
+            }
+
+            size_t num_rows = res_columns[0]->size();
+            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+            result.pipeline = QueryPipeline(std::move(source));
+            break;
+        }
         case Type::DROP_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
             if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
+                caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
             else
                 caches_to_drop = {query.schema_cache_storage};
 
@@ -410,6 +461,24 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
+#if USE_AZURE_BLOB_STORAGE
+            if (caches_to_drop.contains("AZURE"))
+                StorageAzureBlob::getSchemaCache(getContext()).clear();
+#endif
+            break;
+        }
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
+            std::unordered_set<String> caches_to_drop;
+            if (query.schema_cache_format.empty())
+                caches_to_drop = {"Protobuf"};
+            else
+                caches_to_drop = {query.schema_cache_format};
+#if USE_PROTOBUF
+            if (caches_to_drop.contains("Protobuf"))
+                ProtobufSchemas::instance().clear();
+#endif
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -425,10 +494,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_DICTIONARIES:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            executeCommandsAndThrowIfError(
+            executeCommandsAndThrowIfError({
                 [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
-            );
+            });
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -522,6 +591,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_PULLING_REPLICATION_LOG:
             startStopAction(ActionLocks::PullReplicationLog, true);
             break;
+        case Type::STOP_CLEANUP:
+            startStopAction(ActionLocks::Cleanup, false);
+            break;
+        case Type::START_CLEANUP:
+            startStopAction(ActionLocks::Cleanup, true);
+            break;
         case Type::DROP_REPLICA:
             dropReplica(query);
             break;
@@ -557,23 +632,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-            executeCommandsAndThrowIfError(
-                [&] { if (auto query_log = getContext()->getQueryLog()) query_log->flush(true); },
-                [&] { if (auto part_log = getContext()->getPartLog("")) part_log->flush(true); },
-                [&] { if (auto query_thread_log = getContext()->getQueryThreadLog()) query_thread_log->flush(true); },
-                [&] { if (auto trace_log = getContext()->getTraceLog()) trace_log->flush(true); },
-                [&] { if (auto text_log = getContext()->getTextLog()) text_log->flush(true); },
-                [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
-                [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
-                [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
-                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); },
-                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); },
-                [&] { if (auto transactions_info_log = getContext()->getTransactionsInfoLog()) transactions_info_log->flush(true); },
-                [&] { if (auto processors_profile_log = getContext()->getProcessorsProfileLog()) processors_profile_log->flush(true); },
-                [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); },
-                [&] { if (auto asynchronous_insert_log = getContext()->getAsynchronousInsertLog()) asynchronous_insert_log->flush(true); }
-            );
+
+            auto logs = getContext()->getSystemLogs();
+            std::vector<std::function<void()>> commands;
+            commands.reserve(logs.size());
+            for (auto * system_log : logs)
+                commands.emplace_back([system_log] { system_log->flush(true); });
+
+            executeCommandsAndThrowIfError(commands);
             break;
         }
         case Type::STOP_LISTEN:
@@ -622,6 +688,12 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::RESET_COVERAGE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM);
+            resetCoverage();
+            break;
+        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -643,12 +715,15 @@ void InterpreterSystemQuery::restoreReplica()
     table_replicated_ptr->restoreMetadataInZooKeeper();
 }
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
-    auto table_ddl_guard = need_ddl_guard
-        ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
-        : nullptr;
+    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
+
+    auto restart_replica_lock = DatabaseCatalog::instance().tryGetLockForRestartReplica(replica.getDatabaseName());
+    if (!restart_replica_lock)
+        throw Exception(ErrorCodes::ABORTED, "Database {} is being dropped or detached, will not restart replica {}",
+                        backQuoteIfNeed(replica.getDatabaseName()), replica.getNameForLogs());
 
     auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
     ASTPtr create_ast;
@@ -657,6 +732,11 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
 
+    SCOPE_EXIT({
+        if (table)
+            table->is_being_restarted = false;
+    });
+    table->is_being_restarted = true;
     table->flushAndShutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
@@ -674,7 +754,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true, false);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -727,21 +807,13 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     if (replica_names.empty())
         return;
 
-    TableGuards guards;
-
-    for (const auto & name : replica_names)
-        guards.emplace(UniqueTableName{name.database_name, name.table_name}, nullptr);
-
-    for (auto & guard : guards)
-        guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
-
     size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
     LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
     ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, threads);
 
     for (auto & replica : replica_names)
     {
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context); });
     }
     pool.wait();
 }
@@ -1035,7 +1107,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
 #endif
@@ -1101,6 +1175,15 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_PULLING_REPLICATION_LOG:
         case Type::START_PULLING_REPLICATION_LOG:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
         {
             if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
@@ -1225,6 +1308,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
         case Type::END: break;
     }

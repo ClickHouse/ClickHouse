@@ -155,7 +155,7 @@ private:
             archive_read_support_filter_all(archive);
             archive_read_support_format_all(archive);
             if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK)
-                throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open archive: {}", quoteString(path_to_archive));
+                throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open archive {}: {}", quoteString(path_to_archive), archive_error_string(archive));
         }
         catch (...)
         {
@@ -231,6 +231,8 @@ public:
 
     String getFileName() const override { return handle.getFileName(); }
 
+    size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
+
     Handle releaseHandle() &&
     {
         return std::move(handle);
@@ -293,17 +295,21 @@ std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::firstFile()
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader::readFile(const String & filename)
+std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader::readFile(const String & filename, bool throw_on_not_found)
 {
-    return readFile([&](const std::string & file) { return file == filename; });
+    return readFile([&](const std::string & file) { return file == filename; }, throw_on_not_found);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader::readFile(NameFilter filter)
+std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader::readFile(NameFilter filter, bool throw_on_not_found)
 {
     Handle handle(path_to_archive, lock_on_reading);
     if (!handle.locateFile(filter))
-        throw Exception(
-            ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't unpack archive {}: no file found satisfying the filter", path_to_archive);
+    {
+        if (throw_on_not_found)
+            throw Exception(
+                ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't unpack archive {}: no file found satisfying the filter", path_to_archive);
+        return nullptr;
+    }
     return std::make_unique<ReadBufferFromLibArchive>(std::move(handle), path_to_archive);
 }
 

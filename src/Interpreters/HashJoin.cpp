@@ -11,9 +11,12 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -27,6 +30,9 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+
+#include <Functions/FunctionHelpers.h>
+
 
 namespace DB
 {
@@ -52,6 +58,16 @@ struct NotProcessedCrossJoin : public ExtraBlock
     size_t left_position;
     size_t right_block;
 };
+
+
+Int64 getCurrentQueryMemoryUsage()
+{
+    /// Use query-level memory tracker
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
+            return memory_tracker->get();
+    return 0;
+}
 
 }
 
@@ -732,6 +748,13 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     if (unlikely(source_block_.rows() > std::numeric_limits<RowRef::SizeT>::max()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block_.rows());
 
+    /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
+      * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.
+      * In that case memory consumed by stored blocks will be underestimated.
+      */
+    if (!memory_usage_before_adding_blocks)
+        memory_usage_before_adding_blocks = getCurrentQueryMemoryUsage();
+
     Block source_block = source_block_;
     if (strictness == JoinStrictness::Asof)
     {
@@ -770,6 +793,9 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     ColumnPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
 
     Block block_to_save = prepareRightBlock(source_block);
+    if (shrink_blocks)
+        block_to_save = block_to_save.shrinkToFit();
+
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -873,7 +899,67 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         }
     }
 
+    shrinkStoredBlocksToFit(total_bytes);
+
+
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+}
+
+void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
+{
+    if (shrink_blocks)
+        return; /// Already shrunk
+
+    Int64 current_memory_usage = getCurrentQueryMemoryUsage();
+    Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
+    Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks ? table_join->getMaxMemoryUsage() : 0;
+
+    auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
+
+    /** If accounted data size is more than half of `max_bytes_in_join`
+      * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
+      * is bigger than half of all memory available for query,
+      * then shrink stored blocks to fit.
+      */
+    shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
+                    (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
+    if (!shrink_blocks)
+        return;
+
+    LOG_DEBUG(log, "Shrinking stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
+        ReadableSize(total_bytes_in_join), max_total_bytes_in_join ? fmt::format("/ {}", ReadableSize(max_total_bytes_in_join)) : "",
+        ReadableSize(query_memory_usage_delta), max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
+
+    for (auto & stored_block : data->blocks)
+    {
+        size_t old_size = stored_block.allocatedBytes();
+        stored_block = stored_block.shrinkToFit();
+        size_t new_size = stored_block.allocatedBytes();
+
+        if (old_size >= new_size)
+        {
+            if (data->blocks_allocated_size < old_size - new_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Blocks allocated size value is broken: "
+                    "blocks_allocated_size = {}, old_size = {}, new_size = {}",
+                    data->blocks_allocated_size, old_size, new_size);
+
+            data->blocks_allocated_size -= old_size - new_size;
+        }
+        else
+            /// Sometimes after clone resized block can be bigger than original
+            data->blocks_allocated_size += new_size - old_size;
+    }
+
+    auto new_total_bytes_in_join = getTotalByteCount();
+
+    Int64 new_current_memory_usage = getCurrentQueryMemoryUsage();
+
+    LOG_DEBUG(log, "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
+        ReadableSize(total_bytes_in_join - new_total_bytes_in_join), ReadableSize(current_memory_usage - new_current_memory_usage),
+        ReadableSize(new_total_bytes_in_join), ReadableSize(new_current_memory_usage));
+
+    total_bytes_in_join = new_total_bytes_in_join;
 }
 
 

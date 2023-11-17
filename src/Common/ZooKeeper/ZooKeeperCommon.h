@@ -163,7 +163,7 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
     OpNum getOpNum() const override
     {
         chassert(false);
-        throw Exception("OpNum for watch response doesn't exist", Error::ZRUNTIMEINCONSISTENCY);
+        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "OpNum for watch response doesn't exist");
     }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
@@ -214,7 +214,7 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override
     {
-        throw Exception("Received response for close request", Error::ZRUNTIMEINCONSISTENCY);
+        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "Received response for close request");
     }
 
     void writeImpl(WriteBuffer &) const override {}
@@ -230,7 +230,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
-    OpNum getOpNum() const override { return OpNum::Create; }
+    OpNum getOpNum() const override { return not_exists ? OpNum::CreateIfNotExists : OpNum::Create; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     std::string toStringImpl() const override;
@@ -243,7 +243,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
+struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
 
@@ -254,6 +254,12 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
     size_t bytesSize() const override { return CreateResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
+};
+
+struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
+{
+    OpNum getOpNum() const override { return OpNum::CreateIfNotExists; }
+    using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest

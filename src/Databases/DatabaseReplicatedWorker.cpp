@@ -128,7 +128,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     }
 
     std::lock_guard lock{database->metadata_mutex};
-    if (!database->checkDigestValid(context))
+    if (!database->checkDigestValid(context, false))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
 }
 
@@ -208,7 +208,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
             zkutil::KeeperMultiException::check(code, ops, res);
     }
 
-    if (iters == 0)
+    if (counter_path.empty())
         throw Exception(ErrorCodes::UNFINISHED,
                         "Cannot enqueue query, because some replica are trying to enqueue another query. "
                         "It may happen on high queries rate or, in rare cases, after connection loss. Client should retry.");
@@ -356,7 +356,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
                 /// We use tryRemove(...) because multiple hosts (including initiator) may try to do it concurrently.
                 auto code = zookeeper->tryRemove(try_node_path);
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                    throw Coordination::Exception(code, try_node_path);
+                    throw Coordination::Exception::fromPath(code, try_node_path);
 
                 if (!zookeeper->exists(fs::path(entry_path) / "committed"))
                 {

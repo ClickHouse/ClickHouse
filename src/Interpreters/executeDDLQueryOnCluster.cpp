@@ -559,7 +559,7 @@ Strings DDLQueryStatusSource::getChildrenAllowNoNode(const std::shared_ptr<zkuti
     Strings res;
     Coordination::Error code = zookeeper->tryGetChildren(node_path, res);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-        throw Coordination::Exception(code, node_path);
+        throw Coordination::Exception::fromPath(code, node_path);
     return res;
 }
 

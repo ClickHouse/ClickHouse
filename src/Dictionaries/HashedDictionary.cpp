@@ -4,13 +4,13 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/ArenaUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadPool.h>
+#include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 #include <Core/Defines.h>
 
@@ -20,10 +20,13 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
+
 
 namespace CurrentMetrics
 {
@@ -599,7 +602,7 @@ DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, s
         for (const auto & map : child_key_to_parent_key_maps)
             size += map.size();
 
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
         parent_to_child.reserve(size);
 
         for (const auto & map : child_key_to_parent_key_maps)
@@ -708,11 +711,15 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-
-        PullingPipelineExecutor executor(pipeline);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        update_field_loaded_block.reset();
         Block block;
+
         while (executor.pull(block))
         {
+            if (!block.rows())
+                continue;
+
             convertToFullIfSparse(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
@@ -933,7 +940,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 
         QueryPipeline pipeline = QueryPipeline(source_ptr->loadAll());
 
-        PullingPipelineExecutor executor(pipeline);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         Block block;
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
@@ -1142,6 +1149,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
+                             ContextPtr global_context,
                              DictionaryKeyType dictionary_key_type,
                              bool sparse) -> DictionaryPtr
     {
@@ -1184,12 +1192,19 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         if (max_load_factor < 0.5f || max_load_factor > 0.99f)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: max_load_factor parameter should be within [0.5, 0.99], got {}", full_name, max_load_factor);
 
+        ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        const auto & settings = context->getSettingsRef();
+
+        const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
+
         HashedDictionaryConfiguration configuration{
             static_cast<UInt64>(shards),
             static_cast<UInt64>(shard_load_queue_backlog),
             max_load_factor,
             require_nonempty,
             dict_lifetime,
+            use_async_executor,
         };
 
         if (source_ptr->hasUpdateField() && shards > 1)
@@ -1231,16 +1246,14 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         }
     };
 
-    using namespace std::placeholders;
-
     factory.registerLayout("hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple, /* sparse = */ false); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Simple, /* sparse = */ false); }, false);
     factory.registerLayout("sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple, /* sparse = */ true); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Simple, /* sparse = */ true); }, false);
     factory.registerLayout("complex_key_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex, /* sparse = */ false); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Complex, /* sparse = */ false); }, true);
     factory.registerLayout("complex_key_sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex, /* sparse = */ true); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Complex, /* sparse = */ true); }, true);
 
 }
 

@@ -61,6 +61,7 @@ KafkaConsumer::KafkaConsumer(
     , stopped(stopped_)
     , current(messages.begin())
     , topics(_topics)
+    , exceptions_buffer(EXCEPTIONS_DEPTH)
 {
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
@@ -79,6 +80,7 @@ KafkaConsumer::KafkaConsumer(
         }
 
         assignment = topic_partitions;
+        num_rebalance_assignments++;
     });
 
     // called (synchronously, during poll) when we leave the consumer group
@@ -106,6 +108,8 @@ KafkaConsumer::KafkaConsumer(
         cleanUnprocessed();
 
         stalled_status = REBALANCE_HAPPENED;
+        last_rebalance_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+
         assignment.reset();
         waited_for_assignment = 0;
 
@@ -118,12 +122,14 @@ KafkaConsumer::KafkaConsumer(
         // {
         //     LOG_WARNING(log, "Commit error: {}", e.what());
         // }
+        num_rebalance_revocations++;
     });
 
     consumer->set_rebalance_error_callback([this](cppkafka::Error err)
     {
         LOG_ERROR(log, "Rebalance error: {}", err);
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
+        setExceptionInfo(err);
     });
 }
 
@@ -177,6 +183,7 @@ void KafkaConsumer::drain()
             else
             {
                 LOG_ERROR(log, "Error during draining: {}", error);
+                setExceptionInfo(error);
             }
         }
 
@@ -251,6 +258,8 @@ void KafkaConsumer::commit()
                 consumer->commit();
                 committed = true;
                 print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
+                last_commit_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+                num_commits += 1;
             }
             catch (const cppkafka::HandleException & e)
             {
@@ -259,7 +268,10 @@ void KafkaConsumer::commit()
                 if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
                     committed = true;
                 else
+                {
                     LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
+                    setExceptionInfo(e.what());
+                }
             }
             --max_retries;
         }
@@ -399,6 +411,8 @@ ReadBufferPtr KafkaConsumer::consume()
         /// Don't drop old messages immediately, since we may need them for virtual columns.
         auto new_messages = consumer->poll_batch(batch_size,
                             std::chrono::milliseconds(actual_poll_timeout_ms));
+        last_poll_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+        num_messages_read += new_messages.size();
 
         resetIfStopped();
         if (stalled_status == CONSUMER_STOPPED)
@@ -495,6 +509,7 @@ size_t KafkaConsumer::filterMessageErrors()
         {
             ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
             LOG_ERROR(log, "Consumer error: {}", error);
+            setExceptionInfo(error);
             return true;
         }
         return false;
@@ -525,6 +540,73 @@ void KafkaConsumer::storeLastReadMessageOffset()
         consumer->store_offset(*(current - 1));
         ++offsets_stored;
     }
+}
+
+void KafkaConsumer::setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)
+{
+    setExceptionInfo(err.to_string(), with_stacktrace);
+}
+
+void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktrace)
+{
+    std::string enriched_text = text;
+
+    if (with_stacktrace)
+    {
+        enriched_text.append(StackTrace().toString());
+    }
+
+    std::lock_guard<std::mutex> lock(exception_mutex);
+    exceptions_buffer.push_back({enriched_text, static_cast<UInt64>(Poco::Timestamp().epochTime())});
+}
+
+/*
+ * Needed until
+ * https://github.com/mfontanini/cppkafka/pull/309
+ * is merged,
+ * because consumer->get_member_id() contains a leak
+ */
+std::string KafkaConsumer::getMemberId() const
+{
+    char * memberid_ptr = rd_kafka_memberid(consumer->get_handle());
+    std::string memberid_string = memberid_ptr;
+    rd_kafka_mem_free(nullptr, memberid_ptr);
+    return memberid_string;
+}
+
+
+KafkaConsumer::Stat KafkaConsumer::getStat() const
+{
+    KafkaConsumer::Stat::Assignments assignments;
+    auto cpp_assignments = consumer->get_assignment();
+    auto cpp_offsets = consumer->get_offsets_position(cpp_assignments);
+
+    for (size_t num = 0; num < cpp_assignments.size(); ++num)
+    {
+        assignments.push_back({
+            cpp_assignments[num].get_topic(),
+            cpp_assignments[num].get_partition(),
+            cpp_offsets[num].get_offset(),
+        });
+    }
+
+    return {
+        .consumer_id = getMemberId() /* consumer->get_member_id() */ ,
+        .assignments = std::move(assignments),
+        .last_poll_time = last_poll_timestamp_usec.load(),
+        .num_messages_read = num_messages_read.load(),
+
+        .last_commit_timestamp_usec = last_commit_timestamp_usec.load(),
+        .last_rebalance_timestamp_usec = last_rebalance_timestamp_usec.load(),
+        .num_commits = num_commits.load(),
+        .num_rebalance_assignments = num_rebalance_assignments.load(),
+        .num_rebalance_revocations = num_rebalance_revocations.load(),
+        .exceptions_buffer = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
+            return exceptions_buffer;}(),
+        .in_use = in_use.load(),
+        .rdkafka_stat = [&](){std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
+            return rdkafka_stat;}(),
+    };
 }
 
 }

@@ -7,14 +7,15 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/numLiteralChars.h>
 
+#include <Interpreters/Context.h>
+
 #include <IO/WriteHelpers.h>
-#include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
+
 
 namespace DB
 {
@@ -485,15 +486,16 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptors args{
+            FunctionArgumentDescriptors mandatory_args{
                 {"time", &isString<IDataType>, nullptr, "String"},
-                {"format", &isString<IDataType>, nullptr, "String"},
+                {"format", &isString<IDataType>, nullptr, "String"}
             };
 
-            if (arguments.size() == 3)
-                args.emplace_back(FunctionArgumentDescriptor{"timezone", &isString<IDataType>, nullptr, "String"});
+            FunctionArgumentDescriptors optional_args{
+                {"timezone", &isString<IDataType>, &isColumnConst, "const String"}
+            };
 
-            validateFunctionArgumentTypes(*this, arguments, args);
+            validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);

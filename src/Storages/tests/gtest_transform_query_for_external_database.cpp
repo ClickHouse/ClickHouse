@@ -127,7 +127,8 @@ static void checkOld(
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
-        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
+        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::Regular, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -180,7 +181,8 @@ static void checkNewAnalyzer(
     query_info.table_expression = findTableExpression(query_node->getJoinTree(), "table");
 
     std::string transformed_query = transformQueryForExternalDatabase(
-        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
+        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::Regular, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -277,9 +279,13 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
 {
     const State & state = State::instance();
 
-    check(state, 1, {"column"},
-          "SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(toString(column), 10) = RIGHT(toString(column), 10) AND column IN (1, 42) AND SUBSTRING(toString(column) FROM 1 FOR 2) = 'Hello' AND column != 4",
-          R"(SELECT "column" FROM "test"."table" WHERE 1 AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))");
+    check(
+        state,
+        1,
+        {"column"},
+        "SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(toString(column), 10) = "
+        "RIGHT(toString(column), 10) AND column IN (1, 42) AND SUBSTRING(toString(column) FROM 1 FOR 2) = 'Hello' AND column != 4",
+        R"(SELECT "column" FROM "test"."table" WHERE (1 = 1) AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))");
     check(state, 1, {"column"},
           "SELECT column FROM test.table WHERE toString(column) = '42' AND left(toString(column), 10) = RIGHT(toString(column), 10) AND column = 42",
           R"(SELECT "column" FROM "test"."table" WHERE "column" = 42)");

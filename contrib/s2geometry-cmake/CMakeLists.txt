@@ -7,12 +7,6 @@ endif()
 
 set(S2_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/s2geometry/src")
 
-set(ABSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
-if(NOT EXISTS "${ABSL_SOURCE_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR " submodule contrib/abseil-cpp is missing. To fix try run: \n git submodule update --init --recursive")
-endif()
-
-
 set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/encoded_s2cell_id_vector.cc"
     "${S2_SOURCE_DIR}/s2/encoded_s2point_vector.cc"
@@ -58,7 +52,9 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2edge_crossings.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_distances.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_tessellator.cc"
+    "${S2_SOURCE_DIR}/s2/s2error.cc"
     "${S2_SOURCE_DIR}/s2/s2furthest_edge_query.cc"
+    "${S2_SOURCE_DIR}/s2/s2hausdorff_distance_query.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng_rect.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng_rect_bounder.cc"
@@ -93,32 +89,27 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2shape_index_buffered_region.cc"
     "${S2_SOURCE_DIR}/s2/s2shape_index_measures.cc"
     "${S2_SOURCE_DIR}/s2/s2shape_measures.cc"
+    "${S2_SOURCE_DIR}/s2/s2shape_nesting_query.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_build_polygon_boundaries.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_coding.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_contains_brute_force.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_conversion.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_edge_iterator.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_get_reference_point.cc"
-    "${S2_SOURCE_DIR}/s2/s2shapeutil_range_iterator.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_visit_crossing_edge_pairs.cc"
     "${S2_SOURCE_DIR}/s2/s2text_format.cc"
     "${S2_SOURCE_DIR}/s2/s2wedge_relations.cc"
     "${S2_SOURCE_DIR}/s2/s2winding_operation.cc"
-    "${S2_SOURCE_DIR}/s2/strings/serialize.cc"
     "${S2_SOURCE_DIR}/s2/util/bits/bit-interleave.cc"
-    "${S2_SOURCE_DIR}/s2/util/bits/bits.cc"
     "${S2_SOURCE_DIR}/s2/util/coding/coder.cc"
     "${S2_SOURCE_DIR}/s2/util/coding/varint.cc"
     "${S2_SOURCE_DIR}/s2/util/math/exactfloat/exactfloat.cc"
     "${S2_SOURCE_DIR}/s2/util/math/mathutil.cc"
     "${S2_SOURCE_DIR}/s2/util/units/length-units.cc"
-
 )
 
 add_library(_s2 ${S2_SRCS})
 add_library(ch_contrib::s2 ALIAS _s2)
-
-set_property(TARGET _s2 PROPERTY CXX_STANDARD 17)
 
 if (TARGET OpenSSL::SSL)
     target_link_libraries(_s2 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
@@ -126,26 +117,30 @@ endif()
 
 # Copied from contrib/s2geometry/CMakeLists
 target_link_libraries(_s2 PRIVATE
-        absl::base
-        absl::btree
-        absl::config
-        absl::core_headers
-        absl::dynamic_annotations
-        absl::endian
-        absl::fixed_array
-        absl::flat_hash_map
-        absl::flat_hash_set
-        absl::hash
-        absl::inlined_vector
-        absl::int128
-        absl::log_severity
-        absl::memory
-        absl::span
-        absl::str_format
-        absl::strings
-        absl::type_traits
-        absl::utility
-        )
+    absl::base
+    absl::btree
+    absl::check
+    absl::config
+    absl::core_headers
+    absl::dynamic_annotations
+    absl::endian
+    absl::fixed_array
+    absl::flags
+    absl::flat_hash_map
+    absl::flat_hash_set
+    absl::hash
+    absl::inlined_vector
+    absl::int128
+    absl::log
+    absl::log_severity
+    absl::memory
+    absl::span
+    absl::status
+    absl::str_format
+    absl::strings
+    absl::type_traits
+    absl::utility
+)
 
 target_include_directories(_s2 SYSTEM BEFORE PUBLIC "${S2_SOURCE_DIR}/")
 target_include_directories(_s2 SYSTEM PUBLIC "${ABSL_SOURCE_DIR}")

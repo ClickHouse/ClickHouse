@@ -39,12 +39,15 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsTrivialCountOptimization() const override { return true; }
+
 private:
     void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
 
     String uri;
     String format_name;
     String compression_method;
+    NamesAndTypesList virtual_columns;
 };
 
 

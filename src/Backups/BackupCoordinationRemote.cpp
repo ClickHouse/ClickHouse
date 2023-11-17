@@ -187,7 +187,7 @@ BackupCoordinationRemote::BackupCoordinationRemote(
                 if (code == Coordination::Error::ZNODEEXISTS)
                     zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
                 else if (code != Coordination::Error::ZOK)
-                    throw zkutil::KeeperException(code, alive_node_path);
+                    throw zkutil::KeeperException::fromPath(code, alive_node_path);
             }
         })
 {
@@ -745,7 +745,7 @@ bool BackupCoordinationRemote::startWritingFile(size_t data_file_index)
         else if (code == Coordination::Error::ZNODEEXISTS)
             host_is_assigned = (zk->get(full_path) == host_index_str); /// The previous retry could write this ZooKeeper's node and then fail.
         else
-            throw zkutil::KeeperException(code, full_path);
+            throw zkutil::KeeperException::fromPath(code, full_path);
     });
 
     if (!host_is_assigned)
@@ -815,7 +815,7 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
                 break;
             bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
             if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-                throw zkutil::KeeperException(code, backup_stage_path);
+                throw zkutil::KeeperException::fromPath(code, backup_stage_path);
         }
     });
 

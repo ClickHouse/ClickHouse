@@ -729,6 +729,30 @@ Returns whether string `str` ends with `suffix`.
 endsWith(str, suffix)
 ```
 
+## endsWithUTF8
+
+Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
+
+**Syntax**
+
+```sql
+endsWithUTF8(str, suffix)
+```
+
+**Example**
+
+``` sql
+SELECT endsWithUTF8('中国', '\xbd'), endsWith('中国', '\xbd')
+```
+
+Result:
+
+```result
+┌─endsWithUTF8('中国', '½')─┬─endsWith('中国', '½')─┐
+│                        0 │                    1 │
+└──────────────────────────┴──────────────────────┘
+```
+
 ## startsWith
 
 Returns whether string `str` starts with `prefix`.
@@ -743,6 +767,25 @@ startsWith(str, prefix)
 
 ``` sql
 SELECT startsWith('Spider-Man', 'Spi');
+```
+
+## startsWithUTF8
+
+Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
+
+
+**Example**
+
+``` sql
+SELECT startsWithUTF8('中国', '\xe4'), startsWith('中国', '\xe4')
+```
+
+Result:
+
+```result
+┌─startsWithUTF8('中国', '⥩─┬─startsWith('中国', '⥩─┐
+│                          0 │                      1 │
+└────────────────────────────┴────────────────────────┘
 ```
 
 ## trim
@@ -1187,6 +1230,42 @@ Result:
 < Σ >
 ```
 
+## decodeHTMLComponent
+
+Un-escapes substrings with special meaning in HTML. For example: `&hbar;` `&gt;` `&diamondsuit;` `&heartsuit;` `&lt;` etc.
+
+This function also replaces numeric character references with Unicode characters. Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
+
+**Syntax**
+
+``` sql
+decodeHTMComponent(x)
+```
+
+**Arguments**
+
+- `x` — An input string. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The un-escaped string.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+``` sql
+SELECT decodeHTMLComponent(''CH');
+SELECT decodeHMLComponent('I&heartsuit;ClickHouse');
+```
+
+Result:
+
+```result
+'CH'
+I♥ClickHouse'
+```
+
 ## extractTextFromHTML
 
 This function extracts plain text from HTML or XHTML.
@@ -1291,6 +1370,86 @@ Result:
 │ A240             │
 └──────────────────┘
 ```
+
+## byteHammingDistance
+
+Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+byteHammingDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT byteHammingDistance('karolin', 'kathrin');
+```
+
+Result:
+
+``` text
+┌─byteHammingDistance('karolin', 'kathrin')─┐
+│                                         3 │
+└───────────────────────────────────────────┘
+```
+
+Alias: mismatches
+
+## stringJaccardIndex
+
+Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
+
+**Syntax**
+
+```sql
+stringJaccardIndex(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT stringJaccardIndex('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─stringJaccardIndex('clickhouse', 'mouse')─┐
+│                                       0.4 │
+└───────────────────────────────────────────┘
+```
+
+## stringJaccardIndexUTF8
+
+Like [stringJaccardIndex](#stringJaccardIndex) but for UTF8-encoded strings.
+
+## editDistance
+
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+editDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT editDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─editDistance('clickhouse', 'mouse')─┐
+│                                   6 │
+└─────────────────────────────────────┘
+```
+
+Alias: levenshteinDistance
 
 ## initcap
 

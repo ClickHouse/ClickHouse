@@ -46,6 +46,8 @@ public:
 
     void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
 
+    size_t getFileOffsetOfBufferEnd() const override  { return file_offset_of_buffer_end; }
+
     off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
 
 private:
@@ -88,7 +90,9 @@ private:
         int64_t size,
         const std::unique_ptr<Stopwatch> & execution_watch);
 
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
+    std::future<IAsynchronousReader::Result> readAsync(char * data, size_t size, Priority priority);
+
+    IAsynchronousReader::Result readSync(char * data, size_t size);
 
     void resetPrefetch(FilesystemPrefetchState state);
 

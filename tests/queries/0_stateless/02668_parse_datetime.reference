@@ -241,3 +241,5 @@ select str_to_date('10:04:11 invalid 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') IS
 -- Error handling
 select parseDateTime('12 AM'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select parseDateTime('12 AM', '%h %p', 'UTC', 'a fourth argument'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- Fuzzer crash bug #53715
+select parseDateTime('', '', toString(number)) from numbers(13); -- { serverError ILLEGAL_COLUMN }
