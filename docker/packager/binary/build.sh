@@ -39,7 +39,7 @@ rm -f CMakeCache.txt
 
 grep -o -P '"contrib/[^"]+"' ../.gitmodules |
   grep -v -P 'llvm-project|abseil-cpp|qpl|grpc|corrosion' |
-  xargs -I@ find @ -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' |
+  xargs -I@ find ../@ -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' |
   xargs rm
 
 
