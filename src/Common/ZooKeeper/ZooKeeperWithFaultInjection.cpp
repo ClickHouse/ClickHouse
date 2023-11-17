@@ -3,11 +3,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 ZooKeeperWithFaultInjection::ZooKeeperWithFaultInjection(
     zkutil::ZooKeeper::Ptr const & keeper_,
     double fault_injection_probability,
@@ -26,8 +21,11 @@ void ZooKeeperWithFaultInjection::injectFailureBeforeOperationThrow(const char *
 {
     if (unlikely(!keeper))
     {
+        /// This is ok for async requests, where you call several of them and one introduced a fault
+        /// In the faults we reset the pointer to mark the connection as failed and inject failures in any
+        /// subsequent async requests
         if (logger)
-            LOG_ERROR(logger, "ZooKeeperWithFaultInjection called after fault: seed={}, func={} path={}", seed, func_name, path);
+            LOG_TRACE(logger, "ZooKeeperWithFaultInjection called after fault: seed={}, func={} path={}", seed, func_name, path);
         throw zkutil::KeeperException::fromMessage(RandomFaultInjection::error_before_op, RandomFaultInjection::msg_session_expired);
     }
 
