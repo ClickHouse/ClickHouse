@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCloner.h>
@@ -12,7 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-Poco::Logger * MergeTreeDataPartCloner::log = &Poco::Logger::get("MergeTreeDataPartCloner1");
+Poco::Logger * MergeTreeDataPartCloner::log = &Poco::Logger::get("MergeTreeDataPartCloner");
 
 namespace DistinctPartitionExpression
 {
@@ -20,7 +21,7 @@ namespace DistinctPartitionExpression
     static std::unique_ptr<WriteBufferFromFileBase> updatePartitionFile(
         const MergeTreeData & merge_tree_data,
         const MergeTreePartition & partition,
-        const MergeTreeDataPartCloner::MutableDataPartPtr & dst_part,
+        const MergeTreeData::MutableDataPartPtr & dst_part,
         IDataPartStorage & storage
     )
     {
@@ -45,7 +46,7 @@ namespace DistinctPartitionExpression
 
     static IMergeTreeDataPart::MinMaxIndex::WrittenFiles updateMinMaxFiles(
         const MergeTreeData & merge_tree_data,
-        const MergeTreeDataPartCloner::MutableDataPartPtr & dst_part,
+        const MergeTreeData::MutableDataPartPtr & dst_part,
         IDataPartStorage & storage,
         const StorageMetadataPtr & metadata_snapshot
     )
@@ -72,7 +73,7 @@ namespace DistinctPartitionExpression
 
     static void updateNewPartFiles(
         const MergeTreeData & merge_tree_data,
-        const MergeTreeDataPartCloner::MutableDataPartPtr & dst_part,
+        const MergeTreeData::MutableDataPartPtr & dst_part,
         const MergeTreePartition & new_partition,
         const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
         const StorageMetadataPtr & metadata_snapshot,

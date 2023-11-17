@@ -1,9 +1,12 @@
 #pragma once
 
-#include "MergeTreeData.h"
-
 namespace DB
 {
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct MergeTreePartition;
+class IMergeTreeDataPart;
 
 class MergeTreeDataPartCloner
 {
@@ -43,12 +46,12 @@ private:
     /// Check that the storage policy contains the disk where the src_part is located.
     static bool doesStoragePolicyAllowSameDisk(
         MergeTreeData * merge_tree_data,
-        const MergeTreeData::DataPartPtr & src_part
+        const DataPartPtr & src_part
     );
 
-    static std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
+    static std::pair<MutableDataPartPtr , scope_guard> cloneSourcePart(
         MergeTreeData * merge_tree_data,
-        const MergeTreeData::DataPartPtr & src_part,
+        const DataPartPtr & src_part,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartInfo & dst_part_info,
         const String & tmp_part_prefix,
@@ -57,17 +60,17 @@ private:
         const DB::IDataPartStorage::ClonePartParams & params
     );
 
-    static void reserveSpaceOnDisk(const MergeTreeData::DataPartPtr & src_part);
+    static void reserveSpaceOnDisk(const DataPartPtr & src_part);
 
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
     static DataPartStoragePtr flushPartStorageToDiskIfInMemory(
         MergeTreeData * merge_tree_data,
-        const MergeTreeData::DataPartPtr & src_part,
+        const DataPartPtr & src_part,
         const StorageMetadataPtr & metadata_snapshot,
         const String & tmp_part_prefix,
         const String & tmp_dst_part_name,
         scope_guard & src_flushed_tmp_dir_lock,
-        MergeTreeData::MutableDataPartPtr src_flushed_tmp_part
+        MutableDataPartPtr src_flushed_tmp_part
     );
 
     static std::shared_ptr<IDataPartStorage> hardlinkAllFiles(
@@ -80,16 +83,16 @@ private:
     );
 
     static void handleHardLinkedParameterFiles(
-        const MergeTreeData::DataPartPtr & src_part,
+        const DataPartPtr & src_part,
         const DB::IDataPartStorage::ClonePartParams & params
     );
 
     static void handleProjections(
-        const MergeTreeData::DataPartPtr & src_part,
+        const DataPartPtr & src_part,
         const DB::IDataPartStorage::ClonePartParams & params
     );
 
-    static MergeTreeData::MutableDataPartPtr finalizePart(
+    static MutableDataPartPtr finalizePart(
         const MutableDataPartPtr & dst_part,
         const DB::IDataPartStorage::ClonePartParams & params,
         bool require_part_metadata
