@@ -578,6 +578,7 @@ public:
     Int8 getConnectedHostIdx() const;
     String getConnectedHostPort() const;
     int32_t getConnectionXid() const;
+    UInt8 isConnectedHostLocalAZ() const;
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 

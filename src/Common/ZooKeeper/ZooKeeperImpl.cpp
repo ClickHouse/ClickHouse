@@ -55,6 +55,7 @@ namespace CurrentMetrics
 {
     extern const Metric ZooKeeperRequest;
     extern const Metric ZooKeeperWatch;
+    extern const Metric KeeperConnectedHostInLocalAZ;
 }
 
 
@@ -1258,6 +1259,7 @@ void ZooKeeper::initFeatureFlags()
 
 void ZooKeeper::initAvailabilityZone()
 {
+    CurrentMetrics::set(CurrentMetrics::KeeperConnectedHostInLocalAZ, 0);
     const auto try_get = [&]() -> std::optional<String>
     {
         auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
@@ -1289,6 +1291,11 @@ void ZooKeeper::initAvailabilityZone()
     {
         LOG_INFO(log, "Set keeper availability zone: {}", *az);
         availability_zone = std::move(*az);
+        if (!availability_zone.empty() && availability_zone == args.availability_zone)
+        {
+            is_host_az_same = true;
+            CurrentMetrics::set(CurrentMetrics::KeeperConnectedHostInLocalAZ, 1);
+        }
         return;
     }
 }

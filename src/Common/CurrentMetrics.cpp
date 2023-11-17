@@ -200,6 +200,7 @@
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
+    M(KeeperConnectedHostInLocalAZ, "Whether current connected Keeper host is in the same availability zone") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \

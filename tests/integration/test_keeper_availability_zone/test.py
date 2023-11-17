@@ -1,5 +1,6 @@
 import pytest
 import time
+from collections import namedtuple
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.keeper_utils import KeeperClient
 from helpers.network import PartitionManager
@@ -34,15 +35,35 @@ def started_cluster():
         cluster.shutdown()
 
 
-def assert_uses_zk_node(node: ClickHouseInstance, zk_node):
-    def check_callback(host):
-        return host.strip() == zk_node
+ConnectionInfo = namedtuple('ConnectionInfo', ['host', 'is_local_az'])
 
-    # We don't convert the column 'host' of system.zookeeper_connection to ip address any more.
+
+def parse_connection_info(row):
+    info = row.strip().split('\t')
+    assert(len(info) == 2)
+    return ConnectionInfo(info[0], info[1] == '1')
+
+
+def assert_same_az_keeper(node: ClickHouseInstance, zk_node: str):
+    def check_callback(host):
+        info = parse_connection_info(host)
+        return info.host == zk_node and info.is_local_az
+
     host = node.query_with_retry(
-        "select host from system.zookeeper_connection", check_callback=check_callback
+        "select host, connected_local_az_host from system.zookeeper_connection", check_callback=check_callback
     )
-    assert host.strip() == zk_node
+    assert check_callback(host)
+
+
+def assert_different_az_keeper(node: ClickHouseInstance, zk_node: str):
+    def check_callback(row):
+        info = parse_connection_info(row)
+        return info.host != zk_node and (not info.is_local_az)
+
+    row = node.query_with_retry(
+        "select host, connected_local_az_host from system.zookeeper_connection", check_callback=check_callback
+    )
+    assert check_callback(row)
 
 
 def assert_session_id_increase(value, timeout):
@@ -58,17 +79,6 @@ def assert_session_id_increase(value, timeout):
         timeout=timeout,
     )
     assert int(session_id) >= value + start
-
-
-def assert_not_uses_zk_node(node: ClickHouseInstance, zk_node):
-    def check_callback(host):
-        return host.strip() != zk_node
-
-    # We don't convert the column 'host' of system.zookeeper_connection to ip address any more.
-    host = node.query_with_retry(
-        "select host from system.zookeeper_connection", check_callback=check_callback
-    )
-    assert host.strip() != zk_node
 
 
 def test_get_availability_zone():
@@ -88,7 +98,7 @@ def test_get_availability_zone():
 
 def test_connect_local_az_keeper(started_cluster: ClickHouseCluster):
     # Initially the node must connect to its own local az keeper host.
-    assert_uses_zk_node(node, "zoo2")
+    assert_same_az_keeper(node, "zoo2")
 
     with PartitionManager() as pm:
         pm._add_rule(
@@ -98,10 +108,8 @@ def test_connect_local_az_keeper(started_cluster: ClickHouseCluster):
                 "action": "REJECT --reject-with tcp-reset",
             }
         )
-        assert_not_uses_zk_node(node, "zoo2")
+        assert_different_az_keeper(node, "zoo2")
         node.query_with_retry("INSERT INTO simple VALUES ({0}, {0})".format(1))
-
-        # and replication still works
         assert (
             node.query_with_retry(
                 "SELECT count() from simple",
@@ -113,12 +121,12 @@ def test_connect_local_az_keeper(started_cluster: ClickHouseCluster):
     # at this point network partitioning has been reverted.
     # the nodes should switch to zoo2 automatically because of avaibility zone load balancing.
     # otherwise they would connect to a random replica.
-    assert_uses_zk_node(node, "zoo2")
+    assert_same_az_keeper(node, "zoo2")
     node.query_with_retry("INSERT INTO simple VALUES ({0}, {0})".format(2))
 
 
 def test_stay_connected_non_local_keeper_unavailable():
-    assert_uses_zk_node(node, "zoo2")
+    assert_same_az_keeper(node, "zoo2")
     with PartitionManager() as pm:
         pm._add_rule(
             {
@@ -130,9 +138,9 @@ def test_stay_connected_non_local_keeper_unavailable():
         # Ensure that clickhouse stay connected to zoo2. zoo1's unavailability should be irrelevant.
         # Check 5 seconds since we configure the fallback session max time 4 seconds.
         for i in range(5):
-            assert_uses_zk_node(node, "zoo2")
+            assert_same_az_keeper(node, "zoo2")
             time.sleep(1)
-        assert_uses_zk_node(node, "zoo2")
+        assert_same_az_keeper(node, "zoo2")
 
 
 def test_retry_unknown_keeper():
@@ -147,14 +155,14 @@ def test_retry_unknown_keeper():
         # Restart the server to make it forget about the mapping from keeper host to the availabilit zone.
         node.stop_clickhouse()
         node.start_clickhouse()
-        assert_not_uses_zk_node(node, 'zoo2')
+        assert_different_az_keeper(node, 'zoo2')
 
         # Check a few times that node is disconnecting and reconnecting, because zoo2 availability zone is still unresolved yet.
         # 2 * 3 (fallback session max time) = 6 seconds, so 8 seconds should be enough for us to observe two new sessions.
         assert_session_id_increase(2, timeout=8)
         # Still not using zoo2.
-        assert_not_uses_zk_node(node, 'zoo2')
-    assert_uses_zk_node(node, "zoo2")
+        assert_different_az_keeper(node, 'zoo2')
+    assert_same_az_keeper(node, "zoo2")
 
 
 def test_basics_when_no_keeper_available():

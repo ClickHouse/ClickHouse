@@ -44,6 +44,7 @@ public:
     String getConnectedHostPort() const override { return "TestKeeper:0000"; }
     int32_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
+    UInt8 isConnectedHostLocalAZ() const override { return false; }
 
 
     void create(

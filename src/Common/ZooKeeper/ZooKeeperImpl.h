@@ -129,6 +129,7 @@ public:
     Int8 getConnectedNodeIdx() const override { return original_index; }
     String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
     int32_t getConnectionXid() const override { return next_xid.load(); }
+    UInt8 isConnectedHostLocalAZ() const override { return is_host_az_same; }
 
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.
@@ -257,6 +258,9 @@ private:
     int64_t session_id = 0;
 
     std::atomic<XID> next_xid {1};
+
+    bool is_host_az_same = false;
+
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
     std::atomic_flag finalization_started;

@@ -553,6 +553,9 @@ public:
     /// Get the xid of current connection.
     virtual int32_t getConnectionXid() const = 0;
 
+    /// Return true if the current connection is to a host in the same availbility zone.
+    virtual UInt8 isConnectedHostLocalAZ() const = 0;
+
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 

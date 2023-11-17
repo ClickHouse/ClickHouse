@@ -353,6 +353,10 @@ Number of alive connections
 
 Number of outstanding requests
 
+### KeeperConnectedHostInLocalAZ
+
+Whether connected to a  keeper host in the same local availability zone
+
 ### LocalThread
 
 Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.

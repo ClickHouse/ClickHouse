@@ -5,6 +5,7 @@
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
+#include "base/types.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -186,7 +187,7 @@ std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger
 {
     if (dns_error)
         throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-    else                    
+    else
         throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
 }
 
@@ -1477,6 +1478,11 @@ String ZooKeeper::getConnectedHostPort() const
 int32_t ZooKeeper::getConnectionXid() const
 {
     return impl->getConnectionXid();
+}
+
+UInt8 ZooKeeper::isConnectedHostLocalAZ() const
+{
+    return impl->isConnectedHostLocalAZ();
 }
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
