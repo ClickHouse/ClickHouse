@@ -231,7 +231,7 @@ function run_tests
 
     if [ "$run_only_changed_tests" -ne 0 ]; then
         if [ ${#test_files[@]} -eq 0 ]; then
-            time "$script_dir/report.py" > report.html
+            time "$script_dir/report.py" --no-tests-run > report.html
             exit 0
         fi
     fi
