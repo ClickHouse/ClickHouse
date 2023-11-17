@@ -22,5 +22,5 @@ insert into tableIn values(2);
 system sync replica tableOut;
 select count() from tableOut;
 
-drop table tableIn
-drop table tableOut
+drop table tableIn;
+drop table tableOut;

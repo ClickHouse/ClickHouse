@@ -349,7 +349,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     return data_checksums;
 }
 
-bool wait_loop(UInt32 wait_timeout_ms, std::function<bool()> pred)
+bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
 {
     static const UInt32 loop_delay_ms = 5;
 
@@ -360,6 +360,7 @@ bool wait_loop(UInt32 wait_timeout_ms, std::function<bool()> pred)
         return true;
 
     Stopwatch timer;
+    sleepForMilliseconds(loop_delay_ms);
     while (!pred() && timer.elapsedMilliseconds() < wait_timeout_ms)
     {
         sleepForMilliseconds(loop_delay_ms);
@@ -387,8 +388,13 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     /// do not expose PreActive parts for zero-copy
 
     static const UInt32 wait_timeout_ms = 1000;
-    bool pred_result = wait_loop(wait_timeout_ms, [&] () { return part->getState() != MergeTreeDataPartState::PreActive; });
+    auto pred = [&] ()
+    {
+        auto lock = data.lockParts();
+        return part->getState() != MergeTreeDataPartState::PreActive;
+    };
 
+    bool pred_result = wait_loop(wait_timeout_ms, pred);
     if (!pred_result)
         throw Exception(
                 ErrorCodes::ABORTED,
