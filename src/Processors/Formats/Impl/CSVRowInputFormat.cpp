@@ -167,7 +167,9 @@ void CSVFormatReader::skipRow()
             else if (*pos == '\r')
             {
                 ++istr.position();
-                if (!istr.eof() && *pos == '\n')
+                if (format_settings.csv.allow_cr_end_of_line)
+                    return;
+                else if (!istr.eof() && *pos == '\n')
                 {
                     ++pos;
                     return;
@@ -561,7 +563,11 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             else if (*pos == '\r')
             {
                 ++pos;
-                if (loadAtPosition(in, memory, pos) && *pos == '\n')
+                const DB::ContextPtr context = DB::CurrentThread::get().getGlobalContext();
+                auto format_settings = getFormatSettings(context);
+                if (format_settings.csv.allow_cr_end_of_line)
+                    continue;
+                else if (loadAtPosition(in, memory, pos) && *pos == '\n')
                     ++pos;
                 else
                     continue;
