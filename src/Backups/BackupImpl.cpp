@@ -24,6 +24,8 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 
+#include <ranges>
+
 
 namespace ProfileEvents
 {
@@ -452,7 +454,6 @@ void BackupImpl::readBackupMetadata()
     size_of_entries = 0;
 
     const auto * contents = config_root->getNodeByPath("contents");
-    std::vector<std::pair<String /*source*/, String /*target*/>> reference_files;
     for (const Poco::XML::Node * child = contents->firstChild(); child; child = child->nextSibling())
     {
         if (child->nodeName() == "file")
@@ -913,15 +914,20 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     /// NOTE: `mutex` must be unlocked during copying otherwise writing will be in one thread maximum and hence slow.
 
-    if (use_archive)
+    const auto write_info_to_archive = [&](const auto & file_name)
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
-        auto out = archive_writer->writeFile(info.data_file_name);
+        auto out = archive_writer->writeFile(file_name);
         auto read_buffer = entry->getReadBuffer(writer->getReadSettings());
         if (info.base_size != 0)
             read_buffer->seek(info.base_size, SEEK_SET);
         copyData(*read_buffer, *out);
         out->finalize();
+    };
+
+    if (use_archive)
+    {
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
+        write_info_to_archive(info.data_file_name);
     }
     else if (src_disk && from_immutable_file)
     {
@@ -935,11 +941,20 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
 
-    if (!deduplicate_files)
+    std::function<void(const String &)> copy_file_inside_backup;
+    if (use_archive)
     {
-        for (const auto & reference : info.reference_sources)
-            writer->copyFile(reference, info.data_file_name, info.size - info.base_size);
+        copy_file_inside_backup = write_info_to_archive;
     }
+    else
+    {
+        copy_file_inside_backup = [&](const auto & data_file_copy)
+        {
+            writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
+        };
+    }
+
+    std::ranges::for_each(info.data_file_copies, copy_file_inside_backup);
 
     {
         std::lock_guard lock{mutex};

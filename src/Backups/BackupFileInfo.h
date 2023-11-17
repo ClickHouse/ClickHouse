@@ -42,9 +42,10 @@ struct BackupFileInfo
     /// Set if this file is just a reference to another file
     String reference_target;
 
-    /// List of files that are referencing this file
-    /// Used for plain backup which needs to resolve all references
-    Strings reference_sources;
+    /// (While writing a backup) if this list is not empty then after writing
+    /// `data_file_name` it should be copied to this list of destinations too.
+    /// This is used for plain backups.
+    Strings data_file_copies;
 
     struct LessByFileName
     {

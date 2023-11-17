@@ -50,6 +50,21 @@ BackupFileInfo BackupCoordinationFileInfos::getFileInfoByDataFileIndex(size_t da
     return *(file_infos_for_all_hosts[data_file_index]);
 }
 
+namespace
+{
+
+/// copy all the file infos that are shared between reference target and source
+void copyFileInfoToReference(const BackupFileInfo & target, BackupFileInfo & reference)
+{
+    reference.size = target.size;
+    reference.checksum = target.checksum;
+    reference.base_size = target.base_size;
+    reference.base_checksum = target.base_checksum;
+    reference.encrypted_by_disk = target.encrypted_by_disk;
+}
+
+}
+
 void BackupCoordinationFileInfos::prepare() const
 {
     if (prepared)
@@ -78,11 +93,24 @@ void BackupCoordinationFileInfos::prepare() const
     num_files = 0;
     total_size_of_files = 0;
 
+    std::vector<BackupFileInfo *> unresolved_references;
+    std::unordered_map<std::string_view, BackupFileInfo *> file_name_to_info;
+
+    const auto handle_unresolved_references = [&](const auto & try_resolve_reference)
+    {
+        for (auto * reference : unresolved_references)
+        {
+            if (!try_resolve_reference(*reference))
+                throw DB::Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Couldn't resolve reference {} with target {}",
+                    reference->file_name,
+                    reference->reference_target);
+        }
+    };
+
     if (plain_backup)
     {
-        std::vector<BackupFileInfo *> unresolved_references;
-        std::unordered_map<std::string_view, BackupFileInfo *> file_name_to_info;
-
         const auto try_resolve_reference = [&](BackupFileInfo & reference)
         {
             auto it = file_name_to_info.find(reference.reference_target);
@@ -91,10 +119,9 @@ void BackupCoordinationFileInfos::prepare() const
                 return false;
 
             auto & target_info = it->second;
-            target_info->reference_sources.push_back(reference.file_name);
-            reference.size = target_info->size;
+            target_info->data_file_copies.push_back(reference.file_name);
+            copyFileInfoToReference(*target_info, reference);
             total_size_of_files += reference.size;
-            reference.checksum = target_info->checksum;
             return true;
         };
 
@@ -118,23 +145,12 @@ void BackupCoordinationFileInfos::prepare() const
             }
         }
 
-        for (auto * reference : unresolved_references)
-        {
-            if (!try_resolve_reference(*reference))
-                throw DB::Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Couldn't resolve reference {} with target {}",
-                    reference->file_name,
-                    reference->reference_target);
-        }
+        handle_unresolved_references(try_resolve_reference);
 
         num_files = file_infos_for_all_hosts.size();
     }
     else
     {
-        std::vector<BackupFileInfo *> unresolved_references;
-        std::unordered_map<std::string_view, BackupFileInfo *> file_name_to_info;
-
         const auto try_resolve_reference = [&](BackupFileInfo & reference)
         {
             auto it = file_name_to_info.find(reference.reference_target);
@@ -143,8 +159,7 @@ void BackupCoordinationFileInfos::prepare() const
                 return false;
 
             auto & target_info = it->second;
-            reference.size = target_info->size;
-            reference.checksum = target_info->checksum;
+            copyFileInfoToReference(*target_info, reference);
             reference.data_file_name = target_info->data_file_name;
             reference.data_file_index = target_info->data_file_index;
             return true;
@@ -195,15 +210,7 @@ void BackupCoordinationFileInfos::prepare() const
             file_name_to_info.emplace(info.file_name, &info);
         }
 
-        for (auto * reference : unresolved_references)
-        {
-            if (!try_resolve_reference(*reference))
-                throw DB::Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Couldn't resolve reference {} with target {}",
-                    reference->file_name,
-                    reference->reference_target);
-        }
+        handle_unresolved_references(try_resolve_reference);
 
         num_files = file_infos_for_all_hosts.size();
     }
