@@ -149,6 +149,26 @@ class FileBlockBase:
 
             result += " ENGINE = MergeTree() ORDER BY " + pk_string
             return result
+        elif "SELECT" in sql and "CAST" in sql and "NULL" in sql:
+            # convert `CAST (NULL as INTEGER)` to `CAST (NULL as Nullable(Int32))`
+            try:
+                ast = sqlglot.parse_one(sql, read="sqlite")
+            except sqlglot.errors.ParseError as err:
+                logger.info("cannot parse %s , error is %s", sql, err)
+                return sql
+            cast = ast.find(sqlglot.expressions.Cast)
+            # logger.info("found sql %s && %s && %s", sql, cast.sql(), cast.to.args)
+            if (
+                cast is not None
+                and cast.name == "NULL"
+                and ("nested" not in cast.to.args or not cast.to.args["nested"])
+            ):
+                cast.args["to"] = sqlglot.expressions.DataType.build(
+                    "NULLABLE", expressions=[cast.to]
+                )
+                new_sql = ast.sql("clickhouse")
+                logger.info("convert from %s to %s", sql, new_sql)
+                return new_sql
         return sql
 
     @staticmethod
@@ -198,6 +218,8 @@ class FileBlockBase:
                 request, last_line = FileBlockBase.__parse_request(
                     parser, line + 1, end
                 )
+                if parser.dbms_name == "ClickHouse":
+                    request = FileBlockBase.convert_request(request)
                 result_line = last_line
                 line = last_line
                 if line == end:
