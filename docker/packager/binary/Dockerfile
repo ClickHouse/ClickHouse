@@ -6,29 +6,27 @@ FROM clickhouse/test-util:latest AS cctools
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# DO NOT PUT ANYTHING BEFORE THREE NEXT `RUN` DIRECTIVES
+# DO NOT PUT ANYTHING BEFORE THE NEXT TWO `RUN` DIRECTIVES
 # THE MOST HEAVY OPERATION MUST BE THE FIRST IN THE CACHE
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # libtapi is required to support .tbh format from recent MacOS SDKs
 RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
+    && git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9 \
     && INSTALLPREFIX=/cctools ./build.sh \
     && ./install.sh \
     && cd .. \
     && rm -rf apple-libtapi
 
 # Build and install tools for cross-linking to Darwin (x86-64)
-RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
-    && cd cctools-port/cctools \
-    && ./configure --prefix=/cctools --with-libtapi=/cctools \
-        --target=x86_64-apple-darwin \
-    && make install -j$(nproc) \
-    && cd ../.. \
-    && rm -rf cctools-port
-
 # Build and install tools for cross-linking to Darwin (aarch64)
 RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
+    && git checkout 59f5fb87a3d2c6fd2ba3df6533015cd6172001c6 \
+    && ./configure --prefix=/cctools --with-libtapi=/cctools \
+        --target=x86_64-apple-darwin \
+    && make install -j$(nproc) \
+    && make clean \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=aarch64-apple-darwin \
     && make install -j$(nproc) \
