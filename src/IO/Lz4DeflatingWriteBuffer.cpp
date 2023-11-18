@@ -41,6 +41,8 @@ namespace
 
         ~SinkToOut() noexcept(false)
         {
+            tmp_out.finalize();
+
             if (cur_out == sink)
                 return;
 
