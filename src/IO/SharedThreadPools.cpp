@@ -130,7 +130,7 @@ StaticThreadPool & getBackupsIOThreadPool()
 
 StaticThreadPool & getActivePartsLoadingThreadPool()
 {
-    static StaticThreadPool instance("MergeTreePartsLoaderThreadPool", CurrentMetrics::MergeTreePartsLoaderThreads, CurrentMetrics::MergeTreePartsLoaderThreadsActive, CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsScheduled);
+    static StaticThreadPool instance("MergeTreePartsLoaderThreadPool", CurrentMetrics::MergeTreePartsLoaderThreads, CurrentMetrics::MergeTreePartsLoaderThreadsActive, CurrentMetrics::MergeTreePartsLoaderThreadsScheduled);
     return instance;
 }
 
