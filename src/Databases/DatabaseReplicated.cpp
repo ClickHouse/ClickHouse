@@ -196,11 +196,11 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
         hosts.clear();
-        std::vector<String> paths;
+        std::vector<String> replica_group_paths;
         for (const auto & host : unfiltered_hosts)
-            paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+            replica_group_paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
 
-        auto replica_groups = zookeeper->tryGet(paths);
+        auto replica_groups = zookeeper->tryGet(replica_group_paths);
 
         for (size_t i = 0; i < paths.size(); ++i)
         {
@@ -211,19 +211,19 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
-        std::vector<String> paths_to_fetch;
-        paths_to_fetch.reserve(hosts.size());
+        std::vector<String> host_paths;
+        host_paths.reserve(hosts.size());
         host_ids.reserve(hosts.size());
 
         for (const auto & host : hosts)
-            paths_to_fetch.emplace_back(zookeeper_path + "/replicas/" + host);
+            host_paths.emplace_back(zookeeper_path + "/replicas/" + host);
 
-        auto fetch_result = zookeeper->tryGet(paths_to_fetch);
+        auto host_result = zookeeper->tryGet(host_paths);
 
         success = true;
-        for (size_t i = 0; i < paths_to_fetch.size(); ++i)
+        for (size_t i = 0; i < hosts.size(); ++i)
         {
-            const auto & res = fetch_result[i];
+            auto & res = host_result[i];
             if (res.error != Coordination::Error::ZOK)
                 success = false;
             host_ids.emplace_back(std::move(res.data));
@@ -1128,10 +1128,10 @@ std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(co
 
         for (size_t i = 0; i < table_names.size(); ++i)
         {
-            const auto & res = table_metadata[i];
+            auto & res = table_metadata[i];
             if (res.error != Coordination::Error::ZOK)
                 break;
-            table_name_to_metadata.emplace(unescapeForFileName(table_names[i]), res.data);
+            table_name_to_metadata.emplace(unescapeForFileName(table_names[i]), std::move(res.data));
         }
 
         UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));

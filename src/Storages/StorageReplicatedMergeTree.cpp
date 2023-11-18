@@ -2800,7 +2800,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         source_queue.reserve(source_queue_names.size());
         for (size_t i = 0; i < source_queue_names.size(); ++i)
         {
-            const auto & res = queue_get_result[i];
+            auto & res = queue_get_result[i];
             /// It's ok if entry is already executed and removed: we also will get source parts set.
             if (res.error == Coordination::Error::ZNONODE)
                 continue;
@@ -6851,6 +6851,9 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 
     for (const auto & replica : replicas)
     {
+        if (replica == replica_name)
+            continue;
+
         replica_paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
         replica_paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "min_unprocessed_insert_time");
     }
