@@ -1431,8 +1431,11 @@ void TCPHandler::receiveHello()
                     getClientAddress(client_info));
                 return;
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED)
+                    throw;
+
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }
