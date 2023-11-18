@@ -305,6 +305,26 @@ void IdentifiersCollector::visit(const ASTPtr & node, IdentifiersCollector::Data
 }
 
 
+AllIdentifiersCollector::ASTIdentifiers AllIdentifiersCollector::collect(const ASTPtr & node)
+{
+    AllIdentifiersCollector::Data ident_data;
+    ConstInDepthNodeVisitor<AllIdentifiersCollector, true> ident_visitor(ident_data);
+    ident_visitor.visit(node);
+    return ident_data.idents;
+}
+
+bool AllIdentifiersCollector::needChildVisit(const ASTPtr &, const ASTPtr &)
+{
+    return true;
+}
+
+void AllIdentifiersCollector::visit(const ASTPtr & node, AllIdentifiersCollector::Data & data)
+{
+    if (const auto * ident = dynamic_cast<ASTIdentifier *>(node.get()))
+        data.idents.push_back(ident);
+}
+
+
 IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuery & select, ContextPtr context)
 {
     if (ASTPtr with = select.with())

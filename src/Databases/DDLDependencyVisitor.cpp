@@ -65,6 +65,10 @@ namespace
                 else
                     visitFunction(*function);
             }
+            else if (const auto * alter = ast->as<ASTAlterCommand>())
+            {
+                vitistAlterCommand(*alter);
+            }
         }
 
     private:
@@ -74,6 +78,25 @@ namespace
         String current_database;
         ContextPtr context;
         TableNamesSet dependencies;
+
+
+        void vitistAlterCommand(const ASTAlterCommand & alter)
+        {
+            if (alter.type == ASTAlterCommand::REPLACE_PARTITION)
+            {
+                QualifiedTableName from_table{alter.from_database, alter.from_table};
+                if (from_table.database.empty())
+                    from_table.database = current_database;
+                dependencies.emplace(from_table);
+            }
+            else if (alter.type == ASTAlterCommand::MOVE_PARTITION)
+            {
+                QualifiedTableName to_table{alter.to_database, alter.to_table};
+                if (to_table.database.empty())
+                    to_table.database = current_database;
+                dependencies.emplace(to_table);
+            }
+        }
 
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         void visitCreateQuery(const ASTCreateQuery & create)

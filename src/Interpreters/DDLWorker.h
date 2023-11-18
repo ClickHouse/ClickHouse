@@ -8,13 +8,12 @@
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLIdentifiersCollector.h>
 
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <shared_mutex>
-#include <thread>
 #include <unordered_set>
 
 namespace zkutil
@@ -176,6 +175,10 @@ protected:
 
     std::unique_ptr<ThreadFromGlobalPool> main_thread;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
+
+    std::mutex currently_executing_identifiers_mutex;
+    std::condition_variable currently_executing_identifiers_cv;
+    DDLQueryIdentifiers currently_executing_identifiers;
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;

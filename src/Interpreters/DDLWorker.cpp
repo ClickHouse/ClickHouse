@@ -422,13 +422,37 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
         auto & saved_task = saveTask(std::move(task));
 
+
         if (worker_pool)
         {
-            worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
+            DDLQueryIdentifiers identifiers = collectIdentifiersForDDLQuery(task->query, context);
+            std::unique_lock lock(currently_executing_identifiers_mutex);
+
+            currently_executing_identifiers_cv.wait(lock, [&] {return !hasIntersection(identifiers, currently_executing_identifiers); });
+
+            currently_executing_identifiers.addQueryIdentifiers(identifiers);
+            try
             {
-                setThreadName("DDLWorkerExec");
-                processTask(saved_task, zookeeper);
-            });
+                worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper, identifiers]()
+                {
+                    SCOPE_EXIT(
+                    {
+                        {
+                            std::lock_guard executing_lock(currently_executing_identifiers_mutex);
+                            currently_executing_identifiers.removeQueryIdentifiers(identifiers);
+                        }
+                        currently_executing_identifiers_cv.notify_all();
+                    });
+                    setThreadName("DDLWorkerExec");
+                    processTask(saved_task, zookeeper);
+                });
+            }
+            catch (...)
+            {
+                std::lock_guard executing_lock(currently_executing_identifiers_mutex);
+                currently_executing_identifiers.removeQueryIdentifiers(identifiers);
+                throw;
+            }
         }
         else
         {

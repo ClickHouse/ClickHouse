@@ -91,6 +91,22 @@ public:
     static ASTIdentifiers collect(const ASTPtr & node);
 };
 
+class AllIdentifiersCollector
+{
+public:
+    using ASTIdentifierPtr = const ASTIdentifier *;
+    using ASTIdentifiers = std::vector<ASTIdentifierPtr>;
+    struct Data
+    {
+        ASTIdentifiers idents;
+    };
+
+    static void visit(const ASTPtr & node, Data & data);
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &);
+    static ASTIdentifiers collect(const ASTPtr & node);
+};
+
+
 /// Collect identifier table membership considering aliases
 class IdentifierMembershipCollector
 {
