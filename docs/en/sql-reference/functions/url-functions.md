@@ -500,3 +500,39 @@ Result:
 │ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
 └──────────────────────────────┴──────────────────────────┘
 ```
+
+### resolveRelativeURL(RELATIVE_URL, BASE_URL)
+
+The resolveRelativeURL function resolves a relative URL against a base URL and returns the absolute URL. 
+**Syntax**
+
+``` sql
+resolveRelativeURL(relative_url, base_url)
+```
+
+**Arguments**
+
+- `relative_url` — relativeURL. [String](../../sql-reference/data-types/string.md).
+- `base_name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
+
+**Returned value**
+
+- The function returns the absolute URL as a string after resolving the relative URL against the base.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT resolveRelativeURL('image.gif', 'https://clickhouse.com/blog/');
+```
+
+Result:
+
+``` text
+┌─resolveRelativeURL('/', 'https://clickhouse.com/blog/')─┐
+│ https://clickhouse.com/                                 │
+└─────────────────────────────────────────────────────────┘
+```
