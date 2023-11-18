@@ -512,8 +512,8 @@ resolveRelativeURL(relative_url, base_url)
 
 **Arguments**
 
-- `relative_url` — relativeURL. [String](../../sql-reference/data-types/string.md).
-- `base_name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
+- `relative_url` — the name of the relative URL. [String](../../sql-reference/data-types/string.md).
+- `base_url` — the name of the base URL. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
 
 **Returned value**
 
