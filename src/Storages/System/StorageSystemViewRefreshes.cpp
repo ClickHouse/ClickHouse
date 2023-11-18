@@ -1,6 +1,9 @@
 #include <Storages/System/StorageSystemViewRefreshes.h>
 
 #include <Access/ContextAccess.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 

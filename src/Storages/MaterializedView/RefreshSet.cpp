@@ -3,7 +3,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric Refresh;
+    extern const Metric RefreshingViews;
 }
 
 namespace DB
@@ -102,7 +102,7 @@ void RefreshSet::Entry::cleanup(RefreshSet * set)
 }
 
 RefreshSet::RefreshSet()
-    : set_metric(CurrentMetrics::Refresh)
+    : set_metric(CurrentMetrics::RefreshingViews)
 {}
 
 RefreshTaskHolder RefreshSet::getTask(const StorageID & id) const

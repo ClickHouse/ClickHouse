@@ -37,7 +37,7 @@ std::variant<RefreshEveryTimer, RefreshAfterTimer> makeRefreshTimer(const ASTRef
         case AFTER:
             return RefreshAfterTimer{strategy.interval};
         default:
-            throw Exception("Unknown refresh strategy kind", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown refresh strategy kind");
     }
 }
 
@@ -64,7 +64,7 @@ RefreshTaskHolder RefreshTask::create(
     if (strategy.dependencies)
     {
         if (strategy.schedule_kind != ASTRefreshStrategy::ScheduleKind::AFTER)
-            throw Exception("Dependencies are allowed only for AFTER refresh kind", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dependencies are allowed only for AFTER refresh kind");
 
         task->deps_entries.reserve(strategy.dependencies->children.size());
         for (auto && dependency : strategy.dependencies->children)

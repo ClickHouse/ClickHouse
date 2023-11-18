@@ -15,8 +15,8 @@ ASTPtr ASTTimePeriod::clone() const
 void ASTTimePeriod::formatImpl(const FormatSettings & f_settings, FormatState &, FormatStateStacked frame) const
 {
     frame.need_parens = false;
-    f_settings.ostr << (f_settings.hilite ? hilite_none : "") << value << ' ';
-    f_settings.ostr << (f_settings.hilite ? hilite_keyword : "") << kind.toKeyword();
+    f_settings.ostr << value << ' ';
+    f_settings.ostr << (f_settings.hilite ? hilite_keyword : "") << kind.toKeyword() << (f_settings.hilite ? hilite_none : "");
 }
 
 ASTPtr ASTTimeInterval::clone() const
@@ -32,8 +32,8 @@ void ASTTimeInterval::formatImpl(const FormatSettings & f_settings, FormatState 
     {
         if (!std::exchange(is_first, false))
             f_settings.ostr << ' ';
-        f_settings.ostr << (f_settings.hilite ? hilite_none : "") << value << ' ';
-        f_settings.ostr << (f_settings.hilite ? hilite_keyword : "") << kind.toKeyword();
+        f_settings.ostr << value << ' ';
+        f_settings.ostr << (f_settings.hilite ? hilite_keyword : "") << kind.toKeyword() << (f_settings.hilite ? hilite_none : "");
     }
 }
 
