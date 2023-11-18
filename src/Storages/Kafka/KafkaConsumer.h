@@ -56,6 +56,7 @@ public:
         UInt64 num_rebalance_assignments;
         UInt64 num_rebalance_revocations;
         KafkaConsumer::ExceptionsBuffer exceptions_buffer;
+        UInt64 num_exceptions;
         bool in_use;
         std::string rdkafka_stat;
     };
@@ -158,6 +159,7 @@ private:
     mutable std::mutex exception_mutex;
     const size_t EXCEPTIONS_DEPTH = 10;
     ExceptionsBuffer exceptions_buffer;
+    UInt64 num_exceptions;
 
     std::atomic<UInt64> last_exception_timestamp_usec = 0;
     std::atomic<UInt64> last_poll_timestamp_usec = 0;

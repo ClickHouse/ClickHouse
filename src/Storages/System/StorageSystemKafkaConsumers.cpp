@@ -33,6 +33,7 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>())},
         {"exceptions.time", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
         {"exceptions.text", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"exceptions.count", std::make_shared<DataTypeUInt64>()},
         {"last_poll_time", std::make_shared<DataTypeDateTime>()},
         {"num_messages_read", std::make_shared<DataTypeUInt64>()},
         {"last_commit_time", std::make_shared<DataTypeDateTime>()},
@@ -70,6 +71,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & exceptions_time_offset = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
     auto & exceptions_text = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & exceptions_text_offset = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
+    auto & num_exceptions = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & last_poll_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
     auto & num_messages_read = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & last_commit_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
@@ -129,10 +131,10 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                     exceptions_text.insertData(exc.text.data(), exc.text.size());
                     exceptions_time.insert(exc.timestamp_usec);
                 }
-                exceptions_num += consumer_stat.exceptions_buffer.size();
+                exceptions_num += consumer_stat.num_exceptions;
                 exceptions_text_offset.push_back(exceptions_num);
                 exceptions_time_offset.push_back(exceptions_num);
-
+                num_exceptions.insert(exceptions_num);
 
                 last_poll_time.insert(consumer_stat.last_poll_time);
                 num_messages_read.insert(consumer_stat.num_messages_read);

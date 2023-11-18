@@ -4588,6 +4588,7 @@ def test_system_kafka_consumers(kafka_cluster):
           assignments.current_offset,
           if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
           if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
+          exceptions.count as exception_count_,
           stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
           num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
           num_rebalance_revocations, num_rebalance_assignments, is_currently_used
@@ -4607,6 +4608,7 @@ assignments.partition_id:   [0]
 assignments.current_offset: [4]
 last_exception_time_:       never
 last_exception_:            no exception
+exception_count_:           0
 last_poll_time_:            now
 num_messages_read:          4
 last_commit_time_:          now
@@ -4688,6 +4690,7 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
           assignments.current_offset,
           if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
           if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
+          exceptions.count as exception_count_,
           stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
           num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
           num_rebalance_revocations, num_rebalance_assignments, is_currently_used
@@ -4707,6 +4710,7 @@ assignments.partition_id:   [0]
 assignments.current_offset: [2]
 last_exception_time_:       never
 last_exception_:            no exception
+exception_count_:           0
 last_poll_time_:            now
 num_messages_read:          4
 last_commit_time_:          now
@@ -4726,6 +4730,7 @@ assignments.partition_id:   [1]
 assignments.current_offset: [2]
 last_exception_time_:       never
 last_exception_:            no exception
+exception_count_:           0
 last_poll_time_:            now
 num_messages_read:          1
 last_commit_time_:          now

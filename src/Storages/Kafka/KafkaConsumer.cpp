@@ -62,6 +62,7 @@ KafkaConsumer::KafkaConsumer(
     , current(messages.begin())
     , topics(_topics)
     , exceptions_buffer(EXCEPTIONS_DEPTH)
+    , num_exceptions(0)
 {
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
@@ -558,6 +559,7 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
 
     std::lock_guard<std::mutex> lock(exception_mutex);
     exceptions_buffer.push_back({enriched_text, static_cast<UInt64>(Poco::Timestamp().epochTime())});
+    ++num_exceptions;
 }
 
 /*
@@ -590,23 +592,34 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
         });
     }
 
+    auto exc_buffer = decltype(this->exceptions_buffer){};
+    auto num_exc = decltype(this->num_exceptions){};
+    {
+        std::lock_guard<std::mutex> lock(exception_mutex);
+        exc_buffer = this->exceptions_buffer;
+        num_exc = this->num_exceptions;
+    }
+
+    auto rdkafka_stat_copy = [&]()
+    {
+        std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
+        return this->rdkafka_stat;
+    }();
+
     return {
-        .consumer_id = getMemberId() /* consumer->get_member_id() */ ,
+        .consumer_id = getMemberId() /* consumer->get_member_id() */,
         .assignments = std::move(assignments),
         .last_poll_time = last_poll_timestamp_usec.load(),
         .num_messages_read = num_messages_read.load(),
-
         .last_commit_timestamp_usec = last_commit_timestamp_usec.load(),
         .last_rebalance_timestamp_usec = last_rebalance_timestamp_usec.load(),
         .num_commits = num_commits.load(),
         .num_rebalance_assignments = num_rebalance_assignments.load(),
         .num_rebalance_revocations = num_rebalance_revocations.load(),
-        .exceptions_buffer = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
-            return exceptions_buffer;}(),
+        .exceptions_buffer = std::move(exc_buffer),
+        .num_exceptions = num_exc,
         .in_use = in_use.load(),
-        .rdkafka_stat = [&](){std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
-            return rdkafka_stat;}(),
+        .rdkafka_stat = std::move(rdkafka_stat_copy),
     };
 }
-
 }
