@@ -380,7 +380,7 @@ void StorageMerge::read(
     query_plan.addStep(std::move(step));
 }
 
-/// A transient object of this helper class is created
+/// An object of this helper class is created
 ///  when processing a Merge table data source (subordinary table)
 ///  that has row policies
 ///  to guarantee that these row policies are applied
@@ -392,16 +392,16 @@ public:
     /// Add to data stream columns that are needed only for row policies
     ///  SELECT x from T  if  T has row policy  y=42
     ///  required y in data pipeline
-    void extendNames(Names &);
+    void extendNames(Names &) const;
 
     /// Use storage facilities to filter data
     ///  optimization
     ///  does not guarantee accuracy, but reduces number of rows
-    void addStorageFilter(SourceStepWithFilter *);
+    void addStorageFilter(SourceStepWithFilter *) const;
 
     /// Create explicit filter transform to exclude
     /// rows that are not conform to row level policy
-    void addFilterTransform(QueryPipelineBuilder &);
+    void addFilterTransform(QueryPipelineBuilder &) const;
 
 private:
     std::string filter_column_name; // complex filter, may contain logic operations
@@ -573,7 +573,8 @@ void ReadFromMerge::createChildPlans()
         Names column_names_as_aliases;
         Names real_column_names = column_names;
 
-        const auto & [database_name, _storage, _, table_name] = table;
+        const auto & database_name = std::get<0>(table);
+        const auto & table_name = std::get<3>(table);
         auto row_policy_filter_ptr = context->getRowPolicyFilter(
             database_name,
             table_name,
@@ -583,7 +584,6 @@ void ReadFromMerge::createChildPlans()
             row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, context);
             row_policy_data_opt->extendNames(real_column_names);
         }
-
 
         if (!context->getSettingsRef().allow_experimental_analyzer)
         {
@@ -645,7 +645,6 @@ void ReadFromMerge::createChildPlans()
             required_max_block_size,
             table,
             column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases),
-            // merge_storage_snapshot->getMetadataForQuery()->getSampleBlock(),
             row_policy_data_opt,
             context,
             current_streams));
@@ -715,7 +714,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
     return modified_query_info;
 }
 
-
 bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
@@ -738,10 +736,10 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     QueryPlan & plan,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & modified_query_info,
-    const QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const Block & header,
     const Aliases & aliases,
-    RowPolicyDataOpt & row_policy_data_opt,
+    const RowPolicyDataOpt & row_policy_data_opt,
     const StorageWithLockAndName & storage_with_lock,
     ContextMutablePtr modified_context,
     bool concat_streams) const
@@ -822,37 +820,18 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 QueryPlan ReadFromMerge::createPlanForTable(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & modified_query_info,
-    const QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     UInt64 max_block_size,
     const StorageWithLockAndName & storage_with_lock,
     Names && real_column_names,
-    RowPolicyDataOpt & row_policy_data_opt,
+    const RowPolicyDataOpt & row_policy_data_opt,
     ContextMutablePtr modified_context,
     size_t streams_num)
 {
     const auto & [database_name, storage, _, table_name] = storage_with_lock;
-    // auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
-    // auto storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, context);
-    // auto modified_query_info = getModifiedQueryInfo(query_info, context, storage_with_lock, storage_snapshot);
 
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
-    // std::unique_ptr<RowPolicyData> row_policy_data_ptr;
-
-    // auto row_policy_filter_ptr = context->getRowPolicyFilter(
-    //     database_name,
-    //     table_name,
-    //     RowPolicyFilterType::SELECT_FILTER);
-    // if (row_policy_filter_ptr)
-    // {
-    //     row_policy_data_ptr = std::make_unique<RowPolicyData>(row_policy_filter_ptr, storage, context);
-    //     row_policy_data_ptr->extendNames(real_column_names);
-    // }
-
-    // Aliases aliases;
-    // processAliases(real_column_names, storage_with_lock, aliases, sample_block, modified_context);
-
-    // QueryPipelineBuilderPtr builder;
     if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
@@ -908,7 +887,6 @@ QueryPlan ReadFromMerge::createPlanForTable(
         if (!plan.isInitialized())
             return {};
 
-        /// move to applyFilters
         if (row_policy_data_opt)
         {
             if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter*>((plan.getRootNode()->step.get())))
@@ -917,16 +895,6 @@ QueryPlan ReadFromMerge::createPlanForTable(
             }
         }
 
-        // if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-        // {
-        //     size_t filters_dags_size = filter_dags.size();
-        //     for (size_t i = 0; i < filters_dags_size; ++i)
-        //         read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
-        // }
-
-        // builder = plan.buildQueryPipeline(
-        //     QueryPlanOptimizationSettings::fromContext(modified_context),
-        //     BuildQueryPipelineSettings::fromContext(modified_context));
         applyFilters(plan);
     }
     else if (processed_stage > storage_stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
@@ -964,14 +932,11 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
 {
     storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto storage_columns = storage_metadata_snapshot->getColumns();
-    auto needed_columns = storage_columns.getAll/*Physical*/();
+    auto needed_columns = storage_columns.getAll();
 
     ASTPtr expr = row_policy_filter_ptr->expression;
 
-    auto syntax_result = TreeRewriter(local_context).analyze(expr,
-      needed_columns /*,
-      storage,
-      storage->getStorageSnapshot(storage_metadata_snapshot, local_context)*/);
+    auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
@@ -992,7 +957,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     filter_column_name = added.getNames().front();
 }
 
-void ReadFromMerge::RowPolicyData::extendNames(Names & names)
+void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
 {
     boost::container::flat_set<std::string_view> names_set(names.begin(), names.end());
     NameSet added_names;
@@ -1011,12 +976,12 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names)
     }
 }
 
-void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step)
+void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step) const
 {
     step->addFilter(actions_dag, filter_column_name);
 }
 
-void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & builder)
+void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & builder) const
 {
     builder.addSimpleTransform([&](const Block & stream_header)
     {
@@ -1198,7 +1163,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
     const Aliases & aliases,
-    RowPolicyDataOpt & row_policy_data_opt,
+    const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     QueryPipelineBuilder & builder,
     QueryProcessingStage::Enum processed_stage)

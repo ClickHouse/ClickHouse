@@ -181,19 +181,7 @@ private:
     using Aliases = std::vector<AliasData>;
 
     class RowPolicyData;
-    // using RowPolicyDataPtr = std::unique_ptr<RowPolicyData>;
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
-
-
-    /// Populates AliasData structures for further processing
-    ///   using types from result query if possible
-    /// and removes alias columns from real_column_names
-    void processAliases(
-        Names & real_column_names,
-        const StorageWithLockAndName & storage_with_lock,
-        Aliases & aliases,
-        const Block & sample_block,
-        ContextMutablePtr modified_context);
 
     std::vector<Aliases> table_aliases;
 
@@ -206,11 +194,11 @@ private:
     QueryPlan createPlanForTable(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
         Names && real_column_names,
-        RowPolicyDataOpt & row_policy_data_ptr,
+        const RowPolicyDataOpt & row_policy_data_ptr,
         ContextMutablePtr modified_context,
         size_t streams_num);
 
@@ -218,10 +206,10 @@ private:
         QueryPlan & plan,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & modified_query_info,
-        const QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         const Block & header,
         const Aliases & aliases,
-        RowPolicyDataOpt & row_policy_data_ptr,
+        const RowPolicyDataOpt & row_policy_data_ptr,
         const StorageWithLockAndName & storage_with_lock,
         ContextMutablePtr modified_context,
         bool concat_streams = false) const;
@@ -235,7 +223,7 @@ private:
         const Block & header,
         const StorageMetadataPtr & metadata_snapshot,
         const Aliases & aliases,
-        RowPolicyDataOpt & row_policy_data_ptr,
+        const RowPolicyDataOpt & row_policy_data_ptr,
         ContextPtr context,
         QueryPipelineBuilder & builder,
         QueryProcessingStage::Enum processed_stage);
