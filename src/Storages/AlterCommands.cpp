@@ -33,6 +33,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -403,10 +405,21 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
             const auto transformed_columns = temporary_metadata.columns.getAll();
 
-            for (auto it = transformed_columns.rbegin(); it != transformed_columns.rend(); it++)
+            auto add_column = [&](const String & name)
             {
-                const auto & transformed_column = temporary_metadata.columns.get(it->name);
+                const auto & transformed_column = temporary_metadata.columns.get(name);
                 metadata.columns.add(transformed_column, after_column, first);
+            };
+
+            if (!after_column.empty() || first)
+            {
+                for (const auto & col: transformed_columns | std::views::reverse)
+                    add_column(col.name);
+            }
+            else
+            {
+                for (const auto & col: transformed_columns)
+                    add_column(col.name);
             }
         }
         else
