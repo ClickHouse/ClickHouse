@@ -43,9 +43,6 @@ namespace
         {
             tmp_out.finalize();
 
-            if (cur_out == sink)
-                return;
-
             sink->write(tmp_out.buffer().begin(), tmp_out.count());
         }
 
@@ -67,8 +64,6 @@ namespace ErrorCodes
 Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
     std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
     : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
-    , in_data(nullptr)
-    , in_capacity(0)
     , tmp_memory(buf_size)
 
 {
@@ -106,9 +101,6 @@ void Lz4DeflatingWriteBuffer::nextImpl()
     if (!offset())
         return;
 
-    in_data = reinterpret_cast<void *>(working_buffer.begin());
-    in_capacity = offset();
-
     if (first_time)
     {
         auto sink = SinkToOut(out.get(), tmp_memory, LZ4F_HEADER_SIZE_MAX);
@@ -128,7 +120,10 @@ void Lz4DeflatingWriteBuffer::nextImpl()
         first_time = false;
     }
 
-    do
+    auto in_data = working_buffer.begin();
+    auto in_capacity = offset();
+
+    while (in_capacity > 0)
     {
         /// Ensure that there is enough space for compressed block of minimal size
         size_t min_compressed_block_size = LZ4F_compressBound(1, &kPrefs);
@@ -154,11 +149,10 @@ void Lz4DeflatingWriteBuffer::nextImpl()
                 LZ4F_VERSION, LZ4F_getErrorName(compressed_size), sink.getCapacity());
 
         in_capacity -= cur_buffer_size;
-        in_data = reinterpret_cast<void *>(working_buffer.end() - in_capacity);
+        in_data += cur_buffer_size;
 
         sink.advancePosition(compressed_size);
     }
-    while (in_capacity > 0);
 }
 
 void Lz4DeflatingWriteBuffer::finalizeBefore()
