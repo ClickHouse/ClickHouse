@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int CANNOT_PARSE_BOOL;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** Type conversion functions.
@@ -4224,6 +4225,9 @@ arguments, result_type, input_rows_count); \
                     {
                         if (!nullable_col->isNullAt(i))
                         {
+                            if (in_data[i] < std::numeric_limits<FieldType>::min() || in_data[i] > std::numeric_limits<FieldType>::max())
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", in_data[i]);
+
                             result_type.findByValue(static_cast<FieldType>(in_data[i]));
                             out_data[i] = static_cast<FieldType>(in_data[i]);
                         }
@@ -4235,6 +4239,9 @@ arguments, result_type, input_rows_count); \
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
+                        if (in_data[i] < std::numeric_limits<FieldType>::min() || in_data[i] > std::numeric_limits<FieldType>::max())
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", in_data[i]);
+
                         result_type.findByValue(static_cast<FieldType>(in_data[i]));
                         out_data[i] = static_cast<FieldType>(in_data[i]);
                     }
