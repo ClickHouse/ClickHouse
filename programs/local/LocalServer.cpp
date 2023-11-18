@@ -612,7 +612,7 @@ void LocalServer::processConfig()
     else if (logging || is_interactive)
     {
         config().setString("logger", "logger");
-        auto log_level_default = is_interactive && !logging ? "none" : level;
+        auto log_level_default = is_interactive && !logging ? "fatal" : level;
         config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
         buildLoggers(config(), logger(), "clickhouse-local");
         logging_initialized = true;
