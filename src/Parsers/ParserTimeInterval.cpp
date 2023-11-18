@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
+
 namespace
 {
 
@@ -27,7 +32,10 @@ std::optional<ValKind> parseValKind(IParser::Pos & pos, Expected & expected)
         return ValKind{ .empty = true };
     if (!parseIntervalKind(pos, expected, kind))
         return {};
-    return ValKind{ value->as<ASTLiteral &>().value.safeGet<UInt64>(), kind, false };
+    UInt64 val;
+    if (!value->as<ASTLiteral &>().value.tryGet(val))
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Time interval must be an integer");
+    return ValKind{ val, kind, false };
 }
 
 }

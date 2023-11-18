@@ -116,7 +116,7 @@ std::chrono::sys_seconds RefreshEveryTimer::alignedToYears(std::chrono::system_c
     if (auto prev_time = offset.after(prev_years); prev_time > tp)
         return prev_time;
 
-    auto next_years = normalize_years(tp_ymd.year() + std::chrono::years{1});
+    auto next_years = normalize_years(std::chrono::year((int(tp_ymd.year()) / value + 1) * value));
     return offset.after(next_years);
 }
 
@@ -234,7 +234,7 @@ std::chrono::sys_seconds RefreshEveryTimer::alignedToSeconds(std::chrono::system
     auto tp_minutes = std::chrono::floor<std::chrono::minutes>(tp);
     auto tp_seconds = std::chrono::floor<std::chrono::seconds>(tp - tp_minutes);
 
-    auto next_seconds= (tp_seconds / value + 1s) * value;
+    auto next_seconds = (tp_seconds / value + 1s) * value;
     if (std::chrono::floor<std::chrono::minutes>(next_seconds - 1s) > 0min)
         return tp_minutes + 1min + std::chrono::seconds{value};
     return tp_minutes + next_seconds;
