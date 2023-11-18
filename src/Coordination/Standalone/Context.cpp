@@ -25,6 +25,7 @@ namespace CurrentMetrics
     extern const Metric BackgroundSchedulePoolSize;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
+    extern const Metric IOWriterThreadsScheduled;
 }
 
 namespace DB

@@ -37,6 +37,7 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageS3Threads;
     extern const Metric ObjectStorageS3ThreadsActive;
+    extern const Metric ObjectStorageS3ThreadsScheduled;
 }
 
 
@@ -105,6 +106,7 @@ public:
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
+            CurrentMetrics::ObjectStorageS3ThreadsScheduled,
             "ListObjectS3")
         , client(client_)
     {
