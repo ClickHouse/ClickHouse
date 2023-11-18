@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
-    : DDLWorker(/* pool_size */ 1, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
+    : DDLWorker(/* pool_size */ 16, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
     /// Pool size must be 1 to avoid reordering of log entries.
