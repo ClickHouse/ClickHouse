@@ -158,14 +158,14 @@ public:
                 if (relative_url_ptr != relative_url_end && *relative_url_ptr == '/')
                 {
                     relative_url_ptr = const_cast<char *>(find_first_not_symbols<'/'>(relative_url_ptr, relative_url_end));
-                    if(*relative_url_ptr == '\0' || relative_url_ptr == relative_url_end)
+                    if (*relative_url_ptr == '\0' || relative_url_ptr == relative_url_end)
                     {
                         domain_pos = base_url_end - 1;
                     }
                     else
                     {
                         domain_pos = getDomainNameBeginPos(base_url_begin, base_url_end);
-                        if(domain_pos == base_url_end)
+                        if (domain_pos == base_url_end)
                             continue;
                     }
                 }
@@ -173,7 +173,7 @@ public:
                 else
                 {
                     domain_pos = getDomainNameEndPos(base_url_begin, base_url_end);
-                    if(domain_pos == base_url_end)
+                    if (domain_pos == base_url_end)
                         continue;
                     relative_url_ptr--;
                 }
