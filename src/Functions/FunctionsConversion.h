@@ -1247,9 +1247,9 @@ struct ConvertImplGenericToString
 
             FormatSettings format_settings;
             auto serialization = type.getDefaultSerialization();
-            for (size_t i = 0; i < size; ++i)
+            for (size_t row = 0; row < size; ++row)
             {
-                serialization->serializeText(col_from, i, write_buffer, format_settings);
+                serialization->serializeText(col_from, row, write_buffer, format_settings);
                 write_helper.rowWritten();
             }
 

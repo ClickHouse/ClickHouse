@@ -144,22 +144,22 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
     const auto * arg = function.arguments->as<ASTExpressionList>()->children[arg_idx].get();
 
-    if (const auto * dict_function = arg->as<ASTFunction>())
+    if (const auto * function_arg = arg->as<ASTFunction>())
     {
-        if (!functionIsDictGet(dict_function->name))
+        if (!functionIsJoinGet(function_arg->name) && !functionIsDictGet(function_arg->name))
             return;
 
-        /// Get the dictionary name from `dict*` function.
-        const auto * literal_arg = dict_function->arguments->as<ASTExpressionList>()->children[0].get();
-        const auto * dictionary_name = literal_arg->as<ASTLiteral>();
+        /// Get the dictionary name from `dict*` function or the table name from 'joinGet' function.
+        const auto * literal_arg = function_arg->arguments->as<ASTExpressionList>()->children[0].get();
+        const auto * name = literal_arg->as<ASTLiteral>();
 
-        if (!dictionary_name)
+        if (!name)
             return;
 
-        if (dictionary_name->value.getType() != Field::Types::String)
+        if (name->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(dictionary_name->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.get<String>());
         if (!maybe_qualified_name)
             return;
 

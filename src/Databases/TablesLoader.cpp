@@ -15,6 +15,7 @@ namespace CurrentMetrics
 {
     extern const Metric TablesLoaderThreads;
     extern const Metric TablesLoaderThreadsActive;
+    extern const Metric TablesLoaderThreadsScheduled;
 }
 
 namespace DB
@@ -32,7 +33,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , referential_dependencies("ReferentialDeps")
     , loading_dependencies("LoadingDeps")
     , all_loading_dependencies("LoadingDeps")
-    , pool(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive)
+    , pool(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, CurrentMetrics::TablesLoaderThreadsScheduled)
 {
     metadata.default_database = global_context->getCurrentDatabase();
     log = &Poco::Logger::get("TablesLoader");
