@@ -55,16 +55,6 @@ if(UNIX)
   endif()
 endif()
 
-if(UNIX AND NOT HAIKU)
-  # -pthread does more than -lpthread
-  set(THREADS_PREFER_PTHREAD_FLAG ON)
-  find_package(Threads)
-  set(_gRPC_ALLTARGETS_LIBRARIES ${CMAKE_DL_LIBS} Threads::Threads)
-  if(_gRPC_PLATFORM_LINUX OR _gRPC_PLATFORM_POSIX)
-    set(_gRPC_ALLTARGETS_LIBRARIES ${_gRPC_ALLTARGETS_LIBRARIES} rt)
-  endif()
-endif()
-
 set(_gRPC_ADDRESS_SORTING_INCLUDE_DIR "${_gRPC_SOURCE_DIR}/third_party/address_sorting/include")
 set(_gRPC_ADDRESS_SORTING_LIBRARIES address_sorting)
 
