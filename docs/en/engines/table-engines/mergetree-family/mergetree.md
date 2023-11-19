@@ -6,7 +6,7 @@ sidebar_label:  MergeTree
 
 # MergeTree
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most common and most robust ClickHouse table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most commonly used and most robust ClickHouse table engines.
 
 Engines in the `MergeTree` family are designed for inserting a very large amount of data into a table. The data is quickly written to the table part by part, then rules are applied for merging the parts in the background. This method is much more efficient than continually rewriting the data in storage during insert.
 
