@@ -7,12 +7,6 @@ endif()
 
 set(LIB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libssh")
 set(LIB_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/libssh")
-# Specify search path for CMake modules to be loaded by include()
-# and find_package()
-list(APPEND CMAKE_MODULE_PATH "${LIB_SOURCE_DIR}/cmake/Modules")
-
-include(DefineCMakeDefaults)
-include(DefineCompilerFlags)
 
 project(libssh VERSION 0.9.7 LANGUAGES C)
 
@@ -28,12 +22,6 @@ set(APPLICATION_NAME ${PROJECT_NAME})
 #     Increment REVISION.
 set(LIBRARY_VERSION "4.8.7")
 set(LIBRARY_SOVERSION "4")
-
-# where to look first for cmake modules, before ${CMAKE_ROOT}/Modules/ is checked
-
-# add definitions
-
-include(DefinePlatformDefaults)
 
 # Copy library files to a lib sub-directory
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${LIB_BINARY_DIR}/lib")

@@ -99,7 +99,7 @@
 #include <unordered_set>
 
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_LINUX)
 #    include <cstdlib>
@@ -675,6 +675,10 @@ try
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
+#endif
+
+#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
+    global_context->addWarningMessage("Server was built with code coverage. It will work slowly.");
 #endif
 
     const size_t physical_server_memory = getMemoryAmount();
@@ -1377,6 +1381,8 @@ try
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
+                global_context->reloadQueryMaskingRulesIfChanged(config);
+
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
@@ -1698,7 +1704,7 @@ try
         load_metadata_tasks = loadMetadata(global_context, default_database, server_settings.async_load_databases);
         /// If we need to convert database engines, disable async tables loading
         convertDatabasesEnginesIfNeed(load_metadata_tasks, global_context);
-        database_catalog.startupBackgroundCleanup();
+        database_catalog.startupBackgroundTasks();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
@@ -1824,6 +1830,9 @@ try
         try
         {
             global_context->loadOrReloadDictionaries(config());
+
+            if (config().getBool("wait_dictionaries_load_at_startup", false))
+                global_context->waitForDictionariesLoad();
         }
         catch (...)
         {

@@ -1078,6 +1078,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -1126,6 +1127,7 @@ azureBlobStorageCluster
 backend
 backoff
 backticks
+backupview
 balancer
 basename
 bcrypt
@@ -1545,6 +1547,7 @@ github
 glibc
 globalIn
 globalNotIn
+globbing
 glushkovds
 golang
 googletest
@@ -2290,6 +2293,7 @@ stochasticlogisticregression
 storages
 storig
 stringJaccardIndex
+stringJaccardIndexUTF
 stringToH
 stripelog
 strtod

@@ -177,6 +177,7 @@ AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool lo
             .thread_pool = std::make_unique<ThreadPool>(
                 init.metric_threads,
                 init.metric_active_threads,
+                init.metric_scheduled_threads,
                 /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
                 /* max_free_threads = */ 0, // We do not require free threads
                 /* queue_size = */0), // Unlimited queue to avoid blocking during worker spawning

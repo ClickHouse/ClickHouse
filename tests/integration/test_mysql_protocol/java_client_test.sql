@@ -145,4 +145,5 @@ CREATE OR REPLACE TABLE suspicious_nullable_low_cardinality_types
 
 INSERT INTO suspicious_nullable_low_cardinality_types
 VALUES (1,    '2022-04-15', '2021-06-04 13:55:11'),
-       (3.14, '1970-01-01', '1970-01-01 00:00:00');
+       (3.14, '1970-01-01', '1970-01-01 00:00:00'),
+       (NULL, NULL, NULL);

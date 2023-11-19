@@ -25,6 +25,7 @@ namespace CurrentMetrics
 {
     extern const Metric TablesLoaderBackgroundThreads;
     extern const Metric TablesLoaderBackgroundThreadsActive;
+    extern const Metric TablesLoaderBackgroundThreadsScheduled;
 }
 
 namespace DB::ErrorCodes
@@ -66,6 +67,7 @@ struct AsyncLoaderTest
                 .name = fmt::format("Pool{}", pool_id),
                 .metric_threads = CurrentMetrics::TablesLoaderBackgroundThreads,
                 .metric_active_threads = CurrentMetrics::TablesLoaderBackgroundThreadsActive,
+                .metric_scheduled_threads = CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
                 .max_threads = desc.max_threads,
                 .priority = desc.priority
             });

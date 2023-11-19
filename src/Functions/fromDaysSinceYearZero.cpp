@@ -59,7 +59,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"days", &isNativeUnsignedInteger<IDataType>, nullptr, "UInt*"}
+            {"days", &isNativeUInt<IDataType>, nullptr, "UInt*"}
         };
 
         validateFunctionArgumentTypes(*this, arguments, args);

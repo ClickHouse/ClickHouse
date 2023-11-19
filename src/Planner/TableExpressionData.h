@@ -240,6 +240,16 @@ public:
         is_remote = is_remote_value;
     }
 
+    bool isMergeTree() const
+    {
+        return is_merge_tree;
+    }
+
+    void setIsMergeTree(bool is_merge_tree_value)
+    {
+        is_merge_tree = is_merge_tree_value;
+    }
+
     const ActionsDAGPtr & getPrewhereFilterActions() const
     {
         return prewhere_filter_actions;
@@ -305,6 +315,9 @@ private:
 
     /// Is storage remote
     bool is_remote = false;
+
+    /// Is storage merge tree
+    bool is_merge_tree = false;
 };
 
 }
