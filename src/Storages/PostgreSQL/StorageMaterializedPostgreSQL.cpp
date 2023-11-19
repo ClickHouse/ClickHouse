@@ -546,7 +546,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
 	
-	if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
+	    if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
 	
