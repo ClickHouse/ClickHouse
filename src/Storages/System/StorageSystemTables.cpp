@@ -116,7 +116,7 @@ ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr co
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// We don't want to show the internal database for temporary tables in system.tables
 
-        if (database->getEngineName() != "PostgreSQL")
+        if (database->getEngineName() != "PostgreSQL" && database->getEngineName() != "MySQL")
             final_database_column->insert(database_name);
         else
             if (filtered_databases_set.find(database_name) != filtered_databases_set.end())
