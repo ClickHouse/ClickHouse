@@ -31,8 +31,10 @@ namespace CurrentMetrics
 {
     extern const Metric BackupsThreads;
     extern const Metric BackupsThreadsActive;
+    extern const Metric BackupsThreadsScheduled;
     extern const Metric RestoreThreads;
     extern const Metric RestoreThreadsActive;
+    extern const Metric RestoreThreadsScheduled;
 }
 
 namespace DB
@@ -58,16 +60,7 @@ namespace
 
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
 
-            BackupCoordinationRemote::BackupKeeperSettings keeper_settings
-            {
-                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
-                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
-                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
-                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
-                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed,
-                .keeper_value_max_size = context->getSettingsRef().backup_restore_keeper_value_max_size,
-            };
+            BackupCoordinationRemote::BackupKeeperSettings keeper_settings = WithRetries::KeeperSettings::fromContext(context);
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
                 backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
@@ -264,6 +257,7 @@ public:
 
         CurrentMetrics::Metric metric_threads;
         CurrentMetrics::Metric metric_active_threads;
+        CurrentMetrics::Metric metric_scheduled_threads;
         size_t max_threads = 0;
 
         /// What to do with a new job if a corresponding thread pool is already running `max_threads` jobs:
@@ -279,6 +273,7 @@ public:
             {
                 metric_threads = CurrentMetrics::BackupsThreads;
                 metric_active_threads = CurrentMetrics::BackupsThreadsActive;
+                metric_active_threads = CurrentMetrics::BackupsThreadsScheduled;
                 max_threads = num_backup_threads;
                 /// We don't use thread pool queues for thread pools with a lot of tasks otherwise that queue could be memory-wasting.
                 use_queue = (thread_pool_id != ThreadPoolId::BACKUP_COPY_FILES);
@@ -291,6 +286,7 @@ public:
             {
                 metric_threads = CurrentMetrics::RestoreThreads;
                 metric_active_threads = CurrentMetrics::RestoreThreadsActive;
+                metric_active_threads = CurrentMetrics::RestoreThreadsScheduled;
                 max_threads = num_restore_threads;
                 use_queue = (thread_pool_id != ThreadPoolId::RESTORE_TABLES_DATA);
                 break;
@@ -301,7 +297,7 @@ public:
         chassert(max_threads != 0);
         size_t max_free_threads = 0;
         size_t queue_size = use_queue ? 0 : max_threads;
-        auto thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, max_threads, max_free_threads, queue_size);
+        auto thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, metric_scheduled_threads, max_threads, max_free_threads, queue_size);
         auto * thread_pool_ptr = thread_pool.get();
         thread_pools.emplace(thread_pool_id, std::move(thread_pool));
         return *thread_pool_ptr;

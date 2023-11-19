@@ -416,7 +416,7 @@ private:
             std::to_integer<UInt32>(bytes.front()) & MAX_ZERO_BYTE_COUNT);
 
         if (zero_byte_count1 > VALUE_SIZE || zero_byte_count2 > VALUE_SIZE) [[unlikely]]
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Invalid compressed data");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Invalid zero byte count(s): {} and {}", zero_byte_count1, zero_byte_count2);
 
         size_t tail_size1 = VALUE_SIZE - zero_byte_count1;
         size_t tail_size2 = VALUE_SIZE - zero_byte_count2;
@@ -424,7 +424,7 @@ private:
         size_t expected_size = 0;
         if (__builtin_add_overflow(tail_size1, tail_size2, &expected_size)
             || __builtin_add_overflow(expected_size, 1, &expected_size)) [[unlikely]]
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Invalid compressed data");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Overflow occurred while calculating expected size");
 
         if (bytes.size() < expected_size) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unexpected end of encoded sequence");

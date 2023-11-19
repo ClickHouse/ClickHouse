@@ -22,6 +22,7 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   fi
 fi
 
+
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
 # export CCACHE_LOGFILE=/build/ccache.log
@@ -31,6 +32,16 @@ fi
 mkdir -p /build/build_docker
 cd /build/build_docker
 rm -f CMakeCache.txt
+
+
+# We don't want to depend on any third-party CMake files.
+# To check it, find and delete them.
+
+grep -o -P '"contrib/[^"]+"' ../.gitmodules |
+  grep -v -P 'llvm-project|google-protobuf|grpc|abseil-cpp|corrosion' |
+  xargs -I@ find ../@ -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' |
+  xargs rm
+
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root

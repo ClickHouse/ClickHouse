@@ -77,7 +77,6 @@ struct WriteBufferFromS3::PartData
 
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
-    std::shared_ptr<const S3::Client> client_with_long_timeout_ptr_,
     const String & bucket_,
     const String & key_,
     size_t buf_size_,
@@ -92,7 +91,6 @@ WriteBufferFromS3::WriteBufferFromS3(
     , upload_settings(request_settings.getUploadSettings())
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
-    , client_with_long_timeout_ptr(std::move(client_with_long_timeout_ptr_))
     , object_metadata(std::move(object_metadata_))
     , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
     , task_tracker(
@@ -566,7 +564,7 @@ void WriteBufferFromS3::completeMultipartUpload()
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
         Stopwatch watch;
-        auto outcome = client_with_long_timeout_ptr->CompleteMultipartUpload(req);
+        auto outcome = client_ptr->CompleteMultipartUpload(req);
         watch.stop();
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
