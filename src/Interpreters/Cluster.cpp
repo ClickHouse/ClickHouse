@@ -4,6 +4,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
+#include <Common/randomSeed.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Core/Settings.h>
@@ -16,6 +17,7 @@
 #include <boost/range/algorithm_ext/erase.hpp>
 
 #include <span>
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -660,8 +662,7 @@ namespace
 
 void shuffleReplicas(std::vector<Cluster::Address> & replicas, const Settings & settings, size_t replicas_needed)
 {
-    std::random_device rd;
-    std::mt19937 gen{rd()};
+    pcg64_fast gen{randomSeed()};
 
     if (settings.prefer_localhost_replica)
     {

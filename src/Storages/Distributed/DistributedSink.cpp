@@ -31,8 +31,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
-#include <base/range.h>
-#include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
 
 #include <filesystem>
@@ -43,6 +41,7 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
     extern const Metric DistributedInsertThreads;
     extern const Metric DistributedInsertThreadsActive;
+    extern const Metric DistributedInsertThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -465,6 +464,7 @@ void DistributedSink::writeSync(const Block & block)
         pool.emplace(
             CurrentMetrics::DistributedInsertThreads,
             CurrentMetrics::DistributedInsertThreadsActive,
+            CurrentMetrics::DistributedInsertThreadsScheduled,
             max_threads, max_threads, jobs_count);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
@@ -553,8 +553,15 @@ void DistributedSink::onFinish()
                 {
                     if (job.executor)
                     {
-                        pool->scheduleOrThrowOnError([&job]()
+                        pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachFromGroupIfNotDetached();
+                            );
+                            if (thread_group)
+                                CurrentThread::attachToGroupIfDetached(thread_group);
+
                             job.executor->finish();
                         });
                     }
@@ -756,7 +763,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         return guard;
     };
 
-    auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds();
+    auto sleep_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms.totalMilliseconds();
     size_t file_size;
 
     auto it = dir_names.begin();
@@ -782,7 +789,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
-            /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
+            /// See also DistributedAsyncInsertHeader::read() in DistributedInsertQueue (for reading side)
             ///
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.

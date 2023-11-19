@@ -89,6 +89,8 @@ String BackupFileInfo::describe() const
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
     result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
+    if (!reference_target.empty())
+        result += fmt::format("reference_target: {};\n", reference_target);
     return result;
 }
 
@@ -104,6 +106,14 @@ BackupFileInfo buildFileInfoForBackupEntry(
 
     BackupFileInfo info;
     info.file_name = adjusted_path;
+
+    /// If it's a "reference" just set the target to a concrete file
+    if (backup_entry->isReference())
+    {
+        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
+        return info;
+    }
+
     info.size = backup_entry->getSize();
     info.encrypted_by_disk = backup_entry->isEncryptedByDisk();
 
@@ -215,14 +225,13 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
             ++num_active_jobs;
         }
 
-        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, i, log](bool async)
+        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, i, log]()
         {
             SCOPE_EXIT_SAFE({
                 std::lock_guard lock{mutex};
                 if (!--num_active_jobs)
                     event.notify_all();
-                if (async)
-                    CurrentThread::detachFromGroupIfNotDetached();
+                CurrentThread::detachFromGroupIfNotDetached();
             });
 
             try
@@ -230,11 +239,10 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                 const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
-                if (async && thread_group)
+                if (thread_group)
                     CurrentThread::attachToGroup(thread_group);
 
-                if (async)
-                    setThreadName("BackupWorker");
+                setThreadName("BackupWorker");
 
                 {
                     std::lock_guard lock{mutex};
@@ -252,8 +260,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
             }
         };
 
-        if (!thread_pool.trySchedule([job] { job(true); }))
-            job(false);
+        thread_pool.scheduleOrThrowOnError(job);
     }
 
     {

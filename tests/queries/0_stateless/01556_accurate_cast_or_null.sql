@@ -49,3 +49,24 @@ SELECT accurateCastOrNull('1xxx', 'Date');
 SELECT accurateCastOrNull('2023-05-30', 'Date');
 SELECT accurateCastOrNull('2180-01-01', 'Date');
 SELECT accurateCastOrNull(19, 'Date');
+
+select accurateCastOrNull('test', 'Bool');
+select accurateCastOrNull('truex', 'Bool');
+select accurateCastOrNull('xfalse', 'Bool');
+select accurateCastOrNull('true', 'Bool');
+select accurateCastOrNull('false', 'Bool');
+select accurateCastOrNull('1', 'Bool');
+select accurateCastOrNull('0', 'Bool');
+select accurateCastOrNull(1, 'Bool');
+select accurateCastOrNull(0, 'Bool');
+
+select accurateCastOrNull('test', 'IPv4');
+select accurateCastOrNull('2001:db8::1', 'IPv4');
+select accurateCastOrNull('::ffff:192.0.2.1', 'IPv4');
+select accurateCastOrNull('192.0.2.1', 'IPv4');
+select accurateCastOrNull('192.0.2.1x', 'IPv4');
+
+select accurateCastOrNull('test', 'IPv6');
+select accurateCastOrNull('192.0.2.1', 'IPv6');
+select accurateCastOrNull('2001:db8::1', 'IPv6');
+select accurateCastOrNull('2001:db8::1x', 'IPv6');

@@ -502,7 +502,7 @@ Possible values:
 Default value: 480.
 
 After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
-Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
+Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is 1.
 
 `fsync` is not called for new parts, so for some time new parts exist only in the server's RAM (OS cache). If the server is rebooted spontaneously, new parts can be lost or damaged.
 To protect data inactive parts are not deleted immediately.

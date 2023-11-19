@@ -128,7 +128,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     }
 
     std::lock_guard lock{database->metadata_mutex};
-    if (!database->checkDigestValid(context))
+    if (!database->checkDigestValid(context, false))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
 }
 
