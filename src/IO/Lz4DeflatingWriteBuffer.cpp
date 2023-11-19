@@ -39,10 +39,9 @@ namespace
             cur_out->position() += size;
         }
 
-        ~SinkToOut() noexcept(false)
+        void finalize()
         {
             tmp_out.finalize();
-
             sink->write(tmp_out.buffer().begin(), tmp_out.count());
         }
 
@@ -117,6 +116,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
                 LZ4F_VERSION, LZ4F_getErrorName(header_size));
 
         sink.advancePosition(header_size);
+        sink.finalize();
         first_time = false;
     }
 
@@ -152,6 +152,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
         in_data += cur_buffer_size;
 
         sink.advancePosition(compressed_size);
+        sink.finalize();
     }
 }
 
@@ -173,6 +174,7 @@ void Lz4DeflatingWriteBuffer::finalizeBefore()
             LZ4F_VERSION, LZ4F_getErrorName(end_size), sink.getCapacity());
 
     sink.advancePosition(end_size);
+    sink.finalize();
 }
 
 void Lz4DeflatingWriteBuffer::finalizeAfter()
