@@ -14,7 +14,7 @@ As s390x does not support boringssl, it uses OpenSSL and has two related build o
 - By default, the s390x build will dynamically link to OpenSSL libraries. It will build OpenSSL shared objects, so it's not necessary to install OpenSSL beforehand. (This option is recommended in all cases.)
 - Another option is to build OpenSSL in-tree. In this case two build flags need to be supplied to cmake
 ```bash
--DENABLE_OPENSSL_DYNAMIC=0 -DENABLE_OPENSSL=1
+-DENABLE_OPENSSL_DYNAMIC=0
 ```
 
 These instructions assume that the host machine is x86_64 and has all the tooling required to build natively based on the [build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but the following instructions should also work on Ubuntu 20.04.
