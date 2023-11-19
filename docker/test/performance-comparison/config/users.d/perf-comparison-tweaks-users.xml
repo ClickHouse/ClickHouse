@@ -34,9 +34,4 @@
             <memory_profiler_step>0</memory_profiler_step>
         </default>
     </profiles>
-    <users>
-        <default>
-            <access_management>1</access_management>
-        </default>
-    </users>
 </clickhouse>

@@ -106,6 +106,10 @@ public:
             {
                 return {next_pos, State::WAITING_KEY};
             }
+            else if (isQuotingCharacter(*p))
+            {
+                return {next_pos, State::READING_QUOTED_KEY};
+            }
 
             pos = next_pos;
         }
