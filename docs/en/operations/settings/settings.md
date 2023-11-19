@@ -2716,6 +2716,10 @@ Default value: `0`.
 - [Distributed Table Engine](../../engines/table-engines/special/distributed.md/#distributed)
 - [Managing Distributed Tables](../../sql-reference/statements/system.md/#query-language-system-distributed)
 
+## insert_distributed_sync {#insert_distributed_sync}
+
+Alias for [`distributed_foreground_insert`](#distributed_foreground_insert).
+
 ## insert_shard_id {#insert_shard_id}
 
 If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table into which the data will be inserted synchronously.
