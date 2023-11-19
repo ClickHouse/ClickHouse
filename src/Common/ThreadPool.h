@@ -41,18 +41,20 @@ public:
     using Metric = CurrentMetrics::Metric;
 
     /// Maximum number of threads is based on the number of physical cores.
-    ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_);
+    ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_);
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
     explicit ThreadPoolImpl(
         Metric metric_threads_,
         Metric metric_active_threads_,
+        Metric metric_scheduled_jobs_,
         size_t max_threads_);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
     ThreadPoolImpl(
         Metric metric_threads_,
         Metric metric_active_threads_,
+        Metric metric_scheduled_jobs_,
         size_t max_threads_,
         size_t max_free_threads_,
         size_t queue_size_,
@@ -113,6 +115,7 @@ private:
 
     Metric metric_threads;
     Metric metric_active_threads;
+    Metric metric_scheduled_jobs;
 
     size_t max_threads;
     size_t max_free_threads;
@@ -127,14 +130,19 @@ private:
     {
         Job job;
         Priority priority;
+        CurrentMetrics::Increment metric_increment;
         DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
         /// Call stacks of all jobs' schedulings leading to this one
         std::vector<StackTrace::FramePointers> frame_pointers;
         bool enable_job_stack_trace = false;
 
-        JobWithPriority(Job job_, Priority priority_, const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool capture_frame_pointers = false)
-            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
+        JobWithPriority(
+            Job job_, Priority priority_, CurrentMetrics::Metric metric,
+            const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
+            bool capture_frame_pointers)
+            : job(job_), priority(priority_), metric_increment(metric),
+            thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
         {
             if (!capture_frame_pointers)
                 return;
