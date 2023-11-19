@@ -688,13 +688,13 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
         return "";
 
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
-    ExtendedRequest<Aws::S3::Model::HeadBucketRequest> req;
+    Aws::S3::Model::HeadBucketRequest req;
     req.SetBucket(bucket);
 
     addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);
 
     std::string region;
-    auto outcome = HeadBucket(static_cast<const Model::HeadBucketRequest&>(req));
+    auto outcome = HeadBucket(req);
     if (outcome.IsSuccess())
     {
         const auto & result = outcome.GetResult();
