@@ -120,7 +120,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
         first_time = false;
     }
 
-    auto in_data = working_buffer.begin();
+    auto * in_data = working_buffer.begin();
     auto in_capacity = offset();
 
     while (in_capacity > 0)
