@@ -8,7 +8,7 @@ ${CLICKHOUSE_CLIENT} -nm -q "
 DROP TABLE IF EXISTS enabled_part_check_t SYNC;
 DROP TABLE IF EXISTS no_part_check_t SYNC;
 
-CREATE TABLE enabled_part_check_t(k UInt32, v String) ENGINE ReplicatedMergeTree('/{database}/part_check', 'r1') ORDER BY k SETTINGS background_part_check_time_to_total_time_ratio=0.01, background_part_check_delay_seconds=0;
+CREATE TABLE enabled_part_check_t(k UInt32, v String) ENGINE ReplicatedMergeTree('/{database}/part_check', 'r1') ORDER BY k SETTINGS background_part_check_time_to_total_time_ratio=1, background_part_check_delay_seconds=0, delay_between_background_part_checks_for_individual_part_seconds=1;
 
 insert into enabled_part_check_t select number, toString(number) from numbers(1000);
 
@@ -47,7 +47,7 @@ for _ in {0..10}; do
 
     SELECT count()
     FROM system.text_log
-    WHERE logger_name ILIKE '%' || currentDatabase() || '%enabled_part_check_t%ReplicatedMergeTreePartCheckThread%' AND level = 'Debug' AND message ILIKE '%Background part check: ZooKeeper hardware error%' AND event_date >= yesterday()
+    WHERE logger_name ILIKE '%' || currentDatabase() || '%enabled_part_check_t%ReplicatedMergeTreePartCheckThread%' AND message ILIKE '%Background part check: ZooKeeper hardware error%' AND event_date >= yesterday()
     GROUP BY logger_name;
   ")
   # echo $count
