@@ -637,7 +637,7 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
                 return nullptr;
             }
 
-            LOG_DEBUG(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
+            LOG_TRACE(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
 
             if (checked_part == MergeTreePartInfo{})
             {
@@ -740,7 +740,7 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
 
         if (result.status.success)
         {
-            LOG_DEBUG(
+            LOG_INFO(
                 log,
                 "Background part check succeeded: part={} path={} took={}ms",
                 part_to_check->name,
@@ -761,7 +761,7 @@ void ReplicatedMergeTreePartCheckThread::doBackgroundPartCheck()
     {
         // do not log error in case of zk hardware error
         if (Coordination::isHardwareError(e.code))
-            LOG_TRACE(log, "Background part check: ZooKeeper hardware error: {}", e.what());
+            LOG_DEBUG(log, "Background part check: ZooKeeper hardware error: {}", e.what());
         else
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
