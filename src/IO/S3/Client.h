@@ -260,9 +260,6 @@ private:
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
-    template <typename RequestType>
-    void addAdditionalAMZHeadersToCanonicalHeadersList(RequestType & request) const;
-
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;

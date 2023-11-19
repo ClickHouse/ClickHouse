@@ -103,6 +103,20 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
+void addAdditionalAMZHeadersToCanonicalHeadersList(
+    Aws::AmazonWebServiceRequest & request,
+    const HTTPHeaderEntries & extra_headers
+)
+{
+    for (const auto & [name, value] : extra_headers)
+    {
+        if (name.starts_with("x-amz-"))
+        {
+            request.SetAdditionalCustomHeaderValue(name, value);
+        }
+    }
+}
+
 }
 
 std::unique_ptr<Client> Client::create(
@@ -267,19 +281,6 @@ void Client::setKMSHeaders(RequestType & request) const
     }
 }
 
-
-template <typename RequestType>
-void Client::addAdditionalAMZHeadersToCanonicalHeadersList(RequestType & request) const
-{
-    for (const auto & [name, value] : client_configuration.extra_headers)
-    {
-        if (name.starts_with("x-amz-"))
-        {
-            request.SetAdditionalCustomHeaderValue(name, value);
-        }
-    }
-}
-
 // Explicitly instantiate this method only for the request types that support KMS headers
 template void Client::setKMSHeaders<CreateMultipartUploadRequest>(CreateMultipartUploadRequest & request) const;
 template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & request) const;
@@ -291,7 +292,7 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     request.setApiMode(api_mode);
 
-    addAdditionalAMZHeadersToCanonicalHeadersList(request);
+    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -514,7 +515,7 @@ template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
-    addAdditionalAMZHeadersToCanonicalHeadersList(request);
+    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
 
@@ -593,7 +594,7 @@ template <bool IsReadMethod, typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType>
 Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
 {
-    addAdditionalAMZHeadersToCanonicalHeadersList(request);
+    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
@@ -690,7 +691,7 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     ExtendedRequest<Aws::S3::Model::HeadBucketRequest> req;
     req.SetBucket(bucket);
 
-    addAdditionalAMZHeadersToCanonicalHeadersList(req);
+    addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);
 
     std::string region;
     auto outcome = HeadBucket(static_cast<const Model::HeadBucketRequest&>(req));
@@ -743,7 +744,7 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
 std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::string & bucket) const
 {
     ListObjectsV2Request req;
-    addAdditionalAMZHeadersToCanonicalHeadersList(req);
+    addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);
     req.SetBucket(bucket);
     req.SetMaxKeys(1);
     auto result = ListObjectsV2(req);
