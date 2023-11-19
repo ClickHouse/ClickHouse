@@ -852,7 +852,7 @@ void ZooKeeper::receiveEvent()
             {
                 for (const auto & callback : it->second)
                     if (callback)
-                        (*callback)(watch_response);
+                        (*callback)(watch_response);  /// NOTE We may process callbacks not under mutex.
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
                 watches.erase(it);
@@ -1370,7 +1370,7 @@ void ZooKeeper::exists(
     ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
 }
 
-/// NOTE(incfly): where we need to invoke & provide callback.
+
 void ZooKeeper::get(
     const String & path,
     GetCallback callback,

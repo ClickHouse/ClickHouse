@@ -278,7 +278,6 @@ private:
     std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    /// NOTE: how request is handled, request queue.
     RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 

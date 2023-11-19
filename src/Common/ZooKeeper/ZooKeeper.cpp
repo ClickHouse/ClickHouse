@@ -7,12 +7,9 @@
 #include "TestKeeper.h"
 #include "base/types.h"
 
-#include <cstddef>
 #include <filesystem>
 #include <functional>
-#include <optional>
 #include <ranges>
-#include <variant>
 #include <vector>
 
 #include "Common/Priority.h"
@@ -89,7 +86,7 @@ std::pair<std::string, bool> parseForSocketAddress(const std::string& raw_host)
     return result;
 }
 
-bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string& host, bool& dns_error)
+bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string& host, bool& dns_error_occurred)
 {
     auto address = parseForSocketAddress(host).first;
     /// We want to resolve all hosts without DNS cache for keeper connection.
@@ -107,11 +104,10 @@ bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string& host, bool& 
     catch (const Poco::Net::DNSException & e)
     {
         /// Most likely DNS is not available now
-        dns_error = true;
+        dns_error_occurred = true;
         LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", host, e.displayText());
         return false;
     }
-    // NOTE: check other exception case how it's handled before.
     return true;
 }
 
@@ -153,7 +149,7 @@ void ZooKeeperAvailabilityZoneMap::updateWithLock(const std::string &host, const
     az_by_host[address] = availability_zone;
 }
 
-std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool& dns_error)
+std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool& dns_error_occurred)
 {
     std::vector<ShuffleHost> shuffled_hosts;
     std::lock_guard lock(mutex);
@@ -164,7 +160,7 @@ std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger
         if (az_by_host.find(hosts[i]) == az_by_host.end())
             updateWithLock(hosts[i], AZ_UNKNWON);
 
-        if (!isKeeperHostDNSAvailable(log, hosts[i], dns_error))
+        if (!skip_dns_check_for_test && !isKeeperHostDNSAvailable(log, hosts[i], dns_error_occurred))
             continue;
 
         ShuffleHost shuffle_host;
@@ -183,9 +179,9 @@ std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger
     return shuffled_hosts;
 }
 
-[[noreturn]] void throwWhenNoHostAvailable(const bool& dns_error)
+[[noreturn]] void throwWhenNoHostAvailable(const bool& dns_error_occurred)
 {
-    if (dns_error)
+    if (dns_error_occurred)
         throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
     else
         throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
@@ -208,11 +204,11 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         }
         else
         {
-            bool dns_error = false;
+            bool dns_error_occurred = false;
             /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-            std::vector<ShuffleHost> shuffled_hosts = shuffleHosts(dns_error);
+            std::vector<ShuffleHost> shuffled_hosts = shuffleHosts(dns_error_occurred);
             if (shuffled_hosts.empty())
-                throwWhenNoHostAvailable(dns_error);
+                throwWhenNoHostAvailable(dns_error_occurred);
 
             Coordination::ZooKeeper::Nodes nodes;
             for (auto & host : shuffled_hosts)
@@ -265,11 +261,6 @@ void ZooKeeper::tryConnectSameAZKeeper()
     auto & az_helper = ZooKeeperAvailabilityZoneMap::instance();
     const auto & shuffle_hosts = az_helper.shuffleHosts(log, local_az, args.hosts, dns_error);
 
-    // Reason of not able to do this: shufflehosts use arg string for key, but the node use different.
-    // However, Node structure is not suitable for encapsulation. We can't create Node{SocketAddress(raw_host_string)} directly before checking DNS.
-    // DNS error comes from the PocoSocketAddress constructor. In another words, stripped version hots is required in the caller site (ZooKeeper.cpp).
-    // Update: Solution, use shufflehost as the key to enforce the key consistency (having secure:// prefix or not).
-
     std::set<std::string> attempted_hosts;
     for (const auto & host : shuffle_hosts)
     {
@@ -320,13 +311,13 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
     init(ZooKeeperArgs(config, config_name));
 }
 
-std::vector<ShuffleHost> ZooKeeper::shuffleHosts(bool& dns_error) const
+std::vector<ShuffleHost> ZooKeeper::shuffleHosts(bool& dns_error_occurred) const
 {
     std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
     for (size_t i = 0; i < args.hosts.size(); ++i)
     {
-        if (!isKeeperHostDNSAvailable(log, args.hosts[i], dns_error))
+        if (!isKeeperHostDNSAvailable(log, args.hosts[i], dns_error_occurred))
             continue;
 
         ShuffleHost shuffle_host;

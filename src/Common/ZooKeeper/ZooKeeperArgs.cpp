@@ -161,8 +161,6 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);
 
-    // NOTE: I suspect the config is not top level, but only the local part. This is fine though.
-
     for (const auto & key : keys)
     {
         if (key.starts_with("node"))

@@ -656,7 +656,8 @@ private:
 
 using ZooKeeperPtr = ZooKeeper::Ptr;
 
-/// ZooKeeperAvailabilityZoneMap contains the map from az to host. We assume a given host AZ does not change.
+/// ZooKeeperAvailabilityZoneMap contains the map from the host address(without secure:// prefix) to the availability zone information.
+// We assume a given host AZ does not change.
 class ZooKeeperAvailabilityZoneMap
 {
 public:
@@ -666,12 +667,16 @@ public:
     std::string get(const std::string & host);
     void update(const std::string & host, const std::string & availability_zone);
 
-    // shuffleHosts returns a more optimal host order to connect. We try our best based on previous az information to return the local host first.
-    std::vector<ShuffleHost> shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool& dns_error);
+    // shuffleHosts returns a list of the hosts with the optimal order to try to connect. This is based on previous connection information.
+    // For example, hosts whose availability zone is the same as the local one will be tried first.
+    std::vector<ShuffleHost> shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool& dns_error_occurred);
 
     // maybeWorthTryingOtherHost returns true if we want to connecto `local_az` and we have tried `attempted_host` already.
-    // For example, if some hosts their availability zone are still unknown, or we still have some same az not tried yet.
+    // If some hosts their availability zone are still unknown, or we still have some same az not tried yet.
     bool needTryOtherHost(const std::string & local_az, const std::set<std::string> & attempted_host);
+
+    // Allow to skip DNS check in unit tests.
+    bool skip_dns_check_for_test = false;
 
 private:
     void updateWithLock(const std::string & host, const std::string & availability_zone);
