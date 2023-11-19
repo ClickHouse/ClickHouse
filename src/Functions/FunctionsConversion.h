@@ -4219,14 +4219,24 @@ arguments, result_type, input_rows_count); \
 
                 auto default_enum_value = result_type.getValues().front().second;
 
+                constexpr auto min_value = std::numeric_limits<FieldType>::min();
+                constexpr auto max_value = std::numeric_limits<FieldType>::max();
+                constexpr auto is_signed = is_signed_v<typename ColumnNumberType::ValueType>;
+
                 if (nullable_col)
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
                         if (!nullable_col->isNullAt(i))
                         {
-                            if (in_data[i] < std::numeric_limits<FieldType>::min() || in_data[i] > std::numeric_limits<FieldType>::max())
-                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", in_data[i]);
+                            if constexpr (is_signed)
+                            {
+                                if (in_data[i] < min_value)
+                                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
+                            }
+
+                            if (in_data[i] > max_value)
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
 
                             result_type.findByValue(static_cast<FieldType>(in_data[i]));
                             out_data[i] = static_cast<FieldType>(in_data[i]);
@@ -4239,8 +4249,14 @@ arguments, result_type, input_rows_count); \
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
-                        if (in_data[i] < std::numeric_limits<FieldType>::min() || in_data[i] > std::numeric_limits<FieldType>::max())
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", in_data[i]);
+                        if constexpr (is_signed)
+                        {
+                            if (in_data[i] < min_value)
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
+                        }
+
+                        if (in_data[i] > max_value)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
 
                         result_type.findByValue(static_cast<FieldType>(in_data[i]));
                         out_data[i] = static_cast<FieldType>(in_data[i]);
