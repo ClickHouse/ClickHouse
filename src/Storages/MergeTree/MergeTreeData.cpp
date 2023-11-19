@@ -3047,8 +3047,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                 backQuoteIfNeed(command.column_name));
             }
 
-            /// Don't check columns in indices here. If required columns of indices get renamed, it
-            /// will be checked later in AlterCommands::apply.
+            /// Don't check columns in indices here. RENAME works fine with index columns.
 
             if (auto it = columns_in_projections.find(command.column_name); it != columns_in_projections.end())
             {
