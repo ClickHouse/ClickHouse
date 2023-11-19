@@ -47,8 +47,6 @@ set(thriftcpp_threads_SOURCES
         "${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp"
         )
 
-include("${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake") # makes config.h
-
 set (HAVE_ARPA_INET_H 1)
 set (HAVE_FCNTL_H 1)
 set (HAVE_GETOPT_H 1)
@@ -80,10 +78,6 @@ set (HAVE_SCHED_GET_PRIORITY_MIN 1)
 if (OS_LINUX AND NOT USE_MUSL)
     set (STRERROR_R_CHAR_P 1)
 endif ()
-
-#set(PACKAGE ${PACKAGE_NAME})
-#set(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_VERSION}")
-#set(VERSION ${thrift_VERSION})
 
 # generate a config.h file
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/build/cmake/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/thrift/config.h")

@@ -53,6 +53,7 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
+    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -1087,7 +1088,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
     , query_info(query_info_)
-    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
+    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, CurrentMetrics::ObjectStorageAzureThreadsScheduled, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
