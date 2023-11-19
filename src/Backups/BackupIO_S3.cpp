@@ -254,7 +254,6 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
     LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
     copyS3File(
         client,
-        client,
         /* src_bucket */ s3_uri.bucket,
         /* src_key= */ fs::path(s3_uri.key) / source,
         0,
