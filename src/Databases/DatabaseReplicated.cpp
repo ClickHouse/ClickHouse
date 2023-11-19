@@ -202,7 +202,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
 
         auto replica_groups = zookeeper->tryGet(replica_group_paths);
 
-        for (size_t i = 0; i < paths.size(); ++i)
+        for (size_t i = 0; i < replica_group_paths.size(); ++i)
         {
             if (replica_groups[i].data == replica_group_name)
                 hosts.push_back(unfiltered_hosts[i]);
