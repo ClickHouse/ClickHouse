@@ -301,7 +301,15 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 #endif
 
             /// Upscale if possible.
-            spawnThreads();
+            try
+            {
+                spawnThreads();
+            }
+            catch (...)
+            {
+                cancel();
+                throw;
+            }
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
