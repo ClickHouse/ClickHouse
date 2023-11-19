@@ -78,6 +78,8 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
 
+    bool supportsSubsetOfSubcolumns(const ContextPtr & context_) const;
+
     bool supportsSubcolumns() const override { return true; }
 
     static ColumnsDescription getTableStructureFromData(

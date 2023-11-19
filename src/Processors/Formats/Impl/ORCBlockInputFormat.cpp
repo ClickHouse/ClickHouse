@@ -189,6 +189,7 @@ void registerInputFormatORC(FormatFactory & factory)
             return res;
         });
     factory.markFormatSupportsSubsetOfColumns("ORC");
+    factory.markFormatSupportsSubsetOfSubcolumns("ORC");
 }
 
 void registerORCSchemaReader(FormatFactory & factory)

@@ -127,6 +127,10 @@ private:
     /// The checker should return true if format support append.
     using SubsetOfColumnsSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
+    /// Some formats like ORC can support reading subset of subcolumns depending on settings.
+    /// The checker should return true if format support append.
+    using SubsetOfSubcolumnsSupportChecker = std::function<bool(const FormatSettings & settings)>;
+
     struct Creators
     {
         InputCreator input_creator;
@@ -141,6 +145,7 @@ private:
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
         SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
+        SubsetOfSubcolumnsSupportChecker subset_of_subcolumns_support_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -233,6 +238,11 @@ public:
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
     bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+
+    void markFormatSupportsSubsetOfSubcolumns(const String & name);
+    void registerSubsetOfSubcolumnsSupportChecker(const String & name, SubsetOfSubcolumnsSupportChecker subset_of_subcolumns_support_checker);
+    bool checkIfFormatSupportsSubsetOfSubcolumns(
+        const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkIfFormatHasSchemaReader(const String & name) const;
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;

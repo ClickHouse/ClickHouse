@@ -743,6 +743,11 @@ bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+bool StorageFile::supportsSubsetOfSubcolumns(const ContextPtr & context) const
+{
+    return supportsSubsetOfColumns(context) && FormatFactory::instance().checkIfFormatSupportsSubsetOfSubcolumns(format_name, context, format_settings);
+}
+
 bool StorageFile::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
@@ -1219,12 +1224,14 @@ public:
                     });
                 }
 
-                /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+                /// If input format do not support subcolumns by itself.
+                /// ExtractColumnsTransform is needed to extract requested columns/subcolumns
                 /// from chunk read by IInputFormat.
-                builder.addSimpleTransform([&](const Block & header)
+                if (!storage->supportsSubsetOfSubcolumns(context))
                 {
-                    return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
-                });
+                    builder.addSimpleTransform([&](const Block & header)
+                                               { return std::make_shared<ExtractColumnsTransform>(header, requested_columns); });
+                }
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1389,7 +1396,8 @@ Pipe StorageFile::read(
     if (progress_callback && !archive_info)
         progress_callback(FileProgress(0, total_bytes_to_read));
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(context), supportsSubsetOfSubcolumns(context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef().optimize_count_from_files;
 

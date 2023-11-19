@@ -24,6 +24,7 @@ class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
 class PullingPipelineExecutor;
+class StorageURLSource;
 
 /**
  * This class represents table engine for external urls.
@@ -66,6 +67,8 @@ public:
         const ContextPtr & context);
 
 protected:
+    friend StorageURLSource;
+
     IStorageURLBase(
         const String & uri_,
         ContextPtr context_,
@@ -115,6 +118,7 @@ protected:
         size_t max_block_size) const;
 
     virtual bool supportsSubsetOfColumns(const ContextPtr & context) const;
+    virtual bool supportsSubsetOfSubcolumns(const ContextPtr & context) const;
 
     bool prefersLargeBlocks() const override;
 
@@ -165,6 +169,7 @@ public:
 
     StorageURLSource(
         const ReadFromFormatInfo & info,
+        std::shared_ptr<IStorageURLBase> storage_,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
         std::function<void(std::ostream &)> callback,
@@ -218,6 +223,7 @@ private:
     using InitializeFunc = std::function<bool()>;
     InitializeFunc initialize;
 
+    std::shared_ptr<IStorageURLBase> storage;
     String name;
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
