@@ -27,6 +27,12 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 /// Add unique suffix to names of duplicate columns in block
 void makeUniqueColumnNamesInBlock(Block & block);
 
+/// Returns true, if node has type QUERY or UNION
+bool isQueryOrUnionNode(const IQueryTreeNode * node);
+
+/// Returns true, if node has type QUERY or UNION
+bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
+
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
   * result cast function is not resolved during build.

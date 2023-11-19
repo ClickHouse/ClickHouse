@@ -1381,7 +1381,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 ```
 
-## toStartOfInterval(time_or_data, INTERVAL x unit \[, time_zone\])
+## toStartOfInterval(date_or_date_with_time, INTERVAL x unit \[, time_zone\])
 
 This function generalizes other `toStartOf*()` functions. For example,
 - `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,

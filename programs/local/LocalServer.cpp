@@ -752,7 +752,7 @@ void LocalServer::processConfig()
         {
             DatabaseCatalog::instance().createBackgroundTasks();
             loadMetadata(global_context);
-            DatabaseCatalog::instance().startupBackgroundCleanup();
+            DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.

@@ -46,8 +46,8 @@ class Elf;
  * can parse Debug Information Entries (DIEs), abbreviations, attributes (of
  * all forms), and we can interpret bytecode for the line number VM.
  *
- * We can interpret DWARF records of version 2, 3, or 4, although we don't
- * actually support many of the version 4 features (such as VLIW, multiple
+ * We can interpret DWARF records of version 2, 3, 4, or 5, although we don't
+ * actually support many of the features of versions 4 and 5 (such as VLIW, multiple
  * operations per instruction)
  *
  * Note that the DWARF record parser does not allocate heap memory at all.

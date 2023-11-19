@@ -77,7 +77,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config.h"
 
 namespace fs = std::filesystem;
@@ -1797,7 +1797,12 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     {
         const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
         if (logs_level_field)
-            updateLoggerLevel(logs_level_field->safeGet<String>());
+        {
+            auto logs_level = logs_level_field->safeGet<String>();
+            /// Check that setting value is correct before updating logger level.
+            SettingFieldLogsLevelTraits::fromString(logs_level);
+            updateLoggerLevel(logs_level);
+        }
     }
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())

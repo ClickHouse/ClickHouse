@@ -53,6 +53,7 @@ namespace CurrentMetrics
 {
     extern const Metric MergeTreeDataSelectExecutorThreads;
     extern const Metric MergeTreeDataSelectExecutorThreadsActive;
+    extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -1075,6 +1076,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+                CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
