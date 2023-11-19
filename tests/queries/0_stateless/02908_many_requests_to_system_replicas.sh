@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 NUM_TABLES=300
-CONCURRENCY=500
+CONCURRENCY=200
 
 echo "Creating $NUM_TABLES tables"
 
