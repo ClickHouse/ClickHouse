@@ -18,7 +18,6 @@ from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
 
 
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -103,6 +102,7 @@ def put_azure_file_content(filename, port, data):
     buf = io.BytesIO(data)
     blob_client.upload_blob(buf)
 
+
 @pytest.fixture(autouse=True, scope="function")
 def delete_all_files(cluster):
     port = cluster.env_variables["AZURITE_PORT"]
@@ -133,6 +133,7 @@ def test_create_table_connection_string(cluster):
         f"CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_create_connection_string', 'CSV')",
     )
 
+
 def test_backup_restore(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
@@ -140,12 +141,23 @@ def test_backup_restore(cluster):
         node,
         f"CREATE TABLE test_simple_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c.csv', 'CSV')",
     )
-    azure_query(node, f"INSERT INTO test_simple_write_connection_string VALUES (1, 'a')")
+    azure_query(
+        node, f"INSERT INTO test_simple_write_connection_string VALUES (1, 'a')"
+    )
     print(get_azure_file_content("test_simple_write_c.csv", port))
     assert get_azure_file_content("test_simple_write_c.csv", port) == '1,"a"\n'
 
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c_backup.csv', 'CSV')"
-    azure_query(node,f"BACKUP TABLE test_simple_write_connection_string TO {backup_destination}")
-    print (get_azure_file_content("test_simple_write_c_backup.csv.backup", port))
-    azure_query(node, f"RESTORE TABLE test_simple_write_connection_string AS test_simple_write_connection_string_restored FROM {backup_destination};")
-    assert(azure_query(node,f"SELECT * from test_simple_write_connection_string_restored") == "1\ta\n")
+    azure_query(
+        node,
+        f"BACKUP TABLE test_simple_write_connection_string TO {backup_destination}",
+    )
+    print(get_azure_file_content("test_simple_write_c_backup.csv.backup", port))
+    azure_query(
+        node,
+        f"RESTORE TABLE test_simple_write_connection_string AS test_simple_write_connection_string_restored FROM {backup_destination};",
+    )
+    assert (
+        azure_query(node, f"SELECT * from test_simple_write_connection_string_restored")
+        == "1\ta\n"
+    )
