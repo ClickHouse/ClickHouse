@@ -37,17 +37,26 @@ bool testCombineFilters(size_t size)
 
     auto result = combineFilters(first_filter, second_filter);
 
-    if (result->size() != size) return false;
+    if (result->size() != size)
+    {
+        return false;
+    }
 
     for (size_t i = 0; i < size; i++)
     {
         if (i % 4 == 0)
         {
-            if (result->get64(i) != 1) return false;
+            if (result->get64(i) != 1)
+            {
+                return false;
+            }
         }
         else
         {
-            if (result->get64(i) != 0) return false;
+            if (result->get64(i) != 0)
+            {
+                return false;
+            }
         }
     }
 
@@ -72,7 +81,7 @@ bool testCombineColumns(size_t size)
         auto & column_data = column->getData();
 
         non_zero_count = 0;
-        for (size_t i = 0; i < len; non_zero_count++, i+=non_zero_count)
+        for (size_t i = 0; i < len; non_zero_count++, i += non_zero_count)
         {
             column_data[i] = 1;
         }
@@ -119,7 +128,10 @@ bool testCombineColumns(size_t size)
         }
         else
         {
-            if (result_data[i] != 0) return false;
+            if (result_data[i] != 0)
+            {
+                return false;
+            }
         }
     }
 
