@@ -35,13 +35,6 @@ if (GLIBC_COMPATIBILITY)
 
     target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
 
-    # TODO: remove it
-    install(
-        TARGETS glibc-compatibility ${MEMCPY_LIBRARY}
-        EXPORT global
-        ARCHIVE DESTINATION lib
-    )
-
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 
 elseif (CLICKHOUSE_OFFICIAL_BUILD)
