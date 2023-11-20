@@ -1591,7 +1591,7 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
         if (skip_spaces)
             skipWhitespaceIfAny(buf);
 
-        if (checkString(row_between_delimiter, buf))
+        if (buf.eof() || checkString(row_between_delimiter, buf))
             break;
     }
 }
