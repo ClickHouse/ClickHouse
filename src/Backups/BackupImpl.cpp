@@ -492,6 +492,7 @@ void BackupImpl::checkBackupDoesntExist() const
     else
         file_name_to_check_existence = ".backup";
 
+    LOG_INFO(&Poco::Logger::get("BackupImpl"), "checkBackupDoesntExist 1");
     if (writer->fileExists(file_name_to_check_existence))
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
 
@@ -499,6 +500,7 @@ void BackupImpl::checkBackupDoesntExist() const
     if (!is_internal_backup)
     {
         assert(!lock_file_name.empty());
+        LOG_INFO(&Poco::Logger::get("BackupImpl"), "checkBackupDoesntExist 2");
         if (writer->fileExists(lock_file_name))
             throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name_for_logging);
     }
@@ -522,6 +524,8 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
 
     if (throw_if_failed)
     {
+        LOG_INFO(&Poco::Logger::get("BackupImpl"), "checkLockFile");
+
         if (!writer->fileExists(lock_file_name))
         {
             throw Exception(
@@ -886,12 +890,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     }
     else if (src_disk && from_immutable_file)
     {
-        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        LOG_INFO(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
         writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        LOG_INFO(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
