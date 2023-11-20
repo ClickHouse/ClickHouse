@@ -34,6 +34,7 @@ namespace CurrentMetrics
 {
     extern const Metric DatabaseOrdinaryThreads;
     extern const Metric DatabaseOrdinaryThreadsActive;
+    extern const Metric DatabaseOrdinaryThreadsScheduled;
 }
 
 namespace DB
@@ -106,7 +107,7 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, Loadin
     std::atomic<size_t> dictionaries_processed{0};
     std::atomic<size_t> tables_processed{0};
 
-    ThreadPool pool(CurrentMetrics::DatabaseOrdinaryThreads, CurrentMetrics::DatabaseOrdinaryThreadsActive);
+    ThreadPool pool(CurrentMetrics::DatabaseOrdinaryThreads, CurrentMetrics::DatabaseOrdinaryThreadsActive, CurrentMetrics::DatabaseOrdinaryThreadsScheduled);
 
     /// We must attach dictionaries before attaching tables
     /// because while we're attaching tables we may need to have some dictionaries attached
