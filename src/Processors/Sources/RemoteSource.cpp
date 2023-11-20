@@ -52,7 +52,7 @@ void RemoteSource::setStorageLimits(const std::shared_ptr<const StorageLimitsLis
 ISource::Status RemoteSource::prepare()
 {
     /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
-    if (was_query_canceled)
+    if (isCancelled())
     {
         getPort().finish();
         return Status::Finished;
@@ -77,7 +77,7 @@ ISource::Status RemoteSource::prepare()
 std::optional<Chunk> RemoteSource::tryGenerate()
 {
     /// onCancel() will do the cancel if the query was sent.
-    if (was_query_canceled)
+    if (isCancelled())
         return {};
 
     if (!was_query_sent)
@@ -169,7 +169,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
 void RemoteSource::onCancel()
 {
-    was_query_canceled = true;
     query_executor->cancel();
 }
 
@@ -177,7 +176,6 @@ void RemoteSource::onUpdatePorts()
 {
     if (getPort().isFinished())
     {
-        was_query_canceled = true;
         query_executor->finish();
     }
 }

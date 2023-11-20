@@ -45,7 +45,7 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  * @return            - true if parsed successfully, false otherwise.
  */
 template <typename T, typename EOFfunction>
-requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
+requires (std::is_same_v<std::remove_cv_t<T>, char>)
 inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_octet = -1)
 {
     if (src == nullptr || first_octet > 255)

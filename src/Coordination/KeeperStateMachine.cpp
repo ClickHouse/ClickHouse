@@ -1,5 +1,4 @@
 #include <cerrno>
-#include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -184,6 +183,15 @@ void assertDigest(
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    auto result = nuraft::buffer::alloc(sizeof(log_idx));
+    nuraft::buffer_serializer ss(result);
+    ss.put_u64(log_idx);
+
+    /// Don't preprocess anything until the first commit when we will manually pre_commit and commit
+    /// all needed logs
+    if (!keeper_context->local_logs_preprocessed)
+        return result;
+
     auto request_for_session = parseRequest(data, /*final=*/false);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
@@ -191,9 +199,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
     request_for_session->log_idx = log_idx;
 
     preprocess(*request_for_session);
-    auto result = nuraft::buffer::alloc(sizeof(log_idx));
-    nuraft::buffer_serializer ss(result);
-    ss.put_u64(log_idx);
     return result;
 }
 
@@ -533,6 +538,10 @@ void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nura
 
 void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
+    /// Don't rollback anything until the first commit because nothing was preprocessed
+    if (!keeper_context->local_logs_preprocessed)
+        return;
+
     auto request_for_session = parseRequest(data, true);
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
