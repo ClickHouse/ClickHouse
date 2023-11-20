@@ -93,11 +93,9 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64|arm64|ARM64")
 endif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64|arm64|ARM64")
 
 
-if(HAVE_SSE42)
+if(ENABLE_AVX2 AND ENABLE_PCLMULQDQ)
   add_definitions(-DHAVE_SSE42)
   add_definitions(-DHAVE_PCLMUL)
-elseif(FORCE_SSE42)
-  message(FATAL_ERROR "FORCE_SSE42=ON but unable to compile with SSE4.2 enabled")
 endif()
 
 set (HAVE_THREAD_LOCAL 1)
@@ -429,7 +427,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/util/memarena.cc
     rocksdb_build_version.cc)
 
-if(HAVE_SSE42)
+if(ENABLE_SSE42 AND ENABLE_PCLMULQDQ)
   set_source_files_properties(
     "${ROCKSDB_SOURCE_DIR}/util/crc32c.cc"
     PROPERTIES COMPILE_FLAGS "-msse4.2 -mpclmul")
