@@ -82,8 +82,9 @@ SELECT concat(materialize(42 :: Int32), materialize(144 :: UInt64));
 SELECT concat(materialize(42 :: Int32), materialize(144 :: UInt64), materialize(255 :: UInt32));
 SELECT concat(42, 144);
 SELECT concat(42, 144, 255);
+SELECT concat(42);
+SELECT concat('foo');
 
 SELECT CONCAT('Testing the ', 'alias');
 
 SELECT concat();  -- { serverError 42 }
-SELECT concat(1); -- { serverError 42 }
