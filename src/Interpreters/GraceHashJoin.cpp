@@ -424,8 +424,10 @@ void GraceHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = sample_block.cloneEmpty();
     output_sample_block = left_sample_block.cloneEmpty();
-    ExtraBlockPtr not_processed;
+    ExtraBlockPtr not_processed = nullptr;
     hash_join->joinBlock(output_sample_block, not_processed);
+    if (not_processed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
     initBuckets();
 }
 
@@ -447,9 +449,6 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
     block = std::move(blocks[current_bucket->idx]);
 
     hash_join->joinBlock(block, not_processed);
-    if (not_processed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
-
     flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
 }
 
@@ -528,6 +527,13 @@ public:
 
     Block nextImpl() override
     {
+        if (not_processed)
+        {
+            Block block = not_processed->block;
+            hash_join->joinBlock(block, not_processed);
+            return block;
+        }
+
         Block block;
         size_t num_buckets = buckets.size();
         size_t current_idx = buckets[current_bucket]->idx;
@@ -565,12 +571,7 @@ public:
             }
         } while (block.rows() == 0);
 
-        ExtraBlockPtr not_processed;
         hash_join->joinBlock(block, not_processed);
-
-        if (not_processed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported hash join type");
-
         return block;
     }
 
@@ -582,6 +583,8 @@ public:
 
     Names left_key_names;
     Names right_key_names;
+
+    ExtraBlockPtr not_processed = nullptr;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
