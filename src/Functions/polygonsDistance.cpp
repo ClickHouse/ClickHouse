@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -26,6 +26,9 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 template <typename Point>
 class FunctionPolygonsDistance : public IFunction
@@ -77,7 +80,7 @@ public:
             using RightConverter = typename RightConverterType::Type;
 
             if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, LeftConverter> || std::is_same_v<ColumnToPointsConverter<Point>, RightConverter>)
-                throw Exception(fmt::format("Any argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be Point", getName());
             else
             {
                 auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
@@ -108,12 +111,12 @@ const char * FunctionPolygonsDistance<CartesianPoint>::name = "polygonsDistanceC
 template <>
 const char * FunctionPolygonsDistance<SphericalPoint>::name = "polygonsDistanceSpherical";
 
+}
 
-void registerFunctionPolygonsDistance(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonsDistance)
 {
     factory.registerFunction<FunctionPolygonsDistance<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsDistance<SphericalPoint>>();
 }
-
 
 }

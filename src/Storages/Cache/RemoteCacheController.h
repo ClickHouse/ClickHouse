@@ -9,7 +9,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Storages/Cache/IRemoteFileMetadata.h>
-#include <base/logger_useful.h>
 #include <Poco/Logger.h>
 #include <Common/ErrorCodes.h>
 

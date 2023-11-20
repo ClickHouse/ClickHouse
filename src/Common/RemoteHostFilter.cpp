@@ -1,4 +1,3 @@
-#include <re2/re2.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/RemoteHostFilter.h>
@@ -6,6 +5,14 @@
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -18,14 +25,16 @@ void RemoteHostFilter::checkURL(const Poco::URI & uri) const
 {
     if (!checkForDirectEntry(uri.getHost()) &&
         !checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
-        throw Exception("URL \"" + uri.toString() + "\" is not allowed in configuration file, see <remote_url_allow_hosts>", ErrorCodes::UNACCEPTABLE_URL);
+        throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}\" is not allowed in configuration file, "
+                                                      "see <remote_url_allow_hosts>", uri.toString());
 }
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
     if (!checkForDirectEntry(host) &&
         !checkForDirectEntry(host + ":" + port))
-        throw Exception("URL \"" + host + ":" + port + "\" is not allowed in configuration file, see <remote_url_allow_hosts>", ErrorCodes::UNACCEPTABLE_URL);
+        throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}:{}\" is not allowed in configuration file, "
+                                                      "see <remote_url_allow_hosts>", host, port);
 }
 
 void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)

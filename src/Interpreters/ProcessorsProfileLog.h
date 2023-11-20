@@ -13,9 +13,13 @@ struct ProcessorProfileLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
-    UInt64 id;
+    UInt64 id{};
     std::vector<UInt64> parent_ids;
 
+    UInt64 plan_step{};
+    UInt64 plan_group{};
+
+    String initial_query_id;
     String query_id;
     String processor_name;
 
@@ -26,21 +30,22 @@ struct ProcessorProfileLogElement
     /// IProcessor::PortFull
     UInt32 output_wait_elapsed_us{};
 
+    size_t input_rows{};
+    size_t input_bytes{};
+    size_t output_rows{};
+    size_t output_bytes{};
+
     static std::string name() { return "ProcessorsProfileLog"; }
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>
 {
 public:
-    ProcessorsProfileLog(
-        ContextPtr context_,
-        const String & database_name_,
-        const String & table_name_,
-        const String & storage_def_,
-        size_t flush_interval_milliseconds_);
+    using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
 
 }

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void registerFunctionMaterialize(FunctionFactory & factory)
+REGISTER_FUNCTION(Materialize)
 {
     factory.registerFunction<FunctionMaterialize>();
 }

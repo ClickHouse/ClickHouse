@@ -1,17 +1,23 @@
 #pragma once
 
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <vector>
 #include <memory>
 #include <utility>
+#include <mutex>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
@@ -29,7 +35,7 @@ struct MergeTreeIndexFormat
     MergeTreeIndexVersion version;
     const char* extension;
 
-    operator bool() const { return version != 0; } /// NOLINT
+    explicit operator bool() const { return version != 0; }
 };
 
 /// Stores some info about a single block of data.
@@ -147,9 +153,9 @@ struct IMergeTreeIndex
     /// Returns extension for deserialization.
     ///
     /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
+    virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
     {
-        if (disk->exists(relative_path_prefix + ".idx"))
+        if (data_part_storage.exists(relative_path_prefix + ".idx"))
             return {1, ".idx"};
         return {0 /*unknown*/, ""};
     }
@@ -159,7 +165,12 @@ struct IMergeTreeIndex
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
+
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
+    {
+        return createIndexAggregator(settings);
+    }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query_info, ContextPtr context) const = 0;
@@ -222,5 +233,18 @@ void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
+
+#ifdef ENABLE_ANNOY
+MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
+void annoyIndexValidator(const IndexDescription & index, bool attach);
+#endif
+
+#ifdef ENABLE_USEARCH
+MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
+void usearchIndexValidator(const IndexDescription& index, bool attach);
+#endif
+
+MergeTreeIndexPtr invertedIndexCreator(const IndexDescription& index);
+void invertedIndexValidator(const IndexDescription& index, bool attach);
 
 }

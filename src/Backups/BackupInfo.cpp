@@ -17,9 +17,25 @@ namespace ErrorCodes
 
 String BackupInfo::toString() const
 {
+    ASTPtr ast = toAST();
+    return serializeAST(*ast);
+}
+
+
+BackupInfo BackupInfo::fromString(const String & str)
+{
+    ParserIdentifierWithOptionalParameters parser;
+    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    return fromAST(*ast);
+}
+
+
+ASTPtr BackupInfo::toAST() const
+{
     auto func = std::make_shared<ASTFunction>();
     func->name = backup_engine_name;
     func->no_empty_args = true;
+    func->kind = ASTFunction::Kind::BACKUP_NAME;
 
     auto list = std::make_shared<ASTExpressionList>();
     func->arguments = list;
@@ -32,15 +48,7 @@ String BackupInfo::toString() const
     for (const auto & arg : args)
         list->children.push_back(std::make_shared<ASTLiteral>(arg));
 
-    return serializeAST(*func);
-}
-
-
-BackupInfo BackupInfo::fromString(const String & str)
-{
-    ParserIdentifierWithOptionalParameters parser;
-    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    return fromAST(*ast);
+    return func;
 }
 
 
@@ -84,5 +92,29 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
     return res;
 }
 
+
+String BackupInfo::toStringForLogging() const
+{
+    return toAST()->formatForLogging();
+}
+
+void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
+{
+    /// named_collection case, no need to update
+    if (!dest.id_arg.empty() || !id_arg.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup is not compatible with named_collections");
+
+    if (backup_engine_name != "S3")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", toStringForLogging());
+    if (dest.backup_engine_name != "S3")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", dest.toStringForLogging());
+    if (args.size() != 3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup requires access_key_id, secret_access_key, got {}", toStringForLogging());
+
+    auto & dest_args = dest.args;
+    dest_args.resize(3);
+    dest_args[1] = args[1];
+    dest_args[2] = args[2];
+}
 
 }

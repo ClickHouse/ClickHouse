@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/statements/select/sample
 sidebar_label: SAMPLE
 ---
 
-# SAMPLE Clause {#select-sample-clause}
+# SAMPLE Clause
 
 The `SAMPLE` clause allows for approximated `SELECT` query processing.
 
@@ -10,9 +11,9 @@ When data sampling is enabled, the query is not performed on all the data, but o
 
 Approximated query processing can be useful in the following cases:
 
--   When you have strict latency requirements (like below 100ms) but you can’t justify the cost of additional hardware resources to meet them.
--   When your raw data is not accurate, so approximation does not noticeably degrade the quality.
--   Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
+- When you have strict latency requirements (like below 100ms) but you can’t justify the cost of additional hardware resources to meet them.
+- When your raw data is not accurate, so approximation does not noticeably degrade the quality.
+- Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
 :::note    
 You can only use sampling with the tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
@@ -20,9 +21,9 @@ You can only use sampling with the tables in the [MergeTree](../../../engines/ta
 
 The features of data sampling are listed below:
 
--   Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
--   Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](../../../sql-reference/operators/in.md) clause. Also, you can join samples using the [JOIN](../../../sql-reference/statements/select/join.md) clause.
--   Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table).
+- Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
+- Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](../../../sql-reference/operators/in.md) clause. Also, you can join samples using the [JOIN](../../../sql-reference/statements/select/join.md) clause.
+- Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table).
 
 For the `SAMPLE` clause the following syntax is supported:
 

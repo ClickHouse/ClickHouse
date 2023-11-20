@@ -1,6 +1,6 @@
--- Tags: zookeeper, no-parallel
+-- Tags: zookeeper
 
-DROP TABLE IF EXISTS merge_tree_pk;
+DROP TABLE IF EXISTS merge_tree_pk SYNC;
 
 CREATE TABLE merge_tree_pk
 (
@@ -24,9 +24,9 @@ ATTACH TABLE merge_tree_pk;
 
 SELECT * FROM merge_tree_pk FINAL ORDER BY key, value;
 
-DROP TABLE IF EXISTS merge_tree_pk;
+DROP TABLE IF EXISTS merge_tree_pk SYNC;
 
-DROP TABLE IF EXISTS merge_tree_pk_sql;
+DROP TABLE IF EXISTS merge_tree_pk_sql SYNC;
 
 CREATE TABLE merge_tree_pk_sql
 (
@@ -60,9 +60,9 @@ SELECT * FROM merge_tree_pk_sql FINAL ORDER BY key, value;
 
 SHOW CREATE TABLE merge_tree_pk_sql;
 
-DROP TABLE IF EXISTS merge_tree_pk_sql;
+DROP TABLE IF EXISTS merge_tree_pk_sql SYNC;
 
-DROP TABLE IF EXISTS replicated_merge_tree_pk_sql;
+DROP TABLE IF EXISTS replicated_merge_tree_pk_sql SYNC;
 
 CREATE TABLE replicated_merge_tree_pk_sql
 (
@@ -70,7 +70,7 @@ CREATE TABLE replicated_merge_tree_pk_sql
     value String,
     PRIMARY KEY (key)
 )
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/test/01532_primary_key_without', 'r1');
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{database}/01532_primary_key_without', 'r1');
 
 SHOW CREATE TABLE replicated_merge_tree_pk_sql;
 
@@ -99,4 +99,4 @@ ATTACH TABLE replicated_merge_tree_pk_sql;
 
 SHOW CREATE TABLE replicated_merge_tree_pk_sql;
 
-DROP TABLE IF EXISTS replicated_merge_tree_pk_sql;
+DROP TABLE IF EXISTS replicated_merge_tree_pk_sql SYNC;

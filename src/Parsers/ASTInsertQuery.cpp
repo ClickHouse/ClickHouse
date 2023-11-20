@@ -138,13 +138,13 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     }
 }
 
-void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state) const
+void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(table_id.database_name);
     hash_state.update(table_id.table_name);
     hash_state.update(table_id.uuid);
     hash_state.update(format);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -160,7 +160,7 @@ static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function
         if (table_function_ast->name == "input")
         {
             if (input_function)
-                throw Exception("You can use 'input()' function only once per request.", ErrorCodes::INVALID_USAGE_OF_INPUT);
+                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "You can use 'input()' function only once per request.");
             input_function = ast;
         }
     }

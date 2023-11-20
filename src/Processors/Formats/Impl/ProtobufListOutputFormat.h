@@ -1,13 +1,13 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowOutputFormat.h>
+#   include <Formats/FormatSchemaInfo.h>
 
 namespace DB
 {
-class FormatSchemaInfo;
 class ProtobufWriter;
 class ProtobufSerializer;
 
@@ -26,8 +26,8 @@ public:
     ProtobufListOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
-        const FormatSchemaInfo & schema_info_);
+        const ProtobufSchemaInfo & schema_info_,
+        bool defaults_for_nullable_google_wrappers_);
 
     String getName() const override { return "ProtobufListOutputFormat"; }
 
@@ -38,6 +38,7 @@ private:
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
 
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     std::unique_ptr<ProtobufWriter> writer;
     std::unique_ptr<ProtobufSerializer> serializer;

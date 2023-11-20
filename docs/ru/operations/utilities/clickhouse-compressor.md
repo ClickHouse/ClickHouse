@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/utilities/clickhouse-compressor
+---
 ## ClickHouse compressor
 
 Simple program for data compression and decompression in ClickHouse way.

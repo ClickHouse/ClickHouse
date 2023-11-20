@@ -1,0 +1,59 @@
+const arguments byteHammingDistance
+0
+const arguments editDistance
+6
+const arguments stringJaccardIndex
+0.4
+byteHammingDistance
+7
+1
+7
+10
+byteHammingDistance(const, non const)
+3
+3
+6
+10
+byteHammingDistance(non const, const)
+3
+6
+6
+10
+mismatches(alias)
+7
+1
+7
+10
+3
+3
+6
+10
+3
+6
+6
+10
+stringJaccardIndex
+0
+0.8571428571428571
+0.8571428571428571
+0.4
+0
+0.8571428571428571
+0.8571428571428571
+0.4
+0.4
+0
+0
+0
+0
+0.25	0.625
+editDistance
+7
+1
+1
+6
+levenshteinDistance
+7
+1
+1
+6

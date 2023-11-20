@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <base/types.h>
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
@@ -34,28 +35,26 @@ extern const int ATTEMPT_TO_READ_AFTER_EOF;
 
 class BitReader
 {
-    using BufferType = unsigned __int128;
-
-    const char * source_begin;
+    const char * const source_begin;
+    const char * const source_end;
     const char * source_current;
-    const char * source_end;
 
-    BufferType bits_buffer;
-    UInt8 bits_count;
+    using BufferType = unsigned __int128;
+    BufferType bits_buffer = 0;
+
+    UInt8 bits_count = 0;
 
 public:
     BitReader(const char * begin, size_t size)
-        : source_begin(begin),
-          source_current(begin),
-          source_end(begin + size),
-          bits_buffer(0),
-          bits_count(0)
+        : source_begin(begin)
+        , source_end(begin + size)
+        , source_current(begin)
     {}
 
     ~BitReader() = default;
 
     // reads bits_to_read high-bits from bits_buffer
-    inline UInt64 readBits(UInt8 bits_to_read)
+    ALWAYS_INLINE UInt64 readBits(UInt8 bits_to_read)
     {
         if (bits_to_read > bits_count)
             fillBitBuffer();
@@ -63,7 +62,7 @@ public:
         return getBitsFromBitBuffer<CONSUME>(bits_to_read);
     }
 
-    inline UInt8 peekByte()
+    UInt8 peekByte()
     {
         if (bits_count < 8)
             fillBitBuffer();
@@ -71,31 +70,31 @@ public:
         return getBitsFromBitBuffer<PEEK>(8);
     }
 
-    inline UInt8 readBit()
+    ALWAYS_INLINE UInt8 readBit()
     {
         return static_cast<UInt8>(readBits(1));
     }
 
     // skip bits from bits_buffer
-    inline void skipBufferedBits(UInt8 bits)
+    void skipBufferedBits(UInt8 bits)
     {
         bits_buffer <<= bits;
         bits_count -= bits;
     }
 
 
-    inline bool eof() const
+    bool eof() const
     {
         return bits_count == 0 && source_current >= source_end;
     }
 
     // number of bits that was already read by clients with readBits()
-    inline UInt64 count() const
+    UInt64 count() const
     {
         return (source_current - source_begin) * 8 - bits_count;
     }
 
-    inline UInt64 remaining() const
+    UInt64 remaining() const
     {
         return (source_end - source_current) * 8 + bits_count;
     }
@@ -104,7 +103,7 @@ private:
     enum GetBitsMode {CONSUME, PEEK};
     // read data from internal buffer, if it has not enough bits, result is undefined.
     template <GetBitsMode mode>
-    inline UInt64 getBitsFromBitBuffer(UInt8 bits_to_read)
+    UInt64 getBitsFromBitBuffer(UInt8 bits_to_read)
     {
         assert(bits_to_read > 0);
 
@@ -122,7 +121,7 @@ private:
 
 
     // Fills internal bits_buffer with data from source, reads at most 64 bits
-    size_t fillBitBuffer()
+    ALWAYS_INLINE size_t fillBitBuffer()
     {
         const size_t available = source_end - source_current;
         const auto bytes_to_read = std::min<size_t>(64 / 8, available);
@@ -131,16 +130,16 @@ private:
             if (bytes_to_read == 0)
                 return 0;
 
-            throw Exception("Buffer is empty, but requested to read "
-                            + std::to_string(bytes_to_read) + " more bytes.",
-                            ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Buffer is empty, but requested to read {} more bytes.",
+                            bytes_to_read);
         }
 
         UInt64 tmp_buffer = 0;
         memcpy(&tmp_buffer, source_current, bytes_to_read);
         source_current += bytes_to_read;
 
-        tmp_buffer = __builtin_bswap64(tmp_buffer);
+        if constexpr (std::endian::native == std::endian::little)
+            tmp_buffer = std::byteswap(tmp_buffer);
 
         bits_buffer |= BufferType(tmp_buffer) << ((sizeof(BufferType) - sizeof(tmp_buffer)) * 8 - bits_count);
         bits_count += static_cast<UInt8>(bytes_to_read) * 8;
@@ -151,24 +150,22 @@ private:
 
 class BitWriter
 {
-    using BufferType = unsigned __int128;
-
     char * dest_begin;
-    char * dest_current;
     char * dest_end;
+    char * dest_current;
 
-    BufferType bits_buffer;
-    UInt8 bits_count;
+    using BufferType = unsigned __int128;
+    BufferType bits_buffer = 0;
+
+    UInt8 bits_count = 0;
 
     static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
 
 public:
     BitWriter(char * begin, size_t size)
-        : dest_begin(begin),
-          dest_current(begin),
-          dest_end(begin + size),
-          bits_buffer(0),
-          bits_count(0)
+        : dest_begin(begin)
+        , dest_end(begin + size)
+        , dest_current(begin)
     {}
 
     ~BitWriter()
@@ -177,7 +174,7 @@ public:
     }
 
     // write `bits_to_write` low-bits of `value` to the buffer
-    inline void writeBits(UInt8 bits_to_write, UInt64 value)
+    void writeBits(UInt8 bits_to_write, UInt64 value)
     {
         assert(bits_to_write > 0);
 
@@ -198,14 +195,14 @@ public:
     }
 
     // flush contents of bits_buffer to the dest_current, partial bytes are completed with zeroes.
-    inline void flush()
+    void flush()
     {
         bits_count = (bits_count + 8 - 1) & ~(8 - 1); // align up to 8-bytes, so doFlush will write all data from bits_buffer
         while (bits_count != 0)
             doFlush();
     }
 
-    inline UInt64 count() const
+    UInt64 count() const
     {
         return (dest_current - dest_begin) * 8 + bits_count;
     }
@@ -220,11 +217,14 @@ private:
         if (available < to_write)
         {
             throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER,
-                "Can not write past end of buffer. Space available {} bytes, required to write {} bytes.",
+                "Can not write past end of buffer. Space available is {} bytes, required to write {} bytes.",
                 available, to_write);
         }
 
-        const auto tmp_buffer = __builtin_bswap64(static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8));
+        UInt64 tmp_buffer = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8);
+        if constexpr (std::endian::native == std::endian::little)
+            tmp_buffer = std::byteswap(tmp_buffer);
+
         memcpy(dest_current, &tmp_buffer, to_write);
         dest_current += to_write;
 

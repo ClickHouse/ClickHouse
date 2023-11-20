@@ -1,4 +1,4 @@
-#include <time.h>
+#include <ctime>
 #include <unistd.h>
 #include <sys/types.h>
 #include <Common/Exception.h>
@@ -7,13 +7,16 @@
 #include <base/getThreadId.h>
 #include <base/types.h>
 
+#if defined(__linux__)
+#include <sys/utsname.h>
+#endif
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_CLOCK_GETTIME;
-    }
+namespace ErrorCodes
+{
+    extern const int CANNOT_CLOCK_GETTIME;
+}
 }
 
 
@@ -29,6 +32,15 @@ DB::UInt64 randomSeed()
     hash.update(times.tv_nsec);
     hash.update(times.tv_sec);
     hash.update(getThreadId());
-    hash.update(&times);
+
+    /// It makes sense to add something like hostname to avoid seed collision when multiple servers start simultaneously.
+    /// But randomSeed() must be signal-safe and gethostname and similar functions are not.
+    /// Let's try to get utsname.nodename using uname syscall (it's signal-safe).
+#if defined(__linux__)
+    struct utsname sysinfo;
+    if (uname(&sysinfo) == 0)
+        hash.update<std::identity>(sysinfo);
+#endif
+
     return hash.get64();
 }

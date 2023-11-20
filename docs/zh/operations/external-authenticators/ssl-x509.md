@@ -1,1 +1,0 @@
-../../../en/operations/external-authenticators/ssl-x509.md

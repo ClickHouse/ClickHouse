@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/special/dictionary
 sidebar_position: 35
 sidebar_label: Dictionary
 ---

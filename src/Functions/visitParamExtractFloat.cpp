@@ -6,16 +6,13 @@
 namespace DB
 {
 
-struct NameVisitParamExtractFloat  { static constexpr auto name = "visitParamExtractFloat"; };
-using FunctionVisitParamExtractFloat = FunctionsStringSearch<ExtractParamImpl<NameVisitParamExtractFloat, ExtractNumericType<Float64>>>;
-
-struct NameSimpleJSONExtractFloat  { static constexpr auto name = "simpleJSONExtractFloat"; };
+struct NameSimpleJSONExtractFloat { static constexpr auto name = "simpleJSONExtractFloat"; };
 using FunctionSimpleJSONExtractFloat = FunctionsStringSearch<ExtractParamImpl<NameSimpleJSONExtractFloat, ExtractNumericType<Float64>>>;
 
-void registerFunctionVisitParamExtractFloat(FunctionFactory & factory)
+REGISTER_FUNCTION(VisitParamExtractFloat)
 {
-    factory.registerFunction<FunctionVisitParamExtractFloat>();
     factory.registerFunction<FunctionSimpleJSONExtractFloat>();
+    factory.registerAlias("visitParamExtractFloat", "simpleJSONExtractFloat");
 }
 
 }

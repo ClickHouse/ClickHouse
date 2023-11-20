@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/update
 sidebar_position: 47
 sidebar_label: "更新"
 ---

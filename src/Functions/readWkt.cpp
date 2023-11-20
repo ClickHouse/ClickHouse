@@ -16,6 +16,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWKT : public IFunction
@@ -41,8 +43,7 @@ public:
     {
         if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
         {
-            throw Exception("First argument should be String",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
         }
 
         return DataTypeFactory::instance().get(DataTypeName().getName());
@@ -96,7 +97,9 @@ struct ReadWKTMultiPolygonNameHolder
     static constexpr const char * name = "readWKTMultiPolygon";
 };
 
-void registerFunctionReadWKT(FunctionFactory & factory)
+}
+
+REGISTER_FUNCTION(ReadWKT)
 {
     factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();

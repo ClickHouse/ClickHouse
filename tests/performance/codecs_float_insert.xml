@@ -12,6 +12,7 @@
                 <value>ZSTD</value>
                 <value>DoubleDelta</value>
                 <value>Gorilla</value>
+                <value>FPC</value>
             </values>
         </substitution>
         <substitution>

@@ -2,7 +2,7 @@
 
 
 #include <string.h>
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
 #endif
 #include <algorithm>
@@ -273,13 +273,13 @@ private:
 
         {
             /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
-            size_t sums[NUM_PASSES] = {0};
+            CountType sums[NUM_PASSES] = {0};
 
             for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
             {
                 for (size_t pass = 0; pass < NUM_PASSES; ++pass)
                 {
-                    size_t tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
+                    CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
                     histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
                     sums[pass] = tmp;
                 }
@@ -355,8 +355,6 @@ private:
     template <size_t PASS>
     static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
     {
-//        std::cerr << PASS << ", " << size << ", " << limit << "\n";
-
         /// The beginning of every i-1-th bucket. 0th element will be equal to 1st.
         /// Last element will point to array end.
         std::unique_ptr<Element *[]> prev_buckets{new Element*[HISTOGRAM_SIZE + 1]};

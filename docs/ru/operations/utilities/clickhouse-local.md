@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/utilities/clickhouse-local
 sidebar_position: 60
 sidebar_label: clickhouse-local
 ---
@@ -11,8 +12,9 @@ sidebar_label: clickhouse-local
 
 `clickhouse-local` при настройке по умолчанию не имеет доступа к данным, которыми управляет сервер ClickHouse, установленный на этом же хосте, однако можно подключить конфигурацию сервера с помощью ключа `--config-file`.
 
-:::danger "Warning"
-    Мы не рекомендуем подключать серверную конфигурацию к `clickhouse-local`, поскольку данные можно легко повредить неосторожными действиями.
+:::danger Предупреждение
+Мы не рекомендуем подключать серверную конфигурацию к `clickhouse-local`, поскольку данные можно легко повредить неосторожными действиями.
+:::
 
 Для временных данных по умолчанию создается специальный каталог.
 
@@ -28,12 +30,12 @@ $ clickhouse-local --structure "table_structure" --input-format "format_of_incom
 Ключи команды:
 
 -   `-S`, `--structure` — структура таблицы, в которую будут помещены входящие данные.
--   `-if`, `--input-format` — формат входящих данных. По умолчанию — `TSV`.
+-   `--input-format` — формат входящих данных. По умолчанию — `TSV`.
 -   `-f`, `--file` — путь к файлу с данными. По умолчанию — `stdin`.
 -   `-q`, `--query` — запросы на выполнение. Разделитель запросов — `;`.
--   `-qf`, `--queries-file` - путь к файлу с запросами для выполнения. Необходимо задать либо параметр `query`, либо `queries-file`.
+-   `--queries-file` - путь к файлу с запросами для выполнения. Необходимо задать либо параметр `query`, либо `queries-file`.
 -   `-N`, `--table` — имя таблицы, в которую будут помещены входящие данные. По умолчанию - `table`.
--   `-of`, `--format`, `--output-format` — формат выходных данных. По умолчанию — `TSV`.
+-   `--format`, `--output-format` — формат выходных данных. По умолчанию — `TSV`.
 -   `-d`, `--database` — база данных по умолчанию. Если не указано, используется значение `_local`.
 -   `--stacktrace` — вывод отладочной информации при исключениях.
 -   `--echo` — перед выполнением  запрос выводится в консоль.
@@ -110,3 +112,41 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
+## Запрос данных в файле с помощью SQL {#query_data_in_file}
+
+Часто `clickhouse-local` используется для выполнения специальных запросов к файлам, когда не нужно вставлять данные в таблицу. `clickhouse-local` может транслировать данные из файла во временную таблицу и выполнить ваш SQL.
+
+Если файл находится на той же машине, что и `clickhouse-local`, то можно просто указать файл для загрузки. Следующий файл `reviews.tsv` содержит выборку отзывов о товарах Amazon:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
+```
+
+Эта команда является сокращением команды:
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
+```
+
+ClickHouse знает, что файл использует формат, разделенный табуляцией, из расширения имени файла. Если необходимо явно указать формат, просто добавьте один из [множества входных форматов ClickHouse](../../interfaces/formats.md):
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+```
+
+Функция таблицы `file` создает таблицу, и вы можете использовать `DESCRIBE` для просмотра предполагаемой схемы:
+
+```bash
+./clickhouse local -q "DESCRIBE file('reviews.tsv')"
+```
+
+:::tip
+В имени файла разрешается использовать [Шаблоны поиска](/docs/ru/sql-reference/table-functions/file.md/#globs-in-path).
+
+Примеры:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews*.jsonl'"
+./clickhouse local -q "SELECT * FROM 'review_?.csv'"
+./clickhouse local -q "SELECT * FROM 'review_{1..3}.csv'"
+```

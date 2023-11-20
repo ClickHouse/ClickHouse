@@ -55,7 +55,7 @@ void TransactionsInfoLogElement::fillCommonFields(const TransactionInfoContext *
     event_time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     thread_id = getThreadId();
 
-    query_id = CurrentThread::getQueryId().toString();
+    query_id = std::string(CurrentThread::getQueryId());
 
     if (!context)
         return;
@@ -101,7 +101,7 @@ try
     elem.type = type;
     elem.tid = tid;
     elem.fillCommonFields(&context);
-    system_log->add(elem);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {

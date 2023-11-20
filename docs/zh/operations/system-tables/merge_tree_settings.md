@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/merge_tree_settings
+---
 # system.merge_tree_settings {#system-merge_tree_settings}
 
 包含 `MergeTree` 表的设置 (Setting) 信息。
@@ -13,10 +16,10 @@
 
 **示例**
 ```sql
-:) SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
+SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
 ```
 
-```text
+```response
 Row 1:
 ──────
 name:        index_granularity
@@ -51,5 +54,3 @@ type:        SettingUInt64
 
 4 rows in set. Elapsed: 0.001 sec.
 ```
-
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/merge_tree_settings) <!--hide-->

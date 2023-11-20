@@ -45,16 +45,15 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
     size_t num_rows = size();
 
     if (num_rows != selector.size())
-        throw Exception(
-                "Size of selector: " + std::to_string(selector.size()) + " doesn't match size of column: " + std::to_string(num_rows),
-                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector: {} doesn't match size of column: {}",
+                selector.size(), num_rows);
 
     std::vector<MutablePtr> columns(num_columns);
     for (auto & column : columns)
         column = cloneEmpty();
 
     {
-        size_t reserve_size = num_rows * 1.1 / num_columns;    /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = static_cast<size_t>(num_rows * 1.1 / num_columns);    /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)
@@ -81,7 +80,8 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     if constexpr (use_indexes)
     {
         num_indexes = row_indexes->size();
-        next_index = indexes = row_indexes->data();
+        indexes = row_indexes->data();
+        next_index = indexes;
     }
 
     compare_results.resize(num_rows);
@@ -89,9 +89,8 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     if (compare_results.empty())
         compare_results.resize(num_rows);
     else if (compare_results.size() != num_rows)
-        throw Exception(
-                "Size of compare_results: " + std::to_string(compare_results.size()) + " doesn't match rows_num: " + std::to_string(num_rows),
-                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of compare_results: {} doesn't match rows_num: {}",
+                compare_results.size(), num_rows);
 
     for (size_t i = 0; i < num_indexes; ++i)
     {
@@ -100,15 +99,9 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
         if constexpr (use_indexes)
             row = indexes[i];
 
-        int res = compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-
-        /// We need to convert int to Int8. Sometimes comparison return values which do not fit in one byte.
-        if (res < 0)
-            compare_results[row] = -1;
-        else if (res > 0)
-            compare_results[row] = 1;
-        else
-            compare_results[row] = 0;
+        int res = static_cast<const Derived *>(this)->compareAt(row, rhs_row_num, rhs, nan_direction_hint);
+        assert(res == 1 || res == -1 || res == 0);
+        compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
             compare_results[row] = -compare_results[row];
@@ -124,7 +117,10 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     }
 
     if constexpr (use_indexes)
-        row_indexes->resize(next_index - row_indexes->data());
+    {
+        size_t equal_row_indexes_size = next_index - row_indexes->data();
+        row_indexes->resize(equal_row_indexes_size);
+    }
 }
 
 template <typename Derived>
@@ -168,16 +164,14 @@ double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Value of 'sample_ratio' must be in interval (0.0; 1.0], but got: {}", sample_ratio);
 
-    /// Randomize a little to avoid boundary effects.
-    std::uniform_int_distribution<size_t> dist(1, static_cast<size_t>(1.0 / sample_ratio));
+    static constexpr auto max_number_of_rows_for_full_search = 1000;
 
     size_t num_rows = size();
-    size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);
-    size_t num_checked_rows = dist(thread_local_rng);
-    num_sampled_rows = std::min(num_sampled_rows + dist(thread_local_rng), num_rows);
+    size_t num_sampled_rows = std::min(static_cast<size_t>(num_rows * sample_ratio), num_rows);
+    size_t num_checked_rows = 0;
     size_t res = 0;
 
-    if (num_sampled_rows == num_rows)
+    if (num_sampled_rows == num_rows || num_rows <= max_number_of_rows_for_full_search)
     {
         for (size_t i = 0; i < num_rows; ++i)
             res += static_cast<const Derived &>(*this).isDefaultAt(i);
@@ -185,7 +179,7 @@ double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
     }
     else if (num_sampled_rows != 0)
     {
-        for (size_t i = num_checked_rows; i < num_rows; ++i)
+        for (size_t i = 0; i < num_rows; ++i)
         {
             if (num_checked_rows * num_rows <= i * num_sampled_rows)
             {
@@ -195,7 +189,20 @@ double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
         }
     }
 
+    if (num_checked_rows == 0)
+        return 0.0;
+
     return static_cast<double>(res) / num_checked_rows;
+}
+
+template <typename Derived>
+UInt64 IColumn::getNumberOfDefaultRowsImpl() const
+{
+    UInt64 res = 0;
+    size_t num_rows = size();
+    for (size_t i = 0; i < num_rows; ++i)
+        res += static_cast<const Derived &>(*this).isDefaultAt(i);
+    return res;
 }
 
 template <typename Derived>

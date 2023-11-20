@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-/// @note We place strings in ascending order here under the assumption it colud speed up String to Enum conversion.
+/// @note We place strings in ascending order here under the assumption it could speed up String to Enum conversion.
 String makeStringsEnum(const std::set<String> & values)
 {
     String enum_string = "Enum8(";
@@ -141,7 +141,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
 
     if (function_node.name == "if")
     {
-        if (function_node.arguments->children.size() != 2)
+        if (function_node.arguments->children.size() != 3)
             return;
 
         const ASTLiteral * literal1 = function_node.arguments->children[1]->as<ASTLiteral>();

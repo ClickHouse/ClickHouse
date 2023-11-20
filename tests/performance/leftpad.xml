@@ -1,7 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
     <settings><max_threads>1</max_threads></settings>
 
     <query><![CDATA[SELECT max(length(MobilePhoneModel)) FROM hits_100m_single]]></query>

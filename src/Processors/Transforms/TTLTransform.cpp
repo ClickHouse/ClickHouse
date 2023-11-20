@@ -49,7 +49,8 @@ TTLTransform::TTLTransform(
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
-            group_by_ttl, old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_, getInputPort().getHeader(), storage_));
+                group_by_ttl, old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
+                getInputPort().getHeader(), storage_));
 
     if (metadata_snapshot_->hasAnyColumnTTL())
     {
@@ -144,6 +145,8 @@ void TTLTransform::finalize()
         else
             LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
     }
+    else
+        LOG_DEBUG(log, "No delete algorithm was applied for part {}", data_part->name);
 }
 
 IProcessor::Status TTLTransform::prepare()

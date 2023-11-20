@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 COPYING_FAIL_PROBABILITY = 0.1
 MOVING_FAIL_PROBABILITY = 0.1
 
-cluster = ClickHouseCluster(__file__, name="copier_test_trivial")
+cluster = ClickHouseCluster(__file__)
 
 
 def generateRandomString(count):
@@ -78,7 +78,7 @@ class TaskTrivial:
 
         source.query(
             "INSERT INTO trivial SELECT * FROM system.numbers LIMIT 1002",
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
 
     def check(self):
@@ -123,7 +123,7 @@ class TaskReplicatedWithoutArguments:
 
         source.query(
             "INSERT INTO trivial_without_arguments SELECT * FROM system.numbers LIMIT 1002",
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
 
     def check(self):

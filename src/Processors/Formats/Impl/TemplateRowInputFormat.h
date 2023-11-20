@@ -5,6 +5,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParsedTemplateFormatString.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Interpreters/Context.h>
@@ -118,15 +119,18 @@ public:
                          std::string row_between_delimiter,
                          const FormatSettings & format_settings_);
 
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
 private:
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+
     PeekableReadBuffer buf;
     const ParsedTemplateFormatString format;
     const ParsedTemplateFormatString row_format;
-    FormatSettings format_settings;
     TemplateFormatReader format_reader;
     bool first_row = true;
+    JSONInferenceInfo json_inference_info;
+    const char default_csv_delimiter;
 };
 
 bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces);

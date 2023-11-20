@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
+#include <base/insertAtEnd.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -15,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
+    extern const int ACCESS_ENTITY_NOT_FOUND;
 }
 
 using Storage = IAccessStorage;
@@ -42,26 +44,24 @@ MultipleAccessStorage::~MultipleAccessStorage()
 
 void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     nested_storages = std::make_shared<const Storages>(storages);
-    ids_cache.reset();
-    updateSubscriptionsToNestedStorages(lock);
+    ids_cache.clear();
 }
 
 void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     if (boost::range::find(*nested_storages, new_storage) != nested_storages->end())
         return;
     auto new_storages = std::make_shared<Storages>(*nested_storages);
     new_storages->push_back(new_storage);
     nested_storages = new_storages;
-    updateSubscriptionsToNestedStorages(lock);
 }
 
 void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     auto it = boost::range::find(*nested_storages, storage_to_remove);
     if (it == nested_storages->end())
         return;
@@ -69,8 +69,7 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     auto new_storages = std::make_shared<Storages>(*nested_storages);
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
-    ids_cache.reset();
-    updateSubscriptionsToNestedStorages(lock);
+    ids_cache.clear();
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()
@@ -180,6 +179,91 @@ ConstStoragePtr MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
+StoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name)
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage->getStorageName() == storage_name)
+            return storage;
+    }
+
+    return nullptr;
+}
+
+
+ConstStoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name) const
+{
+    return const_cast<MultipleAccessStorage *>(this)->findStorageByName(storage_name);
+}
+
+
+StoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name)
+{
+    auto storage = findStorageByName(storage_name);
+    if (storage)
+        return storage;
+
+    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "Access storage with name {} is not found", storage_name);
+}
+
+
+ConstStoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name) const
+{
+    return const_cast<MultipleAccessStorage *>(this)->getStorageByName(storage_name);
+}
+
+StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const DB::String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage == exclude)
+            continue;
+
+        if (storage->find(type, name))
+            return storage;
+    }
+
+    return nullptr;
+}
+
+void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
+{
+    auto source_storage = getStorageByName(source_storage_name);
+    auto destination_storage = getStorageByName(destination_storage_name);
+
+    auto to_move = source_storage->read(ids);
+    bool need_rollback = false;
+
+    try
+    {
+        source_storage->remove(ids);
+        need_rollback = true;
+        destination_storage->insert(to_move, ids);
+    }
+    catch (Exception & e)
+    {
+        String message;
+
+        bool need_comma = false;
+        for (const auto & entity : to_move)
+        {
+            if (std::exchange(need_comma, true))
+                message += ", ";
+
+            message += entity->formatTypeWithName();
+        }
+
+        e.addMessage("while moving {} from {} to {}", message, source_storage_name, destination_storage_name);
+
+        if (need_rollback)
+            source_storage->insert(to_move, ids);
+
+        throw;
+    }
+}
+
 AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
     if (auto storage = findStorage(id))
@@ -192,10 +276,10 @@ AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_n
 }
 
 
-std::optional<String> MultipleAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<std::pair<String, AccessEntityType>> MultipleAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
 {
     if (auto storage = findStorage(id))
-        return storage->readName(id, throw_if_not_exists);
+        return storage->readNameWithType(id, throw_if_not_exists);
 
     if (throw_if_not_exists)
         throwNotFound(id);
@@ -225,7 +309,29 @@ bool MultipleAccessStorage::isReadOnly(const UUID & id) const
 }
 
 
-std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+void MultipleAccessStorage::startPeriodicReloading()
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->startPeriodicReloading();
+}
+
+void MultipleAccessStorage::stopPeriodicReloading()
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->stopPeriodicReloading();
+}
+
+void MultipleAccessStorage::reload(ReloadMode reload_mode)
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->reload(reload_mode);
+}
+
+
+bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -248,13 +354,14 @@ std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & en
             getStorageName());
     }
 
-    auto id = storage_for_insertion->insert(entity, replace_if_exists, throw_if_exists);
-    if (id)
+    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists))
     {
         std::lock_guard lock{mutex};
-        ids_cache.set(*id, storage_for_insertion);
+        ids_cache.set(id, storage_for_insertion);
+        return true;
     }
-    return id;
+
+    return false;
 }
 
 
@@ -296,10 +403,8 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
                         break;
                     if (storage->find(new_entity->getType(), new_entity->getName()))
                     {
-                        throw Exception(
-                            old_entity->formatTypeWithName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
-                                + new_entity->formatTypeWithName() + " already exists in " + storage->getStorageName(),
-                            ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+                        throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
+                            old_entity->formatTypeWithName(), backQuote(new_entity->getName()), new_entity->formatTypeWithName(), storage->getStorageName());
                     }
                 }
             }
@@ -310,146 +415,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
-{
-    auto storage = findStorage(id);
-    if (!storage)
-        return {};
-    return storage->subscribeForChanges(id, handler);
-}
-
-
-bool MultipleAccessStorage::hasSubscription(const UUID & id) const
-{
-    auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
-    {
-        if (storage->hasSubscription(id))
-            return true;
-    }
-    return false;
-}
-
-
-scope_guard MultipleAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
-{
-    std::unique_lock lock{mutex};
-    auto & handlers = handlers_by_type[static_cast<size_t>(type)];
-    handlers.push_back(handler);
-    auto handler_it = std::prev(handlers.end());
-    if (handlers.size() == 1)
-        updateSubscriptionsToNestedStorages(lock);
-
-    return [this, type, handler_it]
-    {
-        std::unique_lock lock2{mutex};
-        auto & handlers2 = handlers_by_type[static_cast<size_t>(type)];
-        handlers2.erase(handler_it);
-        if (handlers2.empty())
-            updateSubscriptionsToNestedStorages(lock2);
-    };
-}
-
-
-bool MultipleAccessStorage::hasSubscription(AccessEntityType type) const
-{
-    std::lock_guard lock{mutex};
-    const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
-    return !handlers.empty();
-}
-
-
-/// Updates subscriptions to nested storages.
-/// We need the subscriptions to the nested storages if someone has subscribed to us.
-/// If any of the nested storages is changed we call our subscribers.
-void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock<std::mutex> & lock) const
-{
-    /// lock is already locked.
-
-    std::vector<std::pair<StoragePtr, scope_guard>> added_subscriptions[static_cast<size_t>(AccessEntityType::MAX)];
-    std::vector<scope_guard> removed_subscriptions;
-
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        auto & handlers = handlers_by_type[static_cast<size_t>(type)];
-        auto & subscriptions = subscriptions_to_nested_storages[static_cast<size_t>(type)];
-        if (handlers.empty())
-        {
-            /// None has subscribed to us, we need no subscriptions to the nested storages.
-            for (auto & subscription : subscriptions | boost::adaptors::map_values)
-                removed_subscriptions.push_back(std::move(subscription));
-            subscriptions.clear();
-        }
-        else
-        {
-            /// Someone has subscribed to us, now we need to have a subscription to each nested storage.
-            for (auto it = subscriptions.begin(); it != subscriptions.end();)
-            {
-                const auto & storage = it->first;
-                auto & subscription = it->second;
-                if (boost::range::find(*nested_storages, storage) == nested_storages->end())
-                {
-                    removed_subscriptions.push_back(std::move(subscription));
-                    it = subscriptions.erase(it);
-                }
-                else
-                    ++it;
-            }
-
-            for (const auto & storage : *nested_storages)
-            {
-                if (!subscriptions.contains(storage))
-                    added_subscriptions[static_cast<size_t>(type)].push_back({storage, nullptr});
-            }
-        }
-    }
-
-    /// Unlock the mutex temporarily because it's much better to subscribe to the nested storages
-    /// with the mutex unlocked.
-    lock.unlock();
-    removed_subscriptions.clear();
-
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        if (!added_subscriptions[static_cast<size_t>(type)].empty())
-        {
-            auto on_changed = [this, type](const UUID & id, const AccessEntityPtr & entity)
-            {
-                Notifications notifications;
-                SCOPE_EXIT({ notify(notifications); });
-                std::lock_guard lock2{mutex};
-                for (const auto & handler : handlers_by_type[static_cast<size_t>(type)])
-                    notifications.push_back({handler, id, entity});
-            };
-            for (auto & [storage, subscription] : added_subscriptions[static_cast<size_t>(type)])
-                subscription = storage->subscribeForChanges(type, on_changed);
-        }
-    }
-
-    /// Lock the mutex again to store added subscriptions to the nested storages.
-    lock.lock();
-
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        if (!added_subscriptions[static_cast<size_t>(type)].empty())
-        {
-            auto & subscriptions = subscriptions_to_nested_storages[static_cast<size_t>(type)];
-            for (auto & [storage, subscription] : added_subscriptions[static_cast<size_t>(type)])
-            {
-                if (!subscriptions.contains(storage) && (boost::range::find(*nested_storages, storage) != nested_storages->end())
-                    && !handlers_by_type[static_cast<size_t>(type)].empty())
-                {
-                    subscriptions.emplace(std::move(storage), std::move(subscription));
-                }
-            }
-        }
-    }
-
-    lock.unlock();
-}
-
-
-std::optional<UUID>
+std::optional<AuthResult>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
                                         bool throw_if_user_not_exists,
@@ -460,14 +426,14 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto id = storage->authenticate(credentials, address, external_authenticators,
+        auto auth_result = storage->authenticate(credentials, address, external_authenticators,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
-        if (id)
+        if (auth_result)
         {
             std::lock_guard lock{mutex};
-            ids_cache.set(*id, storage);
-            return id;
+            ids_cache.set(auth_result->user_id, storage);
+            return auth_result;
         }
     }
 
@@ -477,4 +443,74 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
         return std::nullopt;
 }
 
+
+bool MultipleAccessStorage::isBackupAllowed() const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage->isBackupAllowed())
+            return true;
+    }
+    return false;
+}
+
+
+bool MultipleAccessStorage::isRestoreAllowed() const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage->isRestoreAllowed())
+            return true;
+    }
+    return false;
+}
+
+
+void MultipleAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const
+{
+    auto storages = getStoragesInternal();
+    bool allowed = false;
+
+    for (const auto & storage : *storages)
+    {
+        if (storage->isBackupAllowed())
+        {
+            storage->backup(backup_entries_collector, data_path_in_backup, type);
+            allowed = true;
+        }
+    }
+
+    if (!allowed)
+        throwBackupNotAllowed();
+}
+
+void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+{
+    auto storages = getStoragesInternal();
+
+    for (const auto & storage : *storages)
+    {
+        if (storage->isRestoreAllowed())
+        {
+            storage->restoreFromBackup(restorer);
+            return;
+        }
+    }
+
+    throwBackupNotAllowed();
+}
+
+bool MultipleAccessStorage::containsStorage(std::string_view storage_type) const
+{
+    auto storages = getStoragesInternal();
+
+    for (const auto & storage : *storages)
+    {
+        if (storage->getStorageType() == storage_type)
+            return true;
+    }
+    return false;
+}
 }

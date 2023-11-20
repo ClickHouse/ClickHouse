@@ -32,6 +32,7 @@ show tables from db_01517_atomic_sync;
 -- Ordinary
 ---
 drop database if exists db_01517_ordinary;
+set allow_deprecated_database_ordinary=1;
 create database db_01517_ordinary Engine=Ordinary;
 
 create table db_01517_ordinary.source (key Int) engine=Null;

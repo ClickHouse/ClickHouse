@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/query_views_log
+---
 # system.query_views_log {#system_tables-query_views_log}
 
 包含有关运行查询时执行的从属视图的信息，例如视图类型或执行时间.
@@ -82,5 +85,3 @@ stack_trace:
 
 -   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — 包含查询执行的常用信息的 `query_log`系统表的描述.
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — 包含关于每个查询执行线程的信息.
-
-[原始文章](https://clickhouse.com/docs/en/operations/system_tables/query_thread_log) <!--hide-->

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <filesystem>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -36,7 +36,7 @@ void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String p
         if (code == Coordination::Error::ZNONODE)
             return;
         else if (code != Coordination::Error::ZOK)
-            throw KeeperException(code, path);
+            throw KeeperException::fromPath(code, path);
 
         Coordination::Requests ops;
 

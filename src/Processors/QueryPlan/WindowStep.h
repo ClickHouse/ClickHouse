@@ -16,7 +16,8 @@ class WindowStep : public ITransformingStep
 public:
     explicit WindowStep(const DataStream & input_stream_,
             const WindowDescription & window_description_,
-            const std::vector<WindowFunctionDescription> & window_functions_);
+            const std::vector<WindowFunctionDescription> & window_functions_,
+            bool streams_fan_out_);
 
     String getName() const override { return "Window"; }
 
@@ -25,10 +26,14 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    const WindowDescription & getWindowDescription() const;
+
 private:
+    void updateOutputStream() override;
+
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
-    Block input_header;
+    bool streams_fan_out;
 };
 
 }

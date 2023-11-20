@@ -1,8 +1,10 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -27,6 +29,20 @@ const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
 namespace DB::QueryPlanOptimizations
 {
 
+/// This is a check that output columns does not have the same name
+/// This is ok for DAG, but may introduce a bug in a SotringStep cause columns are selected by name.
+static bool areOutputsConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & outputs)
+{
+    std::unordered_set<std::string_view> names;
+    for (const auto & output : outputs)
+    {
+        if (!names.emplace(output->result_name).second)
+            return false;
+    }
+
+    return true;
+}
+
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
     if (parent_node->children.size() != 1)
@@ -42,6 +58,11 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     if (!sorting_step || !expression_step)
         return 0;
 
+    // Filling step position should be preserved
+    if (!child_node->children.empty())
+        if (typeid_cast<FillingStep *>(child_node->children.front()->step.get()))
+            return 0;
+
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
@@ -49,6 +70,9 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 
     // No calculations can be postponed.
     if (unneeded_for_sorting->trivial())
+        return 0;
+
+    if (!areOutputsConvertableToBlock(needed_for_sorting->getOutputs()))
         return 0;
 
     // Sorting (parent_node) -> Expression (child_node)
@@ -64,8 +88,6 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     // so far the origin Expression (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 
     sorting_step->updateInputStream(getChildOutputStream(*child_node));
-    auto input_header = sorting_step->getInputStreams().at(0).header;
-    sorting_step->updateOutputStream(std::move(input_header));
 
     auto description = parent_step->getStepDescription();
     parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputStream(), std::move(unneeded_for_sorting));

@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/select/union
 sidebar_label: UNION ALL
 ---
 

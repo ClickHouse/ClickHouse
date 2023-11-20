@@ -1,14 +1,15 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
 
 
 namespace DB
 {
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
@@ -23,7 +24,7 @@ class StorageSetOrJoinBase : public IStorage
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
@@ -63,29 +64,9 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
+class StorageSet final : public StorageSetOrJoinBase
 {
-friend struct shared_ptr_helper<StorageSet>;
-
 public:
-    String getName() const override { return "Set"; }
-
-    /// Access the insides.
-    SetPtr & getSet() { return set; }
-
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
-
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
-
-private:
-    SetPtr set;
-
-    void insertBlock(const Block & block, ContextPtr) override;
-    void finishInsert() override;
-    size_t getSize(ContextPtr) const override;
-
-protected:
     StorageSet(
         DiskPtr disk_,
         const String & relative_path_,
@@ -94,6 +75,25 @@ protected:
         const ConstraintsDescription & constraints_,
         const String & comment,
         bool persistent_);
+
+    String getName() const override { return "Set"; }
+
+    /// Access the insides.
+    SetPtr getSet() const;
+
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
+
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
+private:
+    /// Allows to concurrently truncate the set and work (read/fill) the existing set.
+    mutable std::mutex mutex;
+    SetPtr set TSA_GUARDED_BY(mutex);
+
+    void insertBlock(const Block & block, ContextPtr) override;
+    void finishInsert() override;
+    size_t getSize(ContextPtr) const override;
 };
 
 }

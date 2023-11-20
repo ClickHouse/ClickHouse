@@ -2,7 +2,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
 #include <IO/WithFileName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -26,6 +26,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 
@@ -44,37 +47,85 @@ bool isParseError(int code)
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
         || code == ErrorCodes::INCORRECT_DATA              /// For some ReadHelpers
-        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
+        || code == ErrorCodes::CANNOT_PARSE_IPV4
+        || code == ErrorCodes::CANNOT_PARSE_IPV6
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), in_), params(params_)
+    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
 {
-    const auto & port_header = getPort().getHeader();
-    size_t num_columns = port_header.columns();
-    serializations.resize(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = port_header.getByPosition(i).type->getDefaultSerialization();
 }
 
+void IRowInputFormat::logError()
+{
+    String diagnostic;
+    String raw_data;
+    try
+    {
+        std::tie(diagnostic, raw_data) = getDiagnosticAndRawData();
+    }
+    catch (const Exception & exception)
+    {
+        diagnostic = "Cannot get diagnostic: " + exception.message();
+        raw_data = "Cannot get raw data: " + exception.message();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+    }
+    trimLeft(diagnostic, '\n');
+    trimRight(diagnostic, '\n');
+
+    auto now_time = time(nullptr);
+
+    errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
+}
 
 Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
-        readPrefix();
+    {
+        try
+        {
+            readPrefix();
+        }
+        catch (Exception & e)
+        {
+            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+            if (!file_name.empty())
+                e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+            e.addMessage("(while reading header)");
+            throw;
+        }
+    }
 
     const Block & header = getPort().getHeader();
 
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
 
-    ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 
     size_t num_rows = 0;
-
+    size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
     try
     {
+        if (need_only_count && supportsCountRows())
+        {
+            num_rows = countRows(params.max_block_size);
+            if (num_rows == 0)
+            {
+                readSuffix();
+                return {};
+            }
+            total_rows += num_rows;
+            approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
+            return getChunkForCount(num_rows);
+        }
+
         RowReadExtension info;
         bool continue_reading = true;
         for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
@@ -92,7 +143,7 @@ Chunk IRowInputFormat::generate()
                     {
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
-                            throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+                            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Unexpected empty column");
                         block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
@@ -118,6 +169,9 @@ Chunk IRowInputFormat::generate()
 
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
                     throw;
+
+                if (errors_logger)
+                    logError();
 
                 ++num_errors;
                 Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
@@ -161,13 +215,13 @@ Chunk IRowInputFormat::generate()
         {
             verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
         e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
-        e.setLineNumber(total_rows);
+        e.setLineNumber(static_cast<int>(total_rows));
         e.addMessage(verbose_diagnostic);
         throw;
     }
@@ -185,7 +239,7 @@ Chunk IRowInputFormat::generate()
         {
             verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
@@ -211,15 +265,17 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    finalizeObjectColumns(columns);
+    for (const auto & column : columns)
+        column->finalize();
+
     Chunk chunk(std::move(columns), num_rows);
-    //chunk.setChunkInfo(std::move(chunk_missing_values));
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
     return chunk;
 }
 
 void IRowInputFormat::syncAfterError()
 {
-    throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method syncAfterError is not implemented for input format {}", getName());
 }
 
 void IRowInputFormat::resetParser()
@@ -228,6 +284,11 @@ void IRowInputFormat::resetParser()
     total_rows = 0;
     num_errors = 0;
     block_missing_values.clear();
+}
+
+size_t IRowInputFormat::countRows(size_t)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", getName());
 }
 
 

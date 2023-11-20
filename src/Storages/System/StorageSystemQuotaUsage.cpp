@@ -78,7 +78,11 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_
 
 void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_QUOTAS);
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
+    const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_QUOTAS);
+
     auto usage = context->getQuotaUsage();
     if (!usage)
         return;
@@ -158,8 +162,8 @@ void StorageSystemQuotaUsage::fillDataImpl(
         time_t end_time = std::chrono::system_clock::to_time_t(interval->end_of_interval);
         UInt32 duration = static_cast<UInt32>(std::chrono::duration_cast<std::chrono::seconds>(interval->duration).count());
         time_t start_time = end_time - duration;
-        column_start_time.getData().push_back(start_time);
-        column_end_time.getData().push_back(end_time);
+        column_start_time.getData().push_back(static_cast<UInt32>(start_time));
+        column_end_time.getData().push_back(static_cast<UInt32>(end_time));
         column_duration.getData().push_back(duration);
         column_start_time_null_map.push_back(false);
         column_end_time_null_map.push_back(false);

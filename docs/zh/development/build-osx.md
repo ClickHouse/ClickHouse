@@ -1,3 +1,6 @@
+---
+slug: /zh/development/build-osx
+---
 # 在 Mac OS X 中编译 ClickHouse {#zai-mac-os-x-zhong-bian-yi-clickhouse}
 
 ClickHouse 支持在 Mac OS X 10.12 版本中编译。若您在用更早的操作系统版本，可以尝试在指令中使用 `Gentoo Prefix` 和 `clang sl`.
@@ -43,7 +46,7 @@ $ cd ..
 
 为此，请创建以下文件：
 
-/资源库/LaunchDaemons/limit.maxfiles.plist:
+/Library/LaunchDaemons/limit.maxfiles.plist:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -78,5 +81,3 @@ $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 然后重启。
 
 可以通过 `ulimit -n` 命令来检查是否生效。
-
-[来源文章](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

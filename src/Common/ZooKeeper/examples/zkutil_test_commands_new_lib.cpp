@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
+#include <memory>
 #include <base/find_symbols.h>
 
 
@@ -29,18 +30,20 @@ try
     splitInto<','>(hosts_strings, hosts_arg);
     ZooKeeper::Nodes nodes;
     nodes.reserve(hosts_strings.size());
-    for (auto & host_string : hosts_strings)
+    for (size_t i = 0; i < hosts_strings.size(); ++i)
     {
+        std::string host_string = hosts_strings[i];
         bool secure = bool(startsWith(host_string, "secure://"));
 
         if (secure)
             host_string.erase(0, strlen("secure://"));
 
-        nodes.emplace_back(ZooKeeper::Node{Poco::Net::SocketAddress{host_string},secure});
+        nodes.emplace_back(ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, static_cast<UInt8>(i) , secure});
     }
 
 
-    ZooKeeper zk(nodes, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000}, nullptr);
+    zkutil::ZooKeeperArgs args;
+    ZooKeeper zk(nodes, args, nullptr);
 
     Poco::Event event(true);
 
@@ -71,13 +74,15 @@ try
 
             //event.set();
         },
-        [](const WatchResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (get) on /test, Error: " << errorMessage(response.error) << '\n';
-            else
-                std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
-        });
+        std::make_shared<Coordination::WatchCallback>(
+            [](const WatchResponse & response)
+            {
+                if (response.error != Coordination::Error::ZOK)
+                    std::cerr << "Watch (get) on /test, Error: " << errorMessage(response.error) << '\n';
+                else
+                    std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
+            })
+        );
 
     //event.wait();
 
@@ -99,6 +104,7 @@ try
     std::cout << "list\n";
 
     zk.list("/",
+        Coordination::ListRequestType::ALL,
         [&](const ListResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
@@ -112,13 +118,15 @@ try
 
             //event.set();
         },
-        [](const WatchResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
-            else
-                std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
-        });
+        std::make_shared<Coordination::WatchCallback>(
+            [](const WatchResponse & response)
+            {
+                if (response.error != Coordination::Error::ZOK)
+                    std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
+                else
+                    std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
+            })
+        );
 
     //event.wait();
 
@@ -134,13 +142,15 @@ try
 
             //event.set();
         },
-        [](const WatchResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (exists) on /test, Error: " << errorMessage(response.error) << '\n';
-            else
-                std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
-        });
+        std::make_shared<Coordination::WatchCallback>(
+            [](const WatchResponse & response)
+            {
+                if (response.error != Coordination::Error::ZOK)
+                    std::cerr << "Watch (exists) on /test, Error: " << errorMessage(response.error) << '\n';
+                else
+                    std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
+            })
+        );
 
     //event.wait();
 

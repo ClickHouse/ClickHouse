@@ -9,8 +9,6 @@
 #include <thread>
 #include <filesystem>
 
-#include <re2/re2.h>
-
 #include <boost/program_options.hpp>
 
 #include <Common/TerminalSize.h>
@@ -26,6 +24,14 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 static constexpr auto documentation = R"(
 A tool to extract information from Git repository for analytics.
@@ -67,7 +73,7 @@ Run this tool inside your git repository. It will create .tsv files that can be 
 The tool can process large enough repositories in a reasonable time.
 It has been tested on:
 - ClickHouse: 31 seconds; 3 million rows;
-- LLVM: 8 minues; 62 million rows;
+- LLVM: 8 minutes; 62 million rows;
 - Linux - 12 minutes; 85 million rows;
 - Chromium - 67 minutes; 343 million rows;
 (the numbers as of Sep 2020)
@@ -351,7 +357,7 @@ struct LineChange
             ++pos;
         }
 
-        indent = std::max(255U, num_spaces);
+        indent = std::min(255U, num_spaces);
         line.assign(pos, end);
 
         if (pos == end)
@@ -1160,7 +1166,7 @@ void processLog(const Options & options)
     /// Will run multiple processes in parallel
     size_t num_threads = options.threads;
     if (num_threads == 0)
-        throw Exception("num-threads cannot be zero", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "num-threads cannot be zero");
 
     std::vector<std::unique_ptr<ShellCommand>> show_commands(num_threads);
     for (size_t i = 0; i < num_commits && i < num_threads; ++i)

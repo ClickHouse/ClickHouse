@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/system-tables/
 machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 sidebar_position: 52
@@ -72,5 +73,3 @@ sidebar_label: "\u7CFB\u7EDF\u8868"
 -   `OSWriteChars`
 -   `OSReadBytes`
 -   `OSWriteBytes`
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/) <!--hide-->

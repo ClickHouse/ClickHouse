@@ -16,11 +16,14 @@ def started_cluster():
 
 
 def test_file_path_escaping(started_cluster):
-    node.query("CREATE DATABASE IF NOT EXISTS test ENGINE = Ordinary")
+    node.query(
+        "CREATE DATABASE IF NOT EXISTS test ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
     node.query(
         """
         CREATE TABLE test.`T.a_b,l-e!` (`~Id` UInt32)
-        ENGINE = MergeTree() PARTITION BY `~Id` ORDER BY `~Id` SETTINGS min_bytes_for_wide_part = 0;
+        ENGINE = MergeTree() PARTITION BY `~Id` ORDER BY `~Id` SETTINGS min_bytes_for_wide_part = 0, replace_long_file_name_to_hash = 0;
         """
     )
     node.query("""INSERT INTO test.`T.a_b,l-e!` VALUES (1);""")
@@ -41,13 +44,11 @@ def test_file_path_escaping(started_cluster):
         ]
     )
 
-
-def test_file_path_escaping_atomic_db(started_cluster):
     node.query("CREATE DATABASE IF NOT EXISTS `test 2` ENGINE = Atomic")
     node.query(
         """
         CREATE TABLE `test 2`.`T.a_b,l-e!` UUID '12345678-1000-4000-8000-000000000001' (`~Id` UInt32)
-        ENGINE = MergeTree() PARTITION BY `~Id` ORDER BY `~Id` SETTINGS min_bytes_for_wide_part = 0;
+        ENGINE = MergeTree() PARTITION BY `~Id` ORDER BY `~Id` SETTINGS min_bytes_for_wide_part = 0, replace_long_file_name_to_hash = 0;
         """
     )
     node.query("""INSERT INTO `test 2`.`T.a_b,l-e!` VALUES (1);""")

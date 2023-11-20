@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -12,7 +13,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <shared_mutex>
 #include <thread>
+#include <unordered_set>
 
 namespace zkutil
 {
@@ -61,17 +64,49 @@ public:
         return host_fqdn_id;
     }
 
+    std::string getQueueDir() const
+    {
+        return queue_dir;
+    }
+
     void startup();
     virtual void shutdown();
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
-protected:
 
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr tryGetZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     ZooKeeperPtr getAndSetZooKeeper();
+
+protected:
+
+    class ConcurrentSet
+    {
+    public:
+        bool contains(const String & key) const
+        {
+            std::shared_lock lock(mtx);
+            return set.contains(key);
+        }
+
+        bool insert(const String & key)
+        {
+            std::unique_lock lock(mtx);
+            return set.emplace(key).second;
+        }
+
+        bool remove(const String & key)
+        {
+            std::unique_lock lock(mtx);
+            return set.erase(key);
+        }
+
+    private:
+        std::unordered_set<String> set;
+        mutable std::shared_mutex mtx;
+    };
 
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);
@@ -91,17 +126,16 @@ protected:
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
     /// Most of these queries can be executed on non-leader replica, but actually they still send
-    /// query via RemoteBlockOutputStream to leader, so to avoid such "2-phase" query execution we
+    /// query via RemoteQueryExecutor to leader, so to avoid such "2-phase" query execution we
     /// execute query directly on leader.
     bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,
         StoragePtr storage,
-        const String & rewritten_query,
         const String & node_path,
         const ZooKeeperPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
@@ -124,7 +158,7 @@ protected:
     std::string queue_dir;      /// dir with queue of queries
 
     mutable std::mutex zookeeper_mutex;
-    ZooKeeperPtr current_zookeeper;
+    ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
 
     /// Save state of executed task to avoid duplicate execution on ZK error
     std::optional<String> last_skipped_entry_name;
@@ -138,10 +172,10 @@ protected:
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
-    std::atomic<bool> stop_flag = false;
+    std::atomic<bool> stop_flag = true;
 
-    ThreadFromGlobalPool main_thread;
-    ThreadFromGlobalPool cleanup_thread;
+    std::unique_ptr<ThreadFromGlobalPool> main_thread;
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;
@@ -154,7 +188,10 @@ protected:
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
 
-    std::atomic<UInt64> max_id = 0;
+    std::atomic<UInt32> max_id = 0;
+
+    ConcurrentSet entries_to_skip;
+
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
 };

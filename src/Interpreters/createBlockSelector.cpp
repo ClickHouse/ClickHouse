@@ -2,18 +2,21 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 #include <type_traits>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2 1
-#endif
-
+#include <libdivide-config.h>
 #include <libdivide.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 template <typename T>
 IColumn::Selector createBlockSelector(
@@ -21,7 +24,8 @@ IColumn::Selector createBlockSelector(
     const std::vector<UInt64> & slots)
 {
     const auto total_weight = slots.size();
-    assert(total_weight != 0);
+    if (total_weight == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "weight is zero");
 
     size_t num_rows = column.size();
     IColumn::Selector selector(num_rows);
@@ -44,7 +48,7 @@ IColumn::Selector createBlockSelector(
         /// libdivide support only UInt32 and UInt64.
         using TUInt32Or64 = std::conditional_t<sizeof(UnsignedT) <= 4, UInt32, UInt64>;
 
-        libdivide::divider<TUInt32Or64> divider(total_weight);
+        libdivide::divider<TUInt32Or64> divider(static_cast<TUInt32Or64>(total_weight));
 
         const auto & data = typeid_cast<const ColumnVector<T> &>(column).getData();
 

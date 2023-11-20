@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/database-engines/lazy
 sidebar_position: 31
 sidebar_label: Lazy
 ---
@@ -14,5 +15,3 @@ sidebar_label: Lazy
 ``` sql
 CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 ```
-
-[来源文章](https://clickhouse.com/docs/en/database_engines/lazy/) <!--hide-->

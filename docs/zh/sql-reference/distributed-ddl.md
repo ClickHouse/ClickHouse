@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/distributed-ddl
 sidebar_position: 32
 sidebar_label: Distributed DDL
 ---

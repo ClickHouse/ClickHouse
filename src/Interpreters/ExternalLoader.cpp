@@ -1,25 +1,19 @@
 #include "ExternalLoader.h"
 
 #include <mutex>
-#include <pcg_random.hpp>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Common/StatusInfo.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/logger_useful.h>
 #include <base/chrono_io.h>
-#include <base/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
-
-
-namespace CurrentStatusInfo
-{
-    extern const Status DictionaryStatus;
-}
 
 
 namespace DB
@@ -714,7 +708,10 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
-                    LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    else
+                    {
+                        LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    }
                 }
             }
         }
@@ -964,15 +961,18 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupStatusPtr thread_group = {})
+    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
+                CurrentThread::detachFromGroupIfNotDetached();
         );
 
         if (thread_group)
-            CurrentThread::attachTo(thread_group);
+            CurrentThread::attachToGroup(thread_group);
+
+        /// Do not account memory that was occupied by the dictionaries for the query/user context.
+        MemoryTrackerBlockerInThread memory_blocker;
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try
@@ -997,7 +997,7 @@ private:
             /// Loading.
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
-                throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No object created and no exception raised for {}", type_name);
 
             /// Saving the result of the loading.
             {
@@ -1137,7 +1137,6 @@ private:
         if (info && (info->loading_id == loading_id))
         {
             info->loading_id = info->state_id;
-            CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, static_cast<Int8>(info->status()));
         }
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
@@ -1436,7 +1435,7 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.object && (!check_no_errors || !result.exception))
         return;
     if (result.status == ExternalLoader::Status::LOADING)
-        throw Exception(type_name + " '" + result.name + "' is still loading", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' is still loading", type_name, result.name);
     if (result.exception)
     {
         // Exception is shared for multiple threads.
@@ -1462,9 +1461,9 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
         }
     }
     if (result.status == ExternalLoader::Status::NOT_EXIST)
-        throw Exception(type_name + " '" + result.name + "' not found", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not found", type_name, result.name);
     if (result.status == ExternalLoader::Status::NOT_LOADED)
-        throw Exception(type_name + " '" + result.name + "' not tried to load", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not tried to load", type_name, result.name);
 }
 
 void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,

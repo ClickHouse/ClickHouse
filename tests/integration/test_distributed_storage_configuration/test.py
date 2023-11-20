@@ -10,7 +10,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.d/storage_configuration.xml"],
+    main_configs=["configs/config.d/overrides.xml"],
     tmpfs=["/disk1:size=100M", "/disk2:size=100M"],
 )
 
@@ -20,7 +20,8 @@ def start_cluster():
     try:
         cluster.start()
         node.query(
-            "CREATE DATABASE IF NOT EXISTS test ENGINE=Ordinary"
+            "CREATE DATABASE IF NOT EXISTS test ENGINE=Ordinary",
+            settings={"allow_deprecated_database_ordinary": 1},
         )  # Different paths with Atomic
         yield cluster
     finally:

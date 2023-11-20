@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/parts_columns
+---
 # system.parts_columns {#system_tables-parts_columns}
 
 Содержит информацию о кусках данных и столбцах таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
@@ -144,4 +147,3 @@ column_marks_bytes:                    48
 **Смотрите также**
 
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
-

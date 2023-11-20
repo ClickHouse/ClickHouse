@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/database-engines/postgresql
 sidebar_position: 40
 sidebar_label: PostgreSQL
 ---
 
-# PostgreSQL {#postgresql}
+# PostgreSQL
 
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
 
@@ -20,16 +21,16 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 
 **Engine Parameters**
 
--   `host:port` — PostgreSQL server address.
--   `database` — Remote database name.
--   `user` — PostgreSQL user.
--   `password` — User password.
--   `schema` — PostgreSQL schema.
--   `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — PostgreSQL schema.
+- `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
 ## Data Types Support {#data_types-support}
 
-| PostgerSQL       | ClickHouse                                                   |
+| PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
 | DATE             | [Date](../../sql-reference/data-types/date.md)               |
 | TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
@@ -52,7 +53,7 @@ Database in ClickHouse, exchanging data with the PostgreSQL server:
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1);
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
 ```
 
 ``` sql
@@ -136,4 +137,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/database-engines/postgresql/) <!--hide-->
+## Related content
+
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

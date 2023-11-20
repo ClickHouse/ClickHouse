@@ -31,7 +31,7 @@ else
     DO_CHOWN=0
 fi
 
-KEEPER_CONFIG="${KEEPER_CONFIG:-/etc/clickhouse-keeper/config.yaml}"
+KEEPER_CONFIG="${KEEPER_CONFIG:-/etc/clickhouse-keeper/keeper_config.xml}"
 
 if [ -f "$KEEPER_CONFIG" ] && ! $gosu test -f "$KEEPER_CONFIG" -a -r "$KEEPER_CONFIG"; then
     echo "Configuration file '$KEEPER_CONFIG' isn't readable by user with id '$USER'"
@@ -42,6 +42,7 @@ DATA_DIR="${CLICKHOUSE_DATA_DIR:-/var/lib/clickhouse}"
 LOG_DIR="${LOG_DIR:-/var/log/clickhouse-keeper}"
 LOG_PATH="${LOG_DIR}/clickhouse-keeper.log"
 ERROR_LOG_PATH="${LOG_DIR}/clickhouse-keeper.err.log"
+COORDINATION_DIR="${DATA_DIR}/coordination"
 COORDINATION_LOG_DIR="${DATA_DIR}/coordination/log"
 COORDINATION_SNAPSHOT_DIR="${DATA_DIR}/coordination/snapshots"
 CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
@@ -49,6 +50,7 @@ CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
 for dir in "$DATA_DIR" \
   "$LOG_DIR" \
   "$TMP_DIR" \
+  "$COORDINATION_DIR" \
   "$COORDINATION_LOG_DIR" \
   "$COORDINATION_SNAPSHOT_DIR"
 do

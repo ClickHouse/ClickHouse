@@ -1,0 +1,4 @@
+s3_plain_native_copy
+Single operation copy has completed.
+s3_plain_no_native_copy
+Single part upload has completed.

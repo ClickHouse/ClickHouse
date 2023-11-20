@@ -65,14 +65,28 @@ def test_dynamic_query_handler():
             ).status_code
         )
 
+        res_default = cluster.instance.http_request(
+            "test_dynamic_handler_get?max_threads=1&get_dynamic_handler_query="
+            + test_query,
+            method="GET",
+            headers={"XXX": "xxx"},
+        )
+        assert 200 == res_default.status_code
         assert (
-            200
-            == cluster.instance.http_request(
-                "test_dynamic_handler_get?max_threads=1&get_dynamic_handler_query="
-                + test_query,
-                method="GET",
-                headers={"XXX": "xxx"},
-            ).status_code
+            "text/tab-separated-values; charset=UTF-8"
+            == res_default.headers["content-type"]
+        )
+
+        res_custom_ct = cluster.instance.http_request(
+            "test_dynamic_handler_get_custom_content_type?max_threads=1&get_dynamic_handler_query="
+            + test_query,
+            method="GET",
+            headers={"XXX": "xxx"},
+        )
+        assert 200 == res_custom_ct.status_code
+        assert (
+            "application/whatever; charset=cp1337"
+            == res_custom_ct.headers["content-type"]
         )
 
 
@@ -116,22 +130,41 @@ def test_predefined_query_handler():
             ).status_code
         )
 
+        res1 = cluster.instance.http_request(
+            "test_predefined_handler_get?max_threads=1&setting_name=max_threads",
+            method="GET",
+            headers={"XXX": "xxx"},
+        )
+        assert b"max_threads\t1\n" == res1.content
         assert (
-            b"max_threads\t1\n"
-            == cluster.instance.http_request(
-                "test_predefined_handler_get?max_threads=1&setting_name=max_threads",
-                method="GET",
-                headers={"XXX": "xxx"},
-            ).content
+            "text/tab-separated-values; charset=UTF-8" == res1.headers["content-type"]
         )
 
-        assert (
-            b"max_final_threads\t1\nmax_threads\t1\n"
-            == cluster.instance.http_request(
-                "query_param_with_url/max_threads?max_threads=1&max_final_threads=1",
-                headers={"XXX": "max_final_threads"},
-            ).content
+        res2 = cluster.instance.http_request(
+            "query_param_with_url/max_threads?max_threads=1&max_final_threads=1",
+            headers={"XXX": "max_final_threads"},
         )
+        assert b"max_final_threads\t1\nmax_threads\t1\n" == res2.content
+        assert "application/generic+one" == res2.headers["content-type"]
+
+        cluster.instance.query(
+            "CREATE TABLE test_table (id UInt32, data String) Engine=TinyLog"
+        )
+        res3 = cluster.instance.http_request(
+            "test_predefined_handler_post_body?id=100",
+            method="POST",
+            data="TEST".encode("utf8"),
+        )
+        assert res3.status_code == 200
+        assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
+        cluster.instance.query("DROP TABLE test_table")
+
+        res4 = cluster.instance.http_request(
+            "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",
+            method="GET",
+            headers={"XXX": "xxx"},
+        )
+        assert b"max_threads\t1\n" == res1.content
 
 
 def test_fixed_static_handler():
@@ -414,6 +447,55 @@ def test_defaults_http_handlers():
             b"1\n"
             == cluster.instance.http_request("?query=SELECT+1", method="GET").content
         )
+
+        assert (
+            404
+            == cluster.instance.http_request(
+                "/nonexistent?query=SELECT+1", method="GET"
+            ).status_code
+        )
+
+
+def test_defaults_http_handlers_config_order():
+    def check_predefined_query_handler():
+        assert (
+            200
+            == cluster.instance.http_request(
+                "?query=SELECT+1", method="GET"
+            ).status_code
+        )
+        assert (
+            b"1\n"
+            == cluster.instance.http_request("?query=SELECT+1", method="GET").content
+        )
+        response = cluster.instance.http_request(
+            "test_predefined_handler_get?max_threads=1&setting_name=max_threads",
+            method="GET",
+            headers={"XXX": "xxx"},
+        )
+        assert b"max_threads\t1\n" == response.content
+        assert (
+            "text/tab-separated-values; charset=UTF-8"
+            == response.headers["content-type"]
+        )
+
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "defaults_handlers_config_order_first",
+            "test_defaults_handlers_config_order/defaults_first",
+        )
+    ) as cluster:
+        check_predefined_query_handler()
+
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "defaults_handlers_config_order_first",
+            "test_defaults_handlers_config_order/defaults_last",
+        )
+    ) as cluster:
+        check_predefined_query_handler()
 
 
 def test_prometheus_handler():

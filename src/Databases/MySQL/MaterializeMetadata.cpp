@@ -55,7 +55,7 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
         PullingPipelineExecutor executor(pipeline);
         executor.pull(create_query_block);
         if (!create_query_block || create_query_block.rows() != 1)
-            throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR mysql show create return more rows.");
 
         tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
     }
@@ -107,7 +107,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     executor.pull(master_status);
 
     if (!master_status || master_status.rows() != 1)
-        throw Exception("Unable to get master status from MySQL.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to get master status from MySQL.");
 
     data_version = 1;
     binlog_file = (*master_status.getByPosition(0).column)[0].safeGet<String>();
@@ -186,10 +186,9 @@ static void checkSyncUserPriv(const mysqlxx::PoolWithFailover::Entry & connectio
     WriteBufferFromOwnString out;
 
     if (!checkSyncUserPrivImpl(connection, global_settings, out))
-        throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
-                        "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
-                        "and SELECT PRIVILEGE on MySQL Database."
-                        "But the SYNC USER grant query is: " + out.str(), ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
+        throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
+                        "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
+                        "and SELECT PRIVILEGE on MySQL Database.But the SYNC USER grant query is: {}", out.str());
 }
 
 bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection) const

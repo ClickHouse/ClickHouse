@@ -7,7 +7,7 @@ namespace DB
 
 using FunctionAddMinutes = FunctionDateOrDateTimeAddInterval<AddMinutesImpl>;
 
-void registerFunctionAddMinutes(FunctionFactory & factory)
+REGISTER_FUNCTION(AddMinutes)
 {
     factory.registerFunction<FunctionAddMinutes>();
 }

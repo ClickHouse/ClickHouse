@@ -2,8 +2,10 @@
 
 set -ex
 
-if [ "$GIT_DOCS_BRANCH" ]; then
-  git fetch origin --depth=1 "$GIT_DOCS_BRANCH:$GIT_DOCS_BRANCH"
+GIT_BRANCH=$(git branch --show-current)
+
+if [ "$GIT_DOCS_BRANCH" ] && ! [ "$GIT_DOCS_BRANCH" == "$GIT_BRANCH" ]; then
+  git fetch origin --depth=1 -- "$GIT_DOCS_BRANCH:$GIT_DOCS_BRANCH"
   git checkout "$GIT_DOCS_BRANCH"
 else
   # Update docs repo
@@ -23,6 +25,8 @@ done
 sed -i '/onBrokenMarkdownLinks:/ s/ignore/error/g' docusaurus.config.js
 
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
+  export CI=true
+  yarn install
   exec yarn build "$@"
 fi
 

@@ -36,7 +36,7 @@ def setup_module(module):
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
 
-    cluster = ClickHouseCluster(__file__, name=test_name)
+    cluster = ClickHouseCluster(__file__)
 
     main_configs = []
     main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))

@@ -1,11 +1,16 @@
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDummy.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Planner/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
@@ -57,7 +62,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
         const size_t left_table_pos = 0;
         /// Test each argument of `and` function and select ones related to only left table
         std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
-        for (auto && node : collectConjunctions(where))
+        for (auto && node : splitConjunctionsAst(where))
         {
             if (membership_collector.getIdentsMembership(node) == left_table_pos)
                 new_conj->arguments->children.push_back(std::move(node));
@@ -82,11 +87,11 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 }
 
 Block getHeaderForProcessingStage(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage)
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage)
 {
     switch (processed_stage)
     {
@@ -118,16 +123,51 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit:
         case QueryProcessingStage::MAX:
         {
-            auto query = query_info.query->clone();
-            TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
-            removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
+            ASTPtr query = query_info.query;
+            if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
+            {
+                if (!query_info.syntax_analyzer_result)
+                {
+                    if (!query_info.planner_context)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not analyzed: no planner context");
 
-            auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
-                    storage_snapshot->getSampleBlockForColumns(column_names)));
-            return InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+                    const auto & query_node = query_info.query_tree->as<QueryNode &>();
+                    const auto & join_tree = query_node.getJoinTree();
+                    auto left_table_expression = extractLeftTableExpression(join_tree);
+
+                    auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(left_table_expression);
+                    const auto & query_context = query_info.planner_context->getQueryContext();
+                    auto columns = table_expression_data.getColumns();
+                    auto new_query_node = buildSubqueryToReadColumnsFromTableExpression(columns, left_table_expression, query_context);
+                    query = new_query_node->toAST();
+                }
+                else
+                {
+                    query = query_info.query->clone();
+                    TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
+                    removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
+                }
+            }
+
+            Block result;
+
+            if (context->getSettingsRef().allow_experimental_analyzer)
+            {
+                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns());
+                InterpreterSelectQueryAnalyzer interpreter(query, context, storage, SelectQueryOptions(processed_stage).analyze());
+                result = interpreter.getSampleBlock();
+            }
+            else
+            {
+                auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
+                        storage_snapshot->getSampleBlockForColumns(column_names)));
+                result = InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+            }
+
+            return result;
         }
     }
-    throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical Error: unknown processed stage.");
 }
 
 }

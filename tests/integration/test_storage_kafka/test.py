@@ -121,7 +121,7 @@ def kafka_create_topic(
 
 def kafka_delete_topic(admin_client, topic, max_retries=50):
     result = admin_client.delete_topics([topic])
-    for (topic, e) in result.topic_error_codes:
+    for topic, e in result.topic_error_codes:
         if e == 0:
             logging.debug(f"Topic {topic} deleted")
         else:
@@ -285,6 +285,78 @@ def avro_confluent_message(schema_registry_client, value):
 # Tests
 
 
+def test_kafka_column_types(kafka_cluster):
+    def assert_returned_exception(e):
+        assert e.value.returncode == 36
+        assert (
+            "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns."
+            in str(e.value)
+        )
+
+    # check column with DEFAULT expression
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b Int DEFAULT 0)
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+    # check EPHEMERAL
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b Int EPHEMERAL)
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+    # check ALIAS
+    instance.query(
+        """
+                CREATE TABLE test.kafka (a Int, b String Alias toString(a))
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                SETTINGS kafka_commit_on_select = 1;
+                """
+    )
+    messages = []
+    for i in range(5):
+        messages.append(json.dumps({"a": i}))
+    kafka_produce(kafka_cluster, "new", messages)
+    result = ""
+    expected = TSV(
+        """
+0\t0
+1\t1
+2\t2
+3\t3
+4\t4
+                              """
+    )
+    retries = 50
+    while retries > 0:
+        result += instance.query("SELECT a, b FROM test.kafka", ignore_error=True)
+        if TSV(result) == expected:
+            break
+        retries -= 1
+
+    assert TSV(result) == expected
+
+    instance.query("DROP TABLE test.kafka SYNC")
+
+    # check MATERIALIZED
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b String MATERIALIZED toString(a))
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+
 def test_kafka_settings_old_syntax(kafka_cluster):
     assert TSV(
         instance.query(
@@ -370,6 +442,34 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 
     members = describe_consumer_group(kafka_cluster, "new")
     assert members[0]["client_id"] == "instance test 1234"
+
+
+def test_kafka_settings_predefined_macros(kafka_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = '{kafka_broker}:19092',
+                     kafka_topic_list = '{database}_{table}_topic',
+                     kafka_group_name = '{database}_{table}_group',
+                     kafka_format = '{kafka_format_json_each_row}',
+                     kafka_row_delimiter = '\\n',
+                     kafka_commit_on_select = 1,
+                     kafka_client_id = '{database}_{table} test 1234',
+                     kafka_skip_broken_messages = 1;
+        """
+    )
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({"key": i, "value": i}))
+    kafka_produce(kafka_cluster, "test_kafka_topic", messages)
+
+    result = instance.query("SELECT * FROM test.kafka", ignore_error=True)
+    kafka_check_result(result, True)
+
+    members = describe_consumer_group(kafka_cluster, "test_kafka_group")
+    assert members[0]["client_id"] == "test_kafka test 1234"
 
 
 def test_kafka_json_as_string(kafka_cluster):
@@ -570,13 +670,12 @@ def test_kafka_formats(kafka_cluster):
                 b"\x05\x01\x02\x69\x64\x05\x49\x6e\x74\x36\x34\x00\x00\x00\x00\x00\x00\x00\x00\x07\x62\x6c\x6f\x63\x6b\x4e\x6f\x06\x55\x49\x6e\x74\x31\x36\x00\x00\x04\x76\x61\x6c\x31\x06\x53\x74\x72\x69\x6e\x67\x02\x41\x4d\x04\x76\x61\x6c\x32\x07\x46\x6c\x6f\x61\x74\x33\x32\x00\x00\x00\x3f\x04\x76\x61\x6c\x33\x05\x55\x49\x6e\x74\x38\x01",
                 # ''
                 # On empty message exception happens: DB::Exception: Attempt to read after eof
-                # /src/IO/VarInt.h:122: DB::throwReadAfterEOF() @ 0x15c34487 in /usr/bin/clickhouse
-                # /src/IO/VarInt.h:135: void DB::readVarUIntImpl<false>(unsigned long&, DB::ReadBuffer&) @ 0x15c68bb7 in /usr/bin/clickhouse
-                # /src/IO/VarInt.h:149: DB::readVarUInt(unsigned long&, DB::ReadBuffer&) @ 0x15c68844 in /usr/bin/clickhouse
-                # /src/DataStreams/NativeBlockInputStream.cpp:124: DB::NativeBlockInputStream::readImpl() @ 0x1d3e2778 in /usr/bin/clickhouse
-                # /src/DataStreams/IBlockInputStream.cpp:60: DB::IBlockInputStream::read() @ 0x1c9c92fd in /usr/bin/clickhouse
-                # /src/Processors/Formats/Impl/NativeFormat.h:42: DB::NativeInputFormatFromNativeBlockInputStream::generate() @ 0x1df1ea79 in /usr/bin/clickhouse
-                # /src/Processors/ISource.cpp:48: DB::ISource::work() @ 0x1dd79737 in /usr/bin/clickhouse
+                # 1. DB::throwReadAfterEOF() @ 0xb76449b in /usr/bin/clickhouse
+                # 2. ? @ 0xb79cb0b in /usr/bin/clickhouse
+                # 3. DB::NativeReader::read() @ 0x16e7a084 in /usr/bin/clickhouse
+                # 4. DB::NativeInputFormat::generate() @ 0x16f76922 in /usr/bin/clickhouse
+                # 5. DB::ISource::tryGenerate() @ 0x16e90bd5 in /usr/bin/clickhouse
+                # 6. DB::ISource::work() @ 0x16e9087a in /usr/bin/clickhouse
             ],
         },
         "MsgPack": {
@@ -691,7 +790,7 @@ def test_kafka_formats(kafka_cluster):
                 ),
             ],
             "extra_settings": ", format_avro_schema_registry_url='http://{}:{}'".format(
-                kafka_cluster.schema_registry_host, 8081
+                kafka_cluster.schema_registry_host, kafka_cluster.schema_registry_port
             ),
             "supports_empty_value": True,
         },
@@ -772,24 +871,7 @@ def test_kafka_formats(kafka_cluster):
                 extra_settings=format_opts.get("extra_settings") or "",
             )
         )
-
-    instance.wait_for_log_line(
-        "kafka.*Committed offset [0-9]+.*format_tests_",
-        repetitions=len(all_formats.keys()),
-        look_behind_lines=12000,
-    )
-
-    for format_name, format_opts in list(all_formats.items()):
-        logging.debug(("Checking {}".format(format_name)))
-        topic_name = f"format_tests_{format_name}"
-        # shift offsets by 1 if format supports empty value
-        offsets = (
-            [1, 2, 3] if format_opts.get("supports_empty_value", False) else [0, 1, 2]
-        )
-        result = instance.query(
-            "SELECT * FROM test.kafka_{format_name}_mv;".format(format_name=format_name)
-        )
-        expected = """\
+    raw_expected = """\
 0	0	AM	0.5	1	{topic_name}	0	{offset_0}
 1	0	AM	0.5	1	{topic_name}	0	{offset_1}
 2	0	AM	0.5	1	{topic_name}	0	{offset_1}
@@ -807,7 +889,27 @@ def test_kafka_formats(kafka_cluster):
 14	0	AM	0.5	1	{topic_name}	0	{offset_1}
 15	0	AM	0.5	1	{topic_name}	0	{offset_1}
 0	0	AM	0.5	1	{topic_name}	0	{offset_2}
-""".format(
+"""
+
+    expected_rows_count = raw_expected.count("\n")
+    instance.query_with_retry(
+        f"SELECT * FROM test.kafka_{list(all_formats.keys())[-1]}_mv;",
+        retry_count=30,
+        sleep_time=1,
+        check_callback=lambda res: res.count("\n") == expected_rows_count,
+    )
+
+    for format_name, format_opts in list(all_formats.items()):
+        logging.debug(("Checking {}".format(format_name)))
+        topic_name = f"format_tests_{format_name}"
+        # shift offsets by 1 if format supports empty value
+        offsets = (
+            [1, 2, 3] if format_opts.get("supports_empty_value", False) else [0, 1, 2]
+        )
+        result = instance.query(
+            "SELECT * FROM test.kafka_{format_name}_mv;".format(format_name=format_name)
+        )
+        expected = raw_expected.format(
             topic_name=topic_name,
             offset_0=offsets[0],
             offset_1=offsets[1],
@@ -868,9 +970,7 @@ def describe_consumer_group(kafka_cluster, name):
         member_info["client_id"] = client_id
         member_info["client_host"] = client_host
         member_topics_assignment = []
-        for (topic, partitions) in MemberAssignment.decode(
-            member_assignment
-        ).assignment:
+        for topic, partitions in MemberAssignment.decode(member_assignment).assignment:
             member_topics_assignment.append({"topic": topic, "partitions": partitions})
         member_info["assignment"] = member_topics_assignment
         res.append(member_info)
@@ -1086,6 +1186,7 @@ def test_kafka_consumer_hang2(kafka_cluster):
     instance.query(
         """
         DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka2;
 
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
@@ -1488,7 +1589,6 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 
 
 def test_kafka_materialized_view(kafka_cluster):
-
     instance.query(
         """
         DROP TABLE IF EXISTS test.view;
@@ -2266,13 +2366,16 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
 
 def test_kafka_produce_key_timestamp(kafka_cluster):
-
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
     topic_name = "insert3"
-    kafka_create_topic(admin_client, topic_name)
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        "retention.ms": "-1",
+    }
+    kafka_create_topic(admin_client, topic_name, config=topic_config)
 
     instance.query(
         """
@@ -2391,7 +2494,6 @@ def test_kafka_insert_avro(kafka_cluster):
 
 
 def test_kafka_produce_consume_avro(kafka_cluster):
-
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -2846,7 +2948,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     # while materialized view is working to inject zookeeper failure
     pm.drop_instance_zk_connections(instance)
     instance.wait_for_log_line(
-        "Error.*(session has been expired|Connection loss).*while pushing to view"
+        "Error.*(Connection loss|Coordination::Exception).*while pushing to view"
     )
     pm.heal_all()
     instance.wait_for_log_line("Committed offset 22")
@@ -3529,7 +3631,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 '0,"BAD","AM",0.5,1\n',
             ],
-            "expected": """{"raw_message":"0,\\"BAD\\",\\"AM\\",0.5,1\\n","error":"Cannot parse input: expected '\\"' before: 'BAD\\",\\"AM\\",0.5,1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"0,\\"BAD\\",\\"AM\\",0.5,1\\n","error":"Cannot parse input: expected '\\"' before: 'BAD\\",\\"AM\\",0.5,1\\\\n'"}""",
             "printable": True,
             "supports_empty_value": True,
         },
@@ -3541,7 +3643,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "0\tBAD\tAM\t0.5\t1\n",
             ],
-            "expected": """{"raw_message":"0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n'"}""",
             "supports_empty_value": True,
             "printable": True,
         },
@@ -3553,7 +3655,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 '"id","blockNo","val1","val2","val3"\n0,"BAD","AM",0.5,1\n',
             ],
-            "expected": """{"raw_message":"\\"id\\",\\"blockNo\\",\\"val1\\",\\"val2\\",\\"val3\\"\\n0,\\"BAD\\",\\"AM\\",0.5,1\\n","error":"Cannot parse input: expected '\\"' before: 'BAD\\",\\"AM\\",0.5,1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"\\"id\\",\\"blockNo\\",\\"val1\\",\\"val2\\",\\"val3\\"\\n0,\\"BAD\\",\\"AM\\",0.5,1\\n","error":"Cannot parse input: expected '\\"' before: 'BAD\\",\\"AM\\",0.5,1\\\\n'"}""",
             "printable": True,
         },
         "Values": {
@@ -3576,7 +3678,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "id\tblockNo\tval1\tval2\tval3\n0\tBAD\tAM\t0.5\t1\n",
             ],
-            "expected": """{"raw_message":"id\\tblockNo\\tval1\\tval2\\tval3\\n0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"id\\tblockNo\\tval1\\tval2\\tval3\\n0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n"}""",
             "supports_empty_value": True,
             "printable": True,
         },
@@ -3588,7 +3690,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "id\tblockNo\tval1\tval2\tval3\nInt64\tUInt16\tString\tFloat32\tUInt8\n0\tBAD\tAM\t0.5\t1\n",
             ],
-            "expected": """{"raw_message":"id\\tblockNo\\tval1\\tval2\\tval3\\nInt64\\tUInt16\\tString\\tFloat32\\tUInt8\\n0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n': Could not print diagnostic info because two last rows aren't in buffer (rare case)\\n"}""",
+            "expected": """{"raw_message":"id\\tblockNo\\tval1\\tval2\\tval3\\nInt64\\tUInt16\\tString\\tFloat32\\tUInt8\\n0\\tBAD\\tAM\\t0.5\\t1\\n","error":"Cannot parse input: expected '\\\\t' before: 'BAD\\\\tAM\\\\t0.5\\\\t1\\\\n'"}""",
             "printable": True,
         },
         "Native": {
@@ -3685,19 +3787,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
             )
         )
 
-    for format_name, format_opts in list(all_formats.items()):
-        logging.debug("Checking {format_name}")
-        topic_name = f"{topic_name_prefix}{format_name}"
-        # shift offsets by 1 if format supports empty value
-        offsets = (
-            [1, 2, 3] if format_opts.get("supports_empty_value", False) else [0, 1, 2]
-        )
-        result = instance.query(
-            "SELECT * FROM test.kafka_data_{format_name}_mv;".format(
-                format_name=format_name
-            )
-        )
-        expected = """\
+    raw_expected = """\
 0	0	AM	0.5	1	{topic_name}	0	{offset_0}
 1	0	AM	0.5	1	{topic_name}	0	{offset_1}
 2	0	AM	0.5	1	{topic_name}	0	{offset_1}
@@ -3715,7 +3805,29 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
 14	0	AM	0.5	1	{topic_name}	0	{offset_1}
 15	0	AM	0.5	1	{topic_name}	0	{offset_1}
 0	0	AM	0.5	1	{topic_name}	0	{offset_2}
-""".format(
+"""
+
+    expected_rows_count = raw_expected.count("\n")
+    instance.query_with_retry(
+        f"SELECT * FROM test.kafka_data_{list(all_formats.keys())[-1]}_mv;",
+        retry_count=30,
+        sleep_time=1,
+        check_callback=lambda res: res.count("\n") == expected_rows_count,
+    )
+
+    for format_name, format_opts in list(all_formats.items()):
+        logging.debug(f"Checking {format_name}")
+        topic_name = f"{topic_name_prefix}{format_name}"
+        # shift offsets by 1 if format supports empty value
+        offsets = (
+            [1, 2, 3] if format_opts.get("supports_empty_value", False) else [0, 1, 2]
+        )
+        result = instance.query(
+            "SELECT * FROM test.kafka_data_{format_name}_mv;".format(
+                format_name=format_name
+            )
+        )
+        expected = raw_expected.format(
             topic_name=topic_name,
             offset_0=offsets[0],
             offset_1=offsets[1],
@@ -3978,7 +4090,6 @@ def test_kafka_predefined_configuration(kafka_cluster):
 
 # https://github.com/ClickHouse/ClickHouse/issues/26643
 def test_issue26643(kafka_cluster):
-
     # for backporting:
     # admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
     admin_client = KafkaAdminClient(
@@ -4051,7 +4162,7 @@ def test_issue26643(kafka_cluster):
             kafka_num_consumers = 4,
             kafka_skip_broken_messages = 10000;
 
-        SET allow_suspicious_low_cardinality_types=1; 
+        SET allow_suspicious_low_cardinality_types=1;
 
         CREATE TABLE test.log
         (
@@ -4095,12 +4206,632 @@ def test_issue26643(kafka_cluster):
 
     expected = """\
 2021-08-15 07:00:00	server1		443	50000	['1','2']	[0,0]	[444,0]	[123123,0]	['adsfasd','']	GET
-2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]	
+2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]
 2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]
 """
     assert TSV(result) == TSV(expected)
 
     # kafka_cluster.open_bash_shell('instance')
+
+
+def test_num_consumers_limit(kafka_cluster):
+    instance.query("DROP TABLE IF EXISTS test.kafka")
+
+    error = instance.query_and_get_error(
+        """
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n', '', 100)
+            SETTINGS kafka_commit_on_select = 1;
+        """
+    )
+
+    assert "BAD_ARGUMENTS" in error
+
+    instance.query(
+        """
+        SET kafka_disable_num_consumers_limit = 1;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n', '', 100)
+            SETTINGS kafka_commit_on_select = 1;
+        """
+    )
+
+    instance.query("DROP TABLE test.kafka")
+
+
+def test_format_with_prefix_and_suffix(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    kafka_create_topic(admin_client, "custom")
+
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'custom',
+                     kafka_group_name = 'custom',
+                     kafka_format = 'CustomSeparated';
+    """
+    )
+
+    instance.query(
+        "INSERT INTO test.kafka select number*10 as key, number*100 as value from numbers(2) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
+    )
+
+    messages = []
+
+    attempt = 0
+    while attempt < 100:
+        messages.extend(kafka_consume(kafka_cluster, "custom"))
+        if len(messages) == 2:
+            break
+        attempt += 1
+
+    assert len(messages) == 2
+
+    assert (
+        "".join(messages) == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
+    )
+
+    kafka_delete_topic(admin_client, "custom")
+
+
+def test_max_rows_per_message(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "custom_max_rows_per_message"
+
+    kafka_create_topic(admin_client, topic)
+
+    num_rows = 5
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'CustomSeparated',
+                     format_custom_result_before_delimiter = '<prefix>\n',
+                     format_custom_result_after_delimiter = '<suffix>\n',
+                     kafka_max_rows_per_message = 3;
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value FROM test.kafka;
+    """
+    )
+
+    instance.query(
+        f"INSERT INTO test.kafka select number*10 as key, number*100 as value from numbers({num_rows}) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
+    )
+
+    messages = []
+
+    attempt = 0
+    while attempt < 500:
+        messages.extend(kafka_consume(kafka_cluster, topic))
+        if len(messages) == 2:
+            break
+        attempt += 1
+
+    assert len(messages) == 2
+
+    assert (
+        "".join(messages)
+        == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
+    )
+
+    attempt = 0
+    rows = 0
+    while attempt < 500:
+        rows = int(instance.query("SELECT count() FROM test.view"))
+        if rows == num_rows:
+            break
+        attempt += 1
+
+    assert rows == num_rows
+
+    result = instance.query("SELECT * FROM test.view")
+    assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
+
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_row_based_formats(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    for format_name in [
+        "TSV",
+        "TSVWithNamesAndTypes",
+        "TSKV",
+        "CSV",
+        "CSVWithNamesAndTypes",
+        "CustomSeparatedWithNamesAndTypes",
+        "Values",
+        "JSON",
+        "JSONEachRow",
+        "JSONCompactEachRow",
+        "JSONCompactEachRowWithNamesAndTypes",
+        "JSONObjectEachRow",
+        "Avro",
+        "RowBinary",
+        "RowBinaryWithNamesAndTypes",
+        "MsgPack",
+    ]:
+        print(format_name)
+
+        kafka_create_topic(admin_client, format_name)
+
+        num_rows = 10
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.kafka;
+
+            CREATE TABLE test.kafka (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{format_name}',
+                         kafka_group_name = '{format_name}',
+                         kafka_format = '{format_name}',
+                         kafka_max_rows_per_message = 5;
+
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                SELECT key, value FROM test.kafka;
+
+            INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
+        """
+        )
+
+        messages = []
+
+        attempt = 0
+        while attempt < 500:
+            messages.extend(kafka_consume(kafka_cluster, format_name, needDecode=False))
+            if len(messages) == 2:
+                break
+            attempt += 1
+
+        assert len(messages) == 2
+
+        attempt = 0
+        rows = 0
+        while attempt < 500:
+            rows = int(instance.query("SELECT count() FROM test.view"))
+            if rows == num_rows:
+                break
+            attempt += 1
+
+        assert rows == num_rows
+
+        result = instance.query("SELECT * FROM test.view")
+        expected = ""
+        for i in range(num_rows):
+            expected += str(i * 10) + "\t" + str(i * 100) + "\n"
+        assert result == expected
+
+        kafka_delete_topic(admin_client, format_name)
+
+
+def test_block_based_formats_1(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "pretty_space"
+    kafka_create_topic(admin_client, topic)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'PrettySpace';
+
+        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;
+    """
+    )
+
+    messages = []
+
+    attempt = 0
+    while attempt < 500:
+        messages.extend(kafka_consume(kafka_cluster, topic))
+        if len(messages) == 3:
+            break
+        attempt += 1
+
+    assert len(messages) == 3
+
+    data = []
+    for message in messages:
+        splitted = message.split("\n")
+        assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+        assert splitted[1] == ""
+        assert splitted[-1] == ""
+        data += [line.split() for line in splitted[2:-1]]
+
+    assert data == [
+        ["0", "0"],
+        ["10", "100"],
+        ["20", "200"],
+        ["30", "300"],
+        ["40", "400"],
+    ]
+
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_block_based_formats_2(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    num_rows = 100
+
+    for format_name in [
+        "JSONColumns",
+        "Native",
+        "Arrow",
+        "Parquet",
+        "ORC",
+        "JSONCompactColumns",
+    ]:
+        kafka_create_topic(admin_client, format_name)
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.kafka;
+
+            CREATE TABLE test.kafka (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{format_name}',
+                         kafka_group_name = '{format_name}',
+                         kafka_format = '{format_name}';
+
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                SELECT key, value FROM test.kafka;
+
+            INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
+        """
+        )
+
+        messages = []
+
+        attempt = 0
+        while attempt < 500:
+            messages.extend(kafka_consume(kafka_cluster, format_name, needDecode=False))
+            if len(messages) == 9:
+                break
+            attempt += 1
+
+        assert len(messages) == 9
+
+        attempt = 0
+        rows = 0
+        while attempt < 500:
+            rows = int(instance.query("SELECT count() FROM test.view"))
+            if rows == num_rows:
+                break
+            attempt += 1
+
+        assert rows == num_rows
+
+        result = instance.query("SELECT * FROM test.view ORDER by key")
+        expected = ""
+        for i in range(num_rows):
+            expected += str(i * 10) + "\t" + str(i * 100) + "\n"
+        assert result == expected
+
+        kafka_delete_topic(admin_client, format_name)
+
+
+def test_system_kafka_consumers(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "system_kafka_cons"
+    kafka_create_topic(admin_client, topic)
+
+    # Check that format_csv_delimiter parameter works now - as part of all available format settings.
+    kafka_produce(
+        kafka_cluster,
+        topic,
+        ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
+    )
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (a UInt64, b String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'CSV',
+                     kafka_row_delimiter = '\\n',
+                     format_csv_delimiter = '|';
+        """
+    )
+
+    result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
+
+    result_system_kafka_consumers = instance.query(
+        """
+        create or replace function stable_timestamp as
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+
+        SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
+          assignments.current_offset,
+          if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
+          if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
+          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+          num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used
+          FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
+        """
+    )
+    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
+    assert (
+        result_system_kafka_consumers
+        == """Row 1:
+──────
+database:                   test
+table:                      kafka
+length(consumer_id):        67
+assignments.topic:          ['system_kafka_cons']
+assignments.partition_id:   [0]
+assignments.current_offset: [4]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          4
+last_commit_time_:          now
+num_commits:                1
+last_rebalance_time_:       never
+num_rebalance_revocations:  0
+num_rebalance_assignments:  1
+is_currently_used:          0
+"""
+    )
+
+    instance.query("DROP TABLE test.kafka")
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
+    # based on test_kafka_consumer_hang2
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        value_serializer=producer_serializer,
+        key_serializer=producer_serializer,
+    )
+
+    topic = "system_kafka_cons2"
+    kafka_create_topic(admin_client, topic, num_partitions=2)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka2;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka2 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'JSONEachRow';
+        """
+    )
+
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 11, "value": 11}), partition=1)
+    time.sleep(3)
+
+    # first consumer subscribe the topic, try to poll some data, and go to rest
+    instance.query("SELECT * FROM test.kafka")
+
+    # second consumer do the same leading to rebalance in the first
+    # consumer, try to poll some data
+    instance.query("SELECT * FROM test.kafka2")
+
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 10, "value": 10}), partition=1)
+    time.sleep(3)
+
+    instance.query("SELECT * FROM test.kafka")
+    instance.query("SELECT * FROM test.kafka2")
+    instance.query("SELECT * FROM test.kafka")
+    instance.query("SELECT * FROM test.kafka2")
+
+    result_system_kafka_consumers = instance.query(
+        """
+        create or replace function stable_timestamp as
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+        SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
+          assignments.current_offset,
+          if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
+          if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
+          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+          num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used
+          FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
+        """
+    )
+    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
+    assert (
+        result_system_kafka_consumers
+        == """Row 1:
+──────
+database:                   test
+table:                      kafka
+length(consumer_id):        67
+assignments.topic:          ['system_kafka_cons2']
+assignments.partition_id:   [0]
+assignments.current_offset: [2]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          4
+last_commit_time_:          now
+num_commits:                2
+last_rebalance_time_:       now
+num_rebalance_revocations:  1
+num_rebalance_assignments:  2
+is_currently_used:          0
+
+Row 2:
+──────
+database:                   test
+table:                      kafka2
+length(consumer_id):        68
+assignments.topic:          ['system_kafka_cons2']
+assignments.partition_id:   [1]
+assignments.current_offset: [2]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          1
+last_commit_time_:          now
+num_commits:                1
+last_rebalance_time_:       never
+num_rebalance_revocations:  0
+num_rebalance_assignments:  1
+is_currently_used:          0
+"""
+    )
+
+    instance.query("DROP TABLE test.kafka")
+    instance.query("DROP TABLE test.kafka2")
+
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        value_serializer=producer_serializer,
+        key_serializer=producer_serializer,
+    )
+
+    topic = "system_kafka_cons_mv"
+    kafka_create_topic(admin_client, topic, num_partitions=2)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka2;
+        DROP TABLE IF EXISTS test.kafka_persistent;
+        DROP TABLE IF EXISTS test.kafka_persistent2;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka2 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka_persistent (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE TABLE test.kafka_persistent2 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.persistent_kafka_mv TO test.kafka_persistent AS
+        SELECT key, value
+        FROM test.kafka;
+
+        CREATE MATERIALIZED VIEW test.persistent_kafka_mv2 TO test.kafka_persistent2 AS
+        SELECT key, value
+        FROM test.kafka2;
+        """
+    )
+
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 11, "value": 11}), partition=1)
+    time.sleep(3)
+
+    retries = 0
+    result_rdkafka_stat = ""
+    while True:
+        result_rdkafka_stat = instance.query(
+            """
+            SELECT table, JSONExtractString(rdkafka_stat, 'type')
+            FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
+            """
+        )
+        if result_rdkafka_stat.find("consumer") or retries > max_retries:
+            break
+        retries += 1
+        time.sleep(1)
+
+    assert (
+        result_rdkafka_stat
+        == """Row 1:
+──────
+table:                                   kafka
+JSONExtractString(rdkafka_stat, 'type'): consumer
+"""
+    )
+
+    instance.query("DROP TABLE test.kafka")
+    instance.query("DROP TABLE test.kafka2")
+    instance.query("DROP TABLE test.kafka_persistent")
+    instance.query("DROP TABLE test.kafka_persistent2")
+    instance.query("DROP TABLE test.persistent_kafka_mv")
+    instance.query("DROP TABLE test.persistent_kafka_mv2")
+
+    kafka_delete_topic(admin_client, topic)
 
 
 if __name__ == "__main__":

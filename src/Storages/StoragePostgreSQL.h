@@ -1,25 +1,28 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
-#include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
-#include <Core/PostgreSQL/PoolWithFailover.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace Poco
 {
 class Logger;
 }
 
+namespace postgres
+{
+class PoolWithFailover;
+using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
+}
+
 namespace DB
 {
+class NamedCollection;
 
-class StoragePostgreSQL final : public shared_ptr_helper<StoragePostgreSQL>, public IStorage
+class StoragePostgreSQL final : public IStorage
 {
-    friend struct shared_ptr_helper<StoragePostgreSQL>;
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,
@@ -28,6 +31,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
+        ContextPtr context_,
         const String & remote_table_schema_ = "",
         const String & on_conflict = "");
 
@@ -40,15 +44,36 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
-    static StoragePostgreSQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    struct Configuration
+    {
+        String host;
+        UInt16 port = 0;
+        String username = "default";
+        String password;
+        String database;
+        String table;
+        String schema;
+        String on_conflict;
+
+        std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
+        String addresses_expr;
+    };
+
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, bool require_table = true);
+
+    static ColumnsDescription getTableStructureFromData(
+        const postgres::PoolWithFailoverPtr & pool_,
+        const String & table,
+        const String & schema,
+        const ContextPtr & context_);
 
 private:
-    friend class PostgreSQLBlockOutputStream;
-
     String remote_table_name;
     String remote_table_schema;
     String on_conflict;

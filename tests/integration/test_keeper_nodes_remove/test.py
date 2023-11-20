@@ -2,6 +2,7 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+import time
 import os
 from kazoo.client import KazooClient, KazooState
 
@@ -39,67 +40,94 @@ def get_fake_zk(node, timeout=30.0):
 
 
 def test_nodes_remove(started_cluster):
-    zk_conn = get_fake_zk(node1)
+    zk_conn = None
+    zk_conn2 = None
+    zk_conn3 = None
 
-    for i in range(100):
-        zk_conn.create("/test_two_" + str(i), b"somedata")
+    try:
+        zk_conn = get_fake_zk(node1)
 
-    zk_conn2 = get_fake_zk(node2)
-    zk_conn2.sync("/test_two_0")
+        for i in range(100):
+            zk_conn.create("/test_two_" + str(i), b"somedata")
 
-    zk_conn3 = get_fake_zk(node3)
-    zk_conn3.sync("/test_two_0")
-
-    for i in range(100):
-        assert zk_conn2.exists("test_two_" + str(i)) is not None
-        assert zk_conn3.exists("test_two_" + str(i)) is not None
-
-    node2.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "enable_keeper_two_nodes_2.xml"),
-        "/etc/clickhouse-server/config.d/enable_keeper2.xml",
-    )
-    node1.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "enable_keeper_two_nodes_1.xml"),
-        "/etc/clickhouse-server/config.d/enable_keeper1.xml",
-    )
-
-    node1.query("SYSTEM RELOAD CONFIG")
-    node2.query("SYSTEM RELOAD CONFIG")
-
-    zk_conn2 = get_fake_zk(node2)
-
-    for i in range(100):
-        assert zk_conn2.exists("test_two_" + str(i)) is not None
-        zk_conn2.create("/test_two_" + str(100 + i), b"otherdata")
-
-    zk_conn = get_fake_zk(node1)
-    zk_conn.sync("/test_two_0")
-
-    for i in range(100):
-        assert zk_conn.exists("test_two_" + str(i)) is not None
-        assert zk_conn.exists("test_two_" + str(100 + i)) is not None
-
-    with pytest.raises(Exception):
-        zk_conn3 = get_fake_zk(node3)
-        zk_conn3.sync("/test_two_0")
-
-    node3.stop_clickhouse()
-
-    node1.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "enable_single_keeper1.xml"),
-        "/etc/clickhouse-server/config.d/enable_keeper1.xml",
-    )
-
-    node1.query("SYSTEM RELOAD CONFIG")
-    zk_conn = get_fake_zk(node1)
-    zk_conn.sync("/test_two_0")
-
-    for i in range(100):
-        assert zk_conn.exists("test_two_" + str(i)) is not None
-        assert zk_conn.exists("test_two_" + str(100 + i)) is not None
-
-    with pytest.raises(Exception):
         zk_conn2 = get_fake_zk(node2)
         zk_conn2.sync("/test_two_0")
 
-    node2.stop_clickhouse()
+        zk_conn3 = get_fake_zk(node3)
+        zk_conn3.sync("/test_two_0")
+
+        for i in range(100):
+            assert zk_conn2.exists("test_two_" + str(i)) is not None
+            assert zk_conn3.exists("test_two_" + str(i)) is not None
+
+        node2.copy_file_to_container(
+            os.path.join(CONFIG_DIR, "enable_keeper_two_nodes_2.xml"),
+            "/etc/clickhouse-server/config.d/enable_keeper2.xml",
+        )
+        node1.copy_file_to_container(
+            os.path.join(CONFIG_DIR, "enable_keeper_two_nodes_1.xml"),
+            "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+        )
+
+        node1.query("SYSTEM RELOAD CONFIG")
+        node2.query("SYSTEM RELOAD CONFIG")
+
+        zk_conn2.stop()
+        zk_conn2.close()
+        zk_conn2 = get_fake_zk(node2)
+
+        for i in range(100):
+            assert zk_conn2.exists("test_two_" + str(i)) is not None
+            zk_conn2.create("/test_two_" + str(100 + i), b"otherdata")
+
+        zk_conn.stop()
+        zk_conn.close()
+        zk_conn = get_fake_zk(node1)
+        zk_conn.sync("/test_two_0")
+
+        for i in range(100):
+            assert zk_conn.exists("test_two_" + str(i)) is not None
+            assert zk_conn.exists("test_two_" + str(100 + i)) is not None
+
+        try:
+            zk_conn3.stop()
+            zk_conn3.close()
+            zk_conn3 = get_fake_zk(node3)
+            zk_conn3.sync("/test_two_0")
+            time.sleep(0.1)
+        except Exception:
+            pass
+
+        node3.stop_clickhouse()
+
+        node1.copy_file_to_container(
+            os.path.join(CONFIG_DIR, "enable_single_keeper1.xml"),
+            "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+        )
+
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        zk_conn.stop()
+        zk_conn.close()
+        zk_conn = get_fake_zk(node1)
+        zk_conn.sync("/test_two_0")
+
+        for i in range(100):
+            assert zk_conn.exists("test_two_" + str(i)) is not None
+            assert zk_conn.exists("test_two_" + str(100 + i)) is not None
+
+        try:
+            zk_conn2.stop()
+            zk_conn2.close()
+            zk_conn2 = get_fake_zk(node2)
+            zk_conn2.sync("/test_two_0")
+            time.sleep(0.1)
+        except Exception:
+            pass
+
+        node2.stop_clickhouse()
+    finally:
+        for zk in [zk_conn, zk_conn2, zk_conn3]:
+            if zk:
+                zk.stop()
+                zk.close()

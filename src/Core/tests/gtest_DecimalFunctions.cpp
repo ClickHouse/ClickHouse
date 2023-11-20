@@ -1,4 +1,3 @@
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 #include <Core/DecimalFunctions.h>
@@ -17,18 +16,13 @@ struct DecimalUtilsSplitAndCombineTestParam
     DecimalUtils::DecimalComponents<Decimal64> components;
 };
 
-std::ostream & operator << (std::ostream & ostr, const DecimalUtilsSplitAndCombineTestParam & param)
-{
-    return ostr << param.description;
-}
-
 class DecimalUtilsSplitAndCombineTest : public ::testing::TestWithParam<DecimalUtilsSplitAndCombineTestParam>
 {};
 
 template <typename DecimalType>
 void testSplit(const DecimalUtilsSplitAndCombineTestParam & param)
 {
-    const DecimalType decimal_value = param.decimal_value;
+    const DecimalType decimal_value(static_cast<typename DecimalType::NativeType>(param.decimal_value.value));
     const auto & actual_components = DecimalUtils::split(decimal_value, param.scale);
 
     EXPECT_EQ(param.components.whole, actual_components.whole);
@@ -39,21 +33,28 @@ template <typename DecimalType>
 void testDecimalFromComponents(const DecimalUtilsSplitAndCombineTestParam & param)
 {
     EXPECT_EQ(param.decimal_value,
-              DecimalUtils::decimalFromComponents<DecimalType>(param.components.whole, param.components.fractional, param.scale));
+              DecimalUtils::decimalFromComponents<DecimalType>(
+                  static_cast<typename DecimalType::NativeType>(param.components.whole),
+                  static_cast<typename DecimalType::NativeType>(param.components.fractional),
+                  param.scale));
 }
 
 template <typename DecimalType>
 void testGetWhole(const DecimalUtilsSplitAndCombineTestParam & param)
 {
     EXPECT_EQ(param.components.whole,
-              DecimalUtils::getWholePart(DecimalType{param.decimal_value}, param.scale));
+              DecimalUtils::getWholePart(
+                  DecimalType{static_cast<typename DecimalType::NativeType>(param.decimal_value.value)},
+                  param.scale));
 }
 
 template <typename DecimalType>
 void testGetFractional(const DecimalUtilsSplitAndCombineTestParam & param)
 {
     EXPECT_EQ(param.components.fractional,
-              DecimalUtils::getFractionalPart(DecimalType{param.decimal_value}, param.scale));
+              DecimalUtils::getFractionalPart(
+                  DecimalType{static_cast<typename DecimalType::NativeType>(param.decimal_value.value)},
+                  param.scale));
 }
 
 // Unfortunately typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
@@ -144,6 +145,17 @@ TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getFractionalPartDateTime64
 
 }
 
+namespace std // NOLINT(cert-dcl58-cpp)
+{
+
+std::ostream & operator << (std::ostream & ostr, const DecimalUtilsSplitAndCombineTestParam & param) // NOLINT(cert-dcl58-cpp)
+{
+    return ostr << param.description;
+}
+
+}
+
+
 // Intentionally small values that fit into 32-bit in order to cover Decimal32, Decimal64 and Decimal128 with single set of data.
 INSTANTIATE_TEST_SUITE_P(Basic,
     DecimalUtilsSplitAndCombineTest,
@@ -176,7 +188,7 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             }
         },
         {
-            "When scale is not 0 and whole part is 0.",
+            "For positive Decimal value, with scale not 0, and whole part is 0.",
             123,
             3,
             {
@@ -184,6 +196,16 @@ INSTANTIATE_TEST_SUITE_P(Basic,
                 123
             }
         },
+        {
+            "For negative Decimal value, with scale not 0, and whole part is 0.",
+            -123,
+            3,
+            {
+                0,
+                -123
+            }
+        },
+
         {
             "For negative Decimal value whole part is negative, fractional is non-negative.",
             -1234567'89,
@@ -214,6 +236,24 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             3,
             {
                 187618332,
+                123
+            }
+        },
+        {
+            "Negative timestamp 1969-12-31 23:59:59.123 UTC",
+            DateTime64(-877),
+            3,
+            {
+                0,
+                -877
+            }
+        },
+        {
+            "Positive timestamp 1970-01-01 00:00:00.123 UTC",
+            DateTime64(123),
+            3,
+            {
+                0,
                 123
             }
         }

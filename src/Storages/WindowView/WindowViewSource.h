@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Storages/WindowView/StorageWindowView.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 
 namespace DB
 {
 
-class WindowViewSource : public SourceWithProgress
+class WindowViewSource : public ISource
 {
 public:
     WindowViewSource(
@@ -17,22 +17,22 @@ public:
         const bool has_limit_,
         const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
-        : SourceWithProgress(
+        : ISource(
             is_events_ ? Block(
                 {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")})
-                       : storage_->getHeader())
+                       : storage_->getOutputHeader())
         , storage(storage_)
         , is_events(is_events_)
         , window_view_timezone(window_view_timezone_)
         , has_limit(has_limit_)
         , limit(limit_)
-        , heartbeat_interval_sec(heartbeat_interval_sec_)
+        , heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000)
     {
         if (is_events)
             header.insert(
                 ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark"));
         else
-            header = storage->getHeader();
+            header = storage->getOutputHeader();
     }
 
     String getName() const override { return "WindowViewSource"; }
@@ -51,6 +51,8 @@ protected:
         Block block;
         UInt32 watermark;
         std::tie(block, watermark) = generateImpl();
+        if (!block)
+            return Chunk();
         if (is_events)
         {
             return Chunk(
@@ -81,28 +83,27 @@ protected:
                 return {getHeader(), 0};
             }
 
-            storage->fire_condition.wait_for(lock, std::chrono::seconds(heartbeat_interval_sec));
-
-            if (isCancelled() || storage->shutdown_called)
+            while ((Poco::Timestamp().epochMicroseconds() - last_heartbeat_timestamp_usec) < heartbeat_interval_usec)
             {
-                return {Block(), 0};
-            }
-
-            if (blocks_with_watermark.empty())
-                return {getHeader(), 0};
-            else
-            {
-                end_of_blocks = false;
-                auto res = blocks_with_watermark.front();
-                blocks_with_watermark.pop_front();
-                return res;
+                bool signaled = std::cv_status::no_timeout == storage->fire_condition.wait_for(lock, std::chrono::microseconds(1000));
+                if (signaled)
+                    break;
+                if (isCancelled() || storage->shutdown_called)
+                    return {Block(), 0};
             }
         }
-        else
+
+        if (!blocks_with_watermark.empty())
         {
+            end_of_blocks = false;
             auto res = blocks_with_watermark.front();
             blocks_with_watermark.pop_front();
             return res;
+        }
+        else
+        {
+            last_heartbeat_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
+            return {getHeader(), 0};
         }
     }
 
@@ -119,6 +120,7 @@ private:
     Int64 num_updates = -1;
     bool end_of_blocks = false;
     std::mutex blocks_mutex;
-    UInt64 heartbeat_interval_sec;
+    UInt64 heartbeat_interval_usec;
+    UInt64 last_heartbeat_timestamp_usec = 0;
 };
 }

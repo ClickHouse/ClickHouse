@@ -9,15 +9,13 @@ namespace DB
 
 using FunctionToDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfMonthImpl>;
 
-void registerFunctionToDayOfMonth(FunctionFactory & factory)
+REGISTER_FUNCTION(ToDayOfMonth)
 {
     factory.registerFunction<FunctionToDayOfMonth>();
 
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToDayOfMonth>("DAY", FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionToDayOfMonth>("DAYOFMONTH", FunctionFactory::CaseInsensitive);
+    /// MySQL compatibility alias.
+    factory.registerAlias("DAY", "toDayOfMonth", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("DAYOFMONTH", "toDayOfMonth", FunctionFactory::CaseInsensitive);
 }
 
 }
-
-

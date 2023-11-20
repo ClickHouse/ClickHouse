@@ -48,24 +48,25 @@ public:
         const size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(number_of_arguments) + ", should be 2 or 3",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                            getName(), number_of_arguments);
 
         if (arguments[0]->onlyNull())
             return arguments[0];
 
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array but it has type "
-                            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be an array but it has type {}.",
+                            getName(), arguments[0]->getName());
 
         for (size_t i = 1; i < number_of_arguments; ++i)
         {
             if (!isInteger(removeNullable(arguments[i])) && !arguments[i]->onlyNull())
-                throw Exception(
-                        "Argument " + toString(i) + " for function " + getName() + " must be integer but it has type "
-                        + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Argument {} for function {} must be integer but it has type {}.",
+                                i, getName(), arguments[i]->getName());
         }
 
         return arguments[0];
@@ -94,7 +95,7 @@ public:
         if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         else
-            throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "First arguments for function {} must be array.", getName());
 
         ColumnArray::MutablePtr sink;
 
@@ -150,7 +151,7 @@ public:
 };
 
 
-void registerFunctionArraySlice(FunctionFactory & factory)
+REGISTER_FUNCTION(ArraySlice)
 {
     factory.registerFunction<FunctionArraySlice>();
 }

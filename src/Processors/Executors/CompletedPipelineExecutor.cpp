@@ -1,10 +1,12 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include <iostream>
+#include <Common/scope_guard_safe.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -30,16 +32,21 @@ struct CompletedPipelineExecutor::Data
     }
 };
 
-static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
+static void threadFunction(
+    CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
-    setThreadName("QueryPipelineEx");
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachFromGroupIfNotDetached();
+    );
+    setThreadName("QueryCompPipeEx");
 
     try
     {
         if (thread_group)
-            CurrentThread::attachTo(thread_group);
+            CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads);
+        data.executor->execute(num_threads, concurrency_control);
     }
     catch (...)
     {
@@ -65,16 +72,21 @@ void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cance
 
 void CompletedPipelineExecutor::execute()
 {
-    PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-
     if (interactive_timeout_ms)
     {
         data = std::make_unique<Data>();
         data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
-        auto func = [&, thread_group = CurrentThread::getGroup()]()
+        /// Avoid passing this to lambda, copy ptr to data instead.
+        /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
+        auto func = [
+            data_ptr = data.get(),
+            num_threads = pipeline.getNumThreads(),
+            thread_group = CurrentThread::getGroup(),
+            concurrency_control = pipeline.getConcurrencyControl()]
         {
-            threadFunction(*data, thread_group, pipeline.getNumThreads());
+            threadFunction(*data_ptr, thread_group, num_threads, concurrency_control);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
@@ -92,7 +104,11 @@ void CompletedPipelineExecutor::execute()
             std::rethrow_exception(data->exception);
     }
     else
-        executor.execute(pipeline.getNumThreads());
+    {
+        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+        executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+    }
 }
 
 CompletedPipelineExecutor::~CompletedPipelineExecutor()
@@ -104,7 +120,7 @@ CompletedPipelineExecutor::~CompletedPipelineExecutor()
     }
     catch (...)
     {
-        tryLogCurrentException("PullingAsyncPipelineExecutor");
+        tryLogCurrentException("CompletedPipelineExecutor");
     }
 }
 

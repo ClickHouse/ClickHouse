@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <memory>
 #include <Storages/IStorage.h>
 
 
@@ -8,14 +8,16 @@ namespace DB
 {
 
 class Context;
-
+class StorageSystemReplicasImpl;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
-class StorageSystemReplicas final : public shared_ptr_helper<StorageSystemReplicas>, public IStorage
+class StorageSystemReplicas final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemReplicas>;
 public:
+    explicit StorageSystemReplicas(const StorageID & table_id_);
+    ~StorageSystemReplicas() override;
+
     std::string getName() const override { return "SystemReplicas"; }
 
     Pipe read(
@@ -25,12 +27,12 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     bool isSystemStorage() const override { return true; }
 
-protected:
-    explicit StorageSystemReplicas(const StorageID & table_id_);
+private:
+    std::unique_ptr<StorageSystemReplicasImpl> impl;
 };
 
 }

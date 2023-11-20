@@ -1,4 +1,5 @@
 ---
+slug: /ru/development/style
 sidebar_position: 69
 sidebar_label: "Как писать код на C++"
 ---
@@ -344,7 +345,7 @@ struct ExtractDomain
 **7.** Для абстрактных классов (интерфейсов) можно добавить в начало имени букву `I`.
 
 ``` cpp
-class IBlockInputStream
+class IProcessor
 ```
 
 **8.** Если переменная используется достаточно локально, то можно использовать короткое имя.

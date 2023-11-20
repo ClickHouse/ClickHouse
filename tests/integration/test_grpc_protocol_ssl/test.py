@@ -4,45 +4,41 @@ import sys
 import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 
+script_dir = os.path.dirname(os.path.realpath(__file__))
+pb2_dir = os.path.join(script_dir, "pb2")
+if pb2_dir not in sys.path:
+    sys.path.append(pb2_dir)
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
+
+
+# The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
+# The client have to verify server certificate against that name. Client uses SNI
+SSL_HOST = "integration-tests.clickhouse.com"
 GRPC_PORT = 9100
-NODE_IP = "10.5.172.77"  # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
-
-
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-
-proto_dir = os.path.join(SCRIPT_DIR, "./protos")
-gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
-os.makedirs(gen_dir, exist_ok=True)
-run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
-    shell=True,
-)
-
-sys.path.append(gen_dir)
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 
 # Utilities
 
-node_ip_with_grpc_port = NODE_IP + ":" + str(GRPC_PORT)
-config_dir = os.path.join(SCRIPT_DIR, "./configs")
+config_dir = os.path.join(script_dir, "./configs")
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    ipv4_address=NODE_IP,
     main_configs=[
         "configs/grpc_config.xml",
         "configs/server-key.pem",
         "configs/server-cert.pem",
         "configs/ca-cert.pem",
     ],
+    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+    env_variables={
+        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
+    },
 )
+
+
+def get_grpc_url(instance=node):
+    return f"{instance.ip_address}:{GRPC_PORT}"
 
 
 def create_secure_channel():
@@ -50,13 +46,17 @@ def create_secure_channel():
     client_key = open(os.path.join(config_dir, "client-key.pem"), "rb").read()
     client_cert = open(os.path.join(config_dir, "client-cert.pem"), "rb").read()
     credentials = grpc.ssl_channel_credentials(ca_cert, client_key, client_cert)
-    channel = grpc.secure_channel(node_ip_with_grpc_port, credentials)
+    channel = grpc.secure_channel(
+        get_grpc_url(),
+        credentials,
+        options=(("grpc.ssl_target_name_override", SSL_HOST),),
+    )
     grpc.channel_ready_future(channel).result(timeout=10)
     return channel
 
 
 def create_insecure_channel():
-    channel = grpc.insecure_channel(node_ip_with_grpc_port)
+    channel = grpc.insecure_channel(get_grpc_url())
     grpc.channel_ready_future(channel).result(timeout=2)
     return channel
 
@@ -66,7 +66,7 @@ def create_secure_channel_with_wrong_client_certificate():
     client_key = open(os.path.join(config_dir, "wrong-client-key.pem"), "rb").read()
     client_cert = open(os.path.join(config_dir, "wrong-client-cert.pem"), "rb").read()
     credentials = grpc.ssl_channel_credentials(ca_cert, client_key, client_cert)
-    channel = grpc.secure_channel(node_ip_with_grpc_port, credentials)
+    channel = grpc.secure_channel(get_grpc_url(), credentials)
     grpc.channel_ready_future(channel).result(timeout=2)
     return channel
 

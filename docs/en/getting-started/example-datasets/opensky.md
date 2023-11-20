@@ -1,15 +1,15 @@
 ---
+slug: /en/getting-started/example-datasets/opensky
 sidebar_label: Air Traffic Data
 description: The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. 
+title: "Crowdsourced air traffic data from The OpenSky Network 2020"
 ---
-
-# Crowdsourced air traffic data from The OpenSky Network 2020
 
 The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic.
 
 Source: https://zenodo.org/record/5092942#.YRBCyTpRXYd
 
-Martin Strohmeier, Xavier Olive, Jannis Lübbe, Matthias Schäfer, and Vincent Lenders
+Martin Strohmeier, Xavier Olive, Jannis Luebbe, Matthias Schaefer, and Vincent Lenders
 "Crowdsourced air traffic data from the OpenSky Network 2019–2020"
 Earth System Science Data 13(2), 2021
 https://doi.org/10.5194/essd-13-357-2021
@@ -60,7 +60,7 @@ ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c 'gzip -c -d "{}" | clickhou
 `xargs -P100` specifies to use up to 100 parallel workers but as we only have 30 files, the number of workers will be only 30.
 - For every file, `xargs` will run a script with `bash -c`. The script has substitution in form of `{}` and the `xargs` command will substitute the filename to it (we have asked it for `xargs` with `-I{}`).
 - The script will decompress the file (`gzip -c -d "{}"`) to standard output (`-c` parameter) and the output is redirected to `clickhouse-client`.
-- We also asked to parse [DateTime](../../sql-reference/data-types/datetime.md) fields with extended parser ([--date_time_input_format best_effort](../../operations/settings/settings.md#settings-date_time_input_format)) to recognize ISO-8601 format with timezone offsets.
+- We also asked to parse [DateTime](../../sql-reference/data-types/datetime.md) fields with extended parser ([--date_time_input_format best_effort](../../operations/settings/settings-formats.md#settings-date_time_input_format)) to recognize ISO-8601 format with timezone offsets.
 
 Finally, `clickhouse-client` will do insertion. It will read input data in [CSVWithNames](../../interfaces/formats.md#csvwithnames) format. 
 
@@ -417,4 +417,4 @@ Result:
 
 ### Online Playground {#playground}
 
-You can test other queries to this data set using the interactive resource [Online Playground](https://gh-api.clickhouse.com/play?user=play). For example, [like this](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=). However, please note that you cannot create temporary tables here.
+You can test other queries to this data set using the interactive resource [Online Playground](https://play.clickhouse.com/play?user=play). For example, [like this](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=). However, please note that you cannot create temporary tables here.

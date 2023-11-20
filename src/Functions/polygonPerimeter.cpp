@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -17,13 +17,17 @@
 #include <memory>
 #include <string>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
 
 template <typename Point>
 class FunctionPolygonPerimeter : public IFunction
@@ -72,16 +76,15 @@ public:
             using Converter = typename TypeConverter::Type;
 
             if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, Converter>)
-                throw Exception(fmt::format("The argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must not be Point", getName());
             else
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    res_data.emplace_back(boost::geometry::perimeter(geometries[i]));
+                    res_data.emplace_back(static_cast<Float64>(boost::geometry::perimeter(geometries[i])));
             }
-        }
-        );
+        });
 
         return res_column;
     }
@@ -98,8 +101,9 @@ const char * FunctionPolygonPerimeter<CartesianPoint>::name = "polygonPerimeterC
 template <>
 const char * FunctionPolygonPerimeter<SphericalPoint>::name = "polygonPerimeterSpherical";
 
+}
 
-void registerFunctionPolygonPerimeter(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonPerimeter)
 {
     factory.registerFunction<FunctionPolygonPerimeter<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonPerimeter<SphericalPoint>>();

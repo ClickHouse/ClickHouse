@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/data-types/nullable
+---
 # 可为空（类型名称) {#data_type-nullable}
 
 允许用特殊标记 ([NULL](../../sql-reference/data-types/nullable.md)) 表示«缺失值»，可以与 `TypeName` 的正常值存放一起。例如，`Nullable(Int8)` 类型的列可以存储 `Int8` 类型值，而没有值的行将存储 `NULL`。
@@ -37,5 +40,3 @@ SELECT x + y FROM t_null
 │          5 │
 └────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/data_types/nullable/) <!--hide-->

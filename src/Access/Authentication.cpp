@@ -1,5 +1,5 @@
 #include <Access/Authentication.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Poco/SHA1Engine.h>
 #include <Common/typeid_cast.h>
+#include <Common/SSH/Wrappers.h>
 
 
 namespace DB
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -26,17 +28,22 @@ namespace
         return (Util::stringToDigest(password) == password_plaintext);
     }
 
-    bool checkPasswordDoubleSHA1(const std::string_view & password, const Digest & password_double_sha1)
+    bool checkPasswordDoubleSHA1(std::string_view password, const Digest & password_double_sha1)
     {
         return (Util::encodeDoubleSHA1(password) == password_double_sha1);
     }
 
-    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256, const String & salt)
+    bool checkPasswordBcrypt(std::string_view password, const Digest & password_bcrypt)
+    {
+        return Util::checkPasswordBcrypt(password, password_bcrypt);
+    }
+
+    bool checkPasswordSHA256(std::string_view password, const Digest & password_sha256, const String & salt)
     {
         return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
     }
 
-    bool checkPasswordDoubleSHA1MySQL(const std::string_view & scramble, const std::string_view & scrambled_password, const Digest & password_double_sha1)
+    bool checkPasswordDoubleSHA1MySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_double_sha1)
     {
         /// scrambled_password = SHA1(password) XOR SHA1(scramble <concat> SHA1(SHA1(password)))
 
@@ -61,14 +68,28 @@ namespace
         return calculated_password_double_sha1 == password_double_sha1;
     }
 
-    bool checkPasswordPlainTextMySQL(const std::string_view & scramble, const std::string_view & scrambled_password, const Digest & password_plaintext)
+    bool checkPasswordPlainTextMySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_plaintext)
     {
         return checkPasswordDoubleSHA1MySQL(scramble, scrambled_password, Util::encodeDoubleSHA1(password_plaintext));
     }
+
+#if USE_SSL
+    bool checkSshSignature(const std::vector<ssh::SSHKey> & keys, std::string_view signature, std::string_view original)
+    {
+        for (const auto & key: keys)
+            if (key.isPublic() && key.verifySignature(signature, original))
+                return true;
+        return false;
+    }
+#endif
 }
 
 
-bool Authentication::areCredentialsValid(const Credentials & credentials, const AuthenticationData & auth_data, const ExternalAuthenticators & external_authenticators)
+bool Authentication::areCredentialsValid(
+    const Credentials & credentials,
+    const AuthenticationData & auth_data,
+    const ExternalAuthenticators & external_authenticators,
+    SettingsChanges & settings)
 {
     if (!credentials.isReady())
         return false;
@@ -81,7 +102,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::PLAINTEXT_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::KERBEROS:
@@ -89,6 +112,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::SSH_KEY:
+                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
 
             case AuthenticationType::MAX:
                 break;
@@ -109,12 +135,17 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 return checkPasswordDoubleSHA1MySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
             case AuthenticationType::KERBEROS:
+            case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::SSH_KEY:
+                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
 
             case AuthenticationType::MAX:
                 break;
@@ -146,6 +177,20 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
+            case AuthenticationType::SSH_KEY:
+                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+
+            case AuthenticationType::BCRYPT_PASSWORD:
+                return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+
+            case AuthenticationType::HTTP:
+                switch (auth_data.getHTTPAuthenticationScheme())
+                {
+                    case HTTPAuthenticationScheme::BASIC:
+                        return external_authenticators.checkHTTPBasicCredentials(
+                            auth_data.getHTTPAuthenticationServerName(), *basic_credentials, settings);
+                }
+
             case AuthenticationType::MAX:
                 break;
         }
@@ -159,7 +204,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::PLAINTEXT_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::KERBEROS:
@@ -168,6 +215,39 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::SSL_CERTIFICATE:
                 return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
 
+            case AuthenticationType::SSH_KEY:
+                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+
+            case AuthenticationType::MAX:
+                break;
+        }
+    }
+
+    if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))
+    {
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+            case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
+            case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::KERBEROS:
+                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<SSLCertificateCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::SSH_KEY:
+#if USE_SSL
+                return checkSshSignature(auth_data.getSSHKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+#endif
             case AuthenticationType::MAX:
                 break;
         }
@@ -176,7 +256,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    throw Exception("areCredentialsValid(): authentication type " + toString(auth_data.getType()) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "areCredentialsValid(): authentication type {} not supported", toString(auth_data.getType()));
 }
 
 }

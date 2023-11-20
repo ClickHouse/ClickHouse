@@ -9,7 +9,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/setThreadName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -63,7 +63,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())
-        throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
 
     if (compress)
     {
@@ -80,6 +80,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
+    ThreadStatus thread_status;
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -87,16 +88,19 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
     Output used_output;
     const auto & config = server.config();
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     auto write_response = [&](const std::string & message)
     {
-        if (response.sent())
-            return;
-
         auto & out = *used_output.out;
+        if (response.sent())
+        {
+            out.finalize();
+            return;
+        }
+
         try
         {
             writeString(message, out);
@@ -127,28 +131,31 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
+        {
+            used_output.out->finalize();
             return;
+        }
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         /// Sending to remote server was cancelled due to server shutdown or drop table.
         bool is_real_error = e.code() != ErrorCodes::ABORTED;
 
-        std::string message = getCurrentExceptionMessage(is_real_error);
-        write_response(message);
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(is_real_error);
+        write_response(message.text);
 
         if (is_real_error)
-            LOG_ERROR(log, fmt::runtime(message));
+            LOG_ERROR(log, message);
         else
-            LOG_INFO(log, fmt::runtime(message));
+            LOG_INFO(log, message);
     }
     catch (...)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-        std::string message = getCurrentExceptionMessage(false);
-        write_response(message);
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+        write_response(message.text);
 
-        LOG_ERROR(log, fmt::runtime(message));
+        LOG_ERROR(log, message);
     }
 }
 

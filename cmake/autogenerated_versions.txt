@@ -1,12 +1,12 @@
-# This variables autochanged by release_lib.sh:
+# This variables autochanged by tests/ci/version_helper.py:
 
 # NOTE: has nothing common with DBMS_TCP_PROTOCOL_VERSION,
 # only DBMS_TCP_PROTOCOL_VERSION should be incremented on protocol changes.
-SET(VERSION_REVISION 54462)
-SET(VERSION_MAJOR 22)
-SET(VERSION_MINOR 5)
+SET(VERSION_REVISION 54480)
+SET(VERSION_MAJOR 23)
+SET(VERSION_MINOR 11)
 SET(VERSION_PATCH 1)
-SET(VERSION_GITHASH 77a82cc090dd5dba2d995946e82a12a2cadaaff3)
-SET(VERSION_DESCRIBE v22.5.1.1-testing)
-SET(VERSION_STRING 22.5.1.1)
+SET(VERSION_GITHASH 13adae0e42fd48de600486fc5d4b64d39f80c43e)
+SET(VERSION_DESCRIBE v23.11.1.1-testing)
+SET(VERSION_STRING 23.11.1.1)
 # end of autochange

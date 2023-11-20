@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/topk
 sidebar_position: 108
 ---
 
@@ -6,7 +7,7 @@ sidebar_position: 108
 
 Возвращает массив наиболее часто встречающихся значений в указанном столбце. Результирующий массив упорядочен по убыванию частоты значения (не по самим значениям).
 
-Реализует [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) алгоритм для анализа TopK, на основе reduce-and-combine алгоритма из методики [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+Реализует [Filtered Space-Saving](https://doi.org/10.1016/j.ins.2010.08.024) алгоритм для анализа TopK, на основе reduce-and-combine алгоритма из методики [Parallel Space Saving](https://doi.org/10.1016/j.ins.2015.09.003).
 
 ``` sql
 topK(N)(column)
@@ -35,4 +36,3 @@ FROM ontime
 │ [19393,19790,19805] │
 └─────────────────────┘
 ```
-

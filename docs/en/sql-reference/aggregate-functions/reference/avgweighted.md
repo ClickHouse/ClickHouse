@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/avgweighted
 sidebar_position: 107
 ---
 
-# avgWeighted {#avgweighted}
+# avgWeighted
 
 Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
 
@@ -14,8 +15,8 @@ avgWeighted(x, weight)
 
 **Arguments**
 
--   `x` — Values.
--   `weight` — Weights of the values.
+- `x` — Values.
+- `weight` — Weights of the values.
 
 `x` and `weight` must both be
 [Integer](../../../sql-reference/data-types/int-uint.md),
@@ -25,8 +26,8 @@ but may have different types.
 
 **Returned value**
 
--   `NaN` if all the weights are equal to 0 or the supplied weights parameter is empty.
--   Weighted mean otherwise.
+- `NaN` if all the weights are equal to 0 or the supplied weights parameter is empty.
+- Weighted mean otherwise.
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 

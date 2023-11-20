@@ -1,8 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>test.hits</table_exists>
-    </preconditions>
-
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '(\\w+=\\w+)'))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extractAll(URL, '(\\w+=\\w+)'))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extractGroups(URL, '(\\w+)=(\\w+)'))</query>

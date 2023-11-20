@@ -1,7 +1,5 @@
 #include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 
-#include <Columns/ColumnAggregateFunction.h>
-#include <Common/AlignedBuffer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -17,70 +15,6 @@ namespace ErrorCodes
 AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
 AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
 AggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
-
-/// Stores information for aggregation of AggregateFunction columns
-struct AggregatingSortedAlgorithm::AggregateDescription
-{
-    ColumnAggregateFunction * column = nullptr;
-    const size_t column_number = 0; /// Position in header.
-
-    AggregateDescription() = default;
-    explicit AggregateDescription(size_t col_number) : column_number(col_number) {}
-};
-
-/// Stores information for aggregation of SimpleAggregateFunction columns
-struct AggregatingSortedAlgorithm::SimpleAggregateDescription
-{
-    /// An aggregate function 'anyLast', 'sum'...
-    AggregateFunctionPtr function;
-    IAggregateFunction::AddFunc add_function = nullptr;
-
-    size_t column_number = 0;
-    IColumn * column = nullptr;
-
-    /// For LowCardinality, convert is converted to nested type. nested_type is nullptr if no conversion needed.
-    const DataTypePtr nested_type; /// Nested type for LowCardinality, if it is.
-    const DataTypePtr real_type; /// Type in header.
-
-    AlignedBuffer state;
-    bool created = false;
-
-    SimpleAggregateDescription(
-            AggregateFunctionPtr function_, const size_t column_number_,
-            DataTypePtr nested_type_, DataTypePtr real_type_)
-            : function(std::move(function_)), column_number(column_number_)
-            , nested_type(std::move(nested_type_)), real_type(std::move(real_type_))
-    {
-        add_function = function->getAddressOfAddFunction();
-        state.reset(function->sizeOfData(), function->alignOfData());
-    }
-
-    void createState()
-    {
-        if (created)
-            return;
-        function->create(state.data());
-        created = true;
-    }
-
-    void destroyState()
-    {
-        if (!created)
-            return;
-        function->destroy(state.data());
-        created = false;
-    }
-
-    /// Explicitly destroy aggregation state if the stream is terminated
-    ~SimpleAggregateDescription()
-    {
-        destroyState();
-    }
-
-    SimpleAggregateDescription() = default;
-    SimpleAggregateDescription(SimpleAggregateDescription &&) = default;
-    SimpleAggregateDescription(const SimpleAggregateDescription &) = delete;
-};
 
 static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header, const SortDescription & description)
@@ -183,7 +117,7 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
         {
             const auto & from_type = desc.nested_type;
             const auto & to_type = desc.real_type;
-            columns[desc.column_number] = recursiveTypeConversion(columns[desc.column_number], from_type, to_type);
+            columns[desc.column_number] = recursiveLowCardinalityTypeConversion(columns[desc.column_number], from_type, to_type);
         }
     }
 
@@ -191,9 +125,45 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
 }
 
 
+AggregatingSortedAlgorithm::SimpleAggregateDescription::SimpleAggregateDescription(
+    AggregateFunctionPtr function_, const size_t column_number_,
+    DataTypePtr nested_type_, DataTypePtr real_type_)
+    : function(std::move(function_)), column_number(column_number_)
+    , nested_type(std::move(nested_type_)), real_type(std::move(real_type_))
+{
+    add_function = function->getAddressOfAddFunction();
+    state.reset(function->sizeOfData(), function->alignOfData());
+}
+
+void AggregatingSortedAlgorithm::SimpleAggregateDescription::createState()
+{
+    if (created)
+        return;
+    function->create(state.data());
+    created = true;
+}
+
+void AggregatingSortedAlgorithm::SimpleAggregateDescription::destroyState()
+{
+    if (!created)
+        return;
+    function->destroy(state.data());
+    created = false;
+}
+
+/// Explicitly destroy aggregation state if the stream is terminated
+AggregatingSortedAlgorithm::SimpleAggregateDescription::~SimpleAggregateDescription()
+{
+    destroyState();
+}
+
+
 AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
-    MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_)
-    : MergedData(std::move(columns_), false, max_block_size_), def(def_)
+    MutableColumns columns_,
+    UInt64 max_block_size_rows_,
+    UInt64 max_block_size_bytes_,
+    ColumnsDefinition & def_)
+    : MergedData(std::move(columns_), false, max_block_size_rows_, max_block_size_bytes_), def(def_)
 {
     initAggregateDescription();
 
@@ -201,7 +171,7 @@ AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
     if (def.allocates_memory_in_arena)
     {
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
+        arena_size = arena->allocatedBytes();
     }
 }
 
@@ -227,10 +197,10 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnR
     /// To avoid this, reset arena if and only if:
     /// - arena is required (i.e. SimpleAggregateFunction(any, String) in PK),
     /// - arena was used in the previous groups.
-    if (def.allocates_memory_in_arena && arena->size() > arena_size)
+    if (def.allocates_memory_in_arena && arena->allocatedBytes() > arena_size)
     {
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
+        arena_size = arena->allocatedBytes();
     }
 
     is_group_started = true;
@@ -254,7 +224,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::finishGroup()
 void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & cursor)
 {
     if (!is_group_started)
-        throw Exception("Can't add a row to the group because it was not started.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't add a row to the group because it was not started.");
 
     for (auto & desc : def.columns_to_aggregate)
         desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->getRow());
@@ -269,7 +239,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & curs
 Chunk AggregatingSortedAlgorithm::AggregatingMergedData::pull()
 {
     if (is_group_started)
-        throw Exception("Can't pull chunk because group was not finished.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pull chunk because group was not finished.");
 
     auto chunk = MergedData::pull();
     postprocessChunk(chunk, def);
@@ -290,10 +260,14 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initAggregateDescription
 
 
 AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
-    const Block & header_, size_t num_inputs, SortDescription description_, size_t max_block_size)
+    const Block & header_,
+    size_t num_inputs,
+    SortDescription description_,
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
     , columns_definition(defineColumns(header_, description_))
-    , merged_data(getMergedColumns(header_, columns_definition), max_block_size, columns_definition)
+    , merged_data(getMergedColumns(header_, columns_definition), max_block_size_rows_, max_block_size_bytes_, columns_definition)
 {
 }
 

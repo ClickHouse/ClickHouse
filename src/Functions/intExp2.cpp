@@ -18,15 +18,14 @@ template <typename A>
 struct IntExp2Impl
 {
     using ResultType = UInt64;
-    static constexpr const bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr bool allow_string_or_fixed_string = false;
 
     static inline ResultType apply([[maybe_unused]] A a)
     {
         if constexpr (is_big_int_v<A>)
-            throw DB::Exception("intExp2 not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "intExp2 not implemented for big integers");
         else
-            return intExp2(a);
+            return intExp2(static_cast<int>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -35,7 +34,7 @@ struct IntExp2Impl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
     {
         if (!arg->getType()->isIntegerTy())
-            throw Exception("IntExp2Impl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IntExp2Impl expected an integral type");
         return b.CreateShl(llvm::ConstantInt::get(arg->getType(), 1), arg);
     }
 #endif
@@ -58,11 +57,11 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
         if (left_float < 0 || right_float > 63)
             return {};
 
-        return { .is_monotonic = true };
+        return { .is_monotonic = true, .is_strict = true, };
     }
 };
 
-void registerFunctionIntExp2(FunctionFactory & factory)
+REGISTER_FUNCTION(IntExp2)
 {
     factory.registerFunction<FunctionIntExp2>();
 }

@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/utilities/clickhouse-copier
 sidebar_position: 59
 sidebar_label: clickhouse-copier
 ---
@@ -110,7 +111,7 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
     <settings>
         <connect_timeout>3</connect_timeout>
         <!-- Sync insert is set forcibly, leave it here just in case. -->
-        <insert_distributed_sync>1</insert_distributed_sync>
+        <distributed_foreground_insert>1</distributed_foreground_insert>
     </settings>
 
     <!-- Copying tasks description.
@@ -180,4 +181,3 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
 ```
 
 `clickhouse-copier` отслеживает изменения `/task/path/description` и применяет их «на лету». Если вы поменяете, например, значение `max_workers`, то количество процессов, выполняющих задания, также изменится.
-

@@ -4,7 +4,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/LocalDateTime.h>
 #include <Common/filesystemHelpers.h>
 
@@ -68,17 +68,17 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-Pipe ExecutablePoolDictionarySource::loadAll()
+QueryPipeline ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-Pipe ExecutablePoolDictionarySource::loadUpdatedAll()
+QueryPipeline ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -86,7 +86,7 @@ Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return getStreamForBlock(block);
 }
 
-Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -94,7 +94,7 @@ Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const
     return getStreamForBlock(block);
 }
 
-Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
+QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
     String command = configuration.command;
     const auto & coordinator_configuration = coordinator->getConfiguration();
@@ -147,7 +147,7 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
 
-    return pipe;
+    return QueryPipeline(std::move(pipe));
 }
 
 bool ExecutablePoolDictionarySource::isModified() const
@@ -193,7 +193,9 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
         if (created_from_ddl && global_context->getApplicationType() != Context::ApplicationType::LOCAL)
-            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
+            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED,
+                            "Dictionaries with executable pool dictionary source are not allowed "
+                            "to be created from DDL query");
 
         ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
@@ -230,6 +232,8 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
+            .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .pool_size = config.getUInt64(settings_config_prefix + ".pool_size", 16),
             .max_command_execution_time_seconds = max_command_execution_time,
             .is_executable_pool = true,

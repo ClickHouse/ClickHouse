@@ -11,13 +11,16 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Core/MySQL/MySQLReplication.h>
+#include <Core/MySQL/MySQLCharset.h>
 
+static DB::MySQLCharsetPtr charset = std::make_shared<DB::MySQLCharset>();
 static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
     DB::MySQLReplication::EventHeader & header, DB::ReadBuffer & payload,
     std::shared_ptr<DB::MySQLReplication::TableMapEvent> & last_table_map_event, bool exist_checksum)
 {
     DB::MySQLReplication::BinlogEventPtr event;
-    DB::ReadBufferPtr limit_read_buffer = std::make_shared<DB::LimitReadBuffer>(payload, header.event_size - 19, false);
+    DB::ReadBufferPtr limit_read_buffer = std::make_shared<DB::LimitReadBuffer>(payload, header.event_size - 19,
+                                                                                /* trow_exception */ false, /* exact_limit */ std::nullopt);
     DB::ReadBufferPtr event_payload = std::make_shared<DB::MySQLBinlogEventReadBuffer>(*limit_read_buffer, exist_checksum ? 4 : 0);
 
     switch (header.type)
@@ -63,7 +66,7 @@ static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
         {
             DB::MySQLReplication::TableMapEventHeader map_event_header;
             map_event_header.parse(*event_payload);
-            event = std::make_shared<DB::MySQLReplication::TableMapEvent>(std::move(header), map_event_header);
+            event = std::make_shared<DB::MySQLReplication::TableMapEvent>(std::move(header), map_event_header, charset);
             event->parseEvent(*event_payload);
             last_table_map_event = std::static_pointer_cast<DB::MySQLReplication::TableMapEvent>(event);
             break;

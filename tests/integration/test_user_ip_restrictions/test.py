@@ -8,47 +8,56 @@ node_ipv4 = cluster.add_instance(
     "node_ipv4",
     main_configs=[],
     user_configs=["configs/users_ipv4.xml"],
-    ipv4_address="10.5.172.77",
+    ipv4_address="10.5.172.77",  # Never copy-paste this line
 )
 client_ipv4_ok = cluster.add_instance(
-    "client_ipv4_ok", main_configs=[], user_configs=[], ipv4_address="10.5.172.10"
+    "client_ipv4_ok",
+    main_configs=[],
+    user_configs=[],
+    ipv4_address="10.5.172.10",  # Never copy-paste this line
 )
 client_ipv4_ok_direct = cluster.add_instance(
-    "client_ipv4_ok_direct", main_configs=[], user_configs=[], ipv4_address="10.5.173.1"
+    "client_ipv4_ok_direct",
+    main_configs=[],
+    user_configs=[],
+    ipv4_address="10.5.173.1",  # Never copy-paste this line
 )
 client_ipv4_ok_full_mask = cluster.add_instance(
     "client_ipv4_ok_full_mask",
     main_configs=[],
     user_configs=[],
-    ipv4_address="10.5.175.77",
+    ipv4_address="10.5.175.77",  # Never copy-paste this line
 )
 client_ipv4_bad = cluster.add_instance(
-    "client_ipv4_bad", main_configs=[], user_configs=[], ipv4_address="10.5.173.10"
+    "client_ipv4_bad",
+    main_configs=[],
+    user_configs=[],
+    ipv4_address="10.5.173.10",  # Never copy-paste this line
 )
 
 node_ipv6 = cluster.add_instance(
     "node_ipv6",
     main_configs=["configs/config_ipv6.xml"],
     user_configs=["configs/users_ipv6.xml"],
-    ipv6_address="2001:3984:3989::1:1000",
+    ipv6_address="2001:3984:3989::1:1000",  # Never copy-paste this line
 )
 client_ipv6_ok = cluster.add_instance(
     "client_ipv6_ok",
     main_configs=[],
     user_configs=[],
-    ipv6_address="2001:3984:3989::5555",
+    ipv6_address="2001:3984:3989::5555",  # Never copy-paste this line
 )
 client_ipv6_ok_direct = cluster.add_instance(
     "client_ipv6_ok_direct",
     main_configs=[],
     user_configs=[],
-    ipv6_address="2001:3984:3989::1:1111",
+    ipv6_address="2001:3984:3989::1:1111",  # Never copy-paste this line
 )
 client_ipv6_bad = cluster.add_instance(
     "client_ipv6_bad",
     main_configs=[],
     user_configs=[],
-    ipv6_address="2001:3984:3989::1:1112",
+    ipv6_address="2001:3984:3989::1:1112",  # Never copy-paste this line
 )
 
 

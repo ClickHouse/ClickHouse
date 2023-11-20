@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <Access/ReplicatedAccessStorage.h>
+#include <Access/AccessChangesNotifier.h>
 
 using namespace DB;
 
@@ -12,18 +13,6 @@ namespace ErrorCodes
 }
 
 
-TEST(ReplicatedAccessStorage, ShutdownWithoutStartup)
-{
-    auto get_zk = []()
-    {
-        return std::shared_ptr<zkutil::ZooKeeper>();
-    };
-
-    auto storage = ReplicatedAccessStorage("replicated", "/clickhouse/access", get_zk);
-    storage.shutdown();
-}
-
-
 TEST(ReplicatedAccessStorage, ShutdownWithFailedStartup)
 {
     auto get_zk = []()
@@ -31,16 +20,16 @@ TEST(ReplicatedAccessStorage, ShutdownWithFailedStartup)
         return std::shared_ptr<zkutil::ZooKeeper>();
     };
 
-    auto storage = ReplicatedAccessStorage("replicated", "/clickhouse/access", get_zk);
+    AccessChangesNotifier changes_notifier;
+
     try
     {
-        storage.startup();
+        auto storage = ReplicatedAccessStorage("replicated", "/clickhouse/access", get_zk, changes_notifier, false);
     }
     catch (Exception & e)
     {
         if (e.code() != ErrorCodes::NO_ZOOKEEPER)
             throw;
     }
-    storage.shutdown();
 }
 

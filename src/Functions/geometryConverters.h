@@ -18,7 +18,6 @@
 #include <Interpreters/castColumn.h>
 
 #include <cmath>
-#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -28,6 +27,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 template <typename Point>
 using Ring = boost::geometry::model::ring<Point>;
@@ -74,10 +76,10 @@ struct ColumnToPointsConverter
             const Float64 second = second_container[i];
 
             if (isNaN(first) || isNaN(second))
-                throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Point's component must not be NaN");
 
             if (std::isinf(first) || std::isinf(second))
-                throw Exception("Point's component must not be infinite", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Point's component must not be infinite");
 
             answer[i] = Point(first, second);
         }
@@ -86,7 +88,9 @@ struct ColumnToPointsConverter
     }
 };
 
-
+/**
+ * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost ring type.
+*/
 template <typename Point>
 struct ColumnToRingsConverter
 {
@@ -106,7 +110,9 @@ struct ColumnToRingsConverter
     }
 };
 
-
+/**
+ * Class which converts Column with type Array(Array(Tuple(Float64, Float64))) to a vector of boost polygon type.
+*/
 template <typename Point>
 struct ColumnToPolygonsConverter
 {
@@ -120,6 +126,12 @@ struct ColumnToPolygonsConverter
         for (size_t iter = 0; iter < offsets.size(); ++iter)
         {
             const auto current_array_size = offsets[iter] - prev_offset;
+            if (current_array_size == 0)
+            {
+                answer.emplace_back();
+                continue;
+            }
+
             answer[iter].outer() = std::move(all_rings[prev_offset]);
             answer[iter].inners().reserve(current_array_size);
             for (size_t inner_holes = prev_offset + 1; inner_holes < offsets[iter]; ++inner_holes)
@@ -131,7 +143,9 @@ struct ColumnToPolygonsConverter
     }
 };
 
-
+/**
+ * Class which converts Column with type Array(Array(Array(Tuple(Float64, Float64)))) to a vector of boost multi_polygon type.
+*/
 template <typename Point>
 struct ColumnToMultiPolygonsConverter
 {
@@ -143,7 +157,7 @@ struct ColumnToMultiPolygonsConverter
 
         auto all_polygons = ColumnToPolygonsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
-        for (size_t iter = 0; iter < offsets.size(); ++iter)
+        for (size_t iter = 0; iter < offsets.size() && iter < all_polygons.size(); ++iter)
         {
             for (size_t polygon_iter = prev_offset; polygon_iter < offsets[iter]; ++polygon_iter)
                 answer[iter].emplace_back(std::move(all_polygons[polygon_iter]));
@@ -339,7 +353,7 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
         return f(ConverterType<ColumnToPolygonsConverter<Point>>());
     else if (factory.get("MultiPolygon")->equals(*type))
         return f(ConverterType<ColumnToMultiPolygonsConverter<Point>>());
-    throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type {}", type->getName());
 }
 
 
@@ -357,6 +371,8 @@ static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_
             return func(LeftConverterType(), RightConverterType());
         });
     });
+}
+
 }
 
 }

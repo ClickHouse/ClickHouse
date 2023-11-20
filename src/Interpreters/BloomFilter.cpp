@@ -25,9 +25,9 @@ BloomFilterParameters::BloomFilterParameters(size_t filter_size_, size_t filter_
     : filter_size(filter_size_), filter_hashes(filter_hashes_), seed(seed_)
 {
     if (filter_size == 0)
-        throw Exception("The size of bloom filter cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of bloom filter cannot be zero");
     if (filter_hashes == 0)
-        throw Exception("The number of hash functions for bloom filter cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of hash functions for bloom filter cannot be zero");
     if (filter_size > MAX_BLOOM_FILTER_SIZE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of bloom filter cannot be more than {}", MAX_BLOOM_FILTER_SIZE);
 }
@@ -41,8 +41,15 @@ BloomFilter::BloomFilter(const BloomFilterParameters & params)
 BloomFilter::BloomFilter(size_t size_, size_t hashes_, size_t seed_)
     : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)), filter(words, 0)
 {
-    assert(size != 0);
-    assert(hashes != 0);
+    chassert(size != 0);
+    chassert(hashes != 0);
+}
+
+void BloomFilter::resize(size_t size_)
+{
+    size = size_;
+    words = ((size + sizeof(UnderType) - 1) / sizeof(UnderType));
+    filter.resize(words);
 }
 
 bool BloomFilter::find(const char * data, size_t len)
@@ -121,7 +128,7 @@ DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)
         if (!typeid_cast<const DataTypeArray *>(array_type->getNestedType().get()))
             return getPrimitiveType(array_type->getNestedType());
         else
-            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
     }
 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))

@@ -2,7 +2,10 @@
 #include "CacheDictionaryStorage.h"
 #include "SSDCacheDictionaryStorage.h"
 #include <Common/filesystemHelpers.h>
+
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -25,7 +28,9 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
 {
     size_t size = config.getUInt64(dictionary_layout_prefix + ".size_in_cells");
     if (size == 0)
-        throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE, "{}: dictionary of layout '{}' setting 'size_in_cells' must be greater than 0", full_name, layout_type);
+        throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE,
+                        "{}: dictionary of layout '{}' setting 'size_in_cells' must be greater than 0",
+                        full_name, layout_type);
 
     size_t dict_lifetime_seconds = static_cast<size_t>(dict_lifetime.max_sec);
     size_t strict_max_lifetime_seconds = config.getUInt64(dictionary_layout_prefix + ".strict_max_lifetime_seconds", dict_lifetime_seconds);
@@ -41,7 +46,7 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     return storage_configuration;
 }
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 
 SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
@@ -209,7 +214,7 @@ DictionaryPtr createCacheDictionaryLayout(
         auto storage_configuration = parseCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
         storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(dict_struct, storage_configuration);
     }
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     else
     {
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
@@ -220,6 +225,16 @@ DictionaryPtr createCacheDictionaryLayout(
         storage = std::make_shared<SSDCacheDictionaryStorage<dictionary_key_type>>(storage_configuration);
     }
 #endif
+    ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+    const auto & settings = context->getSettingsRef();
+
+    const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
+    CacheDictionaryConfiguration configuration{
+        allow_read_expired_keys,
+        dict_lifetime,
+        use_async_executor,
+    };
 
     auto dictionary = std::make_unique<CacheDictionary<dictionary_key_type>>(
         dictionary_identifier,
@@ -227,8 +242,7 @@ DictionaryPtr createCacheDictionaryLayout(
         std::move(source_ptr),
         std::move(storage),
         update_queue_configuration,
-        dict_lifetime,
-        allow_read_expired_keys);
+        configuration);
 
     return dictionary;
 }
@@ -261,7 +275,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 
     auto create_simple_ssd_cache_layout = [=](const std::string & full_name,
                                               const DictionaryStructure & dict_struct,

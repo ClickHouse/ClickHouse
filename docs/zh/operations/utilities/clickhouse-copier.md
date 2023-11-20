@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/utilities/clickhouse-copier
+---
 # clickhouse-copier {#clickhouse-copier}
 
 将数据从一个群集中的表复制到另一个（或相同）群集中的表。
@@ -97,7 +100,7 @@ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-
     <settings>
         <connect_timeout>3</connect_timeout>
         <!-- Sync insert is set forcibly, leave it here just in case. -->
-        <insert_distributed_sync>1</insert_distributed_sync>
+        <distributed_foreground_insert>1</distributed_foreground_insert>
     </settings>
 
     <!-- Copying tasks description.
@@ -167,5 +170,3 @@ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-
 ```
 
 `clickhouse-copier` 跟踪更改 `/task/path/description` 并在飞行中应用它们。 例如，如果你改变的值 `max_workers`，运行任务的进程数也会发生变化。
-
-[原始文章](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

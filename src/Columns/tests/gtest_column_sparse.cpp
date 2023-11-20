@@ -10,8 +10,9 @@
 
 #include <Common/FieldVisitors.h>
 
+
 using namespace DB;
-pcg64 rng(randomSeed());
+static pcg64 rng(randomSeed());
 
 std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
 {
@@ -327,4 +328,3 @@ TEST(ColumnSparse, GetPermutation)
 }
 
 #undef DUMP_COLUMN
-#undef DUMP_NON_DEFAULTS

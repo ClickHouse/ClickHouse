@@ -26,9 +26,9 @@ def test_overflow_toDate(start_cluster):
 
 
 def test_overflow_toDate32(start_cluster):
-    assert node.query("SELECT toDate32('2999-12-31','UTC')") == "2283-11-11\n"
+    assert node.query("SELECT toDate32('2999-12-31','UTC')") == "2299-12-31\n"
     assert node.query("SELECT toDate32('2021-12-21','UTC')") == "2021-12-21\n"
-    assert node.query("SELECT toDate32('1000-12-31','UTC')") == "1925-01-01\n"
+    assert node.query("SELECT toDate32('1000-12-31','UTC')") == "1900-01-01\n"
 
 
 def test_overflow_toDateTime(start_cluster):

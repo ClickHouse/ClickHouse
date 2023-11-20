@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -20,10 +21,10 @@ do \
 while (false)
 
 
-void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state) const
+void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(final);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -41,12 +42,12 @@ ASTPtr ASTTableExpression::clone() const
     return res;
 }
 
-void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state) const
+void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(locality);
     hash_state.update(strictness);
     hash_state.update(kind);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTTableJoin::clone() const
@@ -60,10 +61,10 @@ ASTPtr ASTTableJoin::clone() const
     return res;
 }
 
-void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state) const
+void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(kind);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTArrayJoin::clone() const
@@ -112,7 +113,7 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
         settings.ostr << " ";
         database_and_table_name->formatImpl(settings, state, frame);
     }
-    else if (table_function)
+    else if (table_function && !(table_function->as<ASTFunction>()->prefer_subquery_to_function_formatting && subquery))
     {
         settings.ostr << " ";
         table_function->formatImpl(settings, state, frame);
@@ -150,42 +151,41 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
     settings.ostr << (settings.hilite ? hilite_keyword : "");
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    if (kind != Kind::Comma)
+    if (kind != JoinKind::Comma)
     {
         settings.ostr << settings.nl_or_ws << indent_str;
     }
 
     switch (locality)
     {
-        case Locality::Unspecified:
+        case JoinLocality::Unspecified:
+        case JoinLocality::Local:
             break;
-        case Locality::Local:
-            break;
-        case Locality::Global:
+        case JoinLocality::Global:
             settings.ostr << "GLOBAL ";
             break;
     }
 
-    if (kind != Kind::Cross && kind != Kind::Comma)
+    if (kind != JoinKind::Cross && kind != JoinKind::Comma)
     {
         switch (strictness)
         {
-            case Strictness::Unspecified:
+            case JoinStrictness::Unspecified:
                 break;
-            case Strictness::RightAny:
-            case Strictness::Any:
+            case JoinStrictness::RightAny:
+            case JoinStrictness::Any:
                 settings.ostr << "ANY ";
                 break;
-            case Strictness::All:
+            case JoinStrictness::All:
                 settings.ostr << "ALL ";
                 break;
-            case Strictness::Asof:
+            case JoinStrictness::Asof:
                 settings.ostr << "ASOF ";
                 break;
-            case Strictness::Semi:
+            case JoinStrictness::Semi:
                 settings.ostr << "SEMI ";
                 break;
-            case Strictness::Anti:
+            case JoinStrictness::Anti:
                 settings.ostr << "ANTI ";
                 break;
         }
@@ -193,22 +193,22 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
 
     switch (kind)
     {
-        case Kind::Inner:
+        case JoinKind::Inner:
             settings.ostr << "INNER JOIN";
             break;
-        case Kind::Left:
+        case JoinKind::Left:
             settings.ostr << "LEFT JOIN";
             break;
-        case Kind::Right:
+        case JoinKind::Right:
             settings.ostr << "RIGHT JOIN";
             break;
-        case Kind::Full:
+        case JoinKind::Full:
             settings.ostr << "FULL OUTER JOIN";
             break;
-        case Kind::Cross:
+        case JoinKind::Cross:
             settings.ostr << "CROSS JOIN";
             break;
-        case Kind::Comma:
+        case JoinKind::Comma:
             settings.ostr << ",";
             break;
     }

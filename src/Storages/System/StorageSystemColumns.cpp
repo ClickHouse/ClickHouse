@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Parsers/queryToString.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -20,10 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_DROPPED;
-}
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -64,7 +61,7 @@ namespace
 }
 
 
-class ColumnsSource : public SourceWithProgress
+class ColumnsSource : public ISource
 {
 public:
     ColumnsSource(
@@ -75,9 +72,10 @@ public:
         ColumnPtr tables_,
         Storages storages_,
         ContextPtr context)
-        : SourceWithProgress(header_)
+        : ISource(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
+        , client_info_interface(context->getClientInfo().interface)
         , total_tables(tables->size()), access(context->getAccess())
         , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
@@ -113,21 +111,12 @@ protected:
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock;
 
-                try
+                table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
+
+                if (table_lock == nullptr)
                 {
-                    table_lock = storage->lockForShare(query_id, lock_acquire_timeout);
-                }
-                catch (const Exception & e)
-                {
-                    /** There are case when IStorage::drop was called,
-                    *  but we still own the object.
-                    * Then table will throw exception at attempt to lock it.
-                    * Just skip the table.
-                    */
-                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                        continue;
-                    else
-                        throw;
+                    // Table was dropped while acquiring the lock, skipping table
+                    continue;
                 }
 
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -294,6 +283,7 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;
@@ -309,26 +299,12 @@ Pipe StorageSystemColumns::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-
-    /// Create a mask of what columns are needed in the result.
-
-    NameSet names_set(column_names.begin(), column_names.end());
-
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
-    Block header;
 
-    std::vector<UInt8> columns_mask(sample_block.columns());
-    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
-    {
-        if (names_set.contains(sample_block.getByPosition(i).name))
-        {
-            columns_mask[i] = 1;
-            header.insert(sample_block.getByPosition(i));
-        }
-    }
+    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
     Block block_to_filter;
     Storages storages;

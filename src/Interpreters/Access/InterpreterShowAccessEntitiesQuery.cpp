@@ -23,7 +23,7 @@ InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const AST
 
 BlockIO InterpreterShowAccessEntitiesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true);
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 
@@ -115,7 +115,7 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
     }
 
     if (origin.empty())
-        throw Exception(toString(query.type) + ": type is not supported by SHOW query", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW query", toString(query.type));
 
     if (order.empty() && expr != "*")
         order = expr;

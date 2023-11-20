@@ -6,7 +6,7 @@ RUN apt-get install -y wget openjdk-8-jre
 
 RUN wget https://archive.apache.org/dist/hadoop/common/hadoop-3.1.0/hadoop-3.1.0.tar.gz && \
         tar -xf hadoop-3.1.0.tar.gz && rm -rf hadoop-3.1.0.tar.gz
-RUN wget https://dlcdn.apache.org/hive/hive-2.3.9/apache-hive-2.3.9-bin.tar.gz && \
+RUN wget https://apache.apache.org/dist/hive/hive-2.3.9/apache-hive-2.3.9-bin.tar.gz && \
         tar -xf apache-hive-2.3.9-bin.tar.gz && rm -rf apache-hive-2.3.9-bin.tar.gz
 RUN apt install -y vim
 
@@ -43,8 +43,5 @@ COPY demo_data.txt /
 
 ENV PATH=/apache-hive-2.3.9-bin/bin:/hadoop-3.1.0/bin:/hadoop-3.1.0/sbin:$PATH
 RUN service ssh start && sed s/HOSTNAME/$HOSTNAME/ /hadoop-3.1.0/etc/hadoop/core-site.xml.template > /hadoop-3.1.0/etc/hadoop/core-site.xml && hdfs namenode -format
-RUN apt install -y python3 python3-pip
-RUN pip3 install flask requests
-COPY http_api_server.py /
 COPY start.sh /
 

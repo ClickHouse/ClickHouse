@@ -1,17 +1,20 @@
 ---
-sidebar_position: 37
+slug: /en/sql-reference/functions/logical-functions
+sidebar_position: 110
 sidebar_label: Logical
 ---
 
-# Logical Functions {#logical-functions}
+# Logical Functions
 
-Performs logical operations on arguments of any numeric types, but returns a [UInt8](../../sql-reference/data-types/int-uint.md) number equal to 0, 1 or `NULL` in some cases.
+Below functions perform logical operations on arguments of arbitrary numeric types. They return either 0 or 1 as [UInt8](../../sql-reference/data-types/int-uint.md) or in some cases `NULL`.
 
-Zero as an argument is considered `false`, while any non-zero value is considered `true`.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
 
-## and {#logical-and-function}
+## and
 
-Calculates the result of the logical conjunction between two or more values. Corresponds to [Logical AND Operator](../../sql-reference/operators/index.md#logical-and-operator).
+Calculates the logical conjunction of two or more values. 
+
+Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
 
 **Syntax**
 
@@ -19,23 +22,21 @@ Calculates the result of the logical conjunction between two or more values. Cor
 and(val1, val2...)
 ```
 
-You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `and` function according to a short scheme. If this setting is enabled, `vali` is evaluated only on rows where `(val1 AND val2 AND ... AND val{i-1})` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(10)`.
+Alias: The [AND operator](../../sql-reference/operators/index.md#logical-and-operator).
 
 **Arguments**
 
--   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
--   `0`, if there is at least one zero value argument.
--   `NULL`, if there are no zero values arguments and there is at least one `NULL` argument.
--   `1`, otherwise.
+- `0`, if at least one argument evaluates to `false`,
+- `NULL`, if no argument evaluates to `false` and at least one argument is `NULL`,
+- `1`, otherwise.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT and(0, 1, -2);
@@ -63,9 +64,11 @@ Result:
 └──────────────────────┘
 ```
 
-## or {#logical-or-function}
+## or
 
-Calculates the result of the logical disjunction between two or more values. Corresponds to [Logical OR Operator](../../sql-reference/operators/index.md#logical-or-operator).
+Calculates the logical disjunction of two or more values.
+
+Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
 
 **Syntax**
 
@@ -73,23 +76,21 @@ Calculates the result of the logical disjunction between two or more values. Cor
 or(val1, val2...)
 ```
 
-You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `or` function according to a short scheme. If this setting is enabled, `vali` is evaluated only on rows where `((NOT val1) AND (NOT val2) AND ... AND (NOT val{i-1}))` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(10)`.
+Alias: The [OR operator](../../sql-reference/operators/index.md#logical-or-operator).
 
 **Arguments**
 
--   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
--   `1`, if there is at least one non-zero value.
--   `0`, if there are only zero values.
--   `NULL`, if there are only zero values and `NULL`.
+- `1`, if at least one argument evaluates to `true`,
+- `0`, if all arguments evaluate to `false`,
+- `NULL`, if all arguments evaluate to `false` and at least one argument is `NULL`.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT or(1, 0, 0, 2, NULL);
@@ -117,9 +118,9 @@ Result:
 └─────────────┘
 ```
 
-## not {#logical-not-function}
+## not
 
-Calculates the result of the logical negation of the value. Corresponds to [Logical Negation Operator](../../sql-reference/operators/index.md#logical-negation-operator).
+Calculates the logical negation of a value.
 
 **Syntax**
 
@@ -127,21 +128,21 @@ Calculates the result of the logical negation of the value. Corresponds to [Logi
 not(val);
 ```
 
+Alias: The [Negation operator](../../sql-reference/operators/index.md#logical-negation-operator).
+
 **Arguments**
 
--   `val` — The value. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val` — The value. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
--   `1`, if the `val` is `0`.
--   `0`, if the `val` is a non-zero value.
--   `NULL`, if the `val` is a `NULL` value.
+- `1`, if `val` evaluates to `false`,
+- `0`, if `val` evaluates to `true`,
+- `NULL`, if `val` is `NULL`.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT NOT(1);
@@ -155,9 +156,9 @@ Result:
 └────────┘
 ```
 
-## xor {#logical-xor-function}
+## xor
 
-Calculates the result of the logical exclusive disjunction between two or more values. For more than two values the function works as if it calculates `XOR` of the first two values and then uses the result with the next value to calculate `XOR` and so on.
+Calculates the logical exclusive disjunction of two or more values. For more than two input values, the function first xor-s the first two values, then xor-s the result with the third value etc.
 
 **Syntax**
 
@@ -167,19 +168,17 @@ xor(val1, val2...)
 
 **Arguments**
 
--   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
--   `1`, for two values: if one of the values is zero and other is not.
--   `0`, for two values: if both values are zero or non-zero at the same time.
--   `NULL`, if there is at least one `NULL` value.
+- `1`, for two values: if one of the values evaluates to `false` and other does not,
+- `0`, for two values: if both values evaluate to `false` or to both `true`,
+- `NULL`, if at least one of the inputs is `NULL`
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT xor(0, 1, 1);

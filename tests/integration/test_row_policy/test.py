@@ -87,6 +87,11 @@ def reset_policies():
         copy_policy_xml("normal_filters.xml")
         for current_node in nodes:
             current_node.query("DROP POLICY IF EXISTS pA, pB ON mydb.filtered_table1")
+            current_node.query("DROP POLICY IF EXISTS pC ON mydb.other_table")
+            current_node.query("DROP POLICY IF EXISTS all_data ON dist_tbl, local_tbl")
+            current_node.query(
+                "DROP POLICY IF EXISTS role1_data ON dist_tbl, local_tbl"
+            )
 
 
 def test_smoke():
@@ -410,51 +415,12 @@ def test_reload_users_xml_by_timer():
 def test_introspection():
     policies = [
         [
-            "another ON mydb.filtered_table1",
-            "another",
-            "mydb",
-            "filtered_table1",
-            "6068883a-0e9d-f802-7e22-0144f8e66d3c",
-            "users.xml",
-            "1",
-            0,
-            0,
-            "['another']",
-            "[]",
-        ],
-        [
-            "another ON mydb.filtered_table2",
-            "another",
-            "mydb",
-            "filtered_table2",
-            "c019e957-c60b-d54e-cc52-7c90dac5fb01",
-            "users.xml",
-            "1",
-            0,
-            0,
-            "['another']",
-            "[]",
-        ],
-        [
-            "another ON mydb.filtered_table3",
-            "another",
-            "mydb",
-            "filtered_table3",
-            "4cb080d0-44e8-dbef-6026-346655143628",
-            "users.xml",
-            "1",
-            0,
-            0,
-            "['another']",
-            "[]",
-        ],
-        [
             "another ON mydb.local",
             "another",
             "mydb",
             "local",
             "5b23c389-7e18-06bf-a6bc-dd1afbbc0a97",
-            "users.xml",
+            "users_xml",
             "a = 1",
             0,
             0,
@@ -467,7 +433,7 @@ def test_introspection():
             "mydb",
             "filtered_table1",
             "9e8a8f62-4965-2b5e-8599-57c7b99b3549",
-            "users.xml",
+            "users_xml",
             "a = 1",
             0,
             0,
@@ -480,7 +446,7 @@ def test_introspection():
             "mydb",
             "filtered_table2",
             "cffae79d-b9bf-a2ef-b798-019c18470b25",
-            "users.xml",
+            "users_xml",
             "a + b < 1 or c - d > 5",
             0,
             0,
@@ -493,21 +459,8 @@ def test_introspection():
             "mydb",
             "filtered_table3",
             "12fc5cef-e3da-3940-ec79-d8be3911f42b",
-            "users.xml",
+            "users_xml",
             "c = 1",
-            0,
-            0,
-            "['default']",
-            "[]",
-        ],
-        [
-            "default ON mydb.local",
-            "default",
-            "mydb",
-            "local",
-            "cdacaeb5-1d97-f99d-2bb0-4574f290629c",
-            "users.xml",
-            "1",
             0,
             0,
             "['default']",
@@ -522,31 +475,21 @@ def test_introspection():
 def test_dcl_introspection():
     assert node.query("SHOW POLICIES") == TSV(
         [
-            "another ON mydb.filtered_table1",
-            "another ON mydb.filtered_table2",
-            "another ON mydb.filtered_table3",
             "another ON mydb.local",
             "default ON mydb.filtered_table1",
             "default ON mydb.filtered_table2",
             "default ON mydb.filtered_table3",
-            "default ON mydb.local",
         ]
     )
 
-    assert node.query("SHOW POLICIES ON mydb.filtered_table1") == TSV(
-        ["another", "default"]
-    )
-    assert node.query("SHOW POLICIES ON mydb.local") == TSV(["another", "default"])
+    assert node.query("SHOW POLICIES ON mydb.filtered_table1") == TSV(["default"])
+    assert node.query("SHOW POLICIES ON mydb.local") == TSV(["another"])
     assert node.query("SHOW POLICIES ON mydb.*") == TSV(
         [
-            "another ON mydb.filtered_table1",
-            "another ON mydb.filtered_table2",
-            "another ON mydb.filtered_table3",
             "another ON mydb.local",
             "default ON mydb.filtered_table1",
             "default ON mydb.filtered_table2",
             "default ON mydb.filtered_table3",
-            "default ON mydb.local",
         ]
     )
     assert node.query("SHOW POLICIES default") == TSV(
@@ -554,7 +497,6 @@ def test_dcl_introspection():
             "default ON mydb.filtered_table1",
             "default ON mydb.filtered_table2",
             "default ON mydb.filtered_table3",
-            "default ON mydb.local",
         ]
     )
 
@@ -570,9 +512,8 @@ def test_dcl_introspection():
         node.query("SHOW CREATE POLICY default ON mydb.filtered_table3")
         == "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default\n"
     )
-    assert (
-        node.query("SHOW CREATE POLICY default ON mydb.local")
-        == "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default\n"
+    assert "no row policy" in node.query_and_get_error(
+        "SHOW CREATE POLICY default ON mydb.local"
     )
 
     assert node.query("SHOW CREATE POLICY default") == TSV(
@@ -580,58 +521,41 @@ def test_dcl_introspection():
             "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default",
         ]
     )
     assert node.query("SHOW CREATE POLICIES ON mydb.filtered_table1") == TSV(
         [
-            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
             "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
         ]
     )
     assert node.query("SHOW CREATE POLICIES ON mydb.*") == TSV(
         [
-            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 TO another",
             "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 TO another",
             "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default",
         ]
     )
     assert node.query("SHOW CREATE POLICIES") == TSV(
         [
-            "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 TO another",
-            "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 TO another",
             "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 TO another",
             "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default",
-            "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default",
         ]
     )
 
     expected_access = (
-        "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another\n"
-        "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 TO another\n"
-        "CREATE ROW POLICY another ON mydb.filtered_table3 FOR SELECT USING 1 TO another\n"
         "CREATE ROW POLICY another ON mydb.local FOR SELECT USING a = 1 TO another\n"
         "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default\n"
         "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default\n"
         "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default\n"
-        "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default\n"
     )
     assert expected_access in node.query("SHOW ACCESS")
 
     copy_policy_xml("all_rows.xml")
     assert node.query("SHOW POLICIES") == TSV(
         [
-            "another ON mydb.filtered_table1",
-            "another ON mydb.filtered_table2",
-            "another ON mydb.filtered_table3",
             "default ON mydb.filtered_table1",
             "default ON mydb.filtered_table2",
             "default ON mydb.filtered_table3",
@@ -653,9 +577,6 @@ def test_dcl_introspection():
     copy_policy_xml("no_rows.xml")
     assert node.query("SHOW POLICIES") == TSV(
         [
-            "another ON mydb.filtered_table1",
-            "another ON mydb.filtered_table2",
-            "another ON mydb.filtered_table3",
             "default ON mydb.filtered_table1",
             "default ON mydb.filtered_table2",
             "default ON mydb.filtered_table3",
@@ -683,7 +604,9 @@ def test_dcl_management():
     assert node.query("SHOW POLICIES") == ""
 
     node.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b")
-    assert node.query("SELECT * FROM mydb.filtered_table1") == ""
+    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
+    )
     assert node.query("SHOW POLICIES ON mydb.filtered_table1") == "pA\n"
 
     node.query("ALTER POLICY pA ON mydb.filtered_table1 TO default")
@@ -713,7 +636,9 @@ def test_grant_create_row_policy():
     assert node.query("SHOW POLICIES") == ""
     node.query("CREATE USER X")
 
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
@@ -721,12 +646,16 @@ def test_grant_create_row_policy():
     node.query(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table2 FOR SELECT USING a<b", user="X"
     )
 
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
@@ -734,25 +663,33 @@ def test_grant_create_row_policy():
     node.query(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table2 FOR SELECT USING a==b", user="X"
     )
 
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table1", user="X"
     )
     node.query("GRANT DROP POLICY ON mydb.filtered_table1 TO X")
     node.query("DROP POLICY pA ON mydb.filtered_table1", user="X")
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table2", user="X"
     )
 
     node.query("REVOKE ALL ON *.* FROM X")
 
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
@@ -761,7 +698,9 @@ def test_grant_create_row_policy():
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
 
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
@@ -770,7 +709,9 @@ def test_grant_create_row_policy():
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
 
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table1", user="X"
     )
@@ -785,6 +726,70 @@ def test_users_xml_is_readonly():
         "storage is readonly",
         node.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"),
     )
+
+
+def test_dcl_users_with_policies_from_users_xml():
+    node.query("CREATE USER X")
+    node.query("GRANT SELECT ON mydb.filtered_table1 TO X")
+
+    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 0], [1, 1]])
+
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
+    )
+
+    node.query("DROP USER X")
+
+
+def test_some_users_without_policies():
+    copy_policy_xml("no_filters.xml")
+    assert node.query("SHOW POLICIES") == ""
+    node.query("CREATE USER X, Y")
+    node.query("GRANT SELECT ON mydb.filtered_table1 TO X, Y")
+
+    # permissive a >= b for X, none for Y
+    node.query(
+        "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a >= b AS permissive TO X"
+    )
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
+        [[0, 0], [1, 0], [1, 1]]
+    )
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="Y") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
+    )
+
+    # restrictive a >=b for X, none for Y
+    node.query("ALTER POLICY pA ON mydb.filtered_table1 AS restrictive")
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
+        [[0, 0], [1, 0], [1, 1]]
+    )
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="Y") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
+    )
+
+    # permissive a >= b for X, restrictive a <= b for X, none for Y
+    node.query("ALTER POLICY pA ON mydb.filtered_table1 AS permissive")
+    node.query(
+        "CREATE POLICY pB ON mydb.filtered_table1 FOR SELECT USING a <= b AS restrictive TO X"
+    )
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
+        [[0, 0], [1, 1]]
+    )
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="Y") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
+    )
+
+    # permissive a >= b for X, restrictive a <= b for Y
+    node.query("ALTER POLICY pB ON mydb.filtered_table1 TO Y")
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
+        [[0, 0], [1, 0], [1, 1]]
+    )
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="Y") == TSV(
+        [[0, 0], [0, 1], [1, 1]]
+    )
+
+    node.query("DROP POLICY pA, pB ON mydb.filtered_table1")
+    node.query("DROP USER X, Y")
 
 
 def test_tags_with_db_and_table_names():
@@ -880,3 +885,30 @@ def test_policy_on_distributed_table_via_role():
     assert node.query(
         "SELECT * FROM dist_tbl SETTINGS prefer_localhost_replica=0", user="user1"
     ) == TSV([[0], [2], [4], [6], [8], [0], [2], [4], [6], [8]])
+
+
+def test_row_policy_filter_with_subquery():
+    copy_policy_xml("no_filters.xml")
+    assert node.query("SHOW POLICIES") == ""
+
+    node.query("DROP ROW POLICY IF EXISTS filter_1 ON table1")
+    node.query("DROP TABLE IF EXISTS table_1")
+    node.query("DROP TABLE IF EXISTS table_2")
+
+    node.query(
+        "CREATE TABLE table_1 (x int, y int) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node.query("INSERT INTO table_1 SELECT number, number * number FROM numbers(10)")
+
+    node.query("CREATE TABLE table_2 (a int) ENGINE=MergeTree ORDER BY tuple()")
+    node.query("INSERT INTO table_2 VALUES (3), (5)")
+
+    node.query(
+        "CREATE ROW POLICY filter_1 ON table_1 USING x IN (SELECT a FROM table_2) TO ALL"
+    )
+
+    assert node.query("SELECT * FROM table_1") == TSV([[3, 9], [5, 25]])
+
+    node.query("DROP ROW POLICY filter_1 ON table_1")
+    node.query("DROP TABLE table_1")
+    node.query("DROP TABLE table_2")

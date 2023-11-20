@@ -1,15 +1,13 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Storages/IStorage.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/IStorageCluster.h>
+#include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -30,20 +28,54 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+struct TreeRewriterResult;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
   *
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
+class StorageDistributed final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageDistributed>;
     friend class DistributedSink;
-    friend class StorageDistributedDirectoryMonitor;
+    friend class DistributedAsyncInsertBatch;
+    friend class DistributedAsyncInsertDirectoryQueue;
     friend class StorageSystemDistributionQueue;
 
 public:
+    StorageDistributed(
+        const StorageID & id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & cluster_name_,
+        ContextPtr context_,
+        const ASTPtr & sharding_key_,
+        const String & storage_policy_name_,
+        const String & relative_data_path_,
+        const DistributedSettings & distributed_settings_,
+        bool attach_,
+        ClusterPtr owned_cluster_ = {},
+        ASTPtr remote_table_function_ptr_ = {});
+
+    StorageDistributed(
+        const StorageID & id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        ASTPtr remote_table_function_ptr_,
+        const String & cluster_name_,
+        ContextPtr context_,
+        const ASTPtr & sharding_key_,
+        const String & storage_policy_name_,
+        const String & relative_data_path_,
+        const DistributedSettings & distributed_settings_,
+        bool attach,
+        ClusterPtr owned_cluster_ = {});
+
     ~StorageDistributed() override;
 
     std::string getName() const override { return "Distributed"; }
@@ -76,15 +108,6 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -93,14 +116,14 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/) override;
+        size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
-    QueryPipelineBuilderPtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
@@ -113,9 +136,9 @@ public:
     /// the structure of the sub-table is not checked
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    void startup() override;
-    void shutdown() override;
-    void flush() override;
+    void initializeFromDisk();
+    void shutdown(bool is_drop) override;
+    void flushAndPrepareForShutdown() override;
     void drop() override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
@@ -136,38 +159,9 @@ public:
     /// Used by ClusterCopier
     size_t getShardCount() const;
 
+    bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
+
 private:
-    StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        ContextPtr context_,
-        const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
-        const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
-        bool attach_,
-        ClusterPtr owned_cluster_ = {},
-        ASTPtr remote_table_function_ptr_ = {});
-
-    StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ASTPtr remote_table_function_ptr_,
-        const String & cluster_name_,
-        ContextPtr context_,
-        const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
-        const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
-        bool attach,
-        ClusterPtr owned_cluster_ = {});
-
     void renameOnDisk(const String & new_path_to_table_data);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
@@ -175,24 +169,39 @@ private:
     const String & getRelativeDataPath() const { return relative_data_path; }
 
     /// create directory monitors for each existing subdirectory
-    void createDirectoryMonitors(const DiskPtr & disk);
-    /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup);
+    void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
+
+    /// Get directory queue thread and connection pool created by disk and subdirectory name
+    ///
+    /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
+    DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
+
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
     ///
     /// Used by StorageSystemDistributionQueue
-    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
+    std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
     static IColumn::Selector createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(ContextPtr, const StorageSnapshotPtr & storage_snapshot, const ASTPtr & query_ptr) const;
+    ClusterPtr getOptimizedCluster(
+        ContextPtr local_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        const TreeRewriterResultPtr & syntax_analyzer_result) const;
 
     ClusterPtr skipUnusedShards(
-        ClusterPtr cluster, const ASTPtr & query_ptr, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
+        ClusterPtr cluster,
+        const SelectQueryInfo & query_info,
+        const TreeRewriterResultPtr & syntax_analyzer_result,
+        const StorageSnapshotPtr & storage_snapshot,
+        ContextPtr context) const;
+
+    ClusterPtr skipUnusedShardsWithAnalyzer(
+        ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
     ///
@@ -211,6 +220,7 @@ private:
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
@@ -218,6 +228,9 @@ private:
     const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
 
     void delayInsertOrThrowIfNeeded() const;
+
+    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     String remote_database;
     String remote_table;
@@ -239,7 +252,7 @@ private:
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
 
-    ActionBlocker monitors_blocker;
+    ActionBlocker async_insert_blocker;
 
     String relative_data_path;
 
@@ -255,7 +268,7 @@ private:
 
     struct ClusterNodeData
     {
-        std::shared_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
+        std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
         ConnectionPoolPtr connection_pool;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;

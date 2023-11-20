@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/integrations/materialized-postgresql
 sidebar_position: 12
 sidebar_label: MaterializedPostgreSQL
 ---
@@ -51,5 +52,6 @@ PRIMARY KEY key;
 SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
-:::danger "Предупреждение"
-    Репликация **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
+:::danger Предупреждение
+Репликация **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
+:::

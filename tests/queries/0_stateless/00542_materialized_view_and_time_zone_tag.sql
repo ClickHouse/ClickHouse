@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS m3;
 DROP TABLE IF EXISTS m1;
 DROP TABLE IF EXISTS x;
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE x (d Date, t DateTime) ENGINE = MergeTree(d, (d, t), 1);
 
 CREATE MATERIALIZED VIEW m1 (d Date, t DateTime, c UInt64) ENGINE = SummingMergeTree(d, (d, t), 1) AS SELECT d, toStartOfMinute(x.t) as t, count() as c FROM x GROUP BY d, t;

@@ -2,10 +2,16 @@
 #include <ctime>
 #include <random>
 #include <thread>
+#include <pcg_random.hpp>
 #include <mysqlxx/PoolWithFailover.h>
+#include <Common/randomSeed.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int ALL_CONNECTION_TRIES_FAILED;
+}
 
 using namespace mysqlxx;
 
@@ -40,10 +46,7 @@ PoolWithFailover::PoolWithFailover(
         /// PoolWithFailover objects are stored in a cache inside PoolFactory.
         /// This cache is reset by ExternalDictionariesLoader after every SYSTEM RELOAD DICTIONAR{Y|IES}
         /// which triggers massive re-constructing of connection pools.
-        /// The state of PRNGs like std::mt19937 is considered to be quite heavy
-        /// thus here we attempt to optimize its construction.
-        static thread_local std::mt19937 rnd_generator(
-                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock());
+        static thread_local pcg64_fast rnd_generator(randomSeed());
         for (auto & [_, replicas] : replicas_by_priority)
         {
             if (replicas.size() > 1)
@@ -123,7 +126,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
 PoolWithFailover::Entry PoolWithFailover::get()
 {
     Poco::Util::Application & app = Poco::Util::Application::instance();
-    std::lock_guard<std::mutex> locker(mutex);
+    std::lock_guard locker(mutex);
 
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;
@@ -168,6 +171,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
                     }
 
                     app.logger().warning("Connection to " + pool->getDescription() + " failed: " + e.displayText());
+
                     replica_name_to_error_detail.insert_or_assign(pool->getDescription(), ErrorDetail{e.code(), e.displayText()});
 
                     continue;
@@ -177,7 +181,10 @@ PoolWithFailover::Entry PoolWithFailover::get()
             }
         }
 
-        app.logger().error("Connection to all replicas failed " + std::to_string(try_no + 1) + " times");
+        if (replicas_by_priority.size() > 1)
+            app.logger().error("Connection to all mysql replicas failed " + std::to_string(try_no + 1) + " times");
+        else
+            app.logger().error("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
     }
 
     if (full_pool)
@@ -187,7 +194,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
     }
 
     DB::WriteBufferFromOwnString message;
-    message << "Connections to all replicas failed: ";
+
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
     {
         for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
@@ -203,5 +210,10 @@ PoolWithFailover::Entry PoolWithFailover::get()
         }
     }
 
-    throw Poco::Exception(message.str());
+
+    if (replicas_by_priority.size() > 1)
+        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to all mysql replicas failed: {}", message.str());
+    else
+        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to mysql failed: {}", message.str());
+
 }

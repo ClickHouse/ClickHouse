@@ -4,6 +4,7 @@
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <list>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -43,12 +44,22 @@ private:
     friend class RoleCache;
     explicit EnabledRoles(const Params & params_);
 
-    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard & notifications);
-
     const Params params;
-    mutable std::shared_ptr<const EnabledRolesInfo> info;
-    mutable std::list<OnChangeHandler> handlers;
-    mutable std::mutex mutex;
+
+    /// Called by RoleCache to store `EnabledRolesInfo` in this `EnabledRoles` after the calculation is done.
+    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard * notifications);
+
+    std::shared_ptr<const EnabledRolesInfo> info;
+    mutable std::mutex info_mutex;
+
+    struct Handlers
+    {
+        std::list<OnChangeHandler> list;
+        std::mutex mutex;
+    };
+
+    /// shared_ptr is here for safety because EnabledRoles can be destroyed before all subscriptions are removed.
+    std::shared_ptr<Handlers> handlers;
 };
 
 }

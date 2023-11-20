@@ -1,9 +1,9 @@
 ---
+slug: /en/operations/quotas
 sidebar_position: 51
 sidebar_label: Quotas
+title: Quotas
 ---
-
-# Quotas {#quotas}
 
 Quotas allow you to limit resource usage over a period of time or track the use of resources.
 Quotas are set up in the user config, which is usually ‘users.xml’.
@@ -12,8 +12,8 @@ The system also has a feature for limiting the complexity of a single query. See
 
 In contrast to query complexity restrictions, quotas:
 
--   Place restrictions on a set of queries that can be run over a period of time, instead of limiting a single query.
--   Account for resources spent on all remote servers for distributed query processing.
+- Place restrictions on a set of queries that can be run over a period of time, instead of limiting a single query.
+- Account for resources spent on all remote servers for distributed query processing.
 
 Let’s look at the section of the ‘users.xml’ file that defines quotas.
 
@@ -116,5 +116,3 @@ The quota is assigned to users in the ‘users’ section of the config. See the
 For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will “start over”.
 
 When the server is restarted, quotas are reset.
-
-[Original article](https://clickhouse.com/docs/en/operations/quotas/) <!--hide-->

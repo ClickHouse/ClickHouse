@@ -1,7 +1,10 @@
-# zookeeper {#system-zookeeper}
+---
+slug: /en/operations/system-tables/zookeeper
+---
+# zookeeper
 
-The table does not exist if ZooKeeper is not configured. Allows reading data from the ZooKeeper cluster defined in the config.
-The query must either have a ‘path =’   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children in ZooKeeper that you want to get data for.
+The table does not exist unless ClickHouse Keeper or ZooKeeper is configured. The `system.zookeeper` table exposes data from the Keeper cluster defined in the config.
+The query must either have a ‘path =’   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children that you want to get data for.
 
 The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
 To output data for all root nodes, write path = ‘/’.
@@ -9,24 +12,24 @@ If the path specified in ‘path’ does not exist, an exception will be thrown.
 
 The query `SELECT * FROM system.zookeeper WHERE path IN ('/', '/clickhouse')` outputs data for all children on the `/` and `/clickhouse` node.
 If in the specified ‘path’ collection has does not exist path, an exception will be thrown.
-It can be used to do a batch of ZooKeeper path queries.
+It can be used to do a batch of Keeper path queries.
 
 Columns:
 
--   `name` (String) — The name of the node.
--   `path` (String) — The path to the node.
--   `value` (String) — Node value.
--   `dataLength` (Int32) — Size of the value.
--   `numChildren` (Int32) — Number of descendants.
--   `czxid` (Int64) — ID of the transaction that created the node.
--   `mzxid` (Int64) — ID of the transaction that last changed the node.
--   `pzxid` (Int64) — ID of the transaction that last deleted or added descendants.
--   `ctime` (DateTime) — Time of node creation.
--   `mtime` (DateTime) — Time of the last modification of the node.
--   `version` (Int32) — Node version: the number of times the node was changed.
--   `cversion` (Int32) — Number of added or removed descendants.
--   `aversion` (Int32) — Number of changes to the ACL.
--   `ephemeralOwner` (Int64) — For ephemeral nodes, the ID of the session that owns this node.
+- `name` (String) — The name of the node.
+- `path` (String) — The path to the node.
+- `value` (String) — Node value.
+- `dataLength` (Int32) — Size of the value.
+- `numChildren` (Int32) — Number of descendants.
+- `czxid` (Int64) — ID of the transaction that created the node.
+- `mzxid` (Int64) — ID of the transaction that last changed the node.
+- `pzxid` (Int64) — ID of the transaction that last deleted or added descendants.
+- `ctime` (DateTime) — Time of node creation.
+- `mtime` (DateTime) — Time of the last modification of the node.
+- `version` (Int32) — Node version: the number of times the node was changed.
+- `cversion` (Int32) — Number of added or removed descendants.
+- `aversion` (Int32) — Number of changes to the ACL.
+- `ephemeralOwner` (Int64) — For ephemeral nodes, the ID of the session that owns this node.
 
 Example:
 
@@ -72,4 +75,3 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/zookeeper) <!--hide-->

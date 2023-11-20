@@ -20,7 +20,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ParserKeyword s_on("ON");
     ParserIdentifier function_name_p;
     ParserKeyword s_as("AS");
-    ParserLambdaExpression lambda_p;
+    ParserExpression lambda_p;
 
     ASTPtr function_name;
     ASTPtr function_core;

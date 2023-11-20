@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/general/olap
 title: What is OLAP?
 toc_hidden: true
 sidebar_position: 100

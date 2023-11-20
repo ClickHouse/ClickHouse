@@ -7,11 +7,11 @@
 #include <filesystem>
 
 
-int getCurrentProcessFDCount()
+Int64 getCurrentProcessFDCount()
 {
     namespace fs = std::filesystem;
-    int result = -1;
-#if defined(__linux__)  || defined(__APPLE__)
+    Int64 result = -1;
+#if defined(OS_LINUX)  || defined(OS_DARWIN)
     using namespace DB;
 
     Int32 pid = getpid();
@@ -36,7 +36,7 @@ int getCurrentProcessFDCount()
             readIntText(result, command->out);
             command->wait();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
     }

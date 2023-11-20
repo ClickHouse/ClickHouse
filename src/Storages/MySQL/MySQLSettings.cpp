@@ -3,6 +3,9 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
+#include <Interpreters/Context.h>
+#include <Parsers/formatAST.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -15,13 +18,18 @@ namespace ErrorCodes
 
 IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
 
+void MySQLSettings::loadFromQuery(const ASTSetQuery & settings_def)
+{
+    applyChanges(settings_def.changes);
+}
+
 void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
         try
         {
-            applyChanges(storage_def.settings->changes);
+            loadFromQuery(*storage_def.settings);
         }
         catch (Exception & e)
         {
@@ -38,5 +46,33 @@ void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
+void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storage_def)
+{
+    if (!context->hasQueryContext())
+        return;
+
+    const Settings & settings = context->getQueryContext()->getSettingsRef();
+
+    if (settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
+    {
+        static constexpr auto setting_name = "mysql_datatypes_support_level";
+        set(setting_name, settings.mysql_datatypes_support_level.toString());
+
+        if (!storage_def.settings)
+        {
+            auto settings_ast = std::make_shared<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage_def.set(storage_def.settings, settings_ast);
+        }
+
+        auto & changes = storage_def.settings->changes;
+        if (changes.end() == std::find_if(
+                changes.begin(), changes.end(),
+                [](const SettingChange & c) { return c.name == setting_name; }))
+        {
+            changes.push_back(SettingChange{setting_name, settings.mysql_datatypes_support_level.toString()});
+        }
+    }
 }
 
+}

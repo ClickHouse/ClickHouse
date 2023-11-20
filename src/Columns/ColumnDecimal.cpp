@@ -4,10 +4,9 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/RadixSort.h>
 
-#include <base/unaligned.h>
 #include <base/sort.h>
-#include <base/scope_guard.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -15,10 +14,9 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
-
-template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
 namespace DB
 {
@@ -59,11 +57,28 @@ bool ColumnDecimal<T>::hasEqualValues() const
 }
 
 template <is_decimal T>
-StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
 {
-    auto * pos = arena.allocContinue(sizeof(T), begin);
+    constexpr size_t null_bit_size = sizeof(UInt8);
+    StringRef res;
+    char * pos;
+    if (null_bit)
+    {
+        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+        memcpy(pos, null_bit, null_bit_size);
+        if (*null_bit) return res;
+        pos += null_bit_size;
+    }
+    else
+    {
+        res.size = sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+    }
     memcpy(pos, &data[n], sizeof(T));
-    return StringRef(pos, sizeof(T));
+    return res;
 }
 
 template <is_decimal T>
@@ -83,7 +98,7 @@ template <is_decimal T>
 UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
-        throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getFamilyName());
     else
         return static_cast<NativeT>(data[n]);
 }
@@ -100,8 +115,8 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
     auto s = data.size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -109,7 +124,7 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = intHashCRC32(*begin, *hash_data);
+        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
         ++begin;
         ++hash_data;
     }
@@ -141,6 +156,59 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
 
         return data[lhs] > data[rhs];
     };
+
+    size_t data_size = data.size();
+    res.resize(data_size);
+
+    if (limit >= data_size)
+        limit = 0;
+
+    for (size_t i = 0; i < data_size; ++i)
+        res[i] = i;
+
+    if constexpr (is_arithmetic_v<NativeT> && !is_big_int_v<NativeT>)
+    {
+        if (!limit)
+        {
+            /// A case for radix sort
+            /// LSD RadixSort is stable
+
+            bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+            bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+            bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
+            /// TODO: LSD RadixSort is currently not stable if direction is descending
+            bool use_radix_sort = (sort_is_stable && ascending) || !sort_is_stable;
+
+            /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
+            if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            {
+                for (size_t i = 0; i < data_size; ++i)
+                    res[i] = i;
+
+                bool try_sort = false;
+
+                if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+                    try_sort = trySort(res.begin(), res.end(), comparator_ascending);
+                else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+                    try_sort = trySort(res.begin(), res.end(), comparator_ascending_stable);
+                else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+                    try_sort = trySort(res.begin(), res.end(), comparator_descending);
+                else
+                    try_sort = trySort(res.begin(), res.end(), comparator_descending_stable);
+
+                if (try_sort)
+                    return;
+
+                PaddedPODArray<ValueWithIndex<NativeT>> pairs(data_size);
+                for (UInt32 i = 0; i < static_cast<UInt32>(data_size); ++i)
+                    pairs[i] = {data[i].value, i};
+
+                RadixSort<RadixSortTraits<NativeT>>::executeLSD(pairs.data(), data_size, reverse, res.data());
+                return;
+            }
+        }
+    }
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         this->getPermutationImpl(limit, res, comparator_ascending, DefaultSort(), DefaultPartialSort());
@@ -174,7 +242,37 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
         return data[lhs] < data[rhs];
     };
     auto equals_comparator = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
-    auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
+    auto sort = [&](auto begin, auto end, auto pred)
+    {
+        bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+        bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+        bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
+        /// TODO: LSD RadixSort is currently not stable if direction is descending
+        bool use_radix_sort = (sort_is_stable && ascending) || !sort_is_stable;
+        size_t size = end - begin;
+
+        if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+        {
+            bool try_sort = trySort(begin, end, pred);
+            if (try_sort)
+                return;
+
+            PaddedPODArray<ValueWithIndex<NativeT>> pairs(size);
+            size_t index = 0;
+
+            for (auto * it = begin; it != end; ++it)
+            {
+                pairs[index] = {data[*it].value, static_cast<UInt32>(*it)};
+                ++index;
+            }
+
+            RadixSort<RadixSortTraits<NativeT>>::executeLSD(pairs.data(), size, reverse, begin);
+            return;
+        }
+
+        ::sort(begin, end, pred);
+    };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
@@ -251,9 +349,9 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length) +
-            " are out of bound in ColumnDecimal<T>::insertRangeFrom method (data.size() = " + toString(src_vec.data.size()) + ").",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnDecimal<T>::insertRangeFrom method (data.size() = {}).",
+                        toString(start), toString(length), toString(src_vec.data.size()));
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -298,7 +396,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
         {
             while (mask)
             {
-                size_t index = __builtin_ctzll(mask);
+                size_t index = std::countr_zero(mask);
                 res_data.push_back(data_pos[index]);
             #ifdef __BMI__
                 mask = _blsr_u64(mask);
@@ -341,7 +439,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = this->create(0, scale);
     if (0 == size)
@@ -386,11 +484,11 @@ ColumnPtr ColumnDecimal<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [compressed = std::move(compressed), column_size = data_size, scale = this->scale]
+        [my_compressed = std::move(compressed), column_size = data_size, my_scale = this->scale]
         {
-            auto res = ColumnDecimal<T>::create(column_size, scale);
+            auto res = ColumnDecimal<T>::create(column_size, my_scale);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
             return res;
         });
 }

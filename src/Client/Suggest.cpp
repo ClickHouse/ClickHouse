@@ -1,12 +1,13 @@
 #include "Suggest.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include "Core/Protocol.h"
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -21,9 +22,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int OK;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DEADLOCK_AVOIDED;
+    extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
 Suggest::Suggest()
@@ -42,7 +45,7 @@ Suggest::Suggest()
         "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
         "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
         "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
-        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",
+        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",    "CLEANUP",     "APPEND"
     });
 }
 
@@ -50,77 +53,97 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
-    WriteBufferFromOwnString query;
-    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
-        "SELECT name FROM system.functions"
-        " UNION ALL "
-        "SELECT name FROM system.table_engines"
-        " UNION ALL "
-        "SELECT name FROM system.formats"
-        " UNION ALL "
-        "SELECT name FROM system.table_functions"
-        " UNION ALL "
-        "SELECT name FROM system.data_type_families"
-        " UNION ALL "
-        "SELECT name FROM system.merge_tree_settings"
-        " UNION ALL "
-        "SELECT name FROM system.settings"
-        " UNION ALL ";
+    String query;
+
+    auto add_subquery = [&](std::string_view select, std::string_view result_column_name)
+    {
+        if (!query.empty())
+            query += " UNION ALL ";
+        query += fmt::format("SELECT * FROM viewIfPermitted({} ELSE null('{} String'))", select, result_column_name);
+    };
+
+    auto add_column = [&](std::string_view column_name, std::string_view table_name, bool distinct, std::optional<Int64> limit)
+    {
+        add_subquery(
+            fmt::format(
+                "SELECT {}{} FROM system.{}{}",
+                (distinct ? "DISTINCT " : ""),
+                column_name,
+                table_name,
+                (limit ? (" LIMIT " + std::to_string(*limit)) : "")),
+            column_name);
+    };
+
+    add_column("name", "functions", false, {});
+    add_column("name", "table_engines", false, {});
+    add_column("name", "formats", false, {});
+    add_column("name", "table_functions", false, {});
+    add_column("name", "data_type_families", false, {});
+    add_column("name", "merge_tree_settings", false, {});
+    add_column("name", "settings", false, {});
+
     if (!basic_suggestion)
     {
-        query << "SELECT cluster FROM system.clusters"
-                 " UNION ALL "
-                 "SELECT macro FROM system.macros"
-                 " UNION ALL "
-                 "SELECT policy_name FROM system.storage_policies"
-                 " UNION ALL ";
+        add_column("cluster", "clusters", false, {});
+        add_column("macro", "macros", false, {});
+        add_column("policy_name", "storage_policies", false, {});
     }
-    query << "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+
+    add_subquery("SELECT concat(func.name, comb.name) AS x FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate", "x");
+
     /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
     if (suggestion_limit > 0)
     {
-        String limit_str = toString(suggestion_limit);
-        query << " UNION ALL "
-                 "SELECT name FROM system.databases LIMIT " << limit_str
-              << " UNION ALL "
-                 "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
-              << " UNION ALL ";
-
+        add_column("name", "databases", false, suggestion_limit);
+        add_column("name", "tables", true, suggestion_limit);
         if (!basic_suggestion)
         {
-            query << "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
-                  << " UNION ALL ";
+            add_column("name", "dictionaries", true, suggestion_limit);
         }
-        query << "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
+        add_column("name", "columns", true, suggestion_limit);
     }
-    query << ") WHERE notEmpty(res)";
 
-    return query.str();
+    /// FIXME: This query does not work with the new analyzer because of bug https://github.com/ClickHouse/ClickHouse/issues/50669
+    query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
+    return query;
 }
 
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
 {
-    loading_thread = std::thread([context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
+    loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
         ThreadStatus thread_status;
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
             {
-                auto connection = ConnectionType::createConnection(connection_parameters, context);
+                auto connection = ConnectionType::createConnection(connection_parameters, my_context);
                 fetch(*connection, connection_parameters.timeouts, getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>));
             }
             catch (const Exception & e)
             {
+                last_error = e.code();
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
-
-                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+                {
+                    /// We should not use std::cerr here, because this method works concurrently with the main thread.
+                    /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
+                    ///
+                    /// USER_SESSION_LIMIT_EXCEEDED is ignored here. The client will try to receive
+                    /// suggestions using the main connection later.
+                    WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
+                    out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                    out.next();
+                }
             }
             catch (...)
             {
-                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                last_error = getCurrentExceptionCode();
+                WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
+                out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                out.next();
             }
 
             break;
@@ -130,9 +153,25 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
     });
 }
 
+void Suggest::load(IServerConnection & connection,
+                   const ConnectionTimeouts & timeouts,
+                   Int32 suggestion_limit)
+{
+    try
+    {
+        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true));
+    }
+    catch (...)
+    {
+        std::cerr << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
+        last_error = getCurrentExceptionCode();
+    }
+}
+
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
-    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false);
+    connection.sendQuery(
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false, {});
 
     while (true)
     {
@@ -143,16 +182,12 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 fillWordsFromBlock(packet.block);
                 continue;
 
+            case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::Progress:
-                continue;
             case Protocol::Server::ProfileInfo:
-                continue;
             case Protocol::Server::Totals:
-                continue;
             case Protocol::Server::Extremes:
-                continue;
             case Protocol::Server::Log:
-                continue;
             case Protocol::Server::ProfileEvents:
                 continue;
 
@@ -161,6 +196,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 return;
 
             case Protocol::Server::EndOfStream:
+                last_error = ErrorCodes::OK;
                 return;
 
             default:
@@ -176,7 +212,7 @@ void Suggest::fillWordsFromBlock(const Block & block)
         return;
 
     if (block.columns() != 1)
-        throw Exception("Wrong number of columns received for query to read words for suggestion", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns received for query to read words for suggestion");
 
     const ColumnString & column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
 
@@ -185,9 +221,8 @@ void Suggest::fillWordsFromBlock(const Block & block)
     Words new_words;
     new_words.reserve(rows);
     for (size_t i = 0; i < rows; ++i)
-    {
-        new_words.emplace_back(column.getDataAt(i).toString());
-    }
+        new_words.emplace_back(column[i].get<String>());
+
     addWords(std::move(new_words));
 }
 

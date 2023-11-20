@@ -34,4 +34,14 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
+inline bool operator==(const ASTSampleRatio::Rational & lhs, const ASTSampleRatio::Rational & rhs)
+{
+    return lhs.numerator == rhs.numerator && lhs.denominator == rhs.denominator;
+}
+
+inline bool operator!=(const ASTSampleRatio::Rational & lhs, const ASTSampleRatio::Rational & rhs)
+{
+    return !(lhs == rhs);
+}
+
 }

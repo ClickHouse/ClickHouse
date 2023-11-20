@@ -10,9 +10,12 @@ namespace DB
 class HTTPChunkedReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    explicit HTTPChunkedReadBuffer(std::unique_ptr<ReadBuffer> in_) : in(std::move(in_)) {}
+    explicit HTTPChunkedReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t max_chunk_size_)
+        : max_chunk_size(max_chunk_size_), in(std::move(in_))
+    {}
 
 private:
+    const size_t max_chunk_size;
     std::unique_ptr<ReadBuffer> in;
 
     size_t readChunkHeader();

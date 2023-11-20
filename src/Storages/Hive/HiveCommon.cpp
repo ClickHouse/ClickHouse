@@ -66,7 +66,6 @@ HiveMetastoreClient::HiveTableMetadataPtr HiveMetastoreClient::getTableMetadata(
     };
     tryCallHiveClient(client_call);
 
-    // bool update_cache = shouldUpdateTableMetadata(db_name, table_name, partitions);
     String cache_key = getCacheKey(db_name, table_name);
 
     HiveTableMetadataPtr metadata = table_metadata_cache.get(cache_key);

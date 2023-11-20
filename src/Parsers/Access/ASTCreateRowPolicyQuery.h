@@ -35,6 +35,7 @@ public:
     bool if_exists = false;
     bool if_not_exists = false;
     bool or_replace = false;
+    String storage_name;
 
     std::shared_ptr<ASTRowPolicyNames> names;
     String new_short_name;
@@ -47,9 +48,11 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
 
     void replaceCurrentUserTag(const String & current_user_name) const;
     void replaceEmptyDatabase(const String & current_database) const;
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

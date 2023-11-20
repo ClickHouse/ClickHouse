@@ -5,7 +5,7 @@
 namespace DB
 {
 
-struct TemporaryFileStream;
+struct TemporaryFileStreamLegacy;
 
 class TemporaryFileLazySource : public ISource
 {
@@ -22,7 +22,7 @@ private:
     Block header;
     bool done;
 
-    std::unique_ptr<TemporaryFileStream> stream;
+    std::unique_ptr<TemporaryFileStreamLegacy> stream;
 };
 
 }

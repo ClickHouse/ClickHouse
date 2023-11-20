@@ -30,8 +30,8 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
         data = const_data->getDataColumnPtr();
 
     if (data->size() != 1)
-        throw Exception("Incorrect size of nested column in constructor of ColumnConst: " + toString(data->size()) + ", must be 1.",
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", data->size());
 
     /// Check that the value is initialized. We do it earlier, before it will be used, to ease debugging.
 #if defined(MEMORY_SANITIZER)
@@ -56,8 +56,8 @@ ColumnPtr ColumnConst::removeLowCardinality() const
 ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
 {
     if (s != filt.size())
-        throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column (" + toString(s) + ")",
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+            filt.size(), toString(s));
 
     size_t new_size = countBytesInFilter(filt);
     return ColumnConst::create(data, new_size);
@@ -66,16 +66,16 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
 void ColumnConst::expand(const Filter & mask, bool inverted)
 {
     if (mask.size() < s)
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
     size_t bytes_count = countBytesInFilter(mask);
     if (inverted)
         bytes_count = mask.size() - bytes_count;
 
     if (bytes_count < s)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
     else if (bytes_count > s)
-        throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
     s = mask.size();
 }
@@ -84,8 +84,8 @@ void ColumnConst::expand(const Filter & mask, bool inverted)
 ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 {
     if (s != offsets.size())
-        throw Exception("Size of offsets (" + toString(offsets.size()) + ") doesn't match size of column (" + toString(s) + ")",
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets ({}) doesn't match size of column ({})",
+            offsets.size(), toString(s));
 
     size_t replicated_size = 0 == s ? 0 : offsets.back();
     return ColumnConst::create(data, replicated_size);
@@ -103,8 +103,8 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
         limit = indexes.size();
 
     if (indexes.size() < limit)
-        throw Exception("Size of indexes (" + toString(indexes.size()) + ") is less than required (" + toString(limit) + ")",
-                        ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})",
+                        indexes.size(), toString(limit));
 
     return ColumnConst::create(data, limit);
 }
@@ -112,8 +112,8 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
 MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     if (s != selector.size())
-        throw Exception("Size of selector (" + toString(selector.size()) + ") doesn't match size of column (" + toString(s) + ")",
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
+            selector.size(), toString(s));
 
     std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
@@ -140,15 +140,15 @@ void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, Perm
 void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
 {
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     WeakHash32 element_hash(1);
     data->updateWeakHash32(element_hash);
     size_t data_hash = element_hash.getData()[0];
 
     for (auto & value : hash.getData())
-        value = intHashCRC32(data_hash, value);
+        value = static_cast<UInt32>(intHashCRC32(data_hash, value));
 }
 
 void ColumnConst::compareColumn(

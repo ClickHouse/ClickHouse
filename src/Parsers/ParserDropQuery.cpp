@@ -19,6 +19,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ParserKeyword s_database("DATABASE");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
+    ParserKeyword s_if_empty("IF EMPTY");
     ParserIdentifier name_p(true);
     ParserKeyword s_permanently("PERMANENTLY");
     ParserKeyword s_no_delay("NO DELAY");
@@ -28,16 +29,20 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ASTPtr table;
     String cluster_str;
     bool if_exists = false;
+    bool if_empty = false;
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
-    bool no_delay = false;
+    bool sync = false;
     bool permanently = false;
 
     if (s_database.ignore(pos, expected))
     {
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
+
+        if (s_if_empty.ignore(pos, expected))
+            if_empty = true;
 
         if (!name_p.parse(pos, database, expected))
             return false;
@@ -59,6 +64,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
+
+        if (s_if_empty.ignore(pos, expected))
+            if_empty = true;
 
         if (!name_p.parse(pos, table, expected))
             return false;
@@ -83,17 +91,18 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
     /// actually for TRUNCATE NO DELAY / SYNC means nothing
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
-        no_delay = true;
+        sync = true;
 
     auto query = std::make_shared<ASTDropQuery>();
     node = query;
 
     query->kind = kind;
     query->if_exists = if_exists;
+    query->if_empty = if_empty;
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
-    query->no_delay = no_delay;
+    query->sync = sync;
     query->permanently = permanently;
     query->database = database;
     query->table = table;

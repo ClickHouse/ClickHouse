@@ -7,10 +7,11 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-
 
 namespace DB
 {
@@ -37,6 +38,7 @@ HashedArrayDictionary<dictionary_key_type>::HashedArrayDictionary(
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -190,9 +192,12 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const auto & key_attribute_container = key_attribute.container;
+        std::optional<UInt64> null_value;
 
-        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
+        if (!dictionary_attribute.null_value.isNull())
+            null_value = dictionary_attribute.null_value.get<UInt64>();
+
+        const auto & key_attribute_container = key_attribute.container;
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & key) { return key_attribute_container.find(key) != key_attribute_container.end(); };
@@ -205,15 +210,25 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key
 
             auto it = key_attribute_container.find(hierarchy_key);
 
-            if (it != key_attribute_container.end())
-                result = parent_keys_container[it->getMapped()];
+            if (it == key_attribute_container.end())
+                return result;
 
-            keys_found += result.has_value();
+            size_t key_index = it->getMapped();
+
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
+                return result;
+
+            UInt64 parent_key = parent_keys_container[key_index];
+            if (null_value && *null_value == parent_key)
+                return result;
+
+            result = parent_key;
+            keys_found += 1;
 
             return result;
         };
 
-        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_func);
+        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -245,9 +260,12 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const auto & key_attribute_container = key_attribute.container;
+        std::optional<UInt64> null_value;
 
-        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
+        if (!dictionary_attribute.null_value.isNull())
+            null_value = dictionary_attribute.null_value.get<UInt64>();
+
+        const auto & key_attribute_container = key_attribute.container;
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & key) { return key_attribute_container.find(key) != key_attribute_container.end(); };
@@ -260,15 +278,25 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 
             auto it = key_attribute_container.find(hierarchy_key);
 
-            if (it != key_attribute_container.end())
-                result = parent_keys_container[it->getMapped()];
+            if (it == key_attribute_container.end())
+                return result;
 
-            keys_found += result.has_value();
+            size_t key_index = it->getMapped();
+
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
+                return result;
+
+            UInt64 parent_key = parent_keys_container[key_index];
+            if (null_value && *null_value == parent_key)
+                return result;
+
+            result = parent_key;
+            keys_found += 1;
 
             return result;
         };
 
-        auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
+        auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -282,18 +310,14 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
-    ColumnPtr key_column [[maybe_unused]],
-    const DataTypePtr &,
-    size_t level [[maybe_unused]]) const
+DictionaryHierarchicalParentToChildIndexPtr HashedArrayDictionary<dictionary_key_type>::getHierarchicalIndex() const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        PaddedPODArray<UInt64> keys_backup;
-        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+        if (hierarchical_index)
+            return hierarchical_index;
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
-
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -305,21 +329,46 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
         for (auto & [key, value] : key_attribute_container)
             index_to_key[value] = key;
 
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
+        parent_to_child.reserve(index_to_key.size());
 
-        for (size_t i = 0; i < parent_keys_container.size(); ++i)
+        size_t parent_keys_container_size = parent_keys_container.size();
+        for (size_t i = 0; i < parent_keys_container_size; ++i)
         {
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[i])
+                continue;
+
             const auto * it = index_to_key.find(i);
             if (it == index_to_key.end())
                 continue;
 
-            auto parent_key = it->getMapped();
-            auto child_key = parent_keys_container[i];
+            auto child_key = it->getMapped();
+            auto parent_key = parent_keys_container[i];
             parent_to_child[parent_key].emplace_back(child_key);
         }
 
+        return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
+    ColumnPtr key_column [[maybe_unused]],
+    const DataTypePtr &,
+    size_t level [[maybe_unused]],
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        PaddedPODArray<UInt64> keys_backup;
+        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
         size_t keys_found = 0;
-        auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+        auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -361,11 +410,17 @@ void HashedArrayDictionary<dictionary_key_type>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-
-        PullingPipelineExecutor executor(pipeline);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        update_field_loaded_block.reset();
         Block block;
+
         while (executor.pull(block))
         {
+            if (!block.rows())
+                continue;
+
+            convertToFullIfSparse(block);
+
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
@@ -465,7 +520,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 }
                 else
                 {
-                    auto value_to_insert = column_value_to_insert.get<NearestFieldType<AttributeValueType>>();
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
                     attribute_container.back() = value_to_insert;
                 }
             };
@@ -479,12 +534,12 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void HashedArrayDictionary<dictionary_key_type>::resize(size_t added_rows)
+void HashedArrayDictionary<dictionary_key_type>::resize(size_t total_rows)
 {
-    if (unlikely(!added_rows))
+    if (unlikely(!total_rows))
         return;
 
-    key_attribute.container.reserve(added_rows);
+    key_attribute.container.reserve(total_rows);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -537,7 +592,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     keys_object,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -547,7 +602,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     keys_object,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_value_extractor);
         }
         else
@@ -673,14 +728,37 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
     {
         QueryPipeline pipeline;
         pipeline = QueryPipeline(source_ptr->loadAll());
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
 
-        PullingPipelineExecutor executor(pipeline);
+        UInt64 pull_time_microseconds = 0;
+        UInt64 process_time_microseconds = 0;
+
+        size_t total_rows = 0;
+        size_t total_blocks = 0;
+
         Block block;
-        while (executor.pull(block))
+        while (true)
         {
-            resize(block.rows());
+            Stopwatch watch_pull;
+            bool has_data = executor.pull(block);
+            pull_time_microseconds += watch_pull.elapsedMicroseconds();
+
+            if (!has_data)
+                break;
+
+            ++total_blocks;
+            total_rows += block.rows();
+
+            Stopwatch watch_process;
+            resize(total_rows);
             blockToAttributes(block);
+            process_time_microseconds += watch_process.elapsedMicroseconds();
         }
+
+        LOG_DEBUG(&Poco::Logger::get("HashedArrayDictionary"),
+            "Finished {}reading {} blocks with {} rows from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
+            configuration.use_async_executor ? "asynchronous " : "",
+            total_blocks, total_rows, pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
     }
     else
     {
@@ -691,6 +769,16 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
             getFullName());
+}
+
+template <DictionaryKeyType dictionary_key_type>
+void HashedArrayDictionary<dictionary_key_type>::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarchical_index = getHierarchicalIndex();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -730,10 +818,16 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
             bytes_allocated += (*attribute.is_index_null).size();
     }
 
-    bytes_allocated += string_arena.size();
-
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    if (hierarchical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarchical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
+
+    bytes_allocated += string_arena.allocatedBytes();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -758,7 +852,7 @@ Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;
@@ -773,6 +867,7 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
+                             ContextPtr global_context,
                              DictionarySourcePtr source_ptr,
                              DictionaryKeyType dictionary_key_type) -> DictionaryPtr
     {
@@ -793,18 +888,28 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
 
         HashedArrayDictionaryStorageConfiguration configuration{require_nonempty, dict_lifetime};
 
+        ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        const auto & settings = context->getSettingsRef();
+
+        const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+        configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
+
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         else
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex>>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    using namespace std::placeholders;
-
     factory.registerLayout("hashed_array",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
+        {
+            return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Simple);
+        }, false);
     factory.registerLayout("complex_key_hashed_array",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
+        {
+            return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Complex);
+        }, true);
 }
 
 }

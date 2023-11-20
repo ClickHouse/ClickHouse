@@ -1,5 +1,5 @@
 #include <Common/formatIPv6.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <base/range.h>
@@ -9,36 +9,55 @@
 namespace DB
 {
 
-// To be used in formatIPv4, maps a byte to it's string form prefixed with length (so save strlen call).
-extern const char one_byte_to_string_lookup_table[256][4] =
+/** Further we want to generate constexpr array of strings with sizes from sequence of unsigned ints [0..N)
+ *  in order to use this arrey for fast conversion of unsigned integers to strings
+ */
+namespace detail
 {
-    {1, '0'}, {1, '1'}, {1, '2'}, {1, '3'}, {1, '4'}, {1, '5'}, {1, '6'}, {1, '7'}, {1, '8'}, {1, '9'},
-    {2, '1', '0'}, {2, '1', '1'}, {2, '1', '2'}, {2, '1', '3'}, {2, '1', '4'}, {2, '1', '5'}, {2, '1', '6'}, {2, '1', '7'}, {2, '1', '8'}, {2, '1', '9'},
-    {2, '2', '0'}, {2, '2', '1'}, {2, '2', '2'}, {2, '2', '3'}, {2, '2', '4'}, {2, '2', '5'}, {2, '2', '6'}, {2, '2', '7'}, {2, '2', '8'}, {2, '2', '9'},
-    {2, '3', '0'}, {2, '3', '1'}, {2, '3', '2'}, {2, '3', '3'}, {2, '3', '4'}, {2, '3', '5'}, {2, '3', '6'}, {2, '3', '7'}, {2, '3', '8'}, {2, '3', '9'},
-    {2, '4', '0'}, {2, '4', '1'}, {2, '4', '2'}, {2, '4', '3'}, {2, '4', '4'}, {2, '4', '5'}, {2, '4', '6'}, {2, '4', '7'}, {2, '4', '8'}, {2, '4', '9'},
-    {2, '5', '0'}, {2, '5', '1'}, {2, '5', '2'}, {2, '5', '3'}, {2, '5', '4'}, {2, '5', '5'}, {2, '5', '6'}, {2, '5', '7'}, {2, '5', '8'}, {2, '5', '9'},
-    {2, '6', '0'}, {2, '6', '1'}, {2, '6', '2'}, {2, '6', '3'}, {2, '6', '4'}, {2, '6', '5'}, {2, '6', '6'}, {2, '6', '7'}, {2, '6', '8'}, {2, '6', '9'},
-    {2, '7', '0'}, {2, '7', '1'}, {2, '7', '2'}, {2, '7', '3'}, {2, '7', '4'}, {2, '7', '5'}, {2, '7', '6'}, {2, '7', '7'}, {2, '7', '8'}, {2, '7', '9'},
-    {2, '8', '0'}, {2, '8', '1'}, {2, '8', '2'}, {2, '8', '3'}, {2, '8', '4'}, {2, '8', '5'}, {2, '8', '6'}, {2, '8', '7'}, {2, '8', '8'}, {2, '8', '9'},
-    {2, '9', '0'}, {2, '9', '1'}, {2, '9', '2'}, {2, '9', '3'}, {2, '9', '4'}, {2, '9', '5'}, {2, '9', '6'}, {2, '9', '7'}, {2, '9', '8'}, {2, '9', '9'},
-    {3, '1', '0', '0'}, {3, '1', '0', '1'}, {3, '1', '0', '2'}, {3, '1', '0', '3'}, {3, '1', '0', '4'}, {3, '1', '0', '5'}, {3, '1', '0', '6'}, {3, '1', '0', '7'}, {3, '1', '0', '8'}, {3, '1', '0', '9'},
-    {3, '1', '1', '0'}, {3, '1', '1', '1'}, {3, '1', '1', '2'}, {3, '1', '1', '3'}, {3, '1', '1', '4'}, {3, '1', '1', '5'}, {3, '1', '1', '6'}, {3, '1', '1', '7'}, {3, '1', '1', '8'}, {3, '1', '1', '9'},
-    {3, '1', '2', '0'}, {3, '1', '2', '1'}, {3, '1', '2', '2'}, {3, '1', '2', '3'}, {3, '1', '2', '4'}, {3, '1', '2', '5'}, {3, '1', '2', '6'}, {3, '1', '2', '7'}, {3, '1', '2', '8'}, {3, '1', '2', '9'},
-    {3, '1', '3', '0'}, {3, '1', '3', '1'}, {3, '1', '3', '2'}, {3, '1', '3', '3'}, {3, '1', '3', '4'}, {3, '1', '3', '5'}, {3, '1', '3', '6'}, {3, '1', '3', '7'}, {3, '1', '3', '8'}, {3, '1', '3', '9'},
-    {3, '1', '4', '0'}, {3, '1', '4', '1'}, {3, '1', '4', '2'}, {3, '1', '4', '3'}, {3, '1', '4', '4'}, {3, '1', '4', '5'}, {3, '1', '4', '6'}, {3, '1', '4', '7'}, {3, '1', '4', '8'}, {3, '1', '4', '9'},
-    {3, '1', '5', '0'}, {3, '1', '5', '1'}, {3, '1', '5', '2'}, {3, '1', '5', '3'}, {3, '1', '5', '4'}, {3, '1', '5', '5'}, {3, '1', '5', '6'}, {3, '1', '5', '7'}, {3, '1', '5', '8'}, {3, '1', '5', '9'},
-    {3, '1', '6', '0'}, {3, '1', '6', '1'}, {3, '1', '6', '2'}, {3, '1', '6', '3'}, {3, '1', '6', '4'}, {3, '1', '6', '5'}, {3, '1', '6', '6'}, {3, '1', '6', '7'}, {3, '1', '6', '8'}, {3, '1', '6', '9'},
-    {3, '1', '7', '0'}, {3, '1', '7', '1'}, {3, '1', '7', '2'}, {3, '1', '7', '3'}, {3, '1', '7', '4'}, {3, '1', '7', '5'}, {3, '1', '7', '6'}, {3, '1', '7', '7'}, {3, '1', '7', '8'}, {3, '1', '7', '9'},
-    {3, '1', '8', '0'}, {3, '1', '8', '1'}, {3, '1', '8', '2'}, {3, '1', '8', '3'}, {3, '1', '8', '4'}, {3, '1', '8', '5'}, {3, '1', '8', '6'}, {3, '1', '8', '7'}, {3, '1', '8', '8'}, {3, '1', '8', '9'},
-    {3, '1', '9', '0'}, {3, '1', '9', '1'}, {3, '1', '9', '2'}, {3, '1', '9', '3'}, {3, '1', '9', '4'}, {3, '1', '9', '5'}, {3, '1', '9', '6'}, {3, '1', '9', '7'}, {3, '1', '9', '8'}, {3, '1', '9', '9'},
-    {3, '2', '0', '0'}, {3, '2', '0', '1'}, {3, '2', '0', '2'}, {3, '2', '0', '3'}, {3, '2', '0', '4'}, {3, '2', '0', '5'}, {3, '2', '0', '6'}, {3, '2', '0', '7'}, {3, '2', '0', '8'}, {3, '2', '0', '9'},
-    {3, '2', '1', '0'}, {3, '2', '1', '1'}, {3, '2', '1', '2'}, {3, '2', '1', '3'}, {3, '2', '1', '4'}, {3, '2', '1', '5'}, {3, '2', '1', '6'}, {3, '2', '1', '7'}, {3, '2', '1', '8'}, {3, '2', '1', '9'},
-    {3, '2', '2', '0'}, {3, '2', '2', '1'}, {3, '2', '2', '2'}, {3, '2', '2', '3'}, {3, '2', '2', '4'}, {3, '2', '2', '5'}, {3, '2', '2', '6'}, {3, '2', '2', '7'}, {3, '2', '2', '8'}, {3, '2', '2', '9'},
-    {3, '2', '3', '0'}, {3, '2', '3', '1'}, {3, '2', '3', '2'}, {3, '2', '3', '3'}, {3, '2', '3', '4'}, {3, '2', '3', '5'}, {3, '2', '3', '6'}, {3, '2', '3', '7'}, {3, '2', '3', '8'}, {3, '2', '3', '9'},
-    {3, '2', '4', '0'}, {3, '2', '4', '1'}, {3, '2', '4', '2'}, {3, '2', '4', '3'}, {3, '2', '4', '4'}, {3, '2', '4', '5'}, {3, '2', '4', '6'}, {3, '2', '4', '7'}, {3, '2', '4', '8'}, {3, '2', '4', '9'},
-    {3, '2', '5', '0'}, {3, '2', '5', '1'}, {3, '2', '5', '2'}, {3, '2', '5', '3'}, {3, '2', '5', '4'}, {3, '2', '5', '5'},
-};
+    template <unsigned... digits>
+    struct ToChars
+    {
+        static const char value[];
+        static const size_t size;
+     };
+
+    template <unsigned... digits>
+    constexpr char ToChars<digits...>::value[] = {('0' + digits)..., 0};
+
+    template <unsigned... digits>
+    constexpr size_t ToChars<digits...>::size = sizeof...(digits);
+
+    template <unsigned rem, unsigned... digits>
+    struct Decompose : Decompose<rem / 10, rem % 10, digits...> {};
+
+    template <unsigned... digits>
+    struct Decompose<0, digits...> : ToChars<digits...> {};
+
+    template <>
+    struct Decompose<0> : ToChars<0> {};
+
+    template <unsigned num>
+    struct NumToString : Decompose<num> {};
+
+    template <class T, T... ints>
+    consteval std::array<std::pair<const char *, size_t>, sizeof...(ints)> str_make_array_impl(std::integer_sequence<T, ints...>)
+    {
+        return std::array<std::pair<const char *, size_t>, sizeof...(ints)> { std::pair<const char *, size_t> {NumToString<ints>::value, NumToString<ints>::size}... };
+    }
+}
+
+/** str_make_array<N>() - generates static array of std::pair<const char *, size_t> for numbers [0..N), where:
+ *      first - null-terminated string representing number
+ *      second - size of the string as would returned by strlen()
+ */
+template <size_t N>
+consteval std::array<std::pair<const char *, size_t>, N> str_make_array()
+{
+    return detail::str_make_array_impl(std::make_integer_sequence<int, N>{});
+}
+
+/// This will generate static array of pair<const char *, size_t> for [0..255] at compile time
+extern constexpr auto one_byte_to_string_lookup_table = str_make_array<256>();
 
 /// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal than log(value, base)
 static constexpr UInt32 intLog(const UInt32 value, const UInt32 base, const bool carry)
@@ -80,7 +99,7 @@ static void printInteger(char *& out, T value)
 
 void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_bytes_count)
 {
-    struct { int base, len; } best{-1, 0}, cur{-1, 0};
+    struct { Int64 base, len; } best{-1, 0}, cur{-1, 0};
     std::array<UInt16, IPV6_BINARY_LENGTH / sizeof(UInt16)> words{};
 
     /** Preprocess:
@@ -122,14 +141,18 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
         best.base = -1;
 
     /// Format the result.
-    for (const int i : collections::range(0, words.size()))
+    for (const size_t i : collections::range(0, words.size()))
     {
         /// Are we inside the best run of 0x00's?
-        if (best.base != -1 && i >= best.base && i < (best.base + best.len))
+        if (best.base != -1)
         {
-            if (i == best.base)
-                *dst++ = ':';
-            continue;
+            size_t best_base = static_cast<size_t>(best.base);
+            if (i >= best_base && i < (best_base + best.len))
+            {
+                if (i == best_base)
+                    *dst++ = ':';
+                continue;
+            }
         }
 
         /// Are we following an initial run of 0x00s or any real hex?
@@ -142,8 +165,9 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
             uint8_t ipv4_buffer[IPV4_BINARY_LENGTH] = {0};
             memcpy(ipv4_buffer, src + 12, IPV4_BINARY_LENGTH);
             // Due to historical reasons formatIPv4() takes ipv4 in BE format, but inside ipv6 we store it in LE-format.
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             std::reverse(std::begin(ipv4_buffer), std::end(ipv4_buffer));
-
+#endif
             formatIPv4(ipv4_buffer, dst, std::min(zeroed_tail_bytes_count, static_cast<uint8_t>(IPV4_BINARY_LENGTH)), "0");
             // formatIPv4 has already added a null-terminator for us.
             return;

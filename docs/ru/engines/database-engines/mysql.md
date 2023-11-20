@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/database-engines/mysql
 sidebar_position: 30
 sidebar_label: MySQL
 ---
@@ -59,8 +60,9 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 - `version`
 - `max_allowed_packet`
 
-:::danger "Предупреждение"
-    В настоящее время эти переменные реализованы только как "заглушки" и не содержат актуальных данных.
+:::danger Предупреждение
+В настоящее время эти переменные реализованы только как "заглушки" и не содержат актуальных данных.
+:::
 
 Пример:
 

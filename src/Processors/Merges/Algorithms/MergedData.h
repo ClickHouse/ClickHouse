@@ -19,8 +19,8 @@ namespace ErrorCodes
 class MergedData
 {
 public:
-    explicit MergedData(MutableColumns columns_, bool use_average_block_size_, UInt64 max_block_size_)
-        : columns(std::move(columns_)), max_block_size(max_block_size_), use_average_block_size(use_average_block_size_)
+    explicit MergedData(MutableColumns columns_, bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_)
+        : columns(std::move(columns_)), max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_)
     {
     }
 
@@ -38,27 +38,52 @@ public:
         sum_blocks_granularity += block_size;
     }
 
-    void insertFromChunk(Chunk && chunk, size_t limit_rows)
+    void insertRows(const ColumnRawPtrs & raw_columns, size_t start_index, size_t length, size_t block_size)
+    {
+        size_t num_columns = raw_columns.size();
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (length == 1)
+                columns[i]->insertFrom(*raw_columns[i], start_index);
+            else
+                columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+        }
+
+        total_merged_rows += length;
+        merged_rows += length;
+        sum_blocks_granularity += (block_size * length);
+    }
+
+    void insertChunk(Chunk && chunk, size_t rows_size)
     {
         if (merged_rows)
-            throw Exception("Cannot insert to MergedData from Chunk because MergedData is not empty.",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert to MergedData from Chunk because MergedData is not empty.");
 
-        auto num_rows = chunk.getNumRows();
-        columns = chunk.mutateColumns();
-        if (limit_rows && num_rows > limit_rows)
+        UInt64 num_rows = chunk.getNumRows();
+        UInt64 num_columns = chunk.getNumColumns();
+        auto chunk_columns = chunk.mutateColumns();
+
+        /// Here is a special code for constant columns.
+        /// Currently, 'columns' will contain constants, but 'chunk_columns' will not.
+        /// We want to keep constants in the result, so just re-create them carefully.
+        for (size_t i = 0; i < num_columns; ++i)
         {
-            num_rows = limit_rows;
+            if (isColumnConst(*columns[i]))
+                columns[i] = columns[i]->cloneResized(num_rows);
+            else
+                columns[i] = std::move(chunk_columns[i]);
+        }
+
+        if (rows_size < num_rows)
+        {
+            size_t pop_size = num_rows - rows_size;
             for (auto & column : columns)
-                column = IColumn::mutate(column->cut(0, num_rows));
+                column->popBack(pop_size);
         }
 
         need_flush = true;
-        total_merged_rows += num_rows;
-        merged_rows = num_rows;
-
-        /// We don't care about granularity here. Because, for fast-forward optimization, chunk will be moved as-is.
-        /// sum_blocks_granularity += block_size * num_rows;
+        total_merged_rows += rows_size;
+        merged_rows = rows_size;
     }
 
     Chunk pull()
@@ -92,6 +117,16 @@ public:
         if (merged_rows >= max_block_size)
             return true;
 
+        /// Never return more than max_block_size_bytes
+        if (max_block_size_bytes)
+        {
+            size_t merged_bytes = 0;
+            for (const auto & column : columns)
+                merged_bytes += column->allocatedBytes();
+            if (merged_bytes >= max_block_size_bytes)
+                return true;
+        }
+
         if (!use_average_block_size)
             return false;
 
@@ -107,6 +142,7 @@ public:
     UInt64 totalMergedRows() const { return total_merged_rows; }
     UInt64 totalChunks() const { return total_chunks; }
     UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
+    UInt64 maxBlockSize() const { return max_block_size; }
 
 protected:
     MutableColumns columns;
@@ -117,8 +153,9 @@ protected:
     UInt64 total_chunks = 0;
     UInt64 total_allocated_bytes = 0;
 
-    const UInt64 max_block_size;
-    const bool use_average_block_size;
+    const UInt64 max_block_size = 0;
+    const UInt64 max_block_size_bytes = 0;
+    const bool use_average_block_size = false;
 
     bool need_flush = false;
 };

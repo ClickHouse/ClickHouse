@@ -1,15 +1,15 @@
-execute: default
+execute: --allow_experimental_analyzer=1
 "foo"
 1
-execute: --stage fetch_columns
-"dummy"
+execute: --allow_experimental_analyzer=1 --stage fetch_columns
+"dummy_0"
 0
-execute: --stage with_mergeable_state
-"1"
+execute: --allow_experimental_analyzer=1 --stage with_mergeable_state
+"1_UInt8"
 1
-execute: --stage with_mergeable_state_after_aggregation
-"1"
+execute: --allow_experimental_analyzer=1 --stage with_mergeable_state_after_aggregation
+"1_UInt8"
 1
-execute: --stage complete
+execute: --allow_experimental_analyzer=1 --stage complete
 "foo"
 1

@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #    include <string>
@@ -26,6 +26,7 @@
 #    include <Common/setThreadName.h>
 #    include <filesystem>
 #    include <Common/filesystemHelpers.h>
+#    include <Parsers/ASTIdentifier.h>
 
 namespace fs = std::filesystem;
 
@@ -52,7 +53,7 @@ DatabaseMySQL::DatabaseMySQL(
     const String & metadata_path_,
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
-    std::unique_ptr<ConnectionMySQLSettings> settings_,
+    std::unique_ptr<MySQLSettings> settings_,
     mysqlxx::PoolWithFailover && pool,
     bool attach)
     : IDatabase(database_name_)
@@ -60,13 +61,13 @@ DatabaseMySQL::DatabaseMySQL(
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
-    , database_settings(std::move(settings_))
+    , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
 {
     try
     {
         /// Test that the database is working fine; it will also fetch tables.
-        empty();
+        empty(); // NOLINT(bugprone-standalone-empty)
     }
     catch (...)
     {
@@ -76,12 +77,14 @@ DatabaseMySQL::DatabaseMySQL(
             throw;
     }
 
+    fs::create_directories(metadata_path);
+
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
 
 bool DatabaseMySQL::empty() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(getContext());
 
@@ -89,7 +92,7 @@ bool DatabaseMySQL::empty() const
         return true;
 
     for (const auto & [table_name, storage_info] : local_tables_cache)
-        if (!remove_or_detach_tables.count(table_name))
+        if (!remove_or_detach_tables.contains(table_name))
             return false;
 
     return true;
@@ -98,12 +101,12 @@ bool DatabaseMySQL::empty() const
 DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
 {
     Tables tables;
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(local_context);
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)
-        if (!remove_or_detach_tables.count(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
+        if (!remove_or_detach_tables.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
             tables[table_name] = modify_time_and_storage.second;
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
@@ -116,11 +119,11 @@ bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) 
 
 StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPtr local_context) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(local_context);
 
-    if (!remove_or_detach_tables.count(mysql_table_name) && local_tables_cache.find(mysql_table_name) != local_tables_cache.end())
+    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.find(mysql_table_name) != local_tables_cache.end())
         return local_tables_cache[mysql_table_name].second;
 
     return StoragePtr{};
@@ -128,15 +131,14 @@ StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPt
 
 ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(local_context);
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
     {
         if (throw_on_error)
-            throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist..",
-                            ErrorCodes::UNKNOWN_TABLE);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
         return nullptr;
     }
 
@@ -144,33 +146,44 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
+        ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
         ASTs storage_children = ast_storage->children;
         auto storage_engine_arguments = ast_storage->engine->arguments;
 
         /// Add table_name to engine arguments
-        auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
-        storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
+        if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
+        {
+            storage_engine_arguments->children.push_back(
+                makeASTFunction("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
+        }
+        else
+        {
+            auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
+            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
+        }
 
         /// Unset settings
-        storage_children.erase(
-            std::remove_if(storage_children.begin(), storage_children.end(),
-                           [&](const ASTPtr & element) { return element.get() == ast_storage->settings; }),
-            storage_children.end());
+        std::erase_if(storage_children, [&](const ASTPtr & element) { return element.get() == ast_storage->settings; });
         ast_storage->settings = nullptr;
     }
-    auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+    auto create_table_query = DB::getCreateQueryFromStorage(storage,
+                                                            table_storage_define,
+                                                            true,
+                                                            max_parser_depth,
+                                                            throw_on_error);
     return create_table_query;
 }
 
 time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_name) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(getContext());
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
-        throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
 
     return time_t(local_tables_cache[table_name].first);
 }
@@ -239,7 +252,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
 
         local_tables_cache[table_name] = std::make_pair(
             table_modification_time,
-            StorageMySQL::create(
+            std::make_shared<StorageMySQL>(
                 StorageID(database_name, table_name),
                 std::move(mysql_pool),
                 database_name_in_mysql,
@@ -299,7 +312,7 @@ DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, C
             database_name_in_mysql,
             tables_name,
             settings,
-            database_settings->mysql_datatypes_support_level);
+            mysql_settings->mysql_datatypes_support_level);
 }
 
 void DatabaseMySQL::shutdown()
@@ -350,15 +363,15 @@ void DatabaseMySQL::cleanOutdatedTables()
 
 void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
-    if (!local_tables_cache.count(table_name))
-        throw Exception("Cannot attach table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) +
-            " because it does not exist.", ErrorCodes::UNKNOWN_TABLE);
+    if (!local_tables_cache.contains(table_name))
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot attach table {}.{} because it does not exist.",
+            backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
-    if (!remove_or_detach_tables.count(table_name))
-        throw Exception("Cannot attach table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) +
-            " because it already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    if (!remove_or_detach_tables.contains(table_name))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table {}.{} because it already exists.",
+            backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     /// We use the new storage to replace the original storage, because the original storage may have been dropped
     /// Although we still keep its
@@ -373,15 +386,15 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
-    if (remove_or_detach_tables.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",
-            ErrorCodes::TABLE_IS_DROPPED);
+    if (remove_or_detach_tables.contains(table_name))
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped",
+            backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
-    if (!local_tables_cache.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
-            ErrorCodes::UNKNOWN_TABLE);
+    if (!local_tables_cache.contains(table_name))
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.",
+            backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     remove_or_detach_tables.emplace(table_name);
     return local_tables_cache[table_name].second;
@@ -392,10 +405,10 @@ String DatabaseMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
 
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
     fs::directory_iterator iter(getMetadataPath());
 
     for (fs::directory_iterator end; iter != end; ++iter)
@@ -411,11 +424,11 @@ void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_atta
 
 void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
-    if (remove_or_detach_tables.count(table_name))
+    if (remove_or_detach_tables.contains(table_name))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     if (fs::exists(remove_flag))
@@ -438,10 +451,10 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
         remove_or_detach_tables.erase(table_name);
         throw;
     }
-    table_iter->second.second->is_dropped = true;
+    table_iter->second.second->is_detached = true;
 }
 
-void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
+void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
 {
     detachTablePermanently(local_context, table_name);
 }
@@ -473,8 +486,10 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     const auto & create = create_query->as<ASTCreateQuery>();
 
     if (!create->attach)
-        throw Exception("MySQL database engine does not support create table. for tables that were detach or dropped before, "
-            "you can use attach to add them back to the MySQL database", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "MySQL database engine does not support create table. "
+                        "for tables that were detach or dropped before, you can use attach "
+                        "to add them back to the MySQL database");
 
     /// XXX: hack
     /// In order to prevent users from broken the table structure by executing attach table database_name.table_name (...)
@@ -483,8 +498,9 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
     if (queryToString(origin_create_query) != queryToString(create_query))
-        throw Exception("The MySQL database engine can only execute attach statements of type attach table database_name.table_name",
-            ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                        "The MySQL database engine can only execute attach statements "
+                        "of type attach table database_name.table_name");
 
     attachTable(local_context, table_name, storage, {});
 }

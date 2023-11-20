@@ -1,9 +1,10 @@
 ---
+slug: /en/sql-reference/data-types/enum
 sidebar_position: 50
 sidebar_label: Enum
 ---
 
-# Enum {#enum}
+# Enum
 
 Enumerated type consisting of named values.
 
@@ -11,12 +12,12 @@ Named values can be declared as `'string' = integer` pairs or `'string'` names .
 
 ClickHouse supports:
 
--   8-bit `Enum`. It can contain up to 256 values enumerated in the `[-128, 127]` range.
--   16-bit `Enum`. It can contain up to 65536 values enumerated in the `[-32768, 32767]` range.
+- 8-bit `Enum`. It can contain up to 256 values enumerated in the `[-128, 127]` range.
+- 16-bit `Enum`. It can contain up to 65536 values enumerated in the `[-32768, 32767]` range.
 
 ClickHouse automatically chooses the type of `Enum` when data is inserted. You can also use `Enum8` or `Enum16` types to be sure in the size of storage.
 
-## Usage Examples {#usage-examples}
+## Usage Examples
 
 Here we create a table with an `Enum8('hello' = 1, 'world' = 2)` type column:
 
@@ -120,7 +121,7 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 └─────────────────────────────────────────────────────┘
 ```
 
-## General Rules and Usage {#general-rules-and-usage}
+## General Rules and Usage
 
 Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` or in the range `-32768 ... 32767` for `Enum16`. All the strings and numbers must be different. An empty string is allowed. If this type is specified (in a table definition), numbers can be in an arbitrary order. However, the order does not matter.
 
@@ -159,5 +160,3 @@ Enum values are also convertible to numeric types using the `toT` function, wher
 The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
-
-[Original article](https://clickhouse.com/docs/en/data_types/enum/) <!--hide-->

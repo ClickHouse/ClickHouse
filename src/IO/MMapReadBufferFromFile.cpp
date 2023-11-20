@@ -40,6 +40,13 @@ std::string MMapReadBufferFromFile::getFileName() const
 }
 
 
+bool MMapReadBufferFromFile::isRegularLocalFile(size_t * out_view_offset)
+{
+    *out_view_offset = mapped.getOffset();
+    return true;
+}
+
+
 MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, size_t offset, size_t length_)
     : file_name(file_name_)
 {
@@ -70,7 +77,7 @@ void MMapReadBufferFromFile::close()
     finish();
 
     if (0 != ::close(fd))
-        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
 
     fd = -1;
     metric_increment.destroy();

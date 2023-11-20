@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/uniqexact
 sidebar_position: 191
 ---
 
-# uniqExact {#agg_function-uniqexact}
+# uniqExact
 
 Calculates the exact number of different argument values.
 
@@ -20,7 +21,7 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 **See Also**
 
--   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
--   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
--   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)
--   [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+- [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
+- [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)
+- [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)

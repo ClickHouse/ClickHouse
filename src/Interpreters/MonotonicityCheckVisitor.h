@@ -39,16 +39,15 @@ public:
         bool canOptimize(const ASTFunction & ast_function) const
         {
             /// if GROUP BY contains the same function ORDER BY shouldn't be optimized
-            auto hash = ast_function.getTreeHash();
-            String key = toString(hash.first) + '_' + toString(hash.second);
+            const auto hash = ast_function.getTreeHash(/*ignore_aliases=*/ true);
+            const auto key = toString(hash);
             if (group_by_function_hashes.count(key))
                 return false;
 
             /// if ORDER BY contains aggregate function or window functions, it
             /// shouldn't be optimized
             if (ast_function.is_window_function
-                || AggregateFunctionFactory::instance().isAggregateFunctionName(
-                    ast_function.name))
+                || AggregateUtils::isAggregateFunction(ast_function))
             {
                 return false;
             }
@@ -69,6 +68,12 @@ public:
             if (!pos)
                 pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables, true);
             if (!pos)
+                return false;
+
+            /// It is possible that tables list is empty.
+            /// IdentifierSemantic get the position from AST, and it can be not valid to use it.
+            /// Example is re-analysing a part of AST for storage Merge, see 02147_order_by_optimizations.sql
+            if (*pos >= tables.size())
                 return false;
 
             if (auto data_type_and_name = tables[*pos].columns.tryGetByName(identifier->shortName()))

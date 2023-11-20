@@ -12,12 +12,12 @@ struct NameILike
     static constexpr auto name = "ilike";
 };
 
-using ILikeImpl = MatchImpl<NameILike, true, false, /*case-insensitive*/true>;
+using ILikeImpl = MatchImpl<NameILike, MatchTraits::Syntax::Like, MatchTraits::Case::Insensitive, MatchTraits::Result::DontNegate>;
 using FunctionILike = FunctionsStringSearch<ILikeImpl>;
 
 }
 
-void registerFunctionILike(FunctionFactory & factory)
+REGISTER_FUNCTION(ILike)
 {
     factory.registerFunction<FunctionILike>();
 }

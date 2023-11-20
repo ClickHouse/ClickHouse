@@ -147,7 +147,7 @@ private:
     }
 };
 
-void registerFunctionsStringTokenExtractor(FunctionFactory & factory)
+REGISTER_FUNCTION(StringTokenExtractor)
 {
     factory.registerFunction<FunctionTokenExtractor<TokenExtractorStrategy::ngrams>>();
     factory.registerFunction<FunctionTokenExtractor<TokenExtractorStrategy::tokens>>();

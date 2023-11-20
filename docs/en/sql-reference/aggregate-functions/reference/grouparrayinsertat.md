@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/grouparrayinsertat
 sidebar_position: 112
 ---
 
-# groupArrayInsertAt {#grouparrayinsertat}
+# groupArrayInsertAt
 
 Inserts a value into the array at the specified position.
 
@@ -14,19 +15,19 @@ groupArrayInsertAt(default_x, size)(x, pos)
 
 If in one query several values are inserted into the same position, the function behaves in the following ways:
 
--   If a query is executed in a single thread, the first one of the inserted values is used.
--   If a query is executed in multiple threads, the resulting value is an undetermined one of the inserted values.
+- If a query is executed in a single thread, the first one of the inserted values is used.
+- If a query is executed in multiple threads, the resulting value is an undetermined one of the inserted values.
 
 **Arguments**
 
--   `x` — Value to be inserted. [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in one of the [supported data types](../../../sql-reference/data-types/index.md).
--   `pos` — Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero. [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
--   `default_x` — Default value for substituting in empty positions. Optional parameter. [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in the data type configured for the `x` parameter. If `default_x` is not defined, the [default values](../../../sql-reference/statements/create/table.md#create-default-values) are used.
--   `size` — Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` must be specified. [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
+- `x` — Value to be inserted. [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in one of the [supported data types](../../../sql-reference/data-types/index.md).
+- `pos` — Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero. [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
+- `default_x` — Default value for substituting in empty positions. Optional parameter. [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in the data type configured for the `x` parameter. If `default_x` is not defined, the [default values](../../../sql-reference/statements/create/table.md#create-default-values) are used.
+- `size` — Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` must be specified. [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned value**
 
--   Array with inserted values.
+- Array with inserted values.
 
 Type: [Array](../../../sql-reference/data-types/array.md#data-type-array).
 

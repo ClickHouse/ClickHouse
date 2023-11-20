@@ -1,19 +1,24 @@
 ---
-sidebar_position: 53
-sidebar_label: UUID
+slug: /en/sql-reference/functions/uuid-functions
+sidebar_position: 205
+sidebar_label: UUIDs
 ---
 
-# Functions for Working with UUID {#functions-for-working-with-uuid}
+# Functions for Working with UUIDs
 
-The functions for working with UUID are listed below.
-
-## generateUUIDv4 {#uuid-function-generate}
+## generateUUIDv4
 
 Generates the [UUID](../data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
+**Syntax**
+
 ``` sql
-generateUUIDv4()
+generateUUIDv4([x])
 ```
+
+**Arguments**
+
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
 **Returned value**
 
@@ -31,13 +36,22 @@ INSERT INTO t_uuid SELECT generateUUIDv4()
 SELECT * FROM t_uuid
 ```
 
-``` text
+```response
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
 ```
 
-## empty {#empty}
+**Usage example if it is needed to generate multiple values in one row**
+
+```sql
+SELECT generateUUIDv4(1), generateUUIDv4(2)
+┌─generateUUIDv4(1)────────────────────┬─generateUUIDv4(2)────────────────────┐
+│ 2d49dc6e-ddce-4cd0-afb8-790956df54c1 │ 8abf8c13-7dea-4fdf-af3e-0e18767770e6 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+## empty
 
 Checks whether the input UUID is empty.
 
@@ -53,11 +67,11 @@ The function also works for [arrays](array-functions.md#function-empty) or [stri
 
 **Arguments**
 
--   `x` — Input UUID. [UUID](../data-types/uuid.md).
+- `x` — Input UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
--   Returns `1` for an empty UUID or `0` for a non-empty UUID. 
+- Returns `1` for an empty UUID or `0` for a non-empty UUID. 
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -73,13 +87,13 @@ SELECT empty(generateUUIDv4());
 
 Result:
 
-```text
+```response
 ┌─empty(generateUUIDv4())─┐
 │                       0 │
 └─────────────────────────┘
 ```
 
-## notEmpty {#notempty}
+## notEmpty
 
 Checks whether the input UUID is non-empty.
 
@@ -95,11 +109,11 @@ The function also works for [arrays](array-functions.md#function-notempty) or [s
 
 **Arguments**
 
--   `x` — Input UUID. [UUID](../data-types/uuid.md).
+- `x` — Input UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
--   Returns `1` for a non-empty UUID or `0` for an empty UUID. 
+- Returns `1` for a non-empty UUID or `0` for an empty UUID. 
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -115,13 +129,13 @@ SELECT notEmpty(generateUUIDv4());
 
 Result:
 
-```text
+```response
 ┌─notEmpty(generateUUIDv4())─┐
 │                          1 │
 └────────────────────────────┘
 ```
 
-## toUUID (x) {#touuid-x}
+## toUUID (x)
 
 Converts String type value to UUID type.
 
@@ -139,13 +153,57 @@ The UUID type value.
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
-``` text
+```response
 ┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
 ```
 
-## toUUIDOrNull (x) {#touuidornull-x}
+## toUUIDOrDefault (x,y)
+
+**Arguments**
+
+- `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#string).
+- `default` — UUID to be used as the default if the first argument cannot be converted to a UUID type. [UUID](/docs/en/sql-reference/data-types/uuid.md).
+
+**Returned value**
+
+UUID
+
+``` sql
+toUUIDOrDefault(String, UUID)
+```
+
+**Returned value**
+
+The UUID type value.
+
+**Usage examples**
+
+This first example returns the first argument converted to a UUID type as it can be converted:
+
+``` sql
+SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
+```
+```response
+┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', CAST('59f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID'))─┐
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+This second example returns the second argument (the provided default UUID) as the first argument cannot be converted to a UUID type:
+
+```sql
+SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
+```
+
+```response
+┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', CAST('59f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID'))─┐
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                               │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## toUUIDOrNull (x)
 
 It takes an argument of type String and tries to parse it into UUID. If failed, returns NULL.
 
@@ -163,13 +221,13 @@ The Nullable(UUID) type value.
 SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
-``` text
+```response
 ┌─uuid─┐
 │ ᴺᵁᴸᴸ │
 └──────┘
 ```
 
-## toUUIDOrZero (x) {#touuidorzero-x}
+## toUUIDOrZero (x)
 
 It takes an argument of type String and tries to parse it into UUID. If failed, returns zero UUID.
 
@@ -187,19 +245,26 @@ The UUID type value.
 SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
-``` text
+```response
 ┌─────────────────────────────────uuid─┐
 │ 00000000-0000-0000-0000-000000000000 │
 └──────────────────────────────────────┘
 ```
 
-## UUIDStringToNum {#uuidstringtonum}
+## UUIDStringToNum
 
-Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns it as a set of bytes in a [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+Accepts `string` containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](../../sql-reference/data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
+
+**Syntax**
 
 ``` sql
-UUIDStringToNum(String)
+UUIDStringToNum(string[, variant = 1])
 ```
+
+**Arguments**
+
+- `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -213,19 +278,38 @@ SELECT
     UUIDStringToNum(uuid) AS bytes
 ```
 
-``` text
+```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-## UUIDNumToString {#uuidnumtostring}
+``` sql
+SELECT
+    '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
+    UUIDStringToNum(uuid, 2) AS bytes
+```
 
-Accepts a [FixedString(16)](../../sql-reference/data-types/fixedstring.md) value, and returns a string containing 36 characters in text format.
+```response
+┌─uuid─────────────────────────────────┬─bytes────────────┐
+│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ @</a;]~!p{jTj={) │
+└──────────────────────────────────────┴──────────────────┘
+```
+
+## UUIDNumToString
+
+Accepts `binary` containing a binary representation of a UUID, with its format optionally specified by `variant` (`Big-endian` by default), and returns a string containing 36 characters in text format.
+
+**Syntax**
 
 ``` sql
-UUIDNumToString(FixedString(16))
+UUIDNumToString(binary[, variant = 1])
 ```
+
+**Arguments**
+
+- `binary` — [FixedString(16)](../../sql-reference/data-types/fixedstring.md) as a binary representation of a UUID.
+- `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -239,13 +323,25 @@ SELECT
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
 ```
 
-``` text
+```response
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-## serverUUID() {#server-uuid}
+``` sql
+SELECT
+    '@</a;]~!p{jTj={)' AS bytes,
+    UUIDNumToString(toFixedString(bytes, 16), 2) AS uuid
+```
+
+```response
+┌─bytes────────────┬─uuid─────────────────────────────────┐
+│ @</a;]~!p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
+└──────────────────┴──────────────────────────────────────┘
+```
+
+## serverUUID()
 
 Returns the random and unique UUID, which is generated when the server is first started and stored forever. The result writes to the file `uuid` created in the ClickHouse server directory `/var/lib/clickhouse/`. 
 
@@ -257,10 +353,10 @@ serverUUID()
 
 **Returned value**
 
--   The UUID of the server. 
+- The UUID of the server. 
 
 Type: [UUID](../data-types/uuid.md).
 
-## See Also {#see-also}
+## See Also
 
--   [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)
+- [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)

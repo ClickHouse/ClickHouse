@@ -4,6 +4,7 @@
 
 #include <Core/Types.h>
 
+
 namespace DB
 {
 
@@ -16,7 +17,7 @@ struct TypePair
 
 
 template <typename T, bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-bool callOnBasicType(TypeIndex number, F && f)
+static bool callOnBasicType(TypeIndex number, F && f)
 {
     if constexpr (_int)
     {
@@ -86,7 +87,7 @@ bool callOnBasicType(TypeIndex number, F && f)
 
 /// Unroll template using TypeIndex
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
+static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
     if constexpr (_int)
     {
@@ -160,6 +161,8 @@ class DataTypeDate32;
 class DataTypeString;
 class DataTypeFixedString;
 class DataTypeUUID;
+class DataTypeIPv4;
+class DataTypeIPv6;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 template <typename T> class DataTypeEnum;
@@ -168,7 +171,7 @@ template <is_decimal T> class DataTypeDecimal;
 
 
 template <typename T, typename F, typename... ExtraArgs>
-bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
+static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
 {
     switch (number)
     {
@@ -206,6 +209,8 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
         case TypeIndex::Enum16:         return f(TypePair<DataTypeEnum<Int16>, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::UUID:           return f(TypePair<DataTypeUUID, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::IPv4:           return f(TypePair<DataTypeIPv4, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::IPv6:           return f(TypePair<DataTypeIPv6, T>(), std::forward<ExtraArgs>(args)...);
 
         default:
             break;

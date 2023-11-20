@@ -15,6 +15,17 @@ shopt -s extglob
 
 export _CLICKHOUSE_COMPLETION_LOADED=1
 
+CLICKHOUSE_logs_level=(
+    none
+    fatal
+    error
+    warning
+    information
+    debug
+    trace
+    test
+)
+
 CLICKHOUSE_QueryProcessingStage=(
     complete
     fetch_columns
@@ -23,67 +34,112 @@ CLICKHOUSE_QueryProcessingStage=(
     with_mergeable_state_after_aggregation_and_limit
 )
 
+CLICKHOUSE_QueryKind=(
+    initial_query
+    secondary_query
+    no_query
+)
+
+# SELECT name FROM system.formats ORDER BY name FORMAT LineAsString
 CLICKHOUSE_Format=(
-    CapnProto
-    PostgreSQLWire
-    MySQLWire
-    JSONStringsEachRowWithProgress
-    JSONEachRowWithProgress
-    JSONCompact
-    JSON
-    CSV
-    Vertical
-    ODBCDriver2
-    PrettySpaceNoEscapes
-    Pretty
-    JSONCompactStrings
-    PrettyNoEscapes
-    ArrowStream
-    TabSeparatedWithNames
-    Parquet
     Arrow
-    PrettyCompact
-    AvroConfluent
-    ORC
-    PrettyCompactNoEscapes
-    RawBLOB
-    Template
-    MsgPack
-    JSONCompactEachRow
-    CustomSeparated
-    TemplateIgnoreSpaces
-    Markdown
-    XML
-    ProtobufSingle
-    JSONCompactStringsEachRowWithNamesAndTypes
-    TSKV
-    TabSeparated
-    JSONStringEachRow
-    JSONStringsEachRow
-    TSVRaw
-    Values
-    TabSeparatedWithNamesAndTypes
-    PrettyCompactMonoBlock
-    TSVWithNamesAndTypes
+    ArrowStream
     Avro
-    RowBinaryWithNamesAndTypes
-    LineAsString
-    Native
-    JSONCompactEachRowWithNamesAndTypes
-    PrettySpace
-    Regexp
-    TSV
-    JSONEachRow
-    CustomSeparatedIgnoreSpaces
+    AvroConfluent
+    BSONEachRow
+    CSV
     CSVWithNames
-    JSONStrings
-    Null
-    TabSeparatedRaw
-    TSVWithNames
-    Protobuf
-    RowBinary
+    CSVWithNamesAndTypes
+    CapnProto
+    CustomSeparated
+    CustomSeparatedIgnoreSpaces
+    CustomSeparatedIgnoreSpacesWithNames
+    CustomSeparatedIgnoreSpacesWithNamesAndTypes
+    CustomSeparatedWithNames
+    CustomSeparatedWithNamesAndTypes
+    DWARF
+    HiveText
+    JSON
+    JSONAsObject
     JSONAsString
+    JSONColumns
+    JSONColumnsWithMetadata
+    JSONCompact
+    JSONCompactColumns
+    JSONCompactEachRow
+    JSONCompactEachRowWithNames
+    JSONCompactEachRowWithNamesAndTypes
+    JSONCompactStrings
     JSONCompactStringsEachRow
+    JSONCompactStringsEachRowWithNames
+    JSONCompactStringsEachRowWithNamesAndTypes
+    JSONEachRow
+    JSONEachRowWithProgress
+    JSONLines
+    JSONObjectEachRow
+    JSONStrings
+    JSONStringsEachRow
+    JSONStringsEachRowWithProgress
+    LineAsString
+    LineAsStringWithNames
+    LineAsStringWithNamesAndTypes
+    Markdown
+    MsgPack
+    MySQLDump
+    MySQLWire
+    NDJSON
+    Native
+    Null
+    ODBCDriver2
+    ORC
+    One
+    Parquet
+    ParquetMetadata
+    PostgreSQLWire
+    Pretty
+    PrettyCompact
+    PrettyCompactMonoBlock
+    PrettyCompactNoEscapes
+    PrettyCompactNoEscapesMonoBlock
+    PrettyJSONEachRow
+    PrettyJSONLines
+    PrettyMonoBlock
+    PrettyNDJSON
+    PrettyNoEscapes
+    PrettyNoEscapesMonoBlock
+    PrettySpace
+    PrettySpaceMonoBlock
+    PrettySpaceNoEscapes
+    PrettySpaceNoEscapesMonoBlock
+    Prometheus
+    Protobuf
+    ProtobufList
+    ProtobufSingle
+    RawBLOB
+    Regexp
+    RowBinary
+    RowBinaryWithDefaults
+    RowBinaryWithNames
+    RowBinaryWithNamesAndTypes
+    SQLInsert
+    TSKV
+    TSV
+    TSVRaw
+    TSVRawWithNames
+    TSVRawWithNamesAndTypes
+    TSVWithNames
+    TSVWithNamesAndTypes
+    TabSeparated
+    TabSeparatedRaw
+    TabSeparatedRawWithNames
+    TabSeparatedRawWithNamesAndTypes
+    TabSeparatedWithNames
+    TabSeparatedWithNamesAndTypes
+    Template
+    TemplateIgnoreSpaces
+    Values
+    Vertical
+    XML
 )
 
 function _clickhouse_bin_exist()
@@ -98,7 +154,7 @@ function _clickhouse_quote()
 # Extract every option (everything that starts with "-") from the --help dialog.
 function _clickhouse_get_options()
 {
-    "$@" --help 2>&1 | awk -F '[ ,=<>]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 0, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
+    "$@" --help 2>&1 | awk -F '[ ,=<>.]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 1, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
 }
 
 function _complete_for_clickhouse_generic_bin_impl()
@@ -111,6 +167,14 @@ function _complete_for_clickhouse_generic_bin_impl()
             ;;
         --stage)
             COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryProcessingStage[*]}" -- "$cur") )
+            return 1
+            ;;
+        --query_kind)
+            COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryKind[*]}" -- "$cur") )
+            return 1
+            ;;
+        --send_logs_level)
+            COMPREPLY=( $(compgen -W "${CLICKHOUSE_logs_level[*]}" -- "$cur") )
             return 1
             ;;
         --format|--input-format|--output-format)

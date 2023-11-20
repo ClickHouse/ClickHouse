@@ -19,7 +19,7 @@ LimitTransform::LimitTransform(
     , with_ties(with_ties_), description(std::move(description_))
 {
     if (num_streams != 1 && with_ties)
-        throw Exception("Cannot use LimitTransform with multiple ports and ties.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use LimitTransform with multiple ports and ties");
 
     ports_data.resize(num_streams);
 
@@ -86,8 +86,7 @@ IProcessor::Status LimitTransform::prepare(
                 return;
             default:
                 throw Exception(
-                        "Unexpected status for LimitTransform::preparePair : " + IProcessor::statusToName(status),
-                        ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::LOGICAL_ERROR, "Unexpected status for LimitTransform::preparePair : {}", IProcessor::statusToName(status));
         }
     };
 
@@ -126,8 +125,7 @@ IProcessor::Status LimitTransform::prepare(
 LimitTransform::Status LimitTransform::prepare()
 {
     if (ports_data.size() != 1)
-        throw Exception("prepare without arguments is not supported for multi-port LimitTransform.",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port LimitTransform");
 
     return prepare({0}, {0});
 }
@@ -185,7 +183,7 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 
     auto rows = data.current_chunk.getNumRows();
 
-    if (rows_before_limit_at_least)
+    if (rows_before_limit_at_least && !data.input_port_has_counter)
         rows_before_limit_at_least->add(rows);
 
     /// Skip block (for 'always_read_till_end' case).

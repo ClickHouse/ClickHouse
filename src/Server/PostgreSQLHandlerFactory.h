@@ -5,7 +5,7 @@
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Core/PostgreSQLProtocol.h>
-#include <Common/config.h>
+#include "config.h"
 
 namespace DB
 {

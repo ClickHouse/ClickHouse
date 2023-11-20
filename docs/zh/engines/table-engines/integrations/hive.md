@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/table-engines/integrations/hive
 sidebar_position: 4
 sidebar_label: Hive
 ---
@@ -24,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Hive('thrift://host:port', 'database', 'table');
 PARTITION BY expr
 ```
-查看[CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query)查询的详细描述。
+查看[CREATE TABLE](../../../sql-reference/statements/create/table.mdx#create-table-query)查询的详细描述。
 
 表的结构可以与原来的Hive表结构有所不同:
 - 列名应该与原来的Hive表相同，但你可以使用这些列中的一些，并以任何顺序，你也可以使用一些从其他列计算的别名列。
@@ -60,7 +61,7 @@ PARTITION BY expr
 - limit_size: 必需的。本地缓存文件的最大大小(单位为字节)。
 - bytes_read_before_flush: 从远程文件系统下载文件时，刷新到本地文件系统前的控制字节数。缺省值为1MB。
 
-当ClickHouse为远程文件系统启用了本地缓存时，用户仍然可以选择不使用缓存，并在查询中设置`use_local_cache_for_remote_fs = 0 `, `use_local_cache_for_remote_fs` 默认为 `false`。
+当ClickHouse为远程文件系统启用了本地缓存时，用户仍然可以选择不使用缓存，并在查询中设置 `use_local_cache_for_remote_storage = 0`, `use_local_cache_for_remote_storage` 默认为 `1`。
 
 ### 查询 ORC 输入格式的Hive 表
 

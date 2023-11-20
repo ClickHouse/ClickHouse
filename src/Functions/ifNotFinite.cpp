@@ -2,7 +2,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Core/ColumnNumbers.h>
 
 
@@ -65,7 +64,7 @@ private:
 
 }
 
-void registerFunctionIfNotFinite(FunctionFactory & factory)
+REGISTER_FUNCTION(IfNotFinite)
 {
     factory.registerFunction<FunctionIfNotFinite>();
 }

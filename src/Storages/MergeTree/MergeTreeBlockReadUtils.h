@@ -2,85 +2,39 @@
 
 #include <optional>
 #include <Core/NamesAndTypes.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 
 
 namespace DB
 {
 
-class MergeTreeData;
-struct MergeTreeReadTask;
-struct MergeTreeBlockSizePredictor;
-
-using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
-using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
-
+struct MergeTreeReaderSettings;
+class IMergeTreeDataPartInfoForReader;
 
 /** If some of the requested columns are not in the part,
   * then find out which columns may need to be read further,
   * so that you can calculate the DEFAULT expression for these columns.
   * Adds them to the `columns`.
   */
-NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageSnapshotPtr & storage_snapshot, const MergeTreeData::DataPartPtr & part, Names & columns);
-
-
-/// A batch of work for MergeTreeThreadSelectBlockInputStream
-struct MergeTreeReadTask
-{
-    /// data part which should be read while performing this task
-    MergeTreeData::DataPartPtr data_part;
-    /// Ranges to read from `data_part`.
-    MarkRanges mark_ranges;
-    /// for virtual `part_index` virtual column
-    size_t part_index_in_query;
-    /// ordered list of column names used in this query, allows returning blocks with consistent ordering
-    const Names & ordered_names;
-    /// used to determine whether column should be filtered during PREWHERE or WHERE
-    const NameSet & column_name_set;
-    /// column names to read during WHERE
-    const NamesAndTypesList & columns;
-    /// column names to read during PREWHERE
-    const NamesAndTypesList & pre_columns;
-    /// should PREWHERE column be returned to requesting side?
-    const bool remove_prewhere_column;
-    /// resulting block may require reordering in accordance with `ordered_names`
-    const bool should_reorder;
-    /// Used to satistfy preferred_block_size_bytes limitation
-    MergeTreeBlockSizePredictorPtr size_predictor;
-    /// Used to save current range processing status
-    MergeTreeRangeReader range_reader;
-    MergeTreeRangeReader pre_range_reader;
-
-    bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
-
-    MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, size_t part_index_in_query_,
-        const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
-        const NamesAndTypesList & pre_columns_, bool remove_prewhere_column_, bool should_reorder_,
-        MergeTreeBlockSizePredictorPtr && size_predictor_);
-};
-
-struct MergeTreeReadTaskColumns
-{
-    /// column names to read during WHERE
-    NamesAndTypesList columns;
-    /// column names to read during PREWHERE
-    NamesAndTypesList pre_columns;
-    /// resulting block may require reordering in accordance with `ordered_names`
-    bool should_reorder = false;
-};
-
-MergeTreeReadTaskColumns getReadTaskColumns(
-    const MergeTreeData & storage,
+NameSet injectRequiredColumns(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeData::DataPartPtr & data_part,
+    bool with_subcolumns,
+    Names & columns);
+
+MergeTreeReadTask::Columns getReadTaskColumns(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const PrewhereInfoPtr & prewhere_info);
+    const Names & system_columns,
+    const PrewhereInfoPtr & prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings,
+    bool with_subcolumns);
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -93,7 +47,6 @@ struct MergeTreeBlockSizePredictor
     {
         return block_size_bytes;
     }
-
 
     /// Predicts what number of rows should be read to exhaust byte quota per column
     inline size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
@@ -108,7 +61,7 @@ struct MergeTreeBlockSizePredictor
     inline size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
-            ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, bytes_per_row_current))
+            ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, static_cast<size_t>(bytes_per_row_current)))
             : 0;
     }
 
@@ -128,8 +81,7 @@ struct MergeTreeBlockSizePredictor
     static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
-
-    MergeTreeData::DataPartPtr data_part;
+    DataPartPtr data_part;
 
     struct ColumnInfo
     {

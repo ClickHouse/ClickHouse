@@ -55,7 +55,7 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
         else
             res = std::make_shared<DataTypeInt16>();
     }
-    else if (type_name == "int" || type_name == "mediumint")
+    else if (type_name == "int" || type_name == "mediumint" || type_name == "integer")
     {
         if (is_unsigned)
             res = std::make_shared<DataTypeUInt32>();
@@ -83,7 +83,11 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
             res = std::make_shared<DataTypeDate>();
     }
     else if (type_name == "binary")
+    {
+        //compatible with binary(0) DataType
+        if (length == 0) length = 1;
         res = std::make_shared<DataTypeFixedString>(length);
+    }
     else if (type_name == "datetime" || type_name == "timestamp")
     {
         if (!type_support.isSet(MySQLDataTypesSupport::DATETIME64))
@@ -107,10 +111,12 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     {
         if (precision <= DecimalUtils::max_precision<Decimal32>)
             res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+        else if (precision <= DecimalUtils::max_precision<Decimal64>)
             res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+        else if (precision <= DecimalUtils::max_precision<Decimal128>)
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
+        else if (precision <= DecimalUtils::max_precision<Decimal256>)
+            res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
     }
 
     /// Also String is fallback for all unknown types.

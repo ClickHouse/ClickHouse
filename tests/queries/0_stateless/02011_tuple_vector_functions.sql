@@ -28,7 +28,9 @@ SELECT scalarProduct(tuple(1), tuple(0));
 SELECT L1Norm((-1, 2, -3));
 SELECT L1Norm((-1, 2.5, -3.6));
 SELECT L2Norm((1, 1.0));
+SELECT L2SquaredNorm((1, 1.0));
 SELECT L2Norm(materialize((-12, 5)));
+SELECT L2SquaredNorm(materialize((-12, 5)));
 
 SELECT max2(materialize(1), 1.5);
 SELECT min2(-1, -3);
@@ -44,8 +46,10 @@ SELECT LpNorm((-1, -2), 11.);
 
 SELECT L1Distance((1, 2, 3), (2, 3, 1));
 SELECT L2Distance(materialize((1, 1)), (3, -1));
+SELECT L2SquaredDistance(materialize((1, 1)), (3, -1));
 SELECT LinfDistance((1, 1), (1, 2));
 SELECT L2Distance((5, 5), (5, 5));
+SELECT L2SquaredDistance((5, 5), (5, 5));
 SELECT LpDistance((1800, 1900), (18, 59), 12) - LpDistance(tuple(-22), tuple(1900), 12.);
 
 SELECT L1Normalize(materialize((1, -4)));
@@ -61,6 +65,7 @@ SELECT cosineDistance((1, 0), (0.5, sqrt(3) / 2));
 SELECT (NULL, 1) + (1, NULL);
 SELECT (NULL, 1) * materialize((1, NULL));
 SELECT L2Norm((NULL, 3, 4));
+SELECT L2SquaredNorm((NULL, 3, 4));
 SELECT 2 * (1, 2, NULL);
 SELECT (1, 1.0, NULL) / NULL;
 SELECT (1, 1.0, NULL) / materialize(NULL);

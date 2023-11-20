@@ -1,4 +1,4 @@
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 

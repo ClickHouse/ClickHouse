@@ -4,7 +4,6 @@
 #include <sys/file.h>
 
 #include <string>
-#include <iostream>
 #include <mutex>
 #include <filesystem>
 
@@ -16,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
+#include <base/defines.h>
 #include <base/types.h>
 
 
@@ -88,7 +88,7 @@ public:
                 {
                     /// A more understandable error message.
                     if (e.code() == DB::ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-                        throw DB::ParsingException("File " + path + " is empty. You must fill it manually with appropriate value.", e.code());
+                        throw DB::ParsingException(e.code(), "File {} is empty. You must fill it manually with appropriate value.", path);
                     else
                         throw;
                 }
@@ -112,11 +112,13 @@ public:
         }
         catch (...)
         {
-            close(fd);
+            int err = close(fd);
+            chassert(!err || errno == EINTR);
             throw;
         }
 
-        close(fd);
+        int err = close(fd);
+        chassert(!err || errno == EINTR);
         return res;
     }
 
@@ -180,11 +182,13 @@ public:
         }
         catch (...)
         {
-            close(fd);
+            int err = close(fd);
+            chassert(!err || errno == EINTR);
             throw;
         }
 
-        close(fd);
+        int err = close(fd);
+        chassert(!err || errno == EINTR);
     }
 
 private:

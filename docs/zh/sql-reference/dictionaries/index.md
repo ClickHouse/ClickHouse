@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/dictionaries/
 sidebar_position: 35
 sidebar_label: 字典
 ---
@@ -15,5 +16,3 @@ ClickHouse支持:
 
 -   [内置字典](internal-dicts.md#internal_dicts) ,这些字典具有特定的 [函数集](../../sql-reference/functions/ym-dict-functions.md).
 -   [插件（外部）字典](external-dictionaries/external-dicts.md#dicts-external-dicts) ,这些字典拥有一个 [函数集](../../sql-reference/functions/ext-dict-functions.md).
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/) <!--hide-->

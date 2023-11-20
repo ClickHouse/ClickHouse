@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/aggregate-functions/reference/quantileexactweighted
 sidebar_position: 203
 ---
 

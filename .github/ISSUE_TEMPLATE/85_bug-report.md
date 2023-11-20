@@ -1,11 +1,13 @@
 ---
 name: Bug report
-about: Wrong behaviour (visible to users) in official ClickHouse release.
+about: Wrong behavior (visible to users) in the official ClickHouse release.
 title: ''
 labels: 'potential bug'
 assignees: ''
 
 ---
+
+> Please make sure that the version you're using is still supported (you can find the list [here](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#scope-and-supported-versions)).
 
 > You have to provide the following information whenever possible.
 
@@ -13,14 +15,15 @@ assignees: ''
 
 > A clear and concise description of what works not as it is supposed to.
 
+> A link to reproducer in [https://fiddle.clickhouse.com/](https://fiddle.clickhouse.com/).
+
 **Does it reproduce on recent release?**
 
 [The list of releases](https://github.com/ClickHouse/ClickHouse/blob/master/utils/list-versions/version_date.tsv)
 
 **Enable crash reporting**
 
-> If possible, change "enabled" to true in "send_crash_reports" section in `config.xml`:
-
+> Change "enabled" to true in "send_crash_reports" section in `config.xml`:
 ```
 <send_crash_reports>
         <!-- Changing <enabled> to true allows sending crash reports to -->

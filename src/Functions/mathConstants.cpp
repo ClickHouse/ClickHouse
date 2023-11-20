@@ -34,14 +34,14 @@ namespace
     using FunctionPi = FunctionMathConstFloat64<PiImpl>;
 }
 
-void registerFunctionE(FunctionFactory & factory)
+REGISTER_FUNCTION(E)
 {
     factory.registerFunction<FunctionE>();
 }
 
-void registerFunctionPi(FunctionFactory & factory)
+REGISTER_FUNCTION(Pi)
 {
-    factory.registerFunction<FunctionPi>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionPi>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -25,7 +25,7 @@ SELECT * FROM t_sparse WHERE arr1 != [] ORDER BY id;
 SELECT * FROM t_sparse WHERE arr2 != [] ORDER BY id;
 
 SELECT sum(u) FROM t_sparse;
-SELECT sum(u) FROM t_sparse GROUP BY id % 7;
+SELECT id % 7, sum(u) FROM t_sparse GROUP BY id % 7 ORDER BY id % 7;
 
 SELECT arrayFilter(x -> x % 2 = 1, arr2) FROM t_sparse WHERE arr2 != [] LIMIT 5;
 

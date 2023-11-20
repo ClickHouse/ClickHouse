@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import uuid
 
 import pytest
 
@@ -228,3 +229,108 @@ def test_executable_function_sum_json_python(started_cluster):
     )
 
     node.query("DROP TABLE test_table;")
+
+
+def test_executable_function_input_nullable_python(started_cluster):
+    skip_test_msan(node)
+
+    node.query(
+        "CREATE TABLE test_table_nullable (value Nullable(UInt64)) ENGINE=TinyLog;"
+    )
+    node.query("INSERT INTO test_table_nullable VALUES (0), (NULL), (2);")
+
+    assert (
+        node.query(
+            "SELECT test_function_nullable_python(1), test_function_nullable_python(NULL)"
+        )
+        == "Key 1\tKey Nullable\n"
+    )
+    assert (
+        node.query(
+            "SELECT test_function_nullable_python(value) FROM test_table_nullable;"
+        )
+        == "Key 0\nKey Nullable\nKey 2\n"
+    )
+
+    assert (
+        node.query(
+            "SELECT test_function_nullable_pool_python(1), test_function_nullable_pool_python(NULL)"
+        )
+        == "Key 1\tKey Nullable\n"
+    )
+    assert (
+        node.query(
+            "SELECT test_function_nullable_pool_python(value) FROM test_table_nullable;"
+        )
+        == "Key 0\nKey Nullable\nKey 2\n"
+    )
+
+
+def test_executable_function_parameter_python(started_cluster):
+    skip_test_msan(node)
+
+    assert node.query_and_get_error(
+        "SELECT test_function_parameter_python(2,2)(toUInt64(1))"
+    )
+    assert node.query_and_get_error("SELECT test_function_parameter_python(2,2)(1)")
+    assert node.query_and_get_error("SELECT test_function_parameter_python(1)")
+    assert node.query_and_get_error(
+        "SELECT test_function_parameter_python('test')(toUInt64(1))"
+    )
+
+    assert (
+        node.query("SELECT test_function_parameter_python('2')(toUInt64(1))")
+        == "Parameter 2 key 1\n"
+    )
+    assert (
+        node.query("SELECT test_function_parameter_python(2)(toUInt64(1))")
+        == "Parameter 2 key 1\n"
+    )
+
+
+def test_executable_function_always_error_python(started_cluster):
+    skip_test_msan(node)
+    try:
+        node.query("SELECT test_function_always_error_throw_python(1)")
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        assert "DB::Exception: Executable generates stderr: Fake error" in str(ex)
+
+    query_id = uuid.uuid4().hex
+    assert (
+        node.query("SELECT test_function_always_error_log_python(1)", query_id=query_id)
+        == "Key 1\n"
+    )
+    assert node.contains_in_log(
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr: Fake error"
+    )
+
+    query_id = uuid.uuid4().hex
+    assert (
+        node.query(
+            "SELECT test_function_always_error_log_first_python(1)", query_id=query_id
+        )
+        == "Key 1\n"
+    )
+    assert node.contains_in_log(
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr at the beginning:  {'a' * (3 * 1024)}{'b' * 1024}\n"
+    )
+
+    query_id = uuid.uuid4().hex
+    assert (
+        node.query(
+            "SELECT test_function_always_error_log_last_python(1)", query_id=query_id
+        )
+        == "Key 1\n"
+    )
+    assert node.contains_in_log(
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr at the end:  {'b' * 1024}{'c' * (3 * 1024)}\n"
+    )
+
+    assert node.query("SELECT test_function_exit_error_ignore_python(1)") == "Key 1\n"
+
+    try:
+        node.query("SELECT test_function_exit_error_fail_python(1)")
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        assert "DB::Exception: Child process was exited with return code 1" in str(ex)

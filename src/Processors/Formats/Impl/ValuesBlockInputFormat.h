@@ -36,9 +36,13 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
     /// TODO: remove context somehow.
-    void setContext(ContextPtr context_) { context = Context::createCopy(context_); }
+    void setContext(ContextPtr & context_) { context = Context::createCopy(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
+    static bool skipToNextRow(ReadBuffer * buf, size_t min_chunk_bytes, int balance);
 
 private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
@@ -56,6 +60,7 @@ private:
     Chunk generate() override;
 
     void readRow(MutableColumns & columns, size_t row_num);
+    void readUntilTheEndOfRowAndReTokenize(size_t current_column_idx);
 
     bool tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
     ALWAYS_INLINE inline bool tryReadValue(IColumn & column, size_t column_idx);
@@ -69,7 +74,11 @@ private:
     void readPrefix();
     void readSuffix();
 
+    size_t countRows(size_t max_block_size);
+
     std::unique_ptr<PeekableReadBuffer> buf;
+    std::optional<IParser::Pos> token_iterator{};
+    std::optional<Tokens> tokens{};
 
     const RowInputFormatParams params;
 
@@ -92,6 +101,7 @@ private:
     Serializations serializations;
 
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk = 0;
 };
 
 class ValuesSchemaReader : public IRowSchemaReader
@@ -100,12 +110,12 @@ public:
     ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
-    const FormatSettings format_settings;
     ParserExpression parser;
     bool first_row = true;
+    bool end_of_data = false;
 };
 
 }

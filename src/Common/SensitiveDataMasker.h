@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <vector>
 #include <cstdint>
 
@@ -45,6 +46,7 @@ class SensitiveDataMasker
 private:
     class MaskingRule;
     std::vector<std::unique_ptr<MaskingRule>> all_masking_rules;
+    static std::mutex instance_mutex;
     static std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
 
 public:
@@ -69,4 +71,8 @@ public:
     size_t rulesCount() const;
 };
 
-};
+/// Wipes sensitive data and cuts to a specified maximum length in one function call.
+/// If the maximum length is zero then the function doesn't cut to the maximum length.
+std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length);
+
+}

@@ -1,11 +1,12 @@
 #include "LZ4_decompress_faster.h"
 
-#include <string.h>
+#include <cstring>
 #include <iostream>
 #include <Core/Defines.h>
-#include <Common/Stopwatch.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <Common/Stopwatch.h>
+#include <Common/TargetSpecific.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -15,9 +16,19 @@
 #include <tmmintrin.h>
 #endif
 
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
+
 #ifdef __aarch64__
 #include <arm_neon.h>
 #endif
+
+static inline UInt16 LZ4_readLE16(const void* mem_ptr)
+{
+        const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
+        return static_cast<UInt16>(p[0]) + (p[1] << 8);
+}
 
 namespace LZ4
 {
@@ -70,7 +81,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined(__riscv)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined(__riscv)
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -261,7 +272,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined (__riscv)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined (__riscv)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
@@ -403,20 +414,71 @@ inline void copyOverlap32(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift4[offset];
 }
 
+DECLARE_AVX512VBMI_SPECIFIC_CODE(
+inline void copyOverlap32Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
+    static constexpr UInt8 __attribute__((__aligned__(32))) masks[] =
+    {
+        0,  1,  2,  2,  4,  2,  2,  4,  8,  5,  2, 10,  8,  6,  4,  2, 16, 15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  /* offset=0, shift amount index. */
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  /* offset=1 */
+        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,
+        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,
+        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,  0,  1,  2,  3,  4,  5,  6,  7,  8,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,  0,  1,  2,  3,  4,  5,  6,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,  0,  1,  2,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,  0,
+    };
+
+    _mm256_storeu_si256(reinterpret_cast<__m256i *>(op),
+        _mm256_permutexvar_epi8(
+            _mm256_load_si256(reinterpret_cast<const __m256i *>(masks) + offset),
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(match))));
+    match += masks[offset];
+}
+) /// DECLARE_AVX512VBMI_SPECIFIC_CODE
+
 
 template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
 template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
 template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32(op, match, offset); }
+template <> void inline copyOverlap<32, true>(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
+#if USE_MULTITARGET_CODE
+    TargetSpecific::AVX512VBMI::copyOverlap32Shuffle(op, match, offset);
+#else
+    copyOverlap32(op, match, offset);
+#endif
+}
 
 
 /// See also https://stackoverflow.com/a/30669632
 
 template <size_t copy_amount, bool use_shuffle>
-bool NO_INLINE decompressImpl(
-     const char * const source,
-     char * const dest,
-     size_t source_size,
-     size_t dest_size)
+bool NO_INLINE decompressImpl(const char * const source, char * const dest, size_t source_size, size_t dest_size)
 {
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
@@ -449,6 +511,18 @@ bool NO_INLINE decompressImpl(
 
         const unsigned token = *ip++;
         length = token >> 4;
+
+        UInt8 * copy_end;
+        size_t real_length;
+
+        /// It might be true fairly often for well-compressed columns.
+        /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
+        /// In such cases this `if` will significantly increase number of mispredicted instructions. But seems like it results in a
+        /// noticeable slowdown only for implementations with `copy_amount` > 8. Probably because they use havier instructions.
+        if constexpr (copy_amount == 8)
+            if (length == 0)
+                goto decompress_match;
+
         if (length == 0x0F)
         {
             if (unlikely(ip + 1 >= input_end))
@@ -458,7 +532,7 @@ bool NO_INLINE decompressImpl(
 
         /// Copy literals.
 
-        UInt8 * copy_end = op + length;
+        copy_end = op + length;
 
         /// input: Hello, world
         ///        ^-ip
@@ -475,7 +549,7 @@ bool NO_INLINE decompressImpl(
             return false;
 
         // Due to implementation specifics the copy length is always a multiple of copy_amount
-        size_t real_length = 0;
+        real_length = 0;
 
         static_assert(copy_amount == 8 || copy_amount == 16 || copy_amount == 32);
         if constexpr (copy_amount == 8)
@@ -486,9 +560,9 @@ bool NO_INLINE decompressImpl(
             real_length = (((length >> 5) + 1) * 32);
 
         if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
-             return false;
+            return false;
 
-        wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
+        wildCopy<copy_amount>(op, ip, copy_end); /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         if (copy_end == output_end)
             return true;
@@ -496,12 +570,14 @@ bool NO_INLINE decompressImpl(
         ip += length;
         op = copy_end;
 
+    decompress_match:
+
         if (unlikely(ip + 1 >= input_end))
             return false;
 
         /// Get match offset.
 
-        size_t offset = unalignedLoad<UInt16>(ip);
+        size_t offset = LZ4_readLE16(ip);
         ip += 2;
         const UInt8 * match = op - offset;
 
@@ -522,6 +598,9 @@ bool NO_INLINE decompressImpl(
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
 
         copy_end = op + length;
+
+        if (unlikely(copy_end > output_end))
+            return false;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
           * The worst case when offset = 1 and length = 4
@@ -578,7 +657,13 @@ bool decompress(
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
     {
-        size_t best_variant = statistics.select();
+        size_t variant_size = 4;
+#if USE_MULTITARGET_CODE && !defined(MEMORY_SANITIZER)
+        /// best_variant == 4 only valid when AVX512VBMI available
+        if (isArchSupported(DB::TargetArch::AVX512VBMI))
+            variant_size = 5;
+#endif
+        size_t best_variant = statistics.select(variant_size);
 
         /// Run the selected method and measure time.
 
@@ -592,6 +677,8 @@ bool decompress(
             success = decompressImpl<8, true>(source, dest, source_size, dest_size);
         if (best_variant == 3)
             success = decompressImpl<32, false>(source, dest, source_size, dest_size);
+        if (best_variant == 4)
+            success = decompressImpl<32, true>(source, dest, source_size, dest_size);
 
         watch.stop();
 

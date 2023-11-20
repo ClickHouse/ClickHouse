@@ -9,14 +9,15 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-13}
+export LLVM_VERSION=${LLVM_VERSION:-17}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
 # it being undefined. Also read it as array so that we can pass an empty list
 # of additional variable to cmake properly, and it doesn't generate an extra
 # empty parameter.
-read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
+# Read it as CMAKE_FLAGS to not lose exported FASTTEST_CMAKE_FLAGS on subsequential launch
+read -ra CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
 # Run only matching tests.
 FASTTEST_FOCUS=${FASTTEST_FOCUS:-""}
@@ -27,6 +28,12 @@ FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/bui
 FASTTEST_DATA=$(readlink -f "${FASTTEST_DATA:-$FASTTEST_WORKSPACE/db-fasttest}")
 FASTTEST_OUTPUT=$(readlink -f "${FASTTEST_OUTPUT:-$FASTTEST_WORKSPACE}")
 PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
+# Work around for non-existent user
+if [ "$HOME" == "/" ]; then
+    HOME="$FASTTEST_WORKSPACE/user-home"
+    mkdir -p "$HOME"
+    export HOME
+fi
 
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
@@ -37,38 +44,20 @@ export FASTTEST_DATA
 export FASTTEST_OUT
 export PATH
 
-server_pid=none
-
-function stop_server
+function ccache_status
 {
-    if ! kill -0 -- "$server_pid"
-    then
-        echo "ClickHouse server pid '$server_pid' is not running"
-        return 0
-    fi
-
-    for _ in {1..60}
-    do
-        if ! pkill -f "clickhouse-server" && ! kill -- "$server_pid" ; then break ; fi
-        sleep 1
-    done
-
-    if kill -0 -- "$server_pid"
-    then
-        pstree -apgT
-        jobs
-        echo "Failed to kill the ClickHouse server pid '$server_pid'"
-        return 1
-    fi
-
-    server_pid=none
+    ccache --show-config ||:
+    ccache --show-stats ||:
+    SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
 function start_server
 {
     set -m # Spawn server in its own process groups
+
     local opts=(
         --config-file "$FASTTEST_DATA/config.xml"
+        --pid-file "$FASTTEST_DATA/clickhouse-server.pid"
         --
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
@@ -76,46 +65,28 @@ function start_server
         --keeper_server.storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
-    server_pid=$!
     set +m
 
-    if [ "$server_pid" == "0" ]
-    then
-        echo "Failed to start ClickHouse server"
-        # Avoid zero PID because `kill` treats it as our process group PID.
-        server_pid="none"
-        return 1
-    fi
-
-    for _ in {1..60}
-    do
-        if clickhouse-client --query "select 1" || ! kill -0 -- "$server_pid"
-        then
+    for _ in {1..60}; do
+        if clickhouse-client --query "select 1"; then
             break
         fi
         sleep 1
     done
 
-    if ! clickhouse-client --query "select 1"
-    then
+    if ! clickhouse-client --query "select 1"; then
         echo "Failed to wait until ClickHouse server starts."
-        server_pid="none"
         return 1
     fi
 
-    if ! kill -0 -- "$server_pid"
-    then
-        echo "Wrong clickhouse server started: PID '$server_pid' we started is not running, but '$(pgrep -f clickhouse-server)' is running"
-        server_pid="none"
-        return 1
-    fi
-
+    local server_pid
+    server_pid="$(cat "$FASTTEST_DATA/clickhouse-server.pid")"
     echo "ClickHouse server pid '$server_pid' started and responded"
 }
 
 function clone_root
 {
-    git config --global --add safe.directory "$FASTTEST_SOURCE"
+    [ "$UID" -eq 0 ] && git config --global --add safe.directory "$FASTTEST_SOURCE"
     git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
@@ -153,15 +124,14 @@ function clone_submodules
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
-            contrib/poco
             contrib/libunwind
             contrib/fmtlib
-            contrib/base64
+            contrib/aklomp-base64
             contrib/cctz
             contrib/libcpuid
+            contrib/libdivide
             contrib/double-conversion
-            contrib/libcxx
-            contrib/libcxxabi
+            contrib/llvm-project
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -176,10 +146,23 @@ function clone_submodules
             contrib/NuRaft
             contrib/jemalloc
             contrib/replxx
+            contrib/wyhash
+            contrib/c-ares
+            contrib/morton-nd
+            contrib/xxHash
+            contrib/simdjson
+            contrib/liburing
+            contrib/libfiu
+            contrib/incbin
+            contrib/yaml-cpp
         )
 
         git submodule sync
-        git submodule update --jobs=16 --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule init
+        # --jobs does not work as fast as real parallel running
+        printf '%s\0' "${SUBMODULES_TO_UPDATE[@]}" | \
+            xargs --max-procs=100 --null --no-run-if-empty --max-args=1 \
+              git submodule update --depth 1 --single-branch
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -192,30 +175,29 @@ function run_cmake
         "-DENABLE_LIBRARIES=0"
         "-DENABLE_TESTS=0"
         "-DENABLE_UTILS=0"
-        "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
-        "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
+        "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
-        "-DENABLE_REPLXX=1"
+        "-DENABLE_LIBURING=1"
+        "-DENABLE_YAML_CPP=1"
     )
 
-    # TODO remove this? we don't use ccache anyway. An option would be to download it
-    # from S3 simultaneously with cloning.
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
+    export CCACHE_COMPRESSLEVEL=5
     export CCACHE_BASEDIR="$FASTTEST_SOURCE"
     export CCACHE_NOHASHDIR=true
     export CCACHE_COMPILERCHECK=content
     export CCACHE_MAXSIZE=15G
 
-    ccache --show-stats ||:
+    ccache_status
     ccache --zero-stats ||:
 
     mkdir "$FASTTEST_BUILD" ||:
 
     (
         cd "$FASTTEST_BUILD"
-        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
     )
 }
 
@@ -223,14 +205,20 @@ function build
 {
     (
         cd "$FASTTEST_BUILD"
-        time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        TIMEFORMAT=$'\nreal\t%3R\nuser\t%3U\nsys\t%3S'
+        ( time ninja clickhouse-bundle clickhouse-stripped) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        BUILD_SECONDS_ELAPSED=$(awk '/^....-..-.. ..:..:.. real\t[0-9]/ {print $4}' < "$FASTTEST_OUTPUT/build_log.txt")
+        echo "build_clickhouse_fasttest_binary: [ OK ] $BUILD_SECONDS_ELAPSED sec." \
+          | ts '%Y-%m-%d %H:%M:%S' \
+          | tee "$FASTTEST_OUTPUT/test_result.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
+            mkdir -p "$FASTTEST_OUTPUT/binaries/"
+            cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
 
-            strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
-            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
+            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
         fi
-        ccache --show-stats ||:
+        ccache_status
+        ccache --evict-older-than 1d ||:
     )
 }
 
@@ -252,9 +240,6 @@ function run_tests
     clickhouse-server --version
     clickhouse-test --help
 
-    # Kill the server in case we are running locally and not in docker
-    stop_server ||:
-
     start_server
 
     set +e
@@ -269,6 +254,7 @@ function run_tests
         --hung-check
         --fast-tests-only
         --no-random-settings
+        --no-random-merge-tree-settings
         --no-long
         --testname
         --shard
@@ -276,12 +262,15 @@ function run_tests
         --check-zookeeper-session
         --order random
         --print-time
+        --report-logs-stats
         --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
-        | tee "$FASTTEST_OUTPUT/test_result.txt"
+        | tee -a "$FASTTEST_OUTPUT/test_result.txt"
     set -e
+
+    clickhouse stop --pid-path "$FASTTEST_DATA"
 }
 
 case "$stage" in
@@ -290,34 +279,12 @@ case "$stage" in
     ;&
 "clone_root")
     clone_root
-
-    # Pass control to the script from cloned sources, unless asked otherwise.
-    if ! [ -v FASTTEST_LOCAL_SCRIPT ]
-    then
-        # 'run' stage is deprecated, used for compatibility with old scripts.
-        # Replace with 'clone_submodules' after Nov 1, 2020.
-        # cd and CLICKHOUSE_DIR are also a setup for old scripts, remove as well.
-        # In modern script we undo it by changing back into workspace dir right
-        # away, see below. Remove that as well.
-        cd "$FASTTEST_SOURCE"
-        CLICKHOUSE_DIR=$(pwd)
-        export CLICKHOUSE_DIR
-        stage=run "$FASTTEST_SOURCE/docker/test/fasttest/run.sh"
-        exit $?
-    fi
-    ;&
-"run")
-    # A deprecated stage that is called by old script and equivalent to everything
-    # after cloning root, starting with cloning submodules.
     ;&
 "clone_submodules")
-    # Recover after being called from the old script that changes into source directory.
-    # See the compatibility hacks in `clone_root` stage above. Remove at the same time,
-    # after Nov 1, 2020.
-    cd "$FASTTEST_WORKSPACE"
     clone_submodules 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
     ;&
 "run_cmake")
+    cd "$FASTTEST_WORKSPACE"
     run_cmake
     ;&
 "build")

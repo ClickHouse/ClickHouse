@@ -18,13 +18,16 @@ namespace DB
 bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_show("SHOW");
+    ParserKeyword s_full("FULL");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_tables("TABLES");
     ParserKeyword s_databases("DATABASES");
     ParserKeyword s_clusters("CLUSTERS");
     ParserKeyword s_cluster("CLUSTER");
     ParserKeyword s_dictionaries("DICTIONARIES");
+    ParserKeyword s_caches("FILESYSTEM CACHES");
     ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_merges("MERGES");
     ParserKeyword s_changed("CHANGED");
     ParserKeyword s_from("FROM");
     ParserKeyword s_in("IN");
@@ -34,7 +37,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_where("WHERE");
     ParserKeyword s_limit("LIMIT");
     ParserStringLiteral like_p;
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
@@ -44,6 +47,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (!s_show.ignore(pos, expected))
         return false;
+
+    if (s_full.ignore(pos, expected))
+    {
+        query->full = true;
+    }
 
     if (s_databases.ignore(pos, expected))
     {
@@ -90,6 +98,33 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!exp_elem.parse(pos, query->limit_length, expected))
                 return false;
         }
+    }
+    else if (s_merges.ignore(pos, expected))
+    {
+        query->merges = true;
+
+        if (s_not.ignore(pos, expected))
+            query->not_like = true;
+
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
+        {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else if (query->not_like)
+            return false;
+        if (s_limit.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, query->limit_length, expected))
+                return false;
+        }
+    }
+    else if (s_caches.ignore(pos, expected))
+    {
+        query->caches = true;
     }
     else if (s_cluster.ignore(pos, expected))
     {
@@ -138,10 +173,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         if (s_from.ignore(pos, expected) || s_in.ignore(pos, expected))
-        {
             if (!name_p.parse(pos, database, expected))
                 return false;
-        }
 
         if (s_not.ignore(pos, expected))
             query->not_like = true;
@@ -157,27 +190,22 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else if (query->not_like)
             return false;
         else if (s_where.ignore(pos, expected))
-        {
             if (!exp_elem.parse(pos, query->where_expression, expected))
                 return false;
-        }
 
         if (s_limit.ignore(pos, expected))
-        {
             if (!exp_elem.parse(pos, query->limit_length, expected))
                 return false;
-        }
     }
 
-    tryGetIdentifierNameInto(database, query->from);
+    query->set(query->from, database);
 
     if (like)
-        query->like = safeGet<const String &>(like->as<ASTLiteral &>().value);
+        query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();
 
     node = query;
 
     return true;
 }
-
 
 }

@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
 -->
@@ -101,13 +100,6 @@
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
-    <!-- Approximate size of mark cache, used in tables of MergeTree family.
-         In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
-
-
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
@@ -144,7 +136,6 @@
          https://clickhouse.com/docs/en/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
-        <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <shard>
                 <replica>
@@ -153,43 +144,6 @@
                 </replica>
             </shard>
         </test_shard_localhost>
-        <test_cluster_two_shards_localhost>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-         </test_cluster_two_shards_localhost>
-        <test_shard_localhost_secure>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure>1</secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure>
-        <test_unavailable_shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>1</port>
-                </replica>
-            </shard>
-        </test_unavailable_shard>
     </remote_servers>
 
 

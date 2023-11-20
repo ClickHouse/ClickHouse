@@ -4,11 +4,11 @@
 namespace DB
 {
 
-void registerFromUnixTimestamp64Nano(FunctionFactory & factory)
+REGISTER_FUNCTION(FromUnixTimestamp64Nano)
 {
     factory.registerFunction("fromUnixTimestamp64Nano",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionFromUnixTimestamp64>(9, "fromUnixTimestamp64Nano")); });
+        [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
+            std::make_shared<FunctionFromUnixTimestamp64>(9, "fromUnixTimestamp64Nano", context)); });
 }
 
 }

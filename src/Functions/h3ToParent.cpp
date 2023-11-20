@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -114,7 +114,7 @@ public:
 
 }
 
-void registerFunctionH3ToParent(FunctionFactory & factory)
+REGISTER_FUNCTION(H3ToParent)
 {
     factory.registerFunction<FunctionH3ToParent>();
 }

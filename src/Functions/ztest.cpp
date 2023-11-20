@@ -57,7 +57,7 @@ public:
     {
         for (size_t i = 0; i < 4; ++i)
         {
-            if (!isUnsignedInteger(arguments[i].type))
+            if (!isUInt(arguments[i].type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -190,7 +190,7 @@ public:
                 zstat = diff / std::sqrt(p_pooled * (1.0 - p_pooled) * trials_fact);
             }
 
-            if (!std::isfinite(zstat))
+            if (unlikely(!std::isfinite(zstat)))
             {
                 insert_values_into_result(nan, nan, nan, nan);
                 continue;
@@ -217,7 +217,7 @@ public:
 };
 
 
-void registerFunctionZTest(FunctionFactory & factory)
+REGISTER_FUNCTION(ZTest)
 {
     factory.registerFunction<FunctionTwoSampleProportionsZTest>();
 }

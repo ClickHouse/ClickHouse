@@ -30,10 +30,14 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
 {
+
+CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
+
 
 namespace ErrorCodes
 {
@@ -123,22 +127,34 @@ void ColumnDescription::readText(ReadBuffer & buf)
             {
                 default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
                 default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.ephemeral_default = col_ast->ephemeral_default;
             }
 
             if (col_ast->comment)
                 comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
         }
         else
-            throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
     }
 }
 
+ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
+{
+    for (const auto & elem : ordinary)
+        add(ColumnDescription(elem.name, elem.type));
+}
+
+ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
+{
+    for (auto & elem : ordinary)
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+}
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {
@@ -173,15 +189,15 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
 {
     String name_with_dot = name_without_dot + ".";
 
-    auto begin = columns.begin();
-    for (; begin != columns.end(); ++begin)
+    /// First we need to check if we have column with name name_without_dot
+    /// and if not - check if we have names that start with name_with_dot
+    for (auto it = columns.begin(); it != columns.end(); ++it)
     {
-        if (begin->name == name_without_dot)
-            return std::make_pair(begin, std::next(begin));
-
-        if (startsWith(begin->name, name_with_dot))
-            break;
+        if (it->name == name_without_dot)
+            return std::make_pair(it, std::next(it));
     }
+
+    auto begin = std::find_if(columns.begin(), columns.end(), [&](const auto & column){ return startsWith(column.name, name_with_dot); });
 
     if (begin == columns.end())
         return std::make_pair(begin, begin);
@@ -196,11 +212,11 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
 {
     if (has(column.name))
-        throw Exception("Cannot add column " + column.name + ": column with this name already exists",
-            ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot add column {}: column with this name already exists", column.name);
 
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.
     if (column.default_desc.expression)
@@ -216,13 +232,13 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     {
         auto range = getNameRange(columns, after_column);
         if (range.first == range.second)
-            throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Wrong column name. Cannot find column {} to insert after", after_column);
 
         insert_it = range.second;
     }
 
-    addSubcolumns(column.name, column.type);
+    if (add_subcolumns)
+        addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -231,9 +247,7 @@ void ColumnsDescription::remove(const String & column_name)
     auto range = getNameRange(columns, column_name);
     if (range.first == range.second)
     {
-        String exception_message = fmt::format("There is no column {} in table", column_name);
-        appendHintsMessage(exception_message, column_name);
-        throw Exception(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table{}", column_name, getHintsMessage(column_name));
     }
 
     for (auto list_it = range.first; list_it != range.second;)
@@ -248,9 +262,8 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     auto it = columns.get<1>().find(column_from);
     if (it == columns.get<1>().end())
     {
-        String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_from);
-        appendHintsMessage(exception_message, column_from);
-        throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in ColumnsDescription{}",
+                        column_from, getHintsMessage(column_from));
     }
 
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)
@@ -266,7 +279,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
         auto column_range = getNameRange(columns, column_name);
 
         if (column_range.first == column_range.second)
-            throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table.", column_name);
 
         std::vector<ColumnDescription> moving_columns;
         for (auto list_it = column_range.first; list_it != column_range.second;)
@@ -285,8 +298,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
         /// Checked first
         auto range = getNameRange(columns, after_column);
         if (range.first == range.second)
-            throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Wrong column name. Cannot find column {} to insert after", after_column);
 
         reorder_column([&]() { return getNameRange(columns, after_column).second; });
     }
@@ -397,6 +409,15 @@ NamesAndTypesList ColumnsDescription::getSubcolumns(const String & name_in_stora
     return NamesAndTypesList(range.first, range.second);
 }
 
+NamesAndTypesList ColumnsDescription::getNested(const String & column_name) const
+{
+    auto range = getNameRange(columns, column_name);
+    NamesAndTypesList nested;
+    for (auto & it = range.first; it != range.second; ++it)
+        nested.emplace_back(it->name, it->type);
+    return nested;
+}
+
 void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
 {
     NamesAndTypesList subcolumns_list;
@@ -416,23 +437,49 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     switch (options.kind)
     {
         case GetColumnsOptions::All:
+        {
             res = getAll();
             break;
+        }
+        case GetColumnsOptions::AllPhysicalAndAliases:
+        {
+            res = getAllPhysical();
+            auto aliases = getAliases();
+            res.insert(res.end(), aliases.begin(), aliases.end());
+            break;
+        }
         case GetColumnsOptions::AllPhysical:
+        {
             res = getAllPhysical();
             break;
+        }
+        case GetColumnsOptions::OrdinaryAndAliases:
+        {
+            res = getOrdinary();
+            auto aliases = getAliases();
+            res.insert(res.end(), aliases.begin(), aliases.end());
+            break;
+        }
         case GetColumnsOptions::Ordinary:
+        {
             res = getOrdinary();
             break;
+        }
         case GetColumnsOptions::Materialized:
+        {
             res = getMaterialized();
             break;
+        }
         case GetColumnsOptions::Aliases:
+        {
             res = getAliases();
             break;
+        }
         case GetColumnsOptions::Ephemeral:
+        {
             res = getEphemeral();
             break;
+        }
     }
 
     if (options.with_subcolumns)
@@ -461,8 +508,7 @@ const ColumnDescription & ColumnsDescription::get(const String & column_name) co
 {
     auto it = columns.get<1>().find(column_name);
     if (it == columns.get<1>().end())
-        throw Exception("There is no column " + column_name + " in table.",
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table.", column_name);
 
     return *it;
 }
@@ -480,7 +526,7 @@ static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
         case ColumnDefaultKind::Ephemeral:
             return GetColumnsOptions::Ephemeral;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
@@ -563,6 +609,27 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetCo
     return tryGetColumn(GetColumnsOptions(kind).withSubcolumns(), column_name);
 }
 
+std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
+        return *it;
+
+    if (options.with_subcolumns)
+    {
+        auto jt = subcolumns.get<0>().find(column_name);
+        if (jt != subcolumns.get<0>().end())
+            return ColumnDescription{jt->name, jt->type};
+    }
+
+    return {};
+}
+
+std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const
+{
+    return tryGetColumnDescription(GetColumnsOptions(kind).withSubcolumns(), column_name);
+}
+
 NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto column = tryGetColumnOrSubcolumn(kind, column_name);
@@ -595,6 +662,12 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
         it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
 }
 
+bool ColumnsDescription::hasAlias(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Alias;
+}
+
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
@@ -603,12 +676,27 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
             || hasSubcolumn(column_name);
 }
 
+bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const
+{
+    auto range = getNameRange(columns, column_name);
+    return range.first != range.second &&
+        defaultKindToGetKind(range.first->default_desc.kind) & kind;
+}
+
 bool ColumnsDescription::hasDefaults() const
 {
     for (const auto & column : columns)
         if (column.default_desc.expression)
             return true;
     return false;
+}
+
+bool ColumnsDescription::hasOnlyOrdinary() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.kind != ColumnDefaultKind::Default)
+            return false;
+    return true;
 }
 
 ColumnDefaults ColumnsDescription::getDefaults() const
@@ -656,11 +744,13 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
+    assert (column_name != BlockNumberColumn::name);
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
 ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
+    assert (column_name != BlockNumberColumn::name);
     const auto it = columns.get<1>().find(column_name);
 
     if (it == columns.get<1>().end() || !it->codec)
@@ -742,7 +832,7 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
                 "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
 
         subcolumns.get<0>().insert(std::move(subcolumn));
-    }, {type_in_storage->getDefaultSerialization(), type_in_storage, nullptr, nullptr});
+    }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
 }
 
 void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
@@ -768,7 +858,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 {
     for (const auto & child : default_expr_list->children)
         if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
-            throw Exception("Select query is not allowed in columns DEFAULT expression", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
     try
     {
@@ -776,7 +866,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+                throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
 
         return actions->getSampleBlock();
     }

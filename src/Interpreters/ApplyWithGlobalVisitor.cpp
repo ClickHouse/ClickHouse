@@ -3,6 +3,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Common/checkStackSize.h>
+
 
 namespace DB
 {
@@ -71,6 +73,8 @@ void ApplyWithGlobalVisitor::visit(
 
 void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
 {
+    checkStackSize();
+
     if (ASTSelectWithUnionQuery * node_union = ast->as<ASTSelectWithUnionQuery>())
     {
         if (auto * first_select = typeid_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get()))
@@ -84,7 +88,7 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                     if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
                         exprs[ast_with_alias->alias] = child;
                 }
-                for (auto it = node_union->list_of_selects->children.begin() + 1; it != node_union->list_of_selects->children.end(); ++it)
+                for (auto * it = node_union->list_of_selects->children.begin() + 1; it != node_union->list_of_selects->children.end(); ++it)
                 {
                     if (auto * union_child = (*it)->as<ASTSelectWithUnionQuery>())
                         visit(*union_child, exprs, with_expression_list);
@@ -95,6 +99,19 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                 }
             }
         }
+
+        /*
+         * We need to visit all children recursively because the WITH statement may appear in the subquery at the nested level.
+         * Behavior of `WITH ... UNION ALL ...` should be the same at the top level and inside the subquery.
+         *
+         * For example:
+         * SELECT * FROM (WITH (SELECT ... ) AS t SELECT ... UNION ALL SELECT ...)
+         *                ^^^^^^^^^^^^     should be visited     ^^^^^^^^^^^^^^^^
+         * or inside `WHERE .. IN` clause:
+         * SELECT * FROM ... WHERE x IN (WITH (SELECT ... ) AS t SELECT ... UNION ALL SELECT ...)
+         */
+        for (auto & child : node_union->list_of_selects->children)
+            visit(child);
     }
     else
     {

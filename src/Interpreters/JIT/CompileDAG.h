@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 
@@ -53,7 +53,7 @@ public:
         std::vector<size_t> arguments;
     };
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, Values input_nodes_values) const;
+    ValueWithType compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values_with_type) const;
 
     std::string dump() const;
 

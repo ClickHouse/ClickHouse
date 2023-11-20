@@ -28,7 +28,7 @@ static void formatReadable(double size, DB::WriteBuffer & out,
     const auto result = DB::DoubleConverter<false>::instance().ToFixed(size, precision, &builder);
 
     if (!result)
-        throw DB::Exception("Cannot print float or double number", DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print float or double number");
 
     out.write(buffer, builder.position());
     writeCString(units[i], out);

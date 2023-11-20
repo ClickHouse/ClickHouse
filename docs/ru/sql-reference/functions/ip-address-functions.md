@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/ip-address-functions
 sidebar_position: 55
 sidebar_label: "Функции для работы с IP-адресами"
 ---
@@ -264,7 +265,7 @@ SELECT
 
 ## toIPv6 {#toipv6string}
 
-Приводит строку с адресом в формате IPv6 к типу [IPv6](../../sql-reference/data-types/domains/ipv6.md). Возвращает пустое значение, если входящая строка не является корректным IP адресом.
+Приводит строку с адресом в формате IPv6 к типу [IPv6](../../sql-reference/data-types/ipv6.md). Возвращает пустое значение, если входящая строка не является корректным IP адресом.
 Похоже на функцию [IPv6StringToNum](#ipv6stringtonums), которая представляет адрес IPv6 в двоичном виде.
 
 Если входящая строка содержит корректный IPv4 адрес, функция возвращает его IPv6 эквивалент.
@@ -283,7 +284,7 @@ toIPv6(string)
 
 -   IP адрес.
 
-Тип: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
+Тип: [IPv6](../../sql-reference/data-types/ipv6.md).
 
 **Примеры**
 
@@ -445,4 +446,18 @@ SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
 ┌─isIPAddressInRange('127.0.0.1', 'ffff::/16')─┐
 │                                            0 │
 └──────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128');
+```
+
+Результат:
+
+``` text
+┌─isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')─┐
+│                                                                  0 │
+└────────────────────────────────────────────────────────────────────┘
 ```

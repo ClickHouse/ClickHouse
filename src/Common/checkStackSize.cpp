@@ -1,11 +1,14 @@
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
+#include <base/getThreadId.h>
 #include <base/scope_guard.h>
 #include <base/defines.h> /// THREAD_SANITIZER
+#include <sys/resource.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <cstdint>
 
-#if defined(__FreeBSD__)
+#if defined(OS_FREEBSD)
 #   include <pthread_np.h>
 #endif
 
@@ -27,7 +30,7 @@ static thread_local size_t max_stack_size = 0;
  * @param out_address - if not nullptr, here the address of the stack will be written.
  * @return stack size
  */
-size_t getStackSize(void ** out_address)
+static size_t getStackSize(void ** out_address)
 {
     using namespace DB;
 
@@ -48,20 +51,51 @@ size_t getStackSize(void ** out_address)
     address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - size);
 #else
     pthread_attr_t attr;
-#   if defined(__FreeBSD__) || defined(OS_SUNOS)
+#   if defined(OS_FREEBSD) || defined(OS_SUNOS)
     pthread_attr_init(&attr);
     if (0 != pthread_attr_get_np(pthread_self(), &attr))
         throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
 #   else
     if (0 != pthread_getattr_np(pthread_self(), &attr))
-        throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
+    {
+        if (errno == ENOENT)
+        {
+            /// Most likely procfs is not mounted.
+            return 0;
+        }
+        else
+            throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
+    }
 #   endif
 
     SCOPE_EXIT({ pthread_attr_destroy(&attr); });
 
     if (0 != pthread_attr_getstack(&attr, &address, &size))
         throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
-#endif // OS_DARWIN
+
+#ifdef USE_MUSL
+    /// Adjust stack size for the main thread under musl.
+    /// musl returns not the maximum available stack, but current stack.
+    ///
+    /// TL;DR;
+    ///
+    /// musl uses mremap() and calls it until it returns ENOMEM, but after the
+    /// available stack there will be a guard page (that is handled by the
+    /// kernel to expand the stack), and when you will try to mremap() on it
+    /// you will get EFAULT.
+    if (static_cast<pid_t>(getThreadId()) == getpid())
+    {
+        ::rlimit rlimit{};
+        if (::getrlimit(RLIMIT_STACK, &rlimit))
+            return 0;
+
+        address = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(address) + size);
+        size = rlimit.rlim_cur;
+        address = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(address) - size);
+    }
+#endif
+
+#endif
 
     if (out_address)
         *out_address = address;
@@ -83,6 +117,10 @@ __attribute__((__weak__)) void checkStackSize()
     if (!stack_address)
         max_stack_size = getStackSize(&stack_address);
 
+    /// The check is impossible.
+    if (!max_stack_size)
+        return;
+
     const void * frame_address = __builtin_frame_address(0);
     uintptr_t int_frame_address = reinterpret_cast<uintptr_t>(frame_address);
     uintptr_t int_stack_address = reinterpret_cast<uintptr_t>(stack_address);
@@ -98,10 +136,10 @@ __attribute__((__weak__)) void checkStackSize()
 
     /// We assume that stack grows towards lower addresses. And that it starts to grow from the end of a chunk of memory of max_stack_size.
     if (int_frame_address > int_stack_address + max_stack_size)
-        throw Exception("Logical error: frame address is greater than stack begin address", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: frame address is greater than stack begin address");
 
     size_t stack_size = int_stack_address + max_stack_size - int_frame_address;
-    size_t max_stack_size_allowed = max_stack_size * STACK_SIZE_FREE_RATIO;
+    size_t max_stack_size_allowed = static_cast<size_t>(max_stack_size * STACK_SIZE_FREE_RATIO);
 
     /// Just check if we have eat more than a STACK_SIZE_FREE_RATIO of stack size already.
     if (stack_size > max_stack_size_allowed)

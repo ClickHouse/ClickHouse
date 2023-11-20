@@ -144,15 +144,15 @@ bool assertOrParseNaN(ReadBuffer & buf)
 template <typename T, typename ReturnType>
 ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextFastFloatImpl must be float or double");
-    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextPreciseImpl must be float or double");
+    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
     static constexpr int MAX_LENGTH = 316;
 
-    if (likely(!buf.eof() && buf.position() + MAX_LENGTH <= buf.buffer().end()))
+    ReadBufferFromMemory * buf_from_memory = dynamic_cast<ReadBufferFromMemory *>(&buf);
+    /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes or buf is ReadBufferFromMemory
+    if (likely(!buf.eof() && (buf_from_memory || buf.position() + MAX_LENGTH <= buf.buffer().end())))
     {
         auto * initial_position = buf.position();
         auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x);
@@ -160,7 +160,10 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         if (unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
-                throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException(
+                    ErrorCodes::CANNOT_PARSE_NUMBER,
+                    "Cannot read floating point value here: {}",
+                    String(initial_position, buf.buffer().end() - initial_position));
             else
                 return ReturnType(false);
         }
@@ -238,12 +241,20 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
             ++num_copied_chars;
         }
 
-        auto res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x);
-
-        if (unlikely(res.ec != std::errc()))
+        fast_float::from_chars_result res;
+        if constexpr (std::endian::native == std::endian::little)
+            res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x);
+        else
+        {
+            Float64 x64 = 0.0;
+            res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x64);
+            x = static_cast<T>(x64);
+        }
+        if (unlikely(res.ec != std::errc() || res.ptr - tmp_buf != num_copied_chars))
         {
             if constexpr (throw_exception)
-                throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException(
+                    ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value here: {}", String(tmp_buf, num_copied_chars));
             else
                 return ReturnType(false);
         }
@@ -317,7 +328,7 @@ template <typename T, typename ReturnType>
 ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
-    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
+    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -331,7 +342,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     if (in.eof())
     {
         if constexpr (throw_exception)
-            throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value");
         else
             return false;
     }
@@ -349,12 +360,12 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     constexpr int significant_digits = std::numeric_limits<UInt64>::digits10;
     readUIntTextUpToNSignificantDigits<significant_digits>(before_point, in);
 
-    int read_digits = in.count() - count_after_sign;
+    size_t read_digits = in.count() - count_after_sign;
 
     if (unlikely(read_digits > significant_digits))
     {
-        int before_point_additional_exponent = read_digits - significant_digits;
-        x = shift10(before_point, before_point_additional_exponent);
+        int before_point_additional_exponent = static_cast<int>(read_digits) - significant_digits;
+        x = static_cast<T>(shift10(before_point, before_point_additional_exponent));
     }
     else
     {
@@ -377,11 +388,11 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
             ++in.position();
 
         auto after_leading_zeros_count = in.count();
-        auto after_point_num_leading_zeros = after_leading_zeros_count - after_point_count;
+        int after_point_num_leading_zeros = static_cast<int>(after_leading_zeros_count - after_point_count);
 
         readUIntTextUpToNSignificantDigits<significant_digits>(after_point, in);
         read_digits = in.count() - after_leading_zeros_count;
-        after_point_exponent = (read_digits > significant_digits ? -significant_digits : -read_digits) - after_point_num_leading_zeros;
+        after_point_exponent = (read_digits > significant_digits ? -significant_digits : static_cast<int>(-read_digits)) - after_point_num_leading_zeros;
     }
 
     if (checkChar('e', in) || checkChar('E', in))
@@ -389,7 +400,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw ParsingException("Cannot read floating point value: nothing after exponent", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: nothing after exponent");
             else
                 return false;
         }
@@ -411,10 +422,10 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     }
 
     if (after_point)
-        x += shift10(after_point, after_point_exponent);
+        x += static_cast<T>(shift10(after_point, after_point_exponent));
 
     if (exponent)
-        x = shift10(x, exponent);
+        x = static_cast<T>(shift10(x, exponent));
 
     if (negative)
         x = -x;
@@ -427,7 +438,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw ParsingException("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: no digits read");
             else
                 return false;
         }
@@ -438,14 +449,14 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
             if (in.eof())
             {
                 if constexpr (throw_exception)
-                    throw ParsingException("Cannot read floating point value: nothing after plus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: nothing after plus sign");
                 else
                     return false;
             }
             else if (negative)
             {
                 if constexpr (throw_exception)
-                    throw ParsingException("Cannot read floating point value: plus after minus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value: plus after minus sign");
                 else
                     return false;
             }
@@ -486,7 +497,7 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
     bool negative = false;
     x = 0;
     bool after_point = false;
-    double power_of_ten = 1;
+    T power_of_ten = 1;
 
     if (buf.eof())
         throwReadAfterEOF();

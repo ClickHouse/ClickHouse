@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/database-engines/materialized-postgresql
 sidebar_position: 30
 sidebar_label: MaterializedPostgreSQL
 ---
@@ -95,9 +96,10 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::danger "Предупреждение"
-    Репликация **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
-	
+:::danger Предупреждение
+Репликация **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
+:::
+
 ## Пример использования {#example-of-use}
 
 ``` sql

@@ -12,7 +12,7 @@
 
 #include "MemoryStatisticsOS.h"
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -135,7 +135,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
     struct kinfo_proc kp;
     size_t len = sizeof(struct kinfo_proc);
 
-    if (-1 == ::sysctl(mib, 4, &kp, &len, NULL, 0))
+    if (-1 == ::sysctl(mib, 4, &kp, &len, nullptr, 0))
         throwFromErrno("Cannot sysctl(kern.proc.pid." + std::to_string(self) + ")", ErrorCodes::SYSTEM_ERROR);
 
     if (sizeof(struct kinfo_proc) != len)

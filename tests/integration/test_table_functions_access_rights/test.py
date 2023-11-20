@@ -40,7 +40,7 @@ def test_merge():
 
     instance.query("CREATE USER A")
     assert (
-        "it's necessary to have grant CREATE TEMPORARY TABLE ON *.*"
+        "it's necessary to have the grant CREATE TEMPORARY TABLE ON *.*"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -62,6 +62,41 @@ def test_merge():
     instance.query("GRANT SELECT ON default.table1 TO A")
     instance.query("GRANT INSERT ON default.table2 TO A")
     assert (
-        "it's necessary to have grant SELECT ON default.table2"
+        "it's necessary to have the grant SELECT ON default.table2"
         in instance.query_and_get_error(select_query, user="A")
+    )
+
+
+def test_view_if_permitted():
+    assert (
+        instance.query(
+            "SELECT * FROM viewIfPermitted(SELECT * FROM table1 ELSE null('x UInt32'))"
+        )
+        == "1\n"
+    )
+
+    expected_error = "requires a SELECT query with the result columns matching a table function after 'ELSE'"
+    assert expected_error in instance.query_and_get_error(
+        "SELECT * FROM viewIfPermitted(SELECT * FROM table1 ELSE null('x Int32'))"
+    )
+    assert expected_error in instance.query_and_get_error(
+        "SELECT * FROM viewIfPermitted(SELECT * FROM table1 ELSE null('y UInt32'))"
+    )
+
+    instance.query("CREATE USER A")
+    assert (
+        instance.query(
+            "SELECT * FROM viewIfPermitted(SELECT * FROM table1 ELSE null('x UInt32'))",
+            user="A",
+        )
+        == ""
+    )
+
+    instance.query("GRANT SELECT ON table1 TO A")
+    assert (
+        instance.query(
+            "SELECT * FROM viewIfPermitted(SELECT * FROM table1 ELSE null('x UInt32'))",
+            user="A",
+        )
+        == "1\n"
     )

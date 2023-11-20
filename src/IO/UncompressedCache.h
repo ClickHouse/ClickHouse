@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Common/LRUCache.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <Common/CacheBase.h>
 
 
 namespace ProfileEvents
@@ -36,26 +36,23 @@ struct UncompressedSizeWeightFunction
 
 /** Cache of decompressed blocks for implementation of CachedCompressedReadBuffer. thread-safe.
   */
-class UncompressedCache : public LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>
+class UncompressedCache : public CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>
 {
 private:
-    using Base = LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
+    using Base = CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 public:
-    explicit UncompressedCache(size_t max_size_in_bytes)
-        : Base(max_size_in_bytes) {}
+    UncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
+        : Base(cache_policy, max_size_in_bytes, 0, size_ratio) {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset)
     {
-        UInt128 key;
-
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
         hash.update(offset);
-        hash.get128(key);
 
-        return key;
+        return hash.get128();
     }
 
     template <typename LoadFunc>

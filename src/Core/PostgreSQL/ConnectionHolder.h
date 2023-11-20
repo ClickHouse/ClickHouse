@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 
@@ -20,11 +20,35 @@ class ConnectionHolder
 {
 
 public:
-    ConnectionHolder(PoolPtr pool_, ConnectionPtr connection_) : pool(pool_), connection(std::move(connection_)) {}
+    ConnectionHolder(PoolPtr pool_, ConnectionPtr connection_, bool auto_close_)
+        : pool(pool_)
+        , connection(std::move(connection_))
+        , auto_close(auto_close_)
+    {}
 
     ConnectionHolder(const ConnectionHolder & other) = delete;
 
-    ~ConnectionHolder() { pool->returnObject(std::move(connection)); }
+    void setBroken() { is_broken = true; }
+
+    ~ConnectionHolder()
+    {
+        if (auto_close)
+        {
+            connection.reset();
+        }
+        else if (is_broken)
+        {
+            try
+            {
+                connection->getRef().reset();
+            }
+            catch (...)
+            {
+                connection.reset();
+            }
+        }
+        pool->returnObject(std::move(connection));
+    }
 
     pqxx::connection & get()
     {
@@ -39,6 +63,8 @@ public:
 private:
     PoolPtr pool;
     ConnectionPtr connection;
+    bool auto_close;
+    bool is_broken = false;
 };
 
 using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;

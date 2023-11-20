@@ -21,9 +21,9 @@ namespace
     using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees>>;
 }
 
-void registerFunctionDegrees(FunctionFactory & factory)
+REGISTER_FUNCTION(Degrees)
 {
-    factory.registerFunction<FunctionDegrees>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDegrees>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

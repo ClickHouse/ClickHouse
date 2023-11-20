@@ -2,8 +2,6 @@
 
 #include <Common/ArenaUtils.h>
 
-#include <Functions/FunctionsConversion.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -13,7 +11,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -33,8 +31,8 @@ PartitionedSink::PartitionedSink(
     , context(context_)
     , sample_block(sample_block_)
 {
-    std::vector<ASTPtr> arguments(1, partition_by);
-    ASTPtr partition_by_string = makeASTFunction(FunctionToString::name, std::move(arguments));
+    ASTs arguments(1, partition_by);
+    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
 
     auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
     partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
@@ -111,6 +109,13 @@ void PartitionedSink::consume(Chunk chunk)
     }
 }
 
+void PartitionedSink::onException(std::exception_ptr exception)
+{
+    for (auto & [_, sink] : partition_id_to_sink)
+    {
+        sink->onException(exception);
+    }
+}
 
 void PartitionedSink::onFinish()
 {

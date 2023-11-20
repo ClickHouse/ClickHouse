@@ -1,8 +1,12 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+
+#include <Common/config_version.h>
 #include <Common/checkStackSize.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 
 namespace DB
 {
@@ -39,26 +43,37 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
-    UInt32 shard_num,
-    UInt32 shard_count,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator)
+    size_t shard_num,
+    size_t shard_count)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
-    auto interpreter = InterpreterSelectQuery(
-        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
+    auto new_context = Context::createCopy(context);
 
-    interpreter.setProperClientInfo();
-    if (coordinator)
+    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
+    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+
+    /// Do not apply AST optimizations, because query
+    /// is already optimized and some optimizations
+    /// can be applied only for non-distributed tables
+    /// and we can produce query, inconsistent with remote plans.
+    auto select_query_options = SelectQueryOptions(processed_stage)
+        .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
+        .ignoreASTOptimizations();
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        interpreter.setMergeTreeReadTaskCallbackAndClientInfo([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
-        {
-            return coordinator->handleRequest(request);
-        });
+        auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+        query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_ast, new_context, select_query_options);
+        interpreter.buildQueryPlan(*query_plan);
     }
 
-    interpreter.buildQueryPlan(*query_plan);
     addConvertingActions(*query_plan, header);
     return query_plan;
 }

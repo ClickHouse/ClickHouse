@@ -52,7 +52,7 @@ CREATE TABLE distributed (x UInt32) ENGINE = Distributed('test_cluster', 'defaul
         )
 
         remote.query(
-            "CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)"
+            "CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x"
         )
         instance_test_inserts_batching.query(
             """
@@ -61,7 +61,7 @@ CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster',
         )
 
         instance_test_inserts_local_cluster.query(
-            "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)"
+            "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x"
         )
         instance_test_inserts_local_cluster.query(
             """
@@ -71,12 +71,12 @@ CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_
 
         node1.query(
             """
-CREATE TABLE replicated(date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/replicated', 'node1', date, id, 8192)
+CREATE TABLE replicated(date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/replicated', 'node1') PARTITION BY toYYYYMM(date) ORDER BY id
 """
         )
         node2.query(
             """
-CREATE TABLE replicated(date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/replicated', 'node2', date, id, 8192)
+CREATE TABLE replicated(date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/replicated', 'node2') PARTITION BY toYYYYMM(date) ORDER BY id
 """
         )
 
@@ -94,12 +94,12 @@ CREATE TABLE distributed (date Date, id UInt32) ENGINE = Distributed('shard_with
 
         shard1.query(
             """
-CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE = MergeTree(d, x, 8192)"""
+CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x"""
         )
 
         shard2.query(
             """
-CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE = MergeTree(d, x, 8192)"""
+CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x"""
         )
 
         shard1.query(
@@ -143,7 +143,7 @@ CREATE TABLE distributed_one_replica_no_internal_replication (date Date, id UInt
 
         node2.query(
             """
-CREATE TABLE single_replicated(date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/single_replicated', 'node2', date, id, 8192)
+CREATE TABLE single_replicated(date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/single_replicated', 'node2') PARTITION BY toYYYYMM(date) ORDER BY id
 """
         )
 
@@ -228,11 +228,11 @@ def test_inserts_batching(started_cluster):
     # 4. Full batch of inserts after ALTER (that have different block structure).
     # 5. What was left to insert with the column structure before ALTER.
     expected = """\
-20000101_20000101_1_1_0\t[1]
-20000101_20000101_2_2_0\t[2,3,4]
-20000101_20000101_3_3_0\t[5,6,7]
-20000101_20000101_4_4_0\t[10,11,12]
-20000101_20000101_5_5_0\t[8,9]
+200001_1_1_0\t[1]
+200001_2_2_0\t[2,3,4]
+200001_3_3_0\t[5,6,7]
+200001_4_4_0\t[10,11,12]
+200001_5_5_0\t[8,9]
 """
     assert TSV(result) == TSV(expected)
 
@@ -246,12 +246,12 @@ def test_inserts_local(started_cluster):
 
 def test_inserts_single_replica_local_internal_replication(started_cluster):
     with pytest.raises(
-        QueryRuntimeException, match="Table default.single_replicated doesn't exist"
+        QueryRuntimeException, match="Table default.single_replicated does not exist"
     ):
         node1.query(
             "INSERT INTO distributed_one_replica_internal_replication VALUES ('2000-01-01', 1)",
             settings={
-                "insert_distributed_sync": "1",
+                "distributed_foreground_insert": "1",
                 "prefer_localhost_replica": "1",
                 # to make the test more deterministic
                 "load_balancing": "first_or_random",
@@ -265,7 +265,7 @@ def test_inserts_single_replica_internal_replication(started_cluster):
         node1.query(
             "INSERT INTO distributed_one_replica_internal_replication VALUES ('2000-01-01', 1)",
             settings={
-                "insert_distributed_sync": "1",
+                "distributed_foreground_insert": "1",
                 "prefer_localhost_replica": "0",
                 # to make the test more deterministic
                 "load_balancing": "first_or_random",
@@ -279,16 +279,17 @@ def test_inserts_single_replica_internal_replication(started_cluster):
 def test_inserts_single_replica_no_internal_replication(started_cluster):
     try:
         with pytest.raises(
-            QueryRuntimeException, match="Table default.single_replicated doesn't exist"
+            QueryRuntimeException,
+            match="Table default.single_replicated does not exist",
         ):
             node1.query(
                 "INSERT INTO distributed_one_replica_no_internal_replication VALUES ('2000-01-01', 1)",
                 settings={
-                    "insert_distributed_sync": "1",
+                    "distributed_foreground_insert": "1",
                     "prefer_localhost_replica": "0",
                 },
             )
-        assert node2.query("SELECT count(*) FROM single_replicated").strip() == "1"
+        assert node2.query("SELECT count(*) FROM single_replicated").strip() == "0"
     finally:
         node2.query("TRUNCATE TABLE single_replicated")
 

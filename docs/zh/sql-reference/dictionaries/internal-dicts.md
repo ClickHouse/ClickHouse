@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/dictionaries/internal-dicts
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 39
@@ -51,5 +52,3 @@ Geobase从文本文件加载。
 我们建议定期使用geobase更新字典。 在更新期间，生成新文件并将其写入单独的位置。 一切准备就绪后，将其重命名为服务器使用的文件。
 
 还有与操作系统标识符和Yandex的工作功能。Metrica搜索引擎，但他们不应该被使用。
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/internal_dicts/) <!--hide-->

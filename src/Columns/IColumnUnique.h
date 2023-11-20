@@ -65,14 +65,115 @@ public:
 
     virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
 
-    /// Returns dictionary hash which is sipHash is applied to each row of nested column.
+    /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
 
     const char * getFamilyName() const override { return "ColumnUnique"; }
     TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
 
-    /**
-     * Given some value (usually, of type @e ColumnType) @p value that is convertible to DB::StringRef, obtains its
+    void insert(const Field &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insert is not supported for ColumnUnique.");
+    }
+
+    void insertRangeFrom(const IColumn &, size_t, size_t) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertRangeFrom is not supported for ColumnUnique.");
+    }
+
+    void insertData(const char *, size_t) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for ColumnUnique.");
+    }
+
+    void insertDefault() override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefault is not supported for ColumnUnique.");
+    }
+
+    void popBack(size_t) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method popBack is not supported for ColumnUnique.");
+    }
+
+    void gather(ColumnGathererStream &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method gather is not supported for ColumnUnique.");
+    }
+
+    const char * deserializeAndInsertFromArena(const char *) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for ColumnUnique.");
+    }
+
+    ColumnPtr index(const IColumn &, size_t) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method index is not supported for ColumnUnique.");
+    }
+
+    ColumnPtr cut(size_t, size_t) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method cut is not supported for ColumnUnique.");
+    }
+
+    ColumnPtr filter(const IColumn::Filter &, ssize_t) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filter is not supported for ColumnUnique.");
+    }
+
+    void expand(const IColumn::Filter &, bool) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method expand is not supported for ColumnUnique.");
+    }
+
+    ColumnPtr permute(const IColumn::Permutation &, size_t) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method permute is not supported for ColumnUnique.");
+    }
+
+    ColumnPtr replicate(const IColumn::Offsets &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method replicate is not supported for ColumnUnique.");
+    }
+
+    void getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
+                    size_t, int, IColumn::Permutation &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getPermutation is not supported for ColumnUnique.");
+    }
+
+    void updatePermutation(PermutationSortDirection, PermutationSortStability,
+                    size_t, int, Permutation &, EqualRanges &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getPermutation is not supported for ColumnUnique.");
+    }
+
+    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for ColumnUnique.");
+    }
+
+    void updateWeakHash32(WeakHash32 &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateWeakHash32 is not supported for ColumnUnique.");
+    }
+
+    void updateHashFast(SipHash &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashFast is not supported for ColumnUnique.");
+    }
+
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnUnique.");
+    }
+
+    bool hasEqualValues() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
+    }
+
+    /** Given some value (usually, of type @e ColumnType) @p value that is convertible to DB::StringRef, obtains its
      * index in the DB::ColumnUnique::reverse_index hashtable.
      *
      * The reverse index (StringRef => UInt64) is built lazily, so there are two variants:
@@ -88,108 +189,6 @@ public:
      * index in the dictionary, which can be used to operate with the indices column.
      */
     virtual std::optional<UInt64> getOrFindValueIndex(StringRef value) const = 0;
-
-    void insert(const Field &) override
-    {
-        throw Exception("Method insert is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void insertRangeFrom(const IColumn &, size_t, size_t) override
-    {
-        throw Exception("Method insertRangeFrom is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void insertData(const char *, size_t) override
-    {
-        throw Exception("Method insertData is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void insertDefault() override
-    {
-        throw Exception("Method insertDefault is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void popBack(size_t) override
-    {
-        throw Exception("Method popBack is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void gather(ColumnGathererStream &) override
-    {
-        throw Exception("Method gather is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    const char * deserializeAndInsertFromArena(const char *) override
-    {
-        throw Exception("Method deserializeAndInsertFromArena is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    ColumnPtr index(const IColumn &, size_t) const override
-    {
-        throw Exception("Method index is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    ColumnPtr cut(size_t, size_t) const override
-    {
-        throw Exception("Method cut is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    ColumnPtr filter(const IColumn::Filter &, ssize_t) const override
-    {
-        throw Exception("Method filter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void expand(const IColumn::Filter &, bool) override
-    {
-        throw Exception("Method expand is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    ColumnPtr permute(const IColumn::Permutation &, size_t) const override
-    {
-        throw Exception("Method permute is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    ColumnPtr replicate(const IColumn::Offsets &) const override
-    {
-        throw Exception("Method replicate is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
-                    size_t, int, IColumn::Permutation &) const override
-    {
-        throw Exception("Method getPermutation is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void updatePermutation(PermutationSortDirection, PermutationSortStability,
-                    size_t, int, Permutation &, EqualRanges &) const override
-    {
-        throw Exception("Method getPermutation is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
-    {
-        throw Exception("Method scatter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void updateWeakHash32(WeakHash32 &) const override
-    {
-        throw Exception("Method updateWeakHash32 is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void updateHashFast(SipHash &) const override
-    {
-        throw Exception("Method updateHashFast is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception("Method compareColumn is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    bool hasEqualValues() const override
-    {
-        throw Exception("Method hasEqualValues is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
-    }
 };
 
 using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;

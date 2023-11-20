@@ -8,8 +8,7 @@
 #include <Core/Block.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/materialize.h>
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -23,7 +22,7 @@ ActionsDAGPtr addMissingDefaults(
     bool null_as_default)
 {
     auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-    auto & index = actions->getIndex();
+    auto & index = actions->getOutputs();
 
     /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
     /// First, remember the offset columns for all arrays in the block.

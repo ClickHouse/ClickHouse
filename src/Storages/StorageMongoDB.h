@@ -2,22 +2,17 @@
 
 #include <Poco/MongoDB/Connection.h>
 
-#include <base/shared_ptr_helper.h>
-
 #include <Storages/IStorage.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
-
 
 namespace DB
 {
 /* Implements storage in the MongoDB database.
- * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
+ * Use ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
  * Read only.
  */
 
-class StorageMongoDB final : public shared_ptr_helper<StorageMongoDB>, public IStorage
+class StorageMongoDB final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageMongoDB>;
 public:
     StorageMongoDB(
         const StorageID & table_id_,
@@ -41,20 +36,34 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
-    static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr context,
+        bool async_insert) override;
+
+    struct Configuration
+    {
+        std::string host;
+        UInt16 port;
+        std::string username;
+        std::string password;
+        std::string database;
+        std::string table;
+        std::string options;
+    };
+
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
     void connectIfNotConnected();
 
-    const std::string host;
-    const uint16_t port; /// NOLINT
     const std::string database_name;
     const std::string collection_name;
     const std::string username;
     const std::string password;
-    const std::string options;
     const std::string uri;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;

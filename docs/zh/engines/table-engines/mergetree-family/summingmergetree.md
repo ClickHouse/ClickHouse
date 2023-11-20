@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/summingmergetree
+---
 # SummingMergeTree {#summingmergetree}
 
 该引擎继承自 [MergeTree](mergetree.md)。区别在于，当合并 `SummingMergeTree` 表的数据片段时，ClickHouse 会把所有具有相同主键的行合并为一行，该行包含了被合并的行中具有数值数据类型的列的汇总值。如果主键的组合方式使得单个键值对应于大量的行，则可以显著的减少存储空间并加快数据查询的速度。
@@ -34,15 +37,18 @@
 
 <summary>已弃用的建表方法</summary>
 
-    :::info "注意"
-    不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::info "注意"
+不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::
 
-    CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-    (
-        name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-        name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-        ...
-    ) ENGINE [=] SummingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] SummingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
+```
 
 除 `columns` 外的所有参数都与 `MergeTree` 中的含义相同。
 
@@ -66,7 +72,9 @@ ORDER BY key
 
 向其中插入数据：
 
-    :) INSERT INTO summtt Values(1,1),(1,2),(2,1)
+``` sql
+INSERT INTO summtt Values(1,1),(1,2),(2,1)
+```
 
 ClickHouse可能不会完整的汇总所有行（[见下文](#data-processing)）,因此我们在查询中使用了聚合函数 `sum` 和 `GROUP BY` 子句。
 
@@ -120,5 +128,3 @@ ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含
 请求数据时，使用 [sumMap(key,value)](../../../engines/table-engines/mergetree-family/summingmergetree.md) 函数来对 `Map` 进行聚合。
 
 对于嵌套数据结构，你无需在列的元组中指定列以进行汇总。
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

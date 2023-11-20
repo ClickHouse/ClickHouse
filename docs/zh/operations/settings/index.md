@@ -1,5 +1,7 @@
 ---
 sidebar_label: 设置
+sidebar_position: 51
+slug: /zh/operations/settings/
 ---
 
 # 设置 {#settings}
@@ -25,5 +27,3 @@ sidebar_label: 设置
     -   使用HTTP API时，请传递CGI参数 (`URL?setting_1=value&setting_2=value...`).
 
 本节不介绍只能在服务器配置文件中进行的设置。
-
-[原始文章](https://clickhouse.com/docs/en/operations/settings/) <!--hide-->

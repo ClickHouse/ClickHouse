@@ -1,3 +1,5 @@
+#include "Common/ZooKeeper/IKeeper.h"
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
@@ -5,7 +7,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
-#include <base/logger_useful.h>
+#include <fmt/format.h>
+#include <Common/logger_useful.h>
 #include <array>
 
 
@@ -24,7 +27,17 @@ void ZooKeeperResponse::write(WriteBuffer & out) const
     if (error == Error::ZOK)
         writeImpl(buf);
     Coordination::write(buf.str(), out);
-    out.next();
+}
+
+std::string ZooKeeperRequest::toString() const
+{
+    return fmt::format(
+        "XID = {}\n"
+        "OpNum = {}\n"
+        "Additional info:\n{}",
+        xid,
+        getOpNum(),
+        toStringImpl());
 }
 
 void ZooKeeperRequest::write(WriteBuffer & out) const
@@ -35,7 +48,6 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
     Coordination::write(getOpNum(), buf);
     writeImpl(buf);
     Coordination::write(buf.str(), out);
-    out.next();
 }
 
 void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const
@@ -48,6 +60,11 @@ void ZooKeeperSyncRequest::readImpl(ReadBuffer & in)
     Coordination::read(path, in);
 }
 
+std::string ZooKeeperSyncRequest::toStringImpl() const
+{
+    return fmt::format("path = {}", path);
+}
+
 void ZooKeeperSyncResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
@@ -56,6 +73,41 @@ void ZooKeeperSyncResponse::readImpl(ReadBuffer & in)
 void ZooKeeperSyncResponse::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
+}
+
+void ZooKeeperReconfigRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(joining, out);
+    Coordination::write(leaving, out);
+    Coordination::write(new_members, out);
+    Coordination::write(version, out);
+}
+
+void ZooKeeperReconfigRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(joining, in);
+    Coordination::read(leaving, in);
+    Coordination::read(new_members, in);
+    Coordination::read(version, in);
+}
+
+std::string ZooKeeperReconfigRequest::toStringImpl() const
+{
+    return fmt::format(
+        "joining = {}\nleaving = {}\nnew_members = {}\nversion = {}",
+        joining, leaving, new_members, version);
+}
+
+void ZooKeeperReconfigResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(value, in);
+    Coordination::read(stat, in);
+}
+
+void ZooKeeperReconfigResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(value, out);
+    Coordination::write(stat, out);
 }
 
 void ZooKeeperWatchResponse::readImpl(ReadBuffer & in)
@@ -93,6 +145,15 @@ void ZooKeeperAuthRequest::readImpl(ReadBuffer & in)
     Coordination::read(data, in);
 }
 
+std::string ZooKeeperAuthRequest::toStringImpl() const
+{
+    return fmt::format(
+        "type = {}\n"
+        "scheme = {}",
+        type,
+        scheme);
+}
+
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
@@ -124,6 +185,17 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
         is_sequential = true;
 }
 
+std::string ZooKeeperCreateRequest::toStringImpl() const
+{
+    return fmt::format(
+        "path = {}\n"
+        "is_ephemeral = {}\n"
+        "is_sequential = {}",
+        path,
+        is_ephemeral,
+        is_sequential);
+}
+
 void ZooKeeperCreateResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(path_created, in);
@@ -138,6 +210,15 @@ void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
     Coordination::write(version, out);
+}
+
+std::string ZooKeeperRemoveRequest::toStringImpl() const
+{
+    return fmt::format(
+        "path = {}\n"
+        "version = {}",
+        path,
+        version);
 }
 
 void ZooKeeperRemoveRequest::readImpl(ReadBuffer & in)
@@ -156,6 +237,11 @@ void ZooKeeperExistsRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
     Coordination::read(has_watch, in);
+}
+
+std::string ZooKeeperExistsRequest::toStringImpl() const
+{
+    return fmt::format("path = {}", path);
 }
 
 void ZooKeeperExistsResponse::readImpl(ReadBuffer & in)
@@ -178,6 +264,11 @@ void ZooKeeperGetRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
     Coordination::read(has_watch, in);
+}
+
+std::string ZooKeeperGetRequest::toStringImpl() const
+{
+    return fmt::format("path = {}", path);
 }
 
 void ZooKeeperGetResponse::readImpl(ReadBuffer & in)
@@ -206,6 +297,15 @@ void ZooKeeperSetRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
+std::string ZooKeeperSetRequest::toStringImpl() const
+{
+    return fmt::format(
+        "path = {}\n"
+        "version = {}",
+        path,
+        version);
+}
+
 void ZooKeeperSetResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(stat, in);
@@ -228,6 +328,37 @@ void ZooKeeperListRequest::readImpl(ReadBuffer & in)
     Coordination::read(has_watch, in);
 }
 
+std::string ZooKeeperListRequest::toStringImpl() const
+{
+    return fmt::format("path = {}", path);
+}
+
+void ZooKeeperFilteredListRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(has_watch, out);
+    Coordination::write(static_cast<uint8_t>(list_request_type), out);
+}
+
+void ZooKeeperFilteredListRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+    Coordination::read(has_watch, in);
+
+    uint8_t read_request_type{0};
+    Coordination::read(read_request_type, in);
+    list_request_type = static_cast<ListRequestType>(read_request_type);
+}
+
+std::string ZooKeeperFilteredListRequest::toStringImpl() const
+{
+    return fmt::format(
+            "path = {}\n"
+            "list_request_type = {}",
+            path,
+            list_request_type);
+}
+
 void ZooKeeperListResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(names, in);
@@ -240,6 +371,15 @@ void ZooKeeperListResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(stat, out);
 }
 
+void ZooKeeperSimpleListResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(names, in);
+}
+
+void ZooKeeperSimpleListResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(names, out);
+}
 
 void ZooKeeperSetACLRequest::writeImpl(WriteBuffer & out) const
 {
@@ -253,6 +393,11 @@ void ZooKeeperSetACLRequest::readImpl(ReadBuffer & in)
     Coordination::read(path, in);
     Coordination::read(acls, in);
     Coordination::read(version, in);
+}
+
+std::string ZooKeeperSetACLRequest::toStringImpl() const
+{
+    return fmt::format("path = {}\n", "version = {}", path, version);
 }
 
 void ZooKeeperSetACLResponse::writeImpl(WriteBuffer & out) const
@@ -273,6 +418,11 @@ void ZooKeeperGetACLRequest::readImpl(ReadBuffer & in)
 void ZooKeeperGetACLRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
+}
+
+std::string ZooKeeperGetACLRequest::toStringImpl() const
+{
+    return fmt::format("path = {}", path);
 }
 
 void ZooKeeperGetACLResponse::writeImpl(WriteBuffer & out) const
@@ -299,19 +449,34 @@ void ZooKeeperCheckRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
+std::string ZooKeeperCheckRequest::toStringImpl() const
+{
+    return fmt::format("path = {}\n", "version = {}", path, version);
+}
+
 void ZooKeeperErrorResponse::readImpl(ReadBuffer & in)
 {
     Coordination::Error read_error;
     Coordination::read(read_error, in);
 
     if (read_error != error)
-        throw Exception(fmt::format("Error code in ErrorResponse ({}) doesn't match error code in header ({})", read_error, error),
-            Error::ZMARSHALLINGERROR);
+        throw Exception(Error::ZMARSHALLINGERROR, "Error code in ErrorResponse ({}) doesn't match error code in header ({})", read_error, error);
 }
 
 void ZooKeeperErrorResponse::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(error, out);
+}
+
+void ZooKeeperMultiRequest::checkOperationType(OperationType type)
+{
+    chassert(!operation_type.has_value() || *operation_type == type);
+    operation_type = type;
+}
+
+OpNum ZooKeeperMultiRequest::getOpNum() const
+{
+    return !operation_type.has_value() || *operation_type == OperationType::Write ? OpNum::Multi : OpNum::MultiRead;
 }
 
 ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
@@ -320,10 +485,12 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
     /// Note that deep copy is required to avoid modifying path in presence of chroot prefix.
     requests.reserve(generic_requests.size());
 
+    using enum OperationType;
     for (const auto & generic_request : generic_requests)
     {
         if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
         {
+            checkOperationType(Write);
             auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
             if (create->acls.empty())
                 create->acls = default_acls;
@@ -331,18 +498,41 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
         }
         else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
         {
+            checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
         }
         else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
         {
+            checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
         }
         else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
         {
+            checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
         }
+        else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
+        {
+            checkOperationType(Read);
+            requests.push_back(std::make_shared<ZooKeeperGetRequest>(*concrete_request_get));
+        }
+        else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(generic_request.get()))
+        {
+            checkOperationType(Read);
+            requests.push_back(std::make_shared<ZooKeeperExistsRequest>(*concrete_request_exists));
+        }
+        else if (const auto * concrete_request_simple_list = dynamic_cast<const ZooKeeperSimpleListRequest *>(generic_request.get()))
+        {
+            checkOperationType(Read);
+            requests.push_back(std::make_shared<ZooKeeperSimpleListRequest>(*concrete_request_simple_list));
+        }
+        else if (const auto * concrete_request_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(generic_request.get()))
+        {
+            checkOperationType(Read);
+            requests.push_back(std::make_shared<ZooKeeperFilteredListRequest>(*concrete_request_list));
+        }
         else
-            throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
     }
 }
 
@@ -373,7 +563,6 @@ void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 {
-
     while (true)
     {
         OpNum op_num;
@@ -386,9 +575,9 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
         if (done)
         {
             if (op_num != OpNum::Error)
-                throw Exception("Unexpected op_num received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
+                throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
             if (error != -1)
-                throw Exception("Unexpected error value received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
+                throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
             break;
         }
 
@@ -397,14 +586,24 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
         requests.push_back(request);
 
         if (in.eof())
-            throw Exception("Not enough results received for multi transaction", Error::ZMARSHALLINGERROR);
+            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Not enough results received for multi transaction");
     }
+}
+
+std::string ZooKeeperMultiRequest::toStringImpl() const
+{
+    auto out = fmt::memory_buffer();
+    for (const auto & request : requests)
+    {
+        const auto & zk_request = dynamic_cast<const ZooKeeperRequest &>(*request);
+        fmt::format_to(std::back_inserter(out), "SubRequest\n{}\n", zk_request.toString());
+    }
+    return {out.data(), out.size()};
 }
 
 bool ZooKeeperMultiRequest::isReadRequest() const
 {
-    /// Possibly we can do better
-    return false;
+    return getOpNum() == OpNum::MultiRead;
 }
 
 void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
@@ -420,7 +619,7 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         Coordination::read(op_error, in);
 
         if (done)
-            throw Exception("Not enough results received for multi transaction", Error::ZMARSHALLINGERROR);
+            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Not enough results received for multi transaction");
 
         /// op_num == -1 is special for multi transaction.
         /// For unknown reason, error code is duplicated in header and in response body.
@@ -441,6 +640,8 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
         if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
+
+        response->zxid = zxid;
     }
 
     /// Footer.
@@ -454,11 +655,11 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         Coordination::read(error_read, in);
 
         if (!done)
-            throw Exception("Too many results received for multi transaction", Error::ZMARSHALLINGERROR);
+            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Too many results received for multi transaction");
         if (op_num != OpNum::Error)
-            throw Exception("Unexpected op_num received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
+            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
         if (error_read != -1)
-            throw Exception("Unexpected error value received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
+            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
     }
 }
 
@@ -493,14 +694,39 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperHeartbeatResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSyncResponse>()); }
 ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperAuthResponse>()); }
-ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCreateResponse>()); }
 ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperRemoveResponse>()); }
 ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperExistsResponse>()); }
 ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperGetResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSetResponse>()); }
+ZooKeeperResponsePtr ZooKeeperReconfigRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperReconfigResponse>()); }
 ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperListResponse>()); }
-ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCheckResponse>()); }
-ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperMultiResponse>(requests)); }
+ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSimpleListResponse>()); }
+
+ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
+{
+    if (not_exists)
+        return setTime(std::make_shared<ZooKeeperCreateIfNotExistsResponse>());
+    return setTime(std::make_shared<ZooKeeperCreateResponse>());
+}
+
+ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const
+{
+    if (not_exists)
+        return setTime(std::make_shared<ZooKeeperCheckNotExistsResponse>());
+
+    return setTime(std::make_shared<ZooKeeperCheckResponse>());
+}
+
+ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const
+{
+    std::shared_ptr<ZooKeeperMultiResponse> response;
+    if (getOpNum() == OpNum::Multi)
+       response = std::make_shared<ZooKeeperMultiWriteResponse>(requests);
+    else
+       response = std::make_shared<ZooKeeperMultiReadResponse>(requests);
+
+    return setTime(std::move(response));
+}
 ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCloseResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSetACLRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSetACLResponse>()); }
 ZooKeeperResponsePtr ZooKeeperGetACLRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperGetACLResponse>()); }
@@ -547,7 +773,7 @@ void ZooKeeperRequest::createLogElements(LogElements & elems) const
     elem.has_watch = has_watch;
     elem.op_num = static_cast<uint32_t>(getOpNum());
     elem.path = getPath();
-    elem.request_idx = elems.size() - 1;
+    elem.request_idx = static_cast<uint32_t>(elems.size() - 1);
 }
 
 
@@ -585,7 +811,7 @@ void ZooKeeperCheckRequest::createLogElements(LogElements & elems) const
 void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
 {
     ZooKeeperRequest::createLogElements(elems);
-    elems.back().requests_size = requests.size();
+    elems.back().requests_size = static_cast<uint32_t>(requests.size());
     for (const auto & request : requests)
     {
         auto & req = dynamic_cast<ZooKeeperRequest &>(*request);
@@ -601,7 +827,10 @@ void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
     assert(!elem.xid || elem.xid == xid);
     elem.xid = xid;
     int32_t response_op = tryGetOpNum();
-    assert(!elem.op_num || elem.op_num == response_op || response_op < 0);
+
+    [[maybe_unused]] const bool is_filtered_list = elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredList)
+        && response_op == static_cast<int32_t>(Coordination::OpNum::List);
+    assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
     elem.op_num = response_op;
 
     elem.zxid = zxid;
@@ -674,7 +903,8 @@ void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) co
 void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 {
     if (!op_num_to_request.try_emplace(op_num, creator).second)
-        throw Coordination::Exception("Request type " + toString(op_num) + " already registered", Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        throw Coordination::Exception(Coordination::Error::ZRUNTIMEINCONSISTENCY,
+            "Request type {} already registered", op_num);
 }
 
 std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
@@ -729,7 +959,7 @@ ZooKeeperRequestPtr ZooKeeperRequestFactory::get(OpNum op_num) const
 {
     auto it = op_num_to_request.find(op_num);
     if (it == op_num_to_request.end())
-        throw Exception("Unknown operation type " + toString(op_num), Error::ZBADARGUMENTS);
+        throw Exception(Error::ZBADARGUMENTS, "Unknown operation type {}", op_num);
 
     return it->second();
 }
@@ -747,6 +977,14 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
     {
         auto res = std::make_shared<RequestT>();
         res->request_created_time_ns = clock_gettime_ns();
+
+        if constexpr (num == OpNum::MultiRead)
+            res->operation_type = ZooKeeperMultiRequest::OperationType::Read;
+        else if constexpr (num == OpNum::Multi)
+            res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
+        else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
+            res->not_exists = true;
+
         return res;
     });
 }
@@ -765,10 +1003,36 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::SimpleList, ZooKeeperSimpleListRequest>(*this);
     registerZooKeeperRequest<OpNum::List, ZooKeeperListRequest>(*this);
     registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
+    registerZooKeeperRequest<OpNum::Reconfig, ZooKeeperReconfigRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
+    registerZooKeeperRequest<OpNum::MultiRead, ZooKeeperMultiRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateIfNotExists, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
+    registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
+    registerZooKeeperRequest<OpNum::CheckNotExists, ZooKeeperCheckRequest>(*this);
+}
+
+PathMatchResult matchPath(std::string_view path, std::string_view match_to)
+{
+    using enum PathMatchResult;
+
+    if (path.ends_with('/'))
+        path.remove_suffix(1);
+
+    if (match_to.ends_with('/'))
+        match_to.remove_suffix(1);
+
+    auto [first_it, second_it] = std::mismatch(path.begin(), path.end(), match_to.begin(), match_to.end());
+
+    if (second_it != match_to.end())
+        return NOT_MATCH;
+
+    if (first_it == path.end())
+        return EXACT;
+
+    return *first_it == '/' ? IS_CHILD : NOT_MATCH;
 }
 
 }

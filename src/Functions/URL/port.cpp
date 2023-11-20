@@ -18,12 +18,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-struct FunctionPort : public IFunction
+template<bool conform_rfc>
+struct FunctionPortImpl : public IFunction
 {
-    static constexpr auto name = "port";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
-
-    String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -33,17 +30,17 @@ struct FunctionPort : public IFunction
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + std::to_string(arguments.size()) + ", should be 1 or 2",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                            getName(), arguments.size());
 
         if (!WhichDataType(arguments[0].type).isString())
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                "Must be String.", arguments[0].type->getName(), getName());
 
         if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isUInt16())
-            throw Exception("Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName() + ". Must be UInt16.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
+                "Must be UInt16.", arguments[1].type->getName(), getName());
 
         return std::make_shared<DataTypeUInt16>();
     }
@@ -56,7 +53,7 @@ struct FunctionPort : public IFunction
         {
             const auto * port_column = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
             if (!port_column)
-                throw Exception("Second argument for function " + getName() + " must be constant UInt16", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be constant UInt16", getName());
             default_port = port_column->getValue<UInt16>();
         }
 
@@ -71,9 +68,8 @@ struct FunctionPort : public IFunction
             return col_res;
         }
         else
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
 }
 
 private:
@@ -91,16 +87,21 @@ private:
 
     static UInt16 extractPort(UInt16 default_port, const ColumnString::Chars & buf, size_t offset, size_t size)
     {
-        const char * p = reinterpret_cast<const char *>(&buf[0]) + offset;
+        const char * p = reinterpret_cast<const char *>(buf.data()) + offset;
         const char * end = p + size;
 
-        StringRef host = getURLHost(p, size);
-        if (!host.size)
+        std::string_view host;
+        if constexpr (conform_rfc)
+            host = getURLHostRFC(p, size);
+        else
+            host = getURLHost(p, size);
+
+        if (host.empty())
             return default_port;
-        if (host.size == size)
+        if (host.size() == size)
             return default_port;
 
-        p = host.data + host.size;
+        p = host.data() + host.size();
         if (*p++ != ':')
             return default_port;
 
@@ -121,10 +122,32 @@ private:
     }
 };
 
-void registerFunctionPort(FunctionFactory & factory)
+struct FunctionPort : public FunctionPortImpl<false>
 {
-    factory.registerFunction<FunctionPort>();
+    static constexpr auto name = "port";
+    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
+};
+
+struct FunctionPortRFC : public FunctionPortImpl<true>
+{
+    static constexpr auto name = "portRFC";
+    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPortRFC>(); }
+};
+
+REGISTER_FUNCTION(Port)
+{
+    factory.registerFunction<FunctionPort>(FunctionDocumentation
+    {
+        .description=R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
+        .categories{"URL"}
+    });
+    factory.registerFunction<FunctionPortRFC>(FunctionDocumentation
+    {
+        .description=R"(Similar to `port`, but conforms to RFC 3986.)",
+        .categories{"URL"}
+    });
 }
 
 }
-

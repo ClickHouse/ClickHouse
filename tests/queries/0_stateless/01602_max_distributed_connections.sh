@@ -15,14 +15,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 i=0 retries=30
 while [[ $i -lt $retries ]]; do
-    clickhouse_client_timeout 10 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 10 --query "
+    timeout 10 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 10 --query "
         SELECT sleep(1.5) FROM remote('127.{1..10}', system.one) FORMAT Null" --prefer_localhost_replica=0 && break
     ((++i))
 done
 
 i=0 retries=30
 while [[ $i -lt $retries ]]; do
-    clickhouse_client_timeout 10 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 10 --query "
+    timeout 10 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 10 --query "
         SELECT sleep(1.5) FROM remote('127.{1..10}', system.one) FORMAT Null" --prefer_localhost_replica=1 && break
     ((++i))
 done
@@ -30,13 +30,10 @@ done
 # If max_distributed_connections is low and async_socket_for_remote is disabled,
 #  the concurrency of distributed queries will be also low.
 
-clickhouse_client_timeout 1 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 1 --async_socket_for_remote 0 --query "
+timeout 1 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 1 --async_socket_for_remote 0 --query "
     SELECT sleep(0.15) FROM remote('127.{1..10}', system.one) FORMAT Null" --prefer_localhost_replica=0 && echo 'Fail'
 
-clickhouse_client_timeout 1 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 1 --async_socket_for_remote 0 --query "
+timeout 1 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 1 --async_socket_for_remote 0 --query "
     SELECT sleep(0.15) FROM remote('127.{1..10}', system.one) FORMAT Null" --prefer_localhost_replica=1 && echo 'Fail'
-
-# FIXME
-clickhouse_test_wait_queries 5
 
 echo 'Ok'
