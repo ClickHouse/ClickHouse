@@ -33,7 +33,6 @@ if (SPLIT_DEBUG_SYMBOLS)
     clickhouse_split_debug_symbols(TARGET clickhouse-odbc-bridge DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLITTED_DEBUG_SYMBOLS_DIR} BINARY_PATH ../clickhouse-odbc-bridge)
 else()
     clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse-odbc-bridge DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLITTED_DEBUG_SYMBOLS_DIR})
-    install(TARGETS clickhouse-odbc-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 
 if(ENABLE_TESTS)

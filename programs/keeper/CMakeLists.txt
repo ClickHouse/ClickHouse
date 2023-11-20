@@ -15,8 +15,6 @@ set (CLICKHOUSE_KEEPER_LINK
 
 clickhouse_program_add(keeper)
 
-install(FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-keeper" COMPONENT clickhouse-keeper)
-
 if (BUILD_STANDALONE_KEEPER)
     # Straight list of all required sources
     set(CLICKHOUSE_KEEPER_STANDALONE_SOURCES
@@ -208,6 +206,5 @@ if (BUILD_STANDALONE_KEEPER)
         clickhouse_split_debug_symbols(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLITTED_DEBUG_SYMBOLS_DIR} BINARY_PATH ../clickhouse-keeper)
     else()
         clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLITTED_DEBUG_SYMBOLS_DIR})
-        install(TARGETS clickhouse-keeper RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
 endif()

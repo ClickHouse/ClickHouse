@@ -24,5 +24,4 @@ foreach (name
 
     clickhouse
 )
-    install(FILES ${name} DESTINATION ${out})
 endforeach()
