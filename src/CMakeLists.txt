@@ -1,3 +1,5 @@
+add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
@@ -297,7 +299,8 @@ set_source_files_properties(
         Common/Elf.cpp
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE}")
+        Common/ThreadFuzzer.cpp
+        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
@@ -601,8 +604,6 @@ if (TARGET ch_rust::skim)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
-include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
-
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
@@ -654,6 +655,4 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::fdb_c)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::fdb_c)
     endif()
-
-    add_check(unit_tests_dbms)
 endif ()

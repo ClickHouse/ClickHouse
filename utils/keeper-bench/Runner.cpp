@@ -11,10 +11,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
+
 namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB::ErrorCodes
@@ -107,7 +109,7 @@ Runner::Runner(
 
     std::cerr << "---- Run options ----\n" << std::endl;
 
-    pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency);
+    pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency);
     queue.emplace(concurrency);
 }
 
@@ -541,4 +543,3 @@ Runner::~Runner()
     generator->cleanup(*connections[0]);
     DB::FoundationDBNetwork::shutdownIfNeed();
 }
-
