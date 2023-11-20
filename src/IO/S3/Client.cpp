@@ -468,7 +468,7 @@ Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) c
         request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
 }
 
-Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & request) const
+Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
