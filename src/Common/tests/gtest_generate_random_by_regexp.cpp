@@ -71,7 +71,7 @@ UInt64 elapsed(DB::ObjectStorageKeysGeneratorPtr generator)
 
     Stopwatch watch;
 
-    for (int i = 0; i < 10000; ++i)
+    for (int i = 0; i < 20000; ++i)
     {
         [[ maybe_unused ]] auto result = generator->generate(path).serialize();
     }
@@ -81,17 +81,21 @@ UInt64 elapsed(DB::ObjectStorageKeysGeneratorPtr generator)
 
 TEST(ObjectStorageKey, Performance)
 {
-    auto elapsed_old = elapsed(DB::createObjectStorageKeysGeneratorByPrefix("mergetree/"));
+    auto elapsed_old = elapsed(DB::createObjectStorageKeysGeneratorByPrefix(
+            "xx-xx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/mergetree/"));
     std::cerr << "old: " << elapsed_old << std::endl;
 
-    auto elapsed_new = elapsed(DB::createObjectStorageKeysGeneratorByTemplate("mergetree/[a-z]{3}/[a-z]{29}"));
+    auto elapsed_new = elapsed(DB::createObjectStorageKeysGeneratorByTemplate(
+            "xx-xx-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/mergetree/[a-z]{3}/[a-z]{29}"));
     std::cerr << "new: " << elapsed_new << std::endl;
 
     if (elapsed_new > elapsed_old)
     {
-        auto diff = elapsed_new - elapsed_old;
-        std::cerr << "slow ratio: " << float(diff) / elapsed_old << std::endl;
-        ASSERT_GT(1.1 * elapsed_old, elapsed_new);
+        if (elapsed_new > elapsed_old)
+            std::cerr << "slow ratio: +" << float(elapsed_new) / elapsed_old << std::endl;
+        else
+            std::cerr << "fast ratio: " << float(elapsed_old) / elapsed_new << std::endl;
+        ASSERT_LT(elapsed_new, 2 * elapsed_old);
     }
 
 }
