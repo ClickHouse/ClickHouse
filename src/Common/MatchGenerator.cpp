@@ -49,7 +49,7 @@ class RandomStringPrepareWalker : public Regexp::Walker<Regexp *>
 private:
     static constexpr int ImplicitMax = 100;
 
-    using Children = std::vector<Regexp*>;
+    using Children = std::vector<Regexp *>;
 
     class Generators;
 
@@ -57,187 +57,226 @@ private:
     class NodeFunction
     {
     public:
-        virtual String operator() (const Generators& generators) = 0;
+        virtual String operator() () = 0;
         virtual ~NodeFunction() = default;
     };
 
     using NodeFunctionPtr = std::shared_ptr<NodeFunction>;
+    using NodeFuncs = std::vector<NodeFunctionPtr>;
+
+    static NodeFuncs getFuncs(Children children_, const Generators & generators_)
+    {
+        NodeFuncs result;
+        result.reserve(children_.size());
+
+        for (auto * child: children_)
+        {
+            result.push_back(generators_.at(child));
+        }
+
+        return result;
+    }
 
     class Generators: public std::map<re2::Regexp *, NodeFunctionPtr> {};
 
     class RegexpConcatFunction : public NodeFunction
     {
     public:
-        RegexpConcatFunction(Children children_)
-            : children(std::move(children_))
-        {}
-
-        String operator () (const Generators& generators_) override
+        RegexpConcatFunction(Children children_, const Generators & generators_)
+            : children(getFuncs(children_, generators_))
         {
-            String result;
-            for (auto child: children)
+        }
+
+        String operator () () override
+        {
+            size_t total_size = 0;
+
+            std::vector<String> part_result;
+            part_result.reserve(children.size());
+            for (auto & child: children)
             {
-                auto res = generators_.at(child)->operator()(generators_);
-                result.append(res);
+                part_result.push_back(child->operator()());
+                total_size += part_result.back().size();
             }
+
+            String result;
+            result.reserve(total_size);
+            for (auto & part: part_result)
+            {
+                result += part;
+            }
+
             return result;
         }
 
     private:
-        Children children;
+        NodeFuncs children;
     };
 
     class RegexpAlternateFunction : public NodeFunction
     {
     public:
-        RegexpAlternateFunction(Children children_)
-            : children(std::move(children_))
-        {}
+        RegexpAlternateFunction(Children children_, const Generators & generators_)
+            : children(getFuncs(children_, generators_))
+        {
+        }
 
-        String operator () (const Generators& generators_) override
+        String operator () () override
         {
             std::uniform_int_distribution<int> distribution(0, static_cast<int>(children.size()-1));
             int chosen = distribution(thread_local_rng);
-            return generators_.at(children[chosen])->operator()(generators_);
+            return children[chosen]->operator()();
         }
 
     private:
-        Children children;
+        NodeFuncs children;
     };
 
     class RegexpRepeatFunction : public NodeFunction
     {
     public:
-        RegexpRepeatFunction(Regexp * re_, int min_repeat_, int max_repeat_)
-            : re(re_)
+        RegexpRepeatFunction(Regexp * re_, const Generators & generators_, int min_repeat_, int max_repeat_)
+            : func(generators_.at(re_))
             , min_repeat(min_repeat_)
             , max_repeat(max_repeat_)
-        {}
+        {
+        }
 
-        String operator () (const Generators& generators_) override
+        String operator () () override
         {
             std::uniform_int_distribution<int> distribution(min_repeat, max_repeat);
             int chosen = distribution(thread_local_rng);
 
             String result;
             for (int i = 0; i < chosen; ++i)
-                result.append(generators_.at(re)->operator()(generators_));
+                result += func->operator()();
             return result;
         }
 
     private:
-        Regexp * re;
+        NodeFunctionPtr func;
         int min_repeat = 0;
         int max_repeat = 0;
     };
 
     class RegexpCharClassFunction : public NodeFunction
     {
+        using CharRanges = std::vector<std::pair<re2::Rune, re2::Rune>>;
+
     public:
         RegexpCharClassFunction(Regexp * re_)
-            : re(re_)
-        {}
-
-        String operator () (const Generators&) override
         {
-            CharClass * cc = re->cc();
+            CharClass * cc = re_->cc();
+            chassert(cc);
             if (cc->empty())
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "kRegexpCharClass is empty");
 
-            std::uniform_int_distribution<int> distribution(1, cc->size());
+            char_count = cc->size();
+            char_ranges.reserve(std::distance(cc->begin(), cc->end()));
+
+            for (auto it = cc->begin(); it != cc->end(); ++it)
+            {
+                char_ranges.emplace_back(it->lo, it->hi);
+            }
+        }
+
+        String operator () () override
+        {
+            std::uniform_int_distribution<int> distribution(1, char_count);
             int chosen = distribution(thread_local_rng);
             int count_down = chosen;
 
-            auto it = cc->begin();
-            for (; it != cc->end(); ++it)
+            auto it = char_ranges.begin();
+            for (; it != char_ranges.end(); ++it)
             {
-                auto range_len = it->hi - it->lo + 1;
+                auto [lo, hi] = *it;
+                auto range_len = hi - lo + 1;
                 if (count_down <= range_len)
                     break;
                 count_down -= range_len;
             }
 
-            if (it == cc->end())
+            if (it == char_ranges.end())
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-                                    "Unable to choose the rune. Runes {}, chosen {}",
-                                    cc->size(), chosen);
+                                    "Unable to choose the rune. Runes {}, ranges {}, chosen {}",
+                                    char_count, char_ranges.size(), chosen);
 
-            Rune r = it->lo + count_down - 1;
-            char buffer[UTFmax+1];
-            buffer[re2::runetochar(buffer, &r)] = 0;
-            return String(buffer);
+            auto [lo, _] = *it;
+            Rune r = lo + count_down - 1;
+            int n = re2::runetochar(buffer, &r);
+            return String(buffer, n);
         }
 
     private:
-        Regexp * re;
+        char buffer[UTFmax];
+        int char_count = 0;
+        CharRanges char_ranges;
     };
 
     class RegexpLiteralStringFunction : public NodeFunction
     {
     public:
         RegexpLiteralStringFunction(Regexp * re_)
-            : re(re_)
-        {}
-
-        String operator () (const Generators&) override
         {
-            if (re->nrunes() == 0)
-                return String();
+            if (re_->nrunes() == 0)
+                return;
 
-            String result;
-            char buffer[UTFmax+1];
-            for (int i = 0; i < re->nrunes(); ++i)
+            char buffer[UTFmax];
+            for (int i = 0; i < re_->nrunes(); ++i)
             {
-                buffer[re2::runetochar(buffer, &re->runes()[i])] = 0;
-                result.append(buffer);
+                int n = re2::runetochar(buffer, &re_->runes()[i]);
+                literal_string += String(buffer, n);
             }
-            return result;
+        }
+
+        String operator () () override
+        {
+            return literal_string;
         }
 
     private:
-        Regexp * re;
+        String literal_string;
     };
 
     class RegexpLiteralFunction : public NodeFunction
     {
     public:
         RegexpLiteralFunction(Regexp * re_)
-            : re(re_)
-        {}
-
-        String operator () (const Generators&) override
         {
-            String result;
-            char buffer[UTFmax+1];
+            char buffer[UTFmax];
 
-            Rune r = re->rune();
-            buffer[re2::runetochar(buffer, &r)] = 0;
-            result.append(buffer);
+            Rune r = re_->rune();
+            int n = re2::runetochar(buffer, &r);
+            literal = String(buffer, n);
+        }
 
-            return result;
+        String operator () () override
+        {
+            return literal;
         }
 
     private:
-        Regexp * re;
+        String literal;
     };
 
     class ThrowExceptionFunction : public NodeFunction
     {
     public:
         ThrowExceptionFunction(Regexp * re_)
-            : re(re_)
-        {}
+            : operation(magic_enum::enum_name(re_->op()))
+        {
+        }
 
-        String operator () (const Generators&) override
+        String operator () () override
         {
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
                 "RandomStringPrepareWalker: regexp node '{}' is not supported for generating a random match",
-                magic_enum::enum_name(re->op()));
+                operation);
         }
 
     private:
-        Regexp * re;
+        String operation;
     };
 
 
@@ -257,8 +296,8 @@ public:
         if (generators.size() == 0)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "no generators");
 
-        auto result = [generators_ = std::move(generators), root_ = std::move(root)] () -> String {
-            return generators_.at(root_)->operator()(generators_);
+        auto result = [root_func = generators.at(root)] () -> String {
+            return root_func->operator()();
         };
 
         root = nullptr;
@@ -309,22 +348,22 @@ private:
         switch (re->op())
         {
             case kRegexpConcat: // Matches concatenation of sub_[0..nsub-1].
-                generators[re] = std::make_shared<RegexpConcatFunction>(CopyChildrenArgs(child_args, nchild_args));
+                generators[re] = std::make_shared<RegexpConcatFunction>(CopyChildrenArgs(child_args, nchild_args), generators);
                 break;
             case kRegexpAlternate: // Matches union of sub_[0..nsub-1].
-                generators[re] = std::make_shared<RegexpAlternateFunction>(CopyChildrenArgs(child_args, nchild_args));
+                generators[re] = std::make_shared<RegexpAlternateFunction>(CopyChildrenArgs(child_args, nchild_args), generators);
                 break;
             case kRegexpQuest: // Matches sub_[0] zero or one times.
                 chassert(nchild_args == 1);
-                generators[re] = std::make_shared<RegexpRepeatFunction>(child_args[0], 0, 1);
+                generators[re] = std::make_shared<RegexpRepeatFunction>(child_args[0], generators, 0, 1);
                 break;
             case kRegexpStar: // Matches sub_[0] zero or more times.
                 chassert(nchild_args == 1);
-                generators[re] = std::make_shared<RegexpRepeatFunction>(child_args[0], 0, ImplicitMax);
+                generators[re] = std::make_shared<RegexpRepeatFunction>(child_args[0], generators, 0, ImplicitMax);
                 break;
             case kRegexpPlus: // Matches sub_[0] one or more times.
                 chassert(nchild_args == 1);
-                generators[re] = std::make_shared<RegexpRepeatFunction>(child_args[0], 1, ImplicitMax);
+                generators[re] = std::make_shared<RegexpRepeatFunction>(child_args[0], generators, 1, ImplicitMax);
                 break;
             case kRegexpCharClass: // Matches character class given by cc_.
                 chassert(nchild_args == 0);
@@ -340,7 +379,7 @@ private:
                 break;
             case kRegexpCapture: // Parenthesized (capturing) subexpression.
                 chassert(nchild_args == 1);
-                generators[re] = generators[child_args[0]];
+                generators[re] = generators.at(child_args[0]);
                 break;
 
             case kRegexpNoMatch: // Matches no strings.
@@ -383,6 +422,7 @@ RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(String re_str, bool
 {
     re2::RE2::Options options;
     options.set_case_sensitive(true);
+    options.set_encoding(re2::RE2::Options::EncodingLatin1);
     auto flags = static_cast<re2::Regexp::ParseFlags>(options.ParseFlags());
 
     re2::RegexpStatus status;
