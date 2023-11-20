@@ -1,8 +1,0 @@
-<clickhouse>
-    <query_log>
-        <order_by>event_date, event_time, initial_query_id</order_by>
-    </query_log>
-    <query_thread_log>
-        <order_by>event_date, event_time, query_id</order_by>
-    </query_thread_log>
-</clickhouse>

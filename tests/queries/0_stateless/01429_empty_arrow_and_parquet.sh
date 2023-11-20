@@ -2,8 +2,6 @@
 # Tags: no-fasttest
 
 set -e
-# Fail `A | B` if A fails.
-set -o pipefail
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,8 +25,3 @@ ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_empty_data"
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_empty_data"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_empty_data"
-
-# Test with clickhouse-local too. (It used to crash because header block had const columns.)
-$CLICKHOUSE_LOCAL -q "select 1 as x where 0 format Arrow" | $CLICKHOUSE_LOCAL --input-format Arrow --structure="x Int8" -q "select count() from table"
-$CLICKHOUSE_LOCAL -q "select 1 as x where 0 format ArrowStream" | $CLICKHOUSE_LOCAL --input-format ArrowStream --structure="x Int8" -q "select count() from table"
-$CLICKHOUSE_LOCAL -q "select 1 as x where 0 format Parquet" | $CLICKHOUSE_LOCAL --input-format Parquet --structure="x Int8" -q "select count() from table"

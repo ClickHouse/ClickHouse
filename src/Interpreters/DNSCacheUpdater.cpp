@@ -2,7 +2,6 @@
 
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB

@@ -19,7 +19,6 @@ parser.add_argument(
     choices=["main", "all-queries"],
     help="Which report to build",
 )
-parser.add_argument("--no-tests-run", action="store_true", default=False)
 args = parser.parse_args()
 
 tables = []
@@ -355,36 +354,6 @@ if args.report == "main":
 
     add_tested_commits()
 
-    def print_status(status, message):
-        print(
-            (
-                """
-        <!--status: {status}-->
-        <!--message: {message}-->
-        """.format(
-                    status=status, message=message
-                )
-            )
-        )
-
-    if args.no_tests_run:
-        for t in tables:
-            print(t)
-        print(
-            "<h2>No tests to run. Only changed tests were run, but all changed tests are from another batch.</h2>"
-        )
-        print(
-            f"""
-        </div>
-        {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
-        </body>
-        </html>
-        """
-        )
-        # Why failure? Because otherwise we will not notice if we have a bug that leads to 0 tests being run
-        print_status("failure", "No tests changed, nothing to run")
-        exit(0)
-
     run_error_rows = tsvRows("run-errors.tsv")
     error_tests += len(run_error_rows)
     addSimpleTable("Run Errors", ["Test", "Error"], run_error_rows)
@@ -392,6 +361,20 @@ if args.report == "main":
         errors_explained.append(
             [
                 f'<a href="#{currentTableAnchor()}">There were some errors while running the tests</a>'
+            ]
+        )
+
+    slow_on_client_rows = tsvRows("report/slow-on-client.tsv")
+    error_tests += len(slow_on_client_rows)
+    addSimpleTable(
+        "Slow on Client",
+        ["Client time,&nbsp;s", "Server time,&nbsp;s", "Ratio", "Test", "Query"],
+        slow_on_client_rows,
+    )
+    if slow_on_client_rows:
+        errors_explained.append(
+            [
+                f'<a href="#{currentTableAnchor()}">Some queries are taking noticeable time client-side (missing `FORMAT Null`?)</a>'
             ]
         )
 
@@ -643,9 +626,7 @@ if args.report == "main":
         message_array.append(str(faster_queries) + " faster")
 
     if slower_queries:
-        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/tests/ci/performance_comparison_check.py#L225
-        # False positives rate should be < 1%: https://shorturl.at/CDEK8
-        if slower_queries > 5:
+        if slower_queries > 3:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
 
@@ -677,7 +658,16 @@ if args.report == "main":
         status = "failure"
         message = "Errors while building the report."
 
-    print_status(status, message)
+    print(
+        (
+            """
+    <!--status: {status}-->
+    <!--message: {message}-->
+    """.format(
+                status=status, message=message
+            )
+        )
+    )
 
 elif args.report == "all-queries":
     print((header_template.format()))

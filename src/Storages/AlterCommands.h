@@ -167,8 +167,6 @@ struct AlterCommand
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
 
-    bool isDropSomething() const;
-
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
@@ -198,11 +196,8 @@ public:
     /// Commands have to be prepared before apply.
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
-    /// At least one command modify settings or comments.
-    bool hasNonReplicatedAlterCommand() const;
-
-    /// All commands modify settings or comments.
-    bool areNonReplicatedAlterCommands() const;
+    /// At least one command modify settings.
+    bool hasSettingsAlterCommand() const;
 
     /// All commands modify settings only.
     bool isSettingsAlter() const;

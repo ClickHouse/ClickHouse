@@ -19,7 +19,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -157,11 +156,11 @@ void buildLayoutConfiguration(
 
         const auto value_field = value_literal->value;
 
-        if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
+        if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::String)
         {
             throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary layout parameter value must be an UInt64, Float64 or String, got '{}' instead",
+                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
                 value_field.getTypeName());
         }
 
@@ -323,7 +322,7 @@ void buildSingleAttribute(
 
 
 /** Transforms
-  *   PRIMARY KEY Attr1, ..., AttrN
+  *   PRIMARY KEY Attr1 ,..., AttrN
   * to the next configuration
   *  <id><name>Attr1</name></id>
   * or
@@ -572,24 +571,11 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 }
 
-void checkLifetime(const ASTCreateQuery & query)
-{
-    if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct")
-    {
-        if (query.dictionary->lifetime)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
-                query.dictionary->layout->layout_type);
-    }
-}
-
 
 DictionaryConfigurationPtr
 getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
 {
     checkAST(query);
-    checkLifetime(query);
 
     AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());
     AutoPtr<Poco::XML::Element> document_root(xml_document->createElement("dictionaries"));
@@ -628,16 +614,6 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     checkPrimaryKey(all_attr_names_and_types, pk_attrs);
 
-    /// If the pk size is 1 and pk's DataType is not number, we should convert to complex.
-    /// NOTE: the data type of Numeric key(simple layout) is UInt64, so if the type is not under UInt64, type casting will lead to precision loss.
-    DataTypePtr first_key_type = DataTypeFactory::instance().get(all_attr_names_and_types.find(pk_attrs[0])->second.type);
-    if ((pk_attrs.size() > 1 || (pk_attrs.size() == 1 && !isNumber(first_key_type)))
-        && !complex
-        && DictionaryFactory::instance().convertToComplex(dictionary_layout->layout_type))
-    {
-        complex = true;
-    }
-
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
@@ -673,12 +649,10 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
 
-    info.query = config->getString("dictionary.source.clickhouse.query", "");
-
-    if (!table.empty())
-        info.table_name = {database, table};
-    else if (info.query.empty())
+    if (table.empty())
         return {};
+
+    info.table_name = {database, table};
 
     try
     {

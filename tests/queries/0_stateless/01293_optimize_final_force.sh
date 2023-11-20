@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-debug, no-s3-storage
-# This test is too slow with S3 storage and debug modes.
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -86,8 +86,6 @@ public:
 REGISTER_FUNCTION(Today)
 {
     factory.registerFunction<TodayOverloadResolver>();
-    factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::CaseInsensitive);
 }
 
 }

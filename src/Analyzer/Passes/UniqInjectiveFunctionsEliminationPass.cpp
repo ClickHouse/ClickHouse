@@ -31,7 +31,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<UniqInjectiveFunctionsEliminationVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_injective_functions_inside_uniq)
             return;

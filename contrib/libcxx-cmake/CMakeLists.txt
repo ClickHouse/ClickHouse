@@ -1,3 +1,5 @@
+include(CheckCXXCompilerFlag)
+
 set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
 
 set(SRCS
@@ -59,10 +61,17 @@ target_include_directories(cxx SYSTEM BEFORE PUBLIC  $<$<COMPILE_LANGUAGE:CXX>:$
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
 
 # Enable capturing stack traces for all exceptions.
-target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+if (USE_UNWIND)
+    target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+endif ()
 
 if (USE_MUSL)
     target_compile_definitions(cxx PUBLIC -D_LIBCPP_HAS_MUSL_LIBC=1)
+endif ()
+
+# Override the deduced attribute support that causes error.
+if (OS_DARWIN AND COMPILER_GCC)
+    add_compile_definitions(_LIBCPP_INIT_PRIORITY_MAX)
 endif ()
 
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
@@ -74,6 +83,11 @@ target_compile_options(cxx PRIVATE -w)
 target_compile_definitions(cxx PUBLIC -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS)
 
 target_link_libraries(cxx PUBLIC cxxabi)
+
+# For __udivmodti4, __divmodti4.
+if (OS_DARWIN AND COMPILER_GCC)
+    target_link_libraries(cxx PRIVATE gcc)
+endif ()
 
 install(
     TARGETS cxx
