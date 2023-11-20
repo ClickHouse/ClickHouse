@@ -8972,7 +8972,7 @@ void StorageReplicatedMergeTree::createTableSharedID() const
         else if (code == Coordination::Error::ZNONODE) /// table completely dropped, we can choose any id we want
         {
             id = toString(UUIDHelpers::Nil);
-            LOG_DEBUG(log, "Table was completely drop, we can use anything as ID (will use {})", id);
+            LOG_DEBUG(log, "Table was completely dropped, and we can use anything as ID (will use {})", id);
         }
         else if (code != Coordination::Error::ZOK)
         {

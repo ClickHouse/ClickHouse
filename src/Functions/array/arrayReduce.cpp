@@ -182,10 +182,19 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
         that->addBatchArray(0, input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
-    for (size_t i = 0; i < input_rows_count; ++i)
-        /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-        /// correctly if result contains AggregateFunction's states
-        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+    if (agg_func.isState())
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+            /// correctly if result contains AggregateFunction's states
+            agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+    }
+    else
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            agg_func.insertResultInto(places[i], res_col, arena.get());
+    }
+
     return result_holder;
 }
 

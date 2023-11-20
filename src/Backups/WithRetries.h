@@ -26,6 +26,9 @@ public:
         Float64 keeper_fault_injection_probability{0};
         UInt64 keeper_fault_injection_seed{42};
         UInt64 keeper_value_max_size{1048576};
+        UInt64 batch_size_for_keeper_multi{1000};
+
+        static KeeperSettings fromContext(ContextPtr context);
     };
 
     /// For simplicity a separate ZooKeeperRetriesInfo and a faulty [Zoo]Keeper client
@@ -53,6 +56,8 @@ public:
 
     /// Used to re-establish new connection inside a retry loop.
     void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;
+
+    const KeeperSettings & getKeeperSettings() const;
 private:
     /// This will provide a special wrapper which is useful for testing
     FaultyKeeper getFaultyZooKeeper() const;

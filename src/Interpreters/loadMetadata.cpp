@@ -32,6 +32,7 @@ namespace CurrentMetrics
 {
     extern const Metric StartupSystemTablesThreads;
     extern const Metric StartupSystemTablesThreadsActive;
+    extern const Metric StartupSystemTablesThreadsScheduled;
 }
 
 namespace DB
@@ -377,7 +378,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         if (!tables_started)
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
+            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive, CurrentMetrics::StartupSystemTablesThreadsScheduled);
             DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
         }
 
@@ -472,7 +473,7 @@ void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
 
 void startupSystemTables()
 {
-    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
+    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive, CurrentMetrics::StartupSystemTablesThreadsScheduled);
     DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
 }
 
