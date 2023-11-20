@@ -47,7 +47,7 @@ void ZooKeeperWithFaultInjection::injectFailureBeforeOperationThrow(const char *
 
 void ZooKeeperWithFaultInjection::injectFailureAfterOperationThrow(const char * func_name, const String & path)
 {
-    if (unlikely(fault_policy) && fault_policy->beforeOperation())
+    if (unlikely(fault_policy) && fault_policy->afterOperation())
     {
         keeper.reset();
         if (logger)

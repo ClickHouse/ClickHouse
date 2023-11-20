@@ -29,6 +29,7 @@ namespace FailPoints
 {
     extern const char replicated_merge_tree_commit_zk_fail_after_op[];
     extern const char replicated_merge_tree_insert_quorum_fail_0[];
+    extern const char replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault[];
 }
 
 namespace ErrorCodes
@@ -568,9 +569,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     bool is_already_existing_part = false;
 
     /// for retries due to keeper error
-    bool part_committed_locally_but_zookeeper = false;
     bool part_was_deduplicated = false;
-    Coordination::Error write_part_info_keeper_error = Coordination::Error::ZOK;
     std::vector<String> conflict_block_ids;
 
     ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info, context->getProcessListElement());
@@ -588,36 +587,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// For example during RESTORE REPLICA.
             if (!writing_existing_part)
             {
+                /// We have lost connection to all keepers but it might be recovered, so we use setUserError to keep retrying
                 retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
-                return;
-            }
-        }
-
-        if (retries_ctl.isRetry())
-        {
-            /// If we are retrying, check if last iteration was actually successful,
-            /// we could get network error on committing part to zk
-            /// but the operation could be completed by zk server
-
-            /// If this flag is true, then part is in Active state, and we'll not retry anymore
-            /// we only check if part was committed to zk and return success or failure correspondingly
-            /// Note: if commit to zk failed then cleanup thread will mark the part as Outdated later
-            if (part_committed_locally_but_zookeeper)
-            {
-                /// check that info about the part was actually written in zk
-                if (zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name))
-                {
-                    LOG_DEBUG(log, "Part was successfully committed on previous iteration: part_id={}", part->name);
-                }
-                else
-                {
-                    retries_ctl.setUserError(
-                        ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                        "Insert failed due to zookeeper error. Please retry. Reason: {}",
-                        write_part_info_keeper_error);
-                }
-
-                retries_ctl.stopRetries();
                 return;
             }
         }
@@ -944,32 +915,49 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else if (Coordination::isHardwareError(multi_code))
         {
-            write_part_info_keeper_error = multi_code;
-            /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
-             *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
-             */
-            transaction.commit();
+            LOG_TRACE(
+                    log, "Insert of part {} failed when committing to keeper (Reason: {}). Attempting to recover it", part->name, multi_code);
+            ZooKeeperRetriesControl new_retry_controller = retries_ctl;
 
-            /// Setting this flag is point of no return
-            /// On next retry, we'll just check if actually operation succeed or failed
-            /// and return ok or error correspondingly
-            part_committed_locally_but_zookeeper = true;
+            /// We are going to try to verify if the transaction was written into keeper
+            /// If we fail to do so (keeper unavailable) then we don't know if the changes were applied or not so
+            /// we can't delete the local part, as if the changes were applied then inserted block appeared in
+            /// `/blocks/`, and it can not be inserted again.
+            new_retry_controller.actionAfterLastFailedRetry([&]
+            {
+                transaction.commit();
+                storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+                throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                        "Unknown status of part {} (Reason: {}). Data was written locally but we don't know the status in keeper. It will be verified in ~{} seconds.",
+                        part->name, multi_code, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+            });
+            new_retry_controller.requestUnconditionalRetry();
 
-            /// if all retries will be exhausted by accessing zookeeper on fresh retry -> we'll add committed part to queue in the action
-            /// here lambda capture part name, it's ok since we'll not generate new one for this insert,
-            /// see comments around 'part_committed_locally_but_zookeeper' flag
-            retries_ctl.actionAfterLastFailedRetry(
-                [&my_storage = storage, part_name = part->name]
-                {
-                    my_storage.enqueuePartForCheck(part_name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
-                });
+            bool node_exists = false;
+            new_retry_controller.retryLoop([&]
+            {
+                fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault, { zookeeper->forceFailureBeforeOperation(); });
+                zookeeper->setKeeper(storage.getZooKeeper());
+                node_exists = zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name);
+            });
 
-            /// We do not know whether or not data has been inserted.
-            retries_ctl.setUserError(
-                ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
-                "Unknown status, client must retry. Reason: {}",
-                multi_code);
-            return;
+            if (node_exists)
+            {
+                LOG_TRACE(log, "Insert of part {} recovered from keeper successfully. It will be committed", part->name);
+                part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
+                transaction.commit();
+                storage.merge_selecting_task->schedule();
+            }
+            else
+            {
+                LOG_TRACE(log, "Insert of part {} was not committed to keeper. Will try again with a new block", part->name);
+                rename_part_to_temporary();
+                retries_ctl.setUserError(
+                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                    "Insert of part {} failed when committing to keeper (Reason: {}",
+                    part->name,
+                    multi_code);
+            }
         }
         else if (Coordination::isUserError(multi_code))
         {

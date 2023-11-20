@@ -30,7 +30,7 @@ public:
 
     bool beforeOperation()
     {
-        if (distribution(rndgen) || must_fail_before_op)
+        if (must_fail_before_op || distribution(rndgen))
         {
             must_fail_before_op = false;
             return true;
@@ -40,7 +40,7 @@ public:
 
     bool afterOperation()
     {
-        if (distribution(rndgen) || must_fail_after_op)
+        if (must_fail_after_op || distribution(rndgen))
         {
             must_fail_after_op = false;
             return true;
