@@ -148,7 +148,7 @@ QueryCache::Key::Key(ASTPtr ast_, const String & user_name_)
 }
 
 /// Hashing of ASTs must consider aliases (issue #56258)
-constexpr bool ignore_aliases = false;
+static constexpr bool ignore_aliases = false;
 
 bool QueryCache::Key::operator==(const Key & other) const
 {

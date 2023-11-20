@@ -967,7 +967,7 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern String getGitHash();
+extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
@@ -1007,7 +1007,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = "";
 #endif
 
-    git_hash = getGitHash();
+    git_hash = GIT_HASH;
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();

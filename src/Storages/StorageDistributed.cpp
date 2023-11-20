@@ -532,9 +532,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
 
-    // std::cerr << query_node.dumpTree() << std::endl;
-    // std::cerr << query_info.table_expression->dumpTree() << std::endl;
-
     auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
     {
         std::unordered_set<std::string> expr_columns;
@@ -1875,4 +1872,19 @@ void registerStorageDistributed(StorageFactory & factory)
     });
 }
 
+bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
+{
+    if (!data_volume)
+        return true;
+
+    for (auto & disk : data_volume->getDisks())
+    {
+        if (new_added_disks.contains(disk->getName()))
+        {
+            initializeDirectoryQueuesForDisk(disk);
+        }
+    }
+
+    return true;
+}
 }

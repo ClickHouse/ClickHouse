@@ -76,7 +76,6 @@ else()
   endif()
 endif()
 
-include(CheckCCompilerFlag)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
   if(POWER9)
     set(HAS_POWER9 1)
@@ -88,21 +87,12 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
 endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64|arm64|ARM64")
-  CHECK_C_COMPILER_FLAG("-march=armv8-a+crc+crypto" HAS_ARMV8_CRC)
-  if(HAS_ARMV8_CRC)
-    message(STATUS " HAS_ARMV8_CRC yes")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
-  endif(HAS_ARMV8_CRC)
+  set(HAS_ARMV8_CRC 1)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
 endif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64|arm64|ARM64")
 
 
-include(CheckCXXSourceCompiles)
-if(NOT MSVC)
-  set(CMAKE_REQUIRED_FLAGS "-msse4.2 -mpclmul")
-endif()
-
-unset(CMAKE_REQUIRED_FLAGS)
 if(HAVE_SSE42)
   add_definitions(-DHAVE_SSE42)
   add_definitions(-DHAVE_PCLMUL)
@@ -121,73 +111,16 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-DOS_LINUX)
 elseif(CMAKE_SYSTEM_NAME MATCHES "SunOS")
   add_definitions(-DOS_SOLARIS)
-elseif(CMAKE_SYSTEM_NAME MATCHES "kFreeBSD")
-  add_definitions(-DOS_GNU_KFREEBSD)
 elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
   add_definitions(-DOS_FREEBSD)
-elseif(CMAKE_SYSTEM_NAME MATCHES "NetBSD")
-  add_definitions(-DOS_NETBSD)
-elseif(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
-  add_definitions(-DOS_OPENBSD)
-elseif(CMAKE_SYSTEM_NAME MATCHES "DragonFly")
-  add_definitions(-DOS_DRAGONFLYBSD)
 elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
   add_definitions(-DOS_ANDROID)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Windows")
-  add_definitions(-DWIN32 -DOS_WIN -D_MBCS -DWIN64 -DNOMINMAX)
-  if(MINGW)
-    add_definitions(-D_WIN32_WINNT=_WIN32_WINNT_VISTA)
-  endif()
 endif()
 
-if(NOT WIN32)
-  add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
-endif()
+add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
 
-option(WITH_FALLOCATE "build with fallocate" ON)
-if(WITH_FALLOCATE)
-  CHECK_C_SOURCE_COMPILES("
-#include <fcntl.h>
-#include <linux/falloc.h>
-int main() {
- int fd = open(\"/dev/null\", 0);
- fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1024);
-}
-" HAVE_FALLOCATE)
-  if(HAVE_FALLOCATE)
-    add_definitions(-DROCKSDB_FALLOCATE_PRESENT)
-  endif()
-endif()
-
-CHECK_C_SOURCE_COMPILES("
-#include <fcntl.h>
-int main() {
-  int fd = open(\"/dev/null\", 0);
-  sync_file_range(fd, 0, 1024, SYNC_FILE_RANGE_WRITE);
-}
-" HAVE_SYNC_FILE_RANGE_WRITE)
-if(HAVE_SYNC_FILE_RANGE_WRITE)
-  add_definitions(-DROCKSDB_RANGESYNC_PRESENT)
-endif()
-
-CHECK_C_SOURCE_COMPILES("
-#include <pthread.h>
-int main() {
-  (void) PTHREAD_MUTEX_ADAPTIVE_NP;
-}
-" HAVE_PTHREAD_MUTEX_ADAPTIVE_NP)
-if(HAVE_PTHREAD_MUTEX_ADAPTIVE_NP)
+if (OS_LINUX OR OS_FREEBSD)
   add_definitions(-DROCKSDB_PTHREAD_ADAPTIVE_MUTEX)
-endif()
-
-include(CheckCXXSymbolExists)
-if (OS_FREEBSD)
-  check_cxx_symbol_exists(malloc_usable_size "${ROCKSDB_SOURCE_DIR}/malloc_np.h" HAVE_MALLOC_USABLE_SIZE)
-else()
-  check_cxx_symbol_exists(malloc_usable_size "${ROCKSDB_SOURCE_DIR}/malloc.h" HAVE_MALLOC_USABLE_SIZE)
-endif()
-if(HAVE_MALLOC_USABLE_SIZE)
-  add_definitions(-DROCKSDB_MALLOC_USABLE_SIZE)
 endif()
 
 if (OS_LINUX)
@@ -204,7 +137,6 @@ include_directories("${ROCKSDB_SOURCE_DIR}/include")
 if(WITH_FOLLY_DISTRIBUTED_MUTEX)
   include_directories("${ROCKSDB_SOURCE_DIR}/third-party/folly")
 endif()
-find_package(Threads REQUIRED)
 
 # Main library source code
 
@@ -497,7 +429,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/util/memarena.cc
     rocksdb_build_version.cc)
 
-if(HAVE_SSE42 AND NOT MSVC)
+if(HAVE_SSE42)
   set_source_files_properties(
     "${ROCKSDB_SOURCE_DIR}/util/crc32c.cc"
     PROPERTIES COMPILE_FLAGS "-msse4.2 -mpclmul")
