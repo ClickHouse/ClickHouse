@@ -116,7 +116,7 @@ namespace
 void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
-    if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    if (!query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         return;
 
     if (!query_context->getCurrentTransaction())
@@ -130,13 +130,11 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
         else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
             storage = table_function_node->getStorage();
 
-        if (storage->supportsTransactions())
-            continue;
-
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Storage {} (table {}) does not support transactions",
-            storage->getName(),
-            storage->getStorageID().getNameForLogs());
+        if (storage && !storage->supportsTransactions())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Storage {} (table {}) does not support transactions",
+                storage->getName(),
+                storage->getStorageID().getNameForLogs());
     }
 }
 
@@ -1334,9 +1332,9 @@ void Planner::buildPlanForQueryNode()
         query_node.getHaving() = {};
     }
 
-    checkStoragesSupportTransactions(planner_context);
     collectSets(query_tree, *planner_context);
     collectTableExpressionData(query_tree, planner_context);
+    checkStoragesSupportTransactions(planner_context);
 
     if (!select_query_options.only_analyze)
         collectFiltersForAnalysis(query_tree, planner_context);
