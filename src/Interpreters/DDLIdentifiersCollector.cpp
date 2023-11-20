@@ -54,6 +54,9 @@ DDLQueryIdentifiers collectIdentifiersForDDLQuery(const ASTPtr & ddl_query, Cont
 {
     DDLQueryIdentifiers result;
 
+    if (ddl_query == nullptr)
+        return result;
+
     if (auto * rename_query = ddl_query->as<ASTRenameQuery>(); rename_query != nullptr)
     {
         for (const auto & table_element : rename_query->elements)
