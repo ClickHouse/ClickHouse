@@ -238,7 +238,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     }
 
     if (has_ordinary_databases)
-        context->addWarningMessage("Server Has Databases with Ordinary Engine which is not optimal. \n " 
+        context->addWarningMessage("Server has databases with Ordinary engine, which is not optimal. \n " 
             "To convert this database to a new Atomic engine, please create a flag named `convert_ordinary_to_atomic` in flags directory");
     
     auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
