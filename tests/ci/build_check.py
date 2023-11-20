@@ -426,7 +426,9 @@ FORMAT JSONCompactEachRow"""
         url = f"https://{ci_logs_credentials.host}/"
         profiles_dir = temp_path / "profiles_source"
         profiles_dir.mkdir(parents=True, exist_ok=True)
-        logging.info("Processing profile JSON files from {GIT_REPO_ROOT}/build_docker")
+        logging.info(
+            "Processing profile JSON files from %s", repo_path / "build_docker"
+        )
         git_runner(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"build_docker {profiles_dir.absolute()}"
