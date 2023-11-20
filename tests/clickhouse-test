@@ -1173,6 +1173,25 @@ class TestCase:
             description_full += result.reason.value
 
         description_full += result.description
+
+        if (
+            args.collect_per_test_coverage
+            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        ):
+            clickhouse_execute(
+                args,
+                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
+                retry_error_codes=True,
+            )
+
+            coverage = clickhouse_execute(
+                args,
+                "SELECT length(coverage())",
+                retry_error_codes=True,
+            ).decode()
+
+            description_full += f" Coverage: {coverage}"
+
         description_full += "\n"
 
         if result.status == TestStatus.FAIL and self.testcase_args:
@@ -1229,6 +1248,17 @@ class TestCase:
             pattern = (
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
+            )
+
+        # We want to calculate per-test code coverage. That's why we reset it before each test.
+        if (
+            args.collect_per_test_coverage
+            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        ):
+            clickhouse_execute(
+                args,
+                "SYSTEM RESET COVERAGE",
+                retry_error_codes=True,
             )
 
         command = pattern.format(**params)
@@ -1872,6 +1902,7 @@ class BuildFlags:
     UNDEFINED = "ubsan"
     MEMORY = "msan"
     DEBUG = "debug"
+    SANITIZE_COVERAGE = "sanitize-coverage"
     RELEASE = "release"
     ORDINARY_DATABASE = "ordinary-database"
     POLYMORPHIC_PARTS = "polymorphic-parts"
@@ -1891,6 +1922,8 @@ def collect_build_flags(args):
         result.append(BuildFlags.UNDEFINED)
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
+    elif b"-DSANITIZE_COVERAGE=1" in value:
+        result.append(BuildFlags.SANITIZE_COVERAGE)
 
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'"
@@ -2072,6 +2105,8 @@ def reportCoverageFor(args, what, query, permissive=False):
     return True
 
 
+# This is high-level coverage on per-component basis (functions, data types, etc.)
+# Don't be confused with the code coverage.
 def reportCoverage(args):
     clickhouse_execute(args, "SYSTEM FLUSH LOGS")
 
@@ -2333,6 +2368,28 @@ def main(args):
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
+
+    if (
+        args.collect_per_test_coverage
+        and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+    ):
+        clickhouse_execute(
+            args,
+            """
+                CREATE TABLE IF NOT EXISTS system.coverage
+                (
+                    time DateTime,
+                    test_name String,
+                    coverage Array(UInt64)
+                ) ENGINE = MergeTree ORDER BY test_name;
+            """,
+        )
+
+        # Coverage collected at the system startup before running any tests:
+        clickhouse_execute(
+            args,
+            "INSERT INTO system.coverage SELECT now(), '', coverage()",
+        )
 
     total_tests_run = 0
 
@@ -2677,6 +2734,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Check what high-level server components were covered by tests",
+    )
+    parser.add_argument(
+        "--collect-per-test-coverage",
+        action="store_true",
+        default=False,
+        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
     )
     parser.add_argument(
         "--report-logs-stats",

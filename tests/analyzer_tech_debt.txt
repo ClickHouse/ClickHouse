@@ -5,7 +5,6 @@
 01064_incremental_streaming_from_2_src_with_feedback
 01083_expressions_in_engine_arguments
 01155_rename_move_materialized_view
-01173_transaction_control_queries
 01214_test_storage_merge_aliases_with_where
 01244_optimize_distributed_group_by_sharding_key
 01268_mv_scalars
@@ -26,7 +25,6 @@
 02139_MV_with_scalar_subquery
 02174_cte_scalar_cache_mv
 02302_s3_file_pruning
-02345_implicit_transaction
 02352_grouby_shadows_arg
 02354_annoy
 02428_parameterized_view

@@ -33,6 +33,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -395,11 +397,35 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         column.ttl = ttl;
 
-        metadata.columns.add(column, after_column, first);
-
-        /// Slow, because each time a list is copied
         if (context->getSettingsRef().flatten_nested)
-            metadata.columns.flattenNested();
+        {
+            StorageInMemoryMetadata temporary_metadata;
+            temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
+            temporary_metadata.columns.flattenNested();
+
+            const auto transformed_columns = temporary_metadata.columns.getAll();
+
+            auto add_column = [&](const String & name)
+            {
+                const auto & transformed_column = temporary_metadata.columns.get(name);
+                metadata.columns.add(transformed_column, after_column, first);
+            };
+
+            if (!after_column.empty() || first)
+            {
+                for (const auto & col: transformed_columns | std::views::reverse)
+                    add_column(col.name);
+            }
+            else
+            {
+                for (const auto & col: transformed_columns)
+                    add_column(col.name);
+            }
+        }
+        else
+        {
+            metadata.columns.add(column, after_column, first);
+        }
     }
     else if (type == DROP_COLUMN)
     {

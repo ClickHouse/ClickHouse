@@ -134,6 +134,7 @@ namespace CurrentMetrics
 {
     extern const Metric StorageDistributedThreads;
     extern const Metric StorageDistributedThreadsActive;
+    extern const Metric StorageDistributedThreadsScheduled;
 }
 
 namespace DB
@@ -1214,7 +1215,7 @@ void StorageDistributed::initializeFromDisk()
     const auto & disks = data_volume->getDisks();
 
     /// Make initialization for large number of disks parallel.
-    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, disks.size());
+    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
 
     for (const DiskPtr & disk : disks)
     {
