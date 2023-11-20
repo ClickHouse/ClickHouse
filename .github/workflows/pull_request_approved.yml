@@ -11,6 +11,7 @@ on:  # yamllint disable-line rule:truthy
 
 jobs:
   MergeOnApproval:
+    name: ${{github.event.review.user.login}}-${{github.event.review.submitted_at}}
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
