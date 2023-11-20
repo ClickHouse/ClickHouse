@@ -63,7 +63,7 @@ private:
 
 
         QueryTreeNodes or_operands;
-        or_operands.reserve(function_node.getArguments()->getNodes().size());  
+        or_operands.reserve(function_node.getArguments().getNodes().size());
 
         /// Indices of `equals` or `isNotDistinctFrom` functions in the vector above
         std::vector<size_t> equals_functions_indices;
