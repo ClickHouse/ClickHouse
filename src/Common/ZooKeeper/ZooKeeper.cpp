@@ -176,6 +176,19 @@ std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger
         shuffled_hosts.emplace_back(shuffle_host);
     }
     ::sort(shuffled_hosts.begin(), shuffled_hosts.end(), ShuffleHost::compare);
+    // Additional check to warn users about situation that remaining keeper in single AZ can't handle the load.
+    std::map<std::string, int> az_count_map;
+    for (const auto & host : az_by_host)
+    {
+        const auto& az = host.second;
+        az_count_map[az]++;
+        if (az != AZ_UNKNWON && az_count_map[az] > 1)
+        {
+            LOG_WARNING(log, "More than one ZooKeeper node found in availability zone {}, such as {}. "
+                "If one of them fails, the remaining ones potentially can be overloaded", az, host.first);
+            break;
+        }
+    }
     return shuffled_hosts;
 }
 

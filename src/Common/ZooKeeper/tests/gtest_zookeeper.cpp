@@ -29,7 +29,7 @@ TEST(ZooKeeperTest, AvailabilityZoneHelper)
     az_helper.update("keeper1", "us-west-2a");
     auto actual = az_helper.shuffleHosts(&Poco::Logger::get("Application"), local_az, hosts, dns_error_occurred);
 
-    // Keeper2 comes first because it's uknown, keeper1 is in different az.
+    // Keeper2 comes first because it's unknown, keeper1 is in different az.
     std::vector<ShuffleHost> expected{
         {"keeper2", 1, Priority{1} },
         {"keeper1", 0, Priority{2}},

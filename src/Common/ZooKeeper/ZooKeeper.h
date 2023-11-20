@@ -671,7 +671,7 @@ public:
     // For example, hosts whose availability zone is the same as the local one will be tried first.
     std::vector<ShuffleHost> shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool& dns_error_occurred);
 
-    // maybeWorthTryingOtherHost returns true if we want to connecto `local_az` and we have tried `attempted_host` already.
+    // maybeWorthTryingOtherHost returns true if we want to connect to `local_az` and we have tried `attempted_host` already.
     // If some hosts their availability zone are still unknown, or we still have some same az not tried yet.
     bool needTryOtherHost(const std::string & local_az, const std::set<std::string> & attempted_host);
 

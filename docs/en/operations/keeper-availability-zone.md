@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/keeper-availablity-zone
+slug: /en/operations/keeper-availability-zone
 sidebar_position: 46
 sidebar_label: Keeper Availability Zone Aware Load Balancing
 ---
