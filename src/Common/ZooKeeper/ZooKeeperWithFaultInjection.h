@@ -64,6 +64,8 @@ class ZooKeeperWithFaultInjection
     Poco::Logger * logger = nullptr;
     const UInt64 seed = 0;
 
+    std::vector<std::string> session_ephemeral_nodes;
+
     template <typename Operation>
     std::invoke_result_t<Operation> executeWithFaultSync(const char * func_name, const std::string & path, Operation);
     void injectFailureBeforeOperationThrow(const char * func_name, const String & path);
@@ -72,6 +74,9 @@ class ZooKeeperWithFaultInjection
     bool injectFailureBeforeOperationPromise(const char * func_name, Promise & promise, const String & path);
     template <typename Promise>
     bool injectFailureAfterOperationPromise(const char * func_name, Promise & promise, const String & path);
+
+    void resetKeeper();
+    void multiResponseSaveEphemeralNodePaths(const Coordination::Requests & requests, const Coordination::Responses & responses);
 
 public:
     using Ptr = std::shared_ptr<ZooKeeperWithFaultInjection>;

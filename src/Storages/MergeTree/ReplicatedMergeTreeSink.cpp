@@ -883,16 +883,17 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
         fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op, { zookeeper->forceFailureAfterOperation(); });
 
-        Coordination::Responses responses;
-        Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
-        if (multi_code == Coordination::Error::ZOK)
+        auto action_when_ok = [&]
         {
-            auto sleep_before_commit_local_part_in_replicated_table_ms = storage.getSettings()->sleep_before_commit_local_part_in_replicated_table_ms;
-            if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
+            auto sleep_before_commit_ms = storage.getSettings()->sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds();
+            if (sleep_before_commit_ms)
             {
-                LOG_INFO(log, "committing part {}, triggered sleep_before_commit_local_part_in_replicated_table_ms {}",
-                         part->name, sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds());
-                sleepForMilliseconds(sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds());
+                LOG_DEBUG(
+                    log,
+                    "committing part {}, triggered sleep_before_commit_local_part_in_replicated_table_ms {}",
+                    part->name,
+                    sleep_before_commit_ms);
+                sleepForMilliseconds(sleep_before_commit_ms);
             }
 
             part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
@@ -902,6 +903,13 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// Lock nodes have been already deleted, do not delete them in destructor
             if (block_number_lock)
                 block_number_lock->assumeUnlocked();
+        };
+
+        Coordination::Responses responses;
+        Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
+        if (multi_code == Coordination::Error::ZOK)
+        {
+            action_when_ok();
         }
         else if (multi_code == Coordination::Error::ZNONODE && zkutil::getFailedOpIndex(multi_code, responses) == block_unlock_op_idx)
         {
@@ -944,9 +952,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             if (node_exists)
             {
                 LOG_TRACE(log, "Insert of part {} recovered from keeper successfully. It will be committed", part->name);
-                part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
-                transaction.commit();
-                storage.merge_selecting_task->schedule();
+                action_when_ok();
             }
             else
             {
@@ -954,7 +960,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 rename_part_to_temporary();
                 retries_ctl.setUserError(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                    "Insert of part {} failed when committing to keeper (Reason: {}",
+                    "Insert of part {} failed when committing to keeper (Reason: {})",
                     part->name,
                     multi_code);
             }

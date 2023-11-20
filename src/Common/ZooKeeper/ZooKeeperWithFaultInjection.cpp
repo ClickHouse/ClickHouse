@@ -1,3 +1,4 @@
+#include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
@@ -17,6 +18,68 @@ ZooKeeperWithFaultInjection::ZooKeeperWithFaultInjection(
 {
 }
 
+void ZooKeeperWithFaultInjection::resetKeeper()
+{
+    /// When an error is injected, we need to reset keeper for several reasons
+    /// a) Avoid processing further requests in this keeper (in async code)
+    /// b) Simulate a fault as ZooKeeperImpl does, forcing a new session (which drops ephemeral nodes)
+    ///
+    /// Ideally we would call `keeper->finalize("Fault injection");` to force the session reload.
+    /// The problem with that is that many operations currently aren't able to cope with keeper faults correctly,
+    /// so they would fail. While this is what happens in production, it's not what we want in the CI.
+    ///
+    /// Until all the code can handle keeper session resets, we need to simulate it so the code that relies on its
+    /// behaviour keeps working. An example of such code is insert block ids: If keeper dies between the block id being
+    /// reserved (via ephemeral node) and the metadata being pushed, the reserved block id will be deleted automatically
+    /// in keeper (connection drop == delete all ephemeral nodes attached to that connection). This way retrying and
+    /// getting a new block id is ok. But without a connection reset (because ZooKeeperWithFaultInjection doesn't
+    /// enforce it yet), the old ephemeral nodes associated with "committing_blocks" will still be there and operations
+    /// such as block merges, mutations, etc., will think they are alive and wait for them to be ready (which will never
+    /// happen)
+    /// Our poor man session reload is to keep track of ephemeral nodes created by this Faulty keeper and delete
+    /// them manually when we force a fault. This is obviously limited as it will only apply for operations processed by
+    /// this instance, but let's trust more and more code can handle session reloads and we can eliminate the hack.
+    /// Until that time, the hack remains.
+    if (keeper)
+    {
+        for (const auto & path_created : session_ephemeral_nodes)
+        {
+            try
+            {
+                keeper->remove(path_created);
+            }
+            catch (const Coordination::Exception &)
+            {
+                if (logger)
+                    LOG_TRACE(logger, "Failed to delete ephemeral node ({}) during fault cleanup", path_created);
+            }
+        }
+    }
+
+
+    keeper.reset();
+}
+
+void ZooKeeperWithFaultInjection::multiResponseSaveEphemeralNodePaths(
+    const Coordination::Requests & requests, const Coordination::Responses & responses)
+{
+    if (responses.empty())
+        return;
+
+    chassert(requests.size() == responses.size());
+
+    for (size_t i = 0; i < requests.size(); i++)
+    {
+        const auto * create_req = dynamic_cast<const Coordination::CreateRequest *>(requests[i].get());
+        if (create_req && create_req->is_ephemeral)
+        {
+            const auto * create_resp = dynamic_cast<const Coordination::CreateResponse *>(responses.at(i).get());
+            chassert(create_resp);
+            session_ephemeral_nodes.emplace_back(create_resp->path_created);
+        }
+    }
+}
+
 void ZooKeeperWithFaultInjection::injectFailureBeforeOperationThrow(const char * func_name, const String & path)
 {
     if (unlikely(!keeper))
@@ -31,7 +94,7 @@ void ZooKeeperWithFaultInjection::injectFailureBeforeOperationThrow(const char *
 
     if (unlikely(fault_policy) && fault_policy->beforeOperation())
     {
-        keeper.reset();
+        resetKeeper();
         if (logger)
             LOG_TRACE(
                 logger,
@@ -49,7 +112,7 @@ void ZooKeeperWithFaultInjection::injectFailureAfterOperationThrow(const char * 
 {
     if (unlikely(fault_policy) && fault_policy->afterOperation())
     {
-        keeper.reset();
+        resetKeeper();
         if (logger)
             LOG_TRACE(
                 logger,
@@ -96,7 +159,7 @@ bool ZooKeeperWithFaultInjection::injectFailureBeforeOperationPromise(const char
 
     if (unlikely(fault_policy) && fault_policy->beforeOperation())
     {
-        keeper.reset();
+        resetKeeper();
         if (logger)
             LOG_TRACE(
                 logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func={} path={}", seed, func_name, path);
@@ -112,7 +175,7 @@ bool ZooKeeperWithFaultInjection::injectFailureAfterOperationPromise(const char 
 {
     if (unlikely(fault_policy) && fault_policy->afterOperation())
     {
-        keeper.reset();
+        resetKeeper();
         promise->set_exception(std::make_exception_ptr(
             zkutil::KeeperException::fromMessage(RandomFaultInjection::error_after_op, RandomFaultInjection::msg_after_op)));
         if (logger)
@@ -234,23 +297,52 @@ zkutil::ZooKeeper::MultiExistsResponse ZooKeeperWithFaultInjection::exists(const
 
 std::string ZooKeeperWithFaultInjection::create(const std::string & path, const std::string & data, int32_t mode)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->create(path, data, mode); });
+    return executeWithFaultSync(
+        __func__,
+        path,
+        [&]()
+        {
+            auto path_created = keeper->create(path, data, mode);
+            if (unlikely(fault_policy) && (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral))
+                session_ephemeral_nodes.emplace_back(path_created);
+            return path_created;
+        });
 }
 
 Coordination::Error
 ZooKeeperWithFaultInjection::tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->tryCreate(path, data, mode, path_created); });
+    return executeWithFaultSync(
+        __func__,
+        path,
+        [&]()
+        {
+            Coordination::Error code = keeper->tryCreate(path, data, mode, path_created);
+            if (unlikely(fault_policy) && code == Coordination::Error::ZOK
+                && (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral))
+                session_ephemeral_nodes.emplace_back(path_created);
+            return code;
+        });
 }
 
 Coordination::Error ZooKeeperWithFaultInjection::tryCreate(const std::string & path, const std::string & data, int32_t mode)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->tryCreate(path, data, mode); });
+    std::string path_created;
+    return tryCreate(path, data, mode, path_created);
 }
 
 Coordination::Responses ZooKeeperWithFaultInjection::multi(const Coordination::Requests & requests)
 {
-    return executeWithFaultSync(__func__, !requests.empty() ? requests.front()->getPath() : "", [&]() { return keeper->multi(requests); });
+    return executeWithFaultSync(
+        __func__,
+        !requests.empty() ? requests.front()->getPath() : "",
+        [&]()
+        {
+            auto responses = keeper->multi(requests);
+            if (unlikely(fault_policy))
+                multiResponseSaveEphemeralNodePaths(requests, responses);
+            return responses;
+        });
 }
 
 void ZooKeeperWithFaultInjection::createIfNotExists(const std::string & path, const std::string & data)
@@ -260,6 +352,7 @@ void ZooKeeperWithFaultInjection::createIfNotExists(const std::string & path, co
 
 void ZooKeeperWithFaultInjection::createOrUpdate(const std::string & path, const std::string & data, int32_t mode)
 {
+    chassert(mode != zkutil::CreateMode::EphemeralSequential && mode != zkutil::CreateMode::Ephemeral);
     return executeWithFaultSync(__func__, path, [&]() { return keeper->createOrUpdate(path, data, mode); });
 }
 
@@ -325,7 +418,15 @@ void ZooKeeperWithFaultInjection::deleteEphemeralNodeIfContentMatches(
 Coordination::Error ZooKeeperWithFaultInjection::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
 {
     return executeWithFaultSync(
-        __func__, !requests.empty() ? requests.front()->getPath() : "", [&]() { return keeper->tryMulti(requests, responses); });
+        __func__,
+        !requests.empty() ? requests.front()->getPath() : "",
+        [&]()
+        {
+            auto code = keeper->tryMulti(requests, responses);
+            if (unlikely(fault_policy) && code == Coordination::Error::ZOK)
+                multiResponseSaveEphemeralNodePaths(requests, responses);
+            return code;
+        });
 }
 
 Coordination::Error
@@ -391,6 +492,18 @@ zkutil::ZooKeeper::FutureGet ZooKeeperWithFaultInjection::asyncTryGet(std::strin
 
 zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(const Coordination::Requests & ops)
 {
+#ifndef NDEBUG
+    /// asyncTryMultiNoThrow is not setup to handle faults with ephemeral nodes
+    /// To do it we'd need to look at ops and save the indexes BEFORE the callback, as the ops are not
+    /// guaranteed to live until then
+    for (size_t i = 0; i < ops.size(); i++)
+    {
+        const auto * create_req = dynamic_cast<const Coordination::CreateRequest *>(ops[i].get());
+        if (create_req)
+            chassert(!create_req->is_ephemeral);
+    }
+#endif
+
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
     size_t request_size = ops.size();
@@ -398,7 +511,7 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
 
     if (!keeper || (unlikely(fault_policy) && fault_policy->beforeOperation()))
     {
-        keeper.reset();
+        resetKeeper();
         if (logger)
             LOG_TRACE(logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func={} path={}", seed, __func__, path);
         Coordination::MultiResponse errors;
@@ -416,7 +529,7 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
     {
         if (unlikely(fault_policy) && fault_policy->afterOperation())
         {
-            keeper.reset();
+            resetKeeper();
             if (logger)
                 LOG_TRACE(
                     logger, "ZooKeeperWithFaultInjection injected fault after operation: seed={} func={} path={}", seed, __func__, path);
@@ -472,7 +585,7 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
 
     if (!keeper || (unlikely(fault_policy) && fault_policy->beforeOperation()))
     {
-        keeper.reset();
+        resetKeeper();
         if (logger)
             LOG_TRACE(logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func={} path={}", seed, __func__, path);
         Coordination::RemoveResponse r;
@@ -485,7 +598,7 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
     {
         if (unlikely(fault_policy) && fault_policy->afterOperation())
         {
-            keeper.reset();
+            resetKeeper();
             if (logger)
                 LOG_TRACE(
                     logger, "ZooKeeperWithFaultInjection injected fault after operation: seed={} func={} path={}", seed, __func__, path);
