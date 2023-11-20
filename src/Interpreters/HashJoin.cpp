@@ -1150,9 +1150,11 @@ public:
 
     std::vector<JoinOnKeyColumns> join_on_keys;
 
+    size_t max_joined_block_rows = 0;
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
+    IColumn::Filter filter;
 
 private:
     std::vector<TypeAndName> type_name;
@@ -1340,7 +1342,7 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool multiple_disjuncts>
-NO_INLINE IColumn::Filter joinRightColumns(
+NO_INLINE size_t joinRightColumns(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -1349,9 +1351,8 @@ NO_INLINE IColumn::Filter joinRightColumns(
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
     size_t rows = added_columns.rows_to_add;
-    IColumn::Filter filter;
     if constexpr (need_filter)
-        filter = IColumn::Filter(rows, 0);
+        added_columns.filter = IColumn::Filter(rows, 0);
 
     Arena pool;
 
@@ -1359,9 +1360,20 @@ NO_INLINE IColumn::Filter joinRightColumns(
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
     IColumn::Offset current_offset = 0;
-
-    for (size_t i = 0; i < rows; ++i)
+    size_t max_joined_block_rows = added_columns.max_joined_block_rows;
+    size_t i = 0;
+    for (; i < rows; ++i)
     {
+        if constexpr (join_features.need_replication)
+        {
+            if (unlikely(current_offset > max_joined_block_rows))
+            {
+                added_columns.offsets_to_replicate->resize_assume_reserved(i);
+                added_columns.filter.resize_assume_reserved(i);
+                break;
+            }
+        }
+
         bool right_row_found = false;
 
         KnownRowsHolder<multiple_disjuncts> known_rows;
@@ -1386,7 +1398,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     auto row_ref = mapped->findAsof(left_asof_key, i);
                     if (row_ref.block)
                     {
-                        setUsed<need_filter>(filter, i);
+                        setUsed<need_filter>(added_columns.filter, i);
                         if constexpr (multiple_disjuncts)
                             used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(row_ref.block, row_ref.row_num, 0);
                         else
@@ -1399,7 +1411,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                 }
                 else if constexpr (join_features.is_all_join)
                 {
-                    setUsed<need_filter>(filter, i);
+                    setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_result);
                     auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
                     addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
@@ -1411,7 +1423,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     if (used_once)
                     {
                         auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
-                        setUsed<need_filter>(filter, i);
+                        setUsed<need_filter>(added_columns.filter, i);
                         addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
                     }
                 }
@@ -1422,7 +1434,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     /// Use first appeared left key only
                     if (used_once)
                     {
-                        setUsed<need_filter>(filter, i);
+                        setUsed<need_filter>(added_columns.filter, i);
                         added_columns.appendFromBlock<join_features.add_missing>(*mapped.block, mapped.row_num);
                     }
 
@@ -1439,7 +1451,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                 }
                 else /// ANY LEFT, SEMI LEFT, old ANY (RightAny)
                 {
-                    setUsed<need_filter>(filter, i);
+                    setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_result);
                     added_columns.appendFromBlock<join_features.add_missing>(*mapped.block, mapped.row_num);
 
@@ -1454,7 +1466,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
         if (!right_row_found)
         {
             if constexpr (join_features.is_anti_join && join_features.left)
-                setUsed<need_filter>(filter, i);
+                setUsed<need_filter>(added_columns.filter, i);
             addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
         }
 
@@ -1465,11 +1477,11 @@ NO_INLINE IColumn::Filter joinRightColumns(
     }
 
     added_columns.applyLazyDefaults();
-    return filter;
+    return i;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter>
-IColumn::Filter joinRightColumnsSwitchMultipleDisjuncts(
+size_t joinRightColumnsSwitchMultipleDisjuncts(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -1481,7 +1493,7 @@ IColumn::Filter joinRightColumnsSwitchMultipleDisjuncts(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename KeyGetter, typename Map>
-IColumn::Filter joinRightColumnsSwitchNullability(
+size_t joinRightColumnsSwitchNullability(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -1498,7 +1510,7 @@ IColumn::Filter joinRightColumnsSwitchNullability(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-IColumn::Filter switchJoinRightColumns(
+size_t switchJoinRightColumns(
     const std::vector<const Maps *> & mapv,
     AddedColumns & added_columns,
     HashJoin::Type type,
@@ -1547,10 +1559,27 @@ IColumn::Filter switchJoinRightColumns(
     }
 }
 
+/// Cut first num_rows rows from block in place and returns block with remaining rows
+Block sliceBlock(Block & block, size_t num_rows)
+{
+    size_t total_rows = block.rows();
+    if (num_rows >= total_rows)
+        return {};
+
+    Block remaining_block = block.cloneEmpty();
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto & col = block.getByPosition(i);
+        remaining_block.getByPosition(i).column = col.column->cut(num_rows, total_rows - num_rows);
+        col.column = col.column->cut(0, num_rows);
+    }
+    return remaining_block;
+}
+
 } /// nameless
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-void HashJoin::joinBlockImpl(
+Block HashJoin::joinBlockImpl(
     Block & block,
     const Block & block_with_columns_to_add,
     const std::vector<const Maps *> & maps_,
@@ -1592,8 +1621,12 @@ void HashJoin::joinBlockImpl(
 
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
+    added_columns.max_joined_block_rows = table_join->maxJoinedBlockRows();
+    if (!added_columns.max_joined_block_rows)
+        added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
 
-    IColumn::Filter row_filter = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
+    size_t num_joined = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
+    Block remaining_block = sliceBlock(block, num_joined);
 
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
@@ -1604,7 +1637,7 @@ void HashJoin::joinBlockImpl(
     {
         /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
         for (size_t i = 0; i < existing_columns; ++i)
-            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(row_filter, -1);
+            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(added_columns.filter, -1);
 
         /// Add join key columns from right block if needed using value from left table because of equality
         for (size_t i = 0; i < required_right_keys.columns(); ++i)
@@ -1635,7 +1668,7 @@ void HashJoin::joinBlockImpl(
         /// Some trash to represent IColumn::Filter as ColumnUInt8 needed for ColumnNullable::applyNullMap()
         auto null_map_filter_ptr = ColumnUInt8::create();
         ColumnUInt8 & null_map_filter = assert_cast<ColumnUInt8 &>(*null_map_filter_ptr);
-        null_map_filter.getData().swap(row_filter);
+        null_map_filter.getData().swap(added_columns.filter);
         const IColumn::Filter & filter = null_map_filter.getData();
 
         /// Add join key columns from right block if needed.
@@ -1680,6 +1713,8 @@ void HashJoin::joinBlockImpl(
         for (size_t pos : right_keys_to_replicate)
             block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
     }
+
+    return remaining_block;
 }
 
 void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const
@@ -1856,7 +1891,11 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
         if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
-            joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+            Block remaining_block = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+            if (remaining_block.rows())
+                not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(remaining_block)});
+            else
+                not_processed.reset();
         }))
         {
             /// Joined

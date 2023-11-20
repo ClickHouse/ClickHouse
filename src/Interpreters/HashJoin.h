@@ -447,7 +447,7 @@ private:
     void initRightBlockStructure(Block & saved_block_sample);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    void joinBlockImpl(
+    Block joinBlockImpl(
         Block & block,
         const Block & block_with_columns_to_add,
         const std::vector<const Maps *> & maps_,
