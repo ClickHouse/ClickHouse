@@ -10,9 +10,7 @@ USER_FILES_PATH=$($CLICKHOUSE_CLIENT --query "select _path,_file from file('none
 
 cp "$CURDIR"/data_csv/1m_rows_cr_end_of_line.csv.xz $USER_FILES_PATH/
 
-$CLICKHOUSE_CLIENT -q "SELECT count(1) from file('1m_rows_cr_end_of_line.csv.xz') settings input_format_csv_allow_cr_end_of_line=1, optimize_count_from_files=1"
-$CLICKHOUSE_CLIENT -q "SELECT count(1) from file('1m_rows_cr_end_of_line.csv.xz') settings input_format_csv_allow_cr_end_of_line=1, optimize_count_from_files=0"
+$CLICKHOUSE_CLIENT -q "SELECT count(1) from file('1m_rows_cr_end_of_line.csv.xz') settings input_format_csv_allow_cr_end_of_line=1, max_threads=1, optimize_count_from_files=1"
+$CLICKHOUSE_CLIENT -q "SELECT count(1) from file('1m_rows_cr_end_of_line.csv.xz') settings input_format_csv_allow_cr_end_of_line=1, max_threads=1, optimize_count_from_files=0"
 
-if [ -f $USER_FILES_PATH/1m_rows_cr_end_of_line.csv.xz ]; then
-    rm $USER_FILES_PATH/1m_rows_cr_end_of_line.csv.xz
-fi
+rm $USER_FILES_PATH/1m_rows_cr_end_of_line.csv.xz
