@@ -14,3 +14,11 @@ git submodule sync
 #
 #       [1] - https://git-scm.com/book/en/v2/Git-Tools-Submodules
 git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //' | xargs -I _ --max-procs 64 git submodule update --depth=1 --single-branch _
+
+# We don't want to depend on any third-party CMake files.
+# To check it, find and delete them.
+grep -o -P '"contrib/[^"]+"' .gitmodules |
+  grep -v -P 'contrib/(llvm-project|google-protobuf|grpc|abseil-cpp|corrosion)' |
+  xargs -I@ find @ \
+    -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' \
+    -delete
