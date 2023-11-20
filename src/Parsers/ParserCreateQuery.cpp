@@ -1517,8 +1517,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
-    ParserKeyword s_not_overridable("NOT OVERRIDABLE");
-    ParserKeyword s_overridable("OVERRIDABLE");
     ParserIdentifier name_p;
     ParserToken s_comma(TokenType::Comma);
 
@@ -1549,7 +1547,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         return false;
 
     SettingsChanges changes;
-    std::unordered_map<String, bool> overridability;
 
     while (true)
     {
@@ -1560,10 +1557,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
         if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
             return false;
-        if (s_not_overridable.ignore(pos, expected))
-            overridability.emplace(changes.back().name, false);
-        else if (s_overridable.ignore(pos, expected))
-            overridability.emplace(changes.back().name, true);
     }
 
     auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
@@ -1572,7 +1565,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     query->if_not_exists = if_not_exists;
     query->changes = changes;
     query->cluster = std::move(cluster_str);
-    query->overridability = overridability;
 
     node = query;
     return true;

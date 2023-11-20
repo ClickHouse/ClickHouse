@@ -126,8 +126,8 @@ bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
         return false;
     if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
     {
-        static const boost::container::flat_set<std::string_view> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (tables_ignoring_quota.contains(storage_id.table_name))
+        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.count(storage_id.table_name))
             return true;
     }
     return false;
@@ -441,8 +441,7 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
 
 FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
-    PlannerContextPtr & planner_context,
-    std::set<std::string> & used_row_policies)
+    PlannerContextPtr & planner_context)
 {
     auto storage_id = storage->getStorageID();
     const auto & query_context = planner_context->getQueryContext();
@@ -450,12 +449,6 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     if (!row_policy_filter || row_policy_filter->empty())
         return {};
-
-    for (const auto & row_policy : row_policy_filter->policies)
-    {
-        auto name = row_policy->getFullName().toString();
-        used_row_policies.emplace(std::move(name));
-    }
 
     return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
 }
@@ -593,7 +586,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     auto * union_node = table_expression->as<UnionNode>();
 
     QueryPlan query_plan;
-    std::set<std::string> used_row_policies;
 
     if (table_node || table_function_node)
     {
@@ -789,7 +781,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 };
 
-                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
+                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context);
                 add_filter(row_policy_filter_info, "Row-level security filter");
                 if (row_policy_filter_info.actions)
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info.actions);
@@ -948,11 +940,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
     }
 
-    return JoinTreeQueryPlan{
-        .query_plan = std::move(query_plan),
-        .from_stage = from_stage,
-        .used_row_policies = std::move(used_row_policies),
-    };
+    return {std::move(query_plan), from_stage};
 }
 
 JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_expression,
@@ -1158,13 +1146,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             const auto & join_clause_right_key_nodes = join_clause.getRightKeyNodes();
 
             size_t join_clause_key_nodes_size = join_clause_left_key_nodes.size();
-            chassert(join_clause_key_nodes_size == join_clause_right_key_nodes.size());
+            assert(join_clause_key_nodes_size == join_clause_right_key_nodes.size());
 
             for (size_t i = 0; i < join_clause_key_nodes_size; ++i)
             {
-                table_join_clause.addKey(join_clause_left_key_nodes[i]->result_name,
-                                         join_clause_right_key_nodes[i]->result_name,
-                                         join_clause.isNullsafeCompareKey(i));
+                table_join_clause.key_names_left.push_back(join_clause_left_key_nodes[i]->result_name);
+                table_join_clause.key_names_right.push_back(join_clause_right_key_nodes[i]->result_name);
             }
 
             const auto & join_clause_get_left_filter_condition_nodes = join_clause.getLeftFilterConditionNodes();
@@ -1411,23 +1398,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     drop_unused_columns_after_join_transform_step->setStepDescription("DROP unused columns after JOIN");
     result_plan.addStep(std::move(drop_unused_columns_after_join_transform_step));
 
-    for (const auto & right_join_tree_query_plan_row_policy : right_join_tree_query_plan.used_row_policies)
-        left_join_tree_query_plan.used_row_policies.insert(right_join_tree_query_plan_row_policy);
-
-    /// Collect all required actions dags in `left_join_tree_query_plan.actions_dags`
-    for (auto && action_dag : right_join_tree_query_plan.actions_dags)
-        left_join_tree_query_plan.actions_dags.emplace_back(action_dag);
-    if (join_clauses_and_actions.left_join_expressions_actions)
-        left_join_tree_query_plan.actions_dags.emplace_back(std::move(join_clauses_and_actions.left_join_expressions_actions));
-    if (join_clauses_and_actions.right_join_expressions_actions)
-        left_join_tree_query_plan.actions_dags.emplace_back(std::move(join_clauses_and_actions.right_join_expressions_actions));
-
-    return JoinTreeQueryPlan{
-        .query_plan = std::move(result_plan),
-        .from_stage = QueryProcessingStage::FetchColumns,
-        .used_row_policies = std::move(left_join_tree_query_plan.used_row_policies),
-        .actions_dags = std::move(left_join_tree_query_plan.actions_dags),
-    };
+    return {std::move(result_plan), QueryProcessingStage::FetchColumns};
 }
 
 JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_join_table_expression,
@@ -1467,9 +1438,6 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     }
 
     array_join_action_dag->projectInput();
-
-    join_tree_query_plan.actions_dags.push_back(array_join_action_dag);
-
     auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), array_join_action_dag);
     array_join_actions->setStepDescription("ARRAY JOIN actions");
     plan.addStep(std::move(array_join_actions));
@@ -1508,12 +1476,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));
 
-    return JoinTreeQueryPlan{
-        .query_plan = std::move(plan),
-        .from_stage = QueryProcessingStage::FetchColumns,
-        .used_row_policies = std::move(join_tree_query_plan.used_row_policies),
-        .actions_dags = std::move(join_tree_query_plan.actions_dags),
-    };
+    return {std::move(plan), QueryProcessingStage::FetchColumns};
 }
 
 }

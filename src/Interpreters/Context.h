@@ -792,7 +792,6 @@ public:
     EmbeddedDictionaries & getEmbeddedDictionaries();
     void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
-    void waitForDictionariesLoad() const;
 
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
@@ -946,8 +945,6 @@ public:
     void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
-
-    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 

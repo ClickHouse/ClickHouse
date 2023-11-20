@@ -59,7 +59,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
-    format_settings.csv.allow_cr_end_of_line = settings.input_format_csv_allow_cr_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;

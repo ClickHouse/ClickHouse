@@ -288,6 +288,8 @@ void StorageMaterializedView::alter(
         const auto & old_select = old_metadata.getSelectQuery();
 
         DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+
+        new_metadata.setSelectQuery(new_select);
     }
     /// end modify query
 
@@ -398,7 +400,7 @@ void StorageMaterializedView::startup()
         DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 }
 
-void StorageMaterializedView::shutdown(bool)
+void StorageMaterializedView::shutdown()
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();

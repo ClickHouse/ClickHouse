@@ -134,7 +134,6 @@ namespace CurrentMetrics
 {
     extern const Metric StorageDistributedThreads;
     extern const Metric StorageDistributedThreadsActive;
-    extern const Metric StorageDistributedThreadsScheduled;
 }
 
 namespace DB
@@ -532,6 +531,9 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
+
+    // std::cerr << query_node.dumpTree() << std::endl;
+    // std::cerr << query_info.table_expression->dumpTree() << std::endl;
 
     auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
     {
@@ -1215,7 +1217,7 @@ void StorageDistributed::initializeFromDisk()
     const auto & disks = data_volume->getDisks();
 
     /// Make initialization for large number of disks parallel.
-    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
+    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, disks.size());
 
     for (const DiskPtr & disk : disks)
     {
@@ -1246,7 +1248,7 @@ void StorageDistributed::initializeFromDisk()
 }
 
 
-void StorageDistributed::shutdown(bool)
+void StorageDistributed::shutdown()
 {
     async_insert_blocker.cancelForever();
 
@@ -1267,7 +1269,7 @@ void StorageDistributed::drop()
     // And second time shutdown() should be fast, since none of
     // DirectoryMonitor should not do anything, because ActionBlocker is
     // canceled (in shutdown()).
-    shutdown(true);
+    shutdown();
 
     // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())
@@ -1873,19 +1875,4 @@ void registerStorageDistributed(StorageFactory & factory)
     });
 }
 
-bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
-{
-    if (!data_volume)
-        return true;
-
-    for (auto & disk : data_volume->getDisks())
-    {
-        if (new_added_disks.contains(disk->getName()))
-        {
-            initializeDirectoryQueuesForDisk(disk);
-        }
-    }
-
-    return true;
-}
 }

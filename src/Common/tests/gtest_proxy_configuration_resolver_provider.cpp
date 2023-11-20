@@ -195,37 +195,3 @@ TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverIsBasedOnProtocolC
 }
 
 // remote resolver is tricky to be tested in unit tests
-
-template <bool DISABLE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY, bool STRING>
-void test_tunneling(DB::ContextMutablePtr context)
-{
-    EnvironmentProxySetter setter(http_env_proxy_server, https_env_proxy_server);
-
-    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
-
-    config->setString("proxy", "");
-
-    if constexpr (STRING)
-    {
-        config->setString("proxy.disable_tunneling_for_https_requests_over_http_proxy", DISABLE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY ? "true" : "false");
-    }
-    else
-    {
-        config->setBool("proxy.disable_tunneling_for_https_requests_over_http_proxy", DISABLE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY);
-    }
-
-    context->setConfig(config);
-
-    auto https_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
-
-    ASSERT_EQ(https_configuration.tunneling, !DISABLE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY);
-}
-
-TEST_F(ProxyConfigurationResolverProviderTests, TunnelingForHTTPSRequestsOverHTTPProxySetting)
-{
-    test_tunneling<false, false>(context);
-    test_tunneling<false, true>(context);
-    test_tunneling<true, false>(context);
-    test_tunneling<true, true>(context);
-}
-

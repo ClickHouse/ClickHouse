@@ -46,7 +46,6 @@ namespace CurrentMetrics
 {
     extern const Metric DDLWorkerThreads;
     extern const Metric DDLWorkerThreadsActive;
-    extern const Metric DDLWorkerThreadsScheduled;
 }
 
 namespace DB
@@ -94,7 +93,7 @@ DDLWorker::DDLWorker(
     {
         LOG_WARNING(log, "DDLWorker is configured to use multiple threads. "
                          "It's not recommended because queries can be reordered. Also it may cause some unknown issues to appear.");
-        worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
+        worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
     }
 
     queue_dir = zk_root_dir;
@@ -515,7 +514,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         /// get the same exception again. So we return false only for several special exception codes,
         /// and consider query as executed with status "failed" and return true in other cases.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
-                                 e.code() != ErrorCodes::UNFINISHED &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
                                  e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
@@ -728,8 +726,7 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
         // Setting alters should be executed on all replicas
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
-            alter->isMovePartitionToDiskOrVolumeAlter() ||
-            alter->isCommentAlter())
+            alter->isMovePartitionToDiskOrVolumeAlter())
             return false;
     }
 
@@ -797,15 +794,11 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         // Has to get with zk fields to get active replicas field
         replicated_storage->getStatus(status, true);
 
-        // Should return as soon as possible if the table is dropped or detached, so we will release StoragePtr
+        // Should return as soon as possible if the table is dropped.
         bool replica_dropped = storage->is_dropped;
         bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(storage->getStorageID(), context);
         if (replica_dropped || all_replicas_likely_detached)
         {
-            /// We have to exit (and release StoragePtr) if the replica is being restarted,
-            /// but we can retry in this case, so don't write execution status
-            if (storage->is_being_restarted)
-                throw Exception(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is dropped or detached permanently");
             LOG_WARNING(log, ", task {} will not be executed.", task.entry_name);
             task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is dropped or detached permanently");
             return false;
@@ -1114,7 +1107,7 @@ void DDLWorker::runMainThread()
         /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
         /// We create new thread pool to forget previous exceptions.
         if (1 < pool_size)
-            worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
+            worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
         last_skipped_entry_name.reset();
@@ -1153,7 +1146,7 @@ void DDLWorker::runMainThread()
                 initialized = false;
                 /// Wait for pending async tasks
                 if (1 < pool_size)
-                    worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
+                    worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
                 LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
             }
             else

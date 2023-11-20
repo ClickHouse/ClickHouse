@@ -31,7 +31,7 @@ PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, ActionsDAG
 {
 }
 
-bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
+bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part)
 {
     if (part.isEmpty())
         return true;

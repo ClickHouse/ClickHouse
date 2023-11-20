@@ -801,11 +801,6 @@ void FileCache::removePathIfExists(const String & path)
 void FileCache::removeAllReleasable()
 {
     assertInitialized();
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-    assertCacheCorrectness();
-#endif
-
     metadata.removeAllKeys(/* if_releasable */true);
 
     if (stash)

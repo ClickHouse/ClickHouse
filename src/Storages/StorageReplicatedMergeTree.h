@@ -139,7 +139,7 @@ public:
     /// In shutdown we completely terminate table -- remove
     /// is_active node and interserver handler. Also optionally
     /// wait until other replicas will download some parts from our replica.
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     ~StorageReplicatedMergeTree() override;
 
@@ -230,7 +230,7 @@ public:
     /// Add a part to the queue of parts whose data you want to check in the background thread.
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
-    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     /// Checks ability to use granularity
@@ -621,7 +621,6 @@ private:
       *  But if there are too many, throw an exception just in case - it's probably a configuration error.
       */
     void checkParts(bool skip_sanity_checks);
-    bool checkPartsImpl(bool skip_sanity_checks);
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.

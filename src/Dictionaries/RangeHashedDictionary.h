@@ -227,7 +227,9 @@ private:
     struct KeyAttribute final
     {
         RangeStorageTypeContainer<KeyAttributeContainerType> container;
+
         RangeStorageTypeContainer<InvalidIntervalsContainerType> invalid_intervals_container;
+
     };
 
     void createAttributes();

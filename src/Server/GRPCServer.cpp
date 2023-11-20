@@ -161,7 +161,7 @@ namespace
                     case GRPCObsoleteTransportCompression::NO_COMPRESSION: res.algorithm = GRPC_COMPRESS_NONE; break;
                     case GRPCObsoleteTransportCompression::DEFLATE: res.algorithm = GRPC_COMPRESS_DEFLATE; break;
                     case GRPCObsoleteTransportCompression::GZIP: res.algorithm = GRPC_COMPRESS_GZIP; break;
-                    case GRPCObsoleteTransportCompression::STREAM_GZIP: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
+                    case GRPCObsoleteTransportCompression::STREAM_GZIP: res.algorithm = GRPC_COMPRESS_STREAM_GZIP; break;
                     default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression algorithm: {}", GRPCObsoleteTransportCompression::CompressionAlgorithm_Name(query_info.obsolete_result_compression().algorithm()));
                 }
 
@@ -206,7 +206,7 @@ namespace
             else if (str == "gzip")
                 algorithm = GRPC_COMPRESS_GZIP;
             else if (str == "stream_gzip")
-                throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
+                algorithm = GRPC_COMPRESS_STREAM_GZIP;
             else
                 throw Exception(error_code, "Unknown compression algorithm: '{}'", str);
         }

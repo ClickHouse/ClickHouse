@@ -731,13 +731,11 @@ Default value: LZ4.
 
 ## max_block_size {#setting-max_block_size}
 
-In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
+In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 
-The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
+Default value: 65,536.
 
-The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
-
-Default value: `65,409`
+Blocks the size of `max_block_size` are not always loaded from the table. If it is obvious that less data needs to be retrieved, a smaller block is processed.
 
 ## preferred_block_size_bytes {#preferred-block-size-bytes}
 
@@ -1659,17 +1657,16 @@ Possible values:
 
 Default value: `1`.
 
-## query_cache_nondeterministic_function_handling {#query-cache-nondeterministic-function-handling}
+## query_cache_store_results_of_queries_with_nondeterministic_functions {#query-cache-store-results-of-queries-with-nondeterministic-functions}
 
-Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
+If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
 
 Possible values:
 
-- `'throw'` - Throw an exception and don't cache the query result.
-- `'save'` - Cache the query result.
-- `'ignore'` - Don't cache the query result and don't throw an exception.
+- 0 - Disabled
+- 1 - Enabled
 
-Default value: `throw`.
+Default value: `0`.
 
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
@@ -2716,10 +2713,6 @@ Default value: `0`.
 - [Distributed Table Engine](../../engines/table-engines/special/distributed.md/#distributed)
 - [Managing Distributed Tables](../../sql-reference/statements/system.md/#query-language-system-distributed)
 
-## insert_distributed_sync {#insert_distributed_sync}
-
-Alias for [`distributed_foreground_insert`](#distributed_foreground_insert).
-
 ## insert_shard_id {#insert_shard_id}
 
 If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table into which the data will be inserted synchronously.
@@ -3317,11 +3310,22 @@ Possible values:
 
 Default value: `0`.
 
+## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
+
+Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Possible values:
+
+- 0 - Show names of native ClickHouse data types.
+- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
+
+Default value: `0`.
+
 ## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
 
 When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has an effect only when the connection is made through the MySQL wire protocol.
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3332,7 +3336,7 @@ Default value: `0`.
 
 When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has an effect only when the connection is made through the MySQL wire protocol.
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3950,17 +3954,6 @@ Possible values:
 
 Default value: `''`.
 
-## preferred_optimize_projection_name {#preferred_optimize_projection_name}
-
-If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
-
-
-Possible values:
-
-- string: name of preferred projection
-
-Default value: `''`.
-
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -3972,10 +3965,6 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
-
-:::note
-`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
-:::
 
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
@@ -4819,17 +4808,3 @@ LIFETIME(MIN 0 MAX 3600)
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```
-
-## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
-
-When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
-
-Default value: `false`.
-
-## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
-
-When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
-When set to `false` than all attempts are made with identical timeouts.
-
-Default value: `true`.

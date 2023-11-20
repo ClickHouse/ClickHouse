@@ -32,7 +32,6 @@ namespace CurrentMetrics
 {
     extern const Metric HashedDictionaryThreads;
     extern const Metric HashedDictionaryThreadsActive;
-    extern const Metric HashedDictionaryThreadsScheduled;
 }
 
 namespace DB
@@ -60,7 +59,7 @@ public:
     explicit ParallelDictionaryLoader(HashedDictionary & dictionary_)
         : dictionary(dictionary_)
         , shards(dictionary.configuration.shards)
-        , pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, CurrentMetrics::HashedDictionaryThreadsScheduled, shards)
+        , pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, shards)
         , shards_queues(shards)
     {
         UInt64 backlog = dictionary.configuration.shard_load_queue_backlog;
@@ -230,7 +229,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         return;
 
     size_t shards = std::max<size_t>(configuration.shards, 1);
-    ThreadPool pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, CurrentMetrics::HashedDictionaryThreadsScheduled, shards);
+    ThreadPool pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, shards);
 
     size_t hash_tables_count = 0;
     auto schedule_destroy = [&hash_tables_count, &pool](auto & container)
@@ -1246,6 +1245,8 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             }
         }
     };
+
+    using namespace std::placeholders;
 
     factory.registerLayout("hashed",
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Simple, /* sparse = */ false); }, false);

@@ -25,7 +25,8 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
+
+#include "config_version.h"
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>

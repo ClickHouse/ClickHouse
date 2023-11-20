@@ -228,7 +228,7 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 }
 
 
-void StorageMaterializedPostgreSQL::shutdown(bool)
+void StorageMaterializedPostgreSQL::shutdown()
 {
     if (replication_handler)
         replication_handler->shutdown();

@@ -69,12 +69,6 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
-     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
-     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
-
-
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},

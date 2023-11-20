@@ -6,7 +6,9 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
 
+#include <base/unaligned.h>
 #include <base/sort.h>
+#include <base/scope_guard.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -17,6 +19,8 @@
 #include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
+
+template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
 namespace DB
 {

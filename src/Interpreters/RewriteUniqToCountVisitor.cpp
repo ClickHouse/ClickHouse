@@ -27,7 +27,7 @@ bool matchFnUniq(String name)
 
 bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & alias)
 {
-    if (lhs->getTreeHash(/*ignore_aliases=*/ true) == rhs->getTreeHash(/*ignore_aliases=*/ true))
+    if (lhs->getTreeHash() == rhs->getTreeHash())
     {
         return true;
     }

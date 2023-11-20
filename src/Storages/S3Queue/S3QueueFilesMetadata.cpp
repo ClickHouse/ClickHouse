@@ -197,7 +197,8 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
     return metadata;
 }
 
-S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
+std::pair<S3QueueFilesMetadata::ProcessingNodeHolderPtr,
+          S3QueueFilesMetadata::FileStatusPtr> S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessingMicroseconds);
     auto file_status = local_file_statuses.get(path, /* create */true);
@@ -260,12 +261,12 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
     {
         case S3QueueMode::ORDERED:
         {
-            std::tie(result, processing_node_holder) = trySetFileAsProcessingForOrderedMode(path, file_status);
+            std::tie(result, processing_node_holder) = trySetFileAsProcessingForOrderedMode(path);
             break;
         }
         case S3QueueMode::UNORDERED:
         {
-            std::tie(result, processing_node_holder) = trySetFileAsProcessingForUnorderedMode(path, file_status);
+            std::tie(result, processing_node_holder) = trySetFileAsProcessingForUnorderedMode(path);
             break;
         }
     }
@@ -306,13 +307,13 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
     }
 
     if (result == SetFileProcessingResult::Success)
-        return processing_node_holder;
+        return std::pair(processing_node_holder, file_status);
 
     return {};
 }
 
 std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
-          S3QueueFilesMetadata::ProcessingNodeHolderPtr> S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string & path, const FileStatusPtr & file_status)
+          S3QueueFilesMetadata::ProcessingNodeHolderPtr> S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string & path)
 {
     /// In one zookeeper transaction do the following:
     /// 1. check that corresponding persistent nodes do not exist in processed/ and failed/;
@@ -339,7 +340,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
 
     if (code == Coordination::Error::ZOK)
     {
-        auto holder = std::make_unique<ProcessingNodeHolder>(node_metadata.processing_id, path, zookeeper_processing_path / node_name, file_status, zk_client);
+        auto holder = std::make_unique<ProcessingNodeHolder>(node_metadata.processing_id, path, zookeeper_processing_path / node_name, zk_client);
         return std::pair{SetFileProcessingResult::Success, std::move(holder)};
     }
 
@@ -362,7 +363,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
 }
 
 std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
-          S3QueueFilesMetadata::ProcessingNodeHolderPtr> S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & path, const FileStatusPtr & file_status)
+          S3QueueFilesMetadata::ProcessingNodeHolderPtr> S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & path)
 {
     /// Same as for Unordered mode.
     /// The only difference is the check if the file is already processed.
@@ -393,10 +394,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
 
         auto max_processed_file_path = processed_node_metadata.file_path;
         if (!max_processed_file_path.empty() && path <= max_processed_file_path)
-        {
-            LOG_TEST(log, "File {} is already processed, max processed file: {}", path, max_processed_file_path);
             return std::pair{SetFileProcessingResult::AlreadyProcessed, nullptr};
-        }
 
         Coordination::Requests requests;
         requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name, "", zkutil::CreateMode::Persistent));
@@ -409,7 +407,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
         auto code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
-            auto holder = std::make_unique<ProcessingNodeHolder>(node_metadata.processing_id, path, zookeeper_processing_path / node_name, file_status, zk_client);
+            auto holder = std::make_unique<ProcessingNodeHolder>(node_metadata.processing_id, path, zookeeper_processing_path / node_name, zk_client);
             return std::pair{SetFileProcessingResult::Success, std::move(holder)};
         }
 
@@ -425,7 +423,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
         }
         else
         {
-            LOG_TEST(log, "Version of max processed file changed. Retrying the check for file `{}`", path);
+            LOG_TEST(log, "Version of max processed file changed. Retring the check for file `{}`", path);
         }
     }
 }
@@ -433,7 +431,9 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
 void S3QueueFilesMetadata::setFileProcessed(ProcessingNodeHolderPtr holder)
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessedMicroseconds);
-    auto file_status = holder->getFileStatus();
+    const auto & path = holder->path;
+
+    auto file_status = local_file_statuses.get(path, /* create */false);
     {
         std::lock_guard lock(file_status->metadata_lock);
         file_status->state = FileStatus::State::Processed;
@@ -559,7 +559,7 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileFailedMicroseconds);
     const auto & path = holder->path;
 
-    auto file_status = holder->getFileStatus();
+    auto file_status = local_file_statuses.get(path, /* create */false);
     {
         std::lock_guard lock(file_status->metadata_lock);
         file_status->state = FileStatus::State::Failed;
@@ -682,10 +682,8 @@ S3QueueFilesMetadata::ProcessingNodeHolder::ProcessingNodeHolder(
     const std::string & processing_id_,
     const std::string & path_,
     const std::string & zk_node_path_,
-    FileStatusPtr file_status_,
     zkutil::ZooKeeperPtr zk_client_)
     : zk_client(zk_client_)
-    , file_status(file_status_)
     , path(path_)
     , zk_node_path(zk_node_path_)
     , processing_id(processing_id_)
@@ -792,18 +790,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
     const bool check_nodes_ttl = max_set_age_sec > 0;
 
     const auto zk_client = getZooKeeper();
-    Strings nodes;
-    auto code = zk_client->tryGetChildren(zookeeper_processed_path, nodes);
-    if (code != Coordination::Error::ZOK)
-    {
-        if (code == Coordination::Error::ZNONODE)
-        {
-            LOG_TEST(log, "A `processed` not is not yet created");
-            return;
-        }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
-    }
-
+    auto nodes = zk_client->getChildren(zookeeper_processed_path);
     if (nodes.empty())
     {
         LOG_TEST(log, "A set of nodes is empty");
@@ -882,7 +869,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 
             local_file_statuses.remove(node.metadata.file_path, /* if_exists */true);
 
-            code = zk_client->tryRemove(path);
+            auto code = zk_client->tryRemove(path);
             if (code == Coordination::Error::ZOK)
                 --nodes_to_remove;
             else
@@ -899,7 +886,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 
                 local_file_statuses.remove(node.metadata.file_path, /* if_exists */true);
 
-                code = zk_client->tryRemove(path);
+                auto code = zk_client->tryRemove(path);
                 if (code != Coordination::Error::ZOK)
                     LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", path.string(), code);
             }

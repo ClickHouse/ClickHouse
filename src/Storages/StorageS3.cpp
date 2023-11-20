@@ -6,6 +6,8 @@
 
 #include <Common/isValidUTF8.h>
 
+#include <Functions/FunctionsConversion.h>
+
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/ParallelReadBuffer.h>
@@ -77,7 +79,6 @@ namespace CurrentMetrics
 {
     extern const Metric StorageS3Threads;
     extern const Metric StorageS3ThreadsActive;
-    extern const Metric StorageS3ThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -148,7 +149,7 @@ public:
         , virtual_columns(virtual_columns_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
-        , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
+        , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
         , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
         , file_progress_callback(file_progress_callback_)
     {
@@ -500,7 +501,7 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     size_t max_threads_count)
     : callback(callback_)
 {
-    ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, max_threads_count);
+    ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, max_threads_count);
     auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "S3ReadTaskItr");
 
     std::vector<std::future<String>> keys;
@@ -565,7 +566,7 @@ StorageS3Source::StorageS3Source(
     , file_iterator(file_iterator_)
     , max_parsing_threads(max_parsing_threads_)
     , need_only_count(need_only_count_)
-    , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
+    , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
 }
@@ -825,6 +826,7 @@ public:
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
                 configuration_.client,
+                configuration_.client_with_long_timeout,
                 bucket,
                 key,
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -1329,6 +1331,8 @@ void StorageS3::Configuration::connect(ContextPtr context)
                 context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
         });
+
+    client_with_long_timeout = client->clone(std::nullopt, request_settings.long_request_timeout_ms);
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)

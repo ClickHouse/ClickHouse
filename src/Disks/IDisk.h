@@ -38,7 +38,6 @@ namespace CurrentMetrics
 {
     extern const Metric IDiskCopierThreads;
     extern const Metric IDiskCopierThreadsActive;
-    extern const Metric IDiskCopierThreadsScheduled;
 }
 
 namespace DB
@@ -118,13 +117,13 @@ public:
     /// Default constructor.
     IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, config.getUInt(config_prefix + ".thread_pool_size", 16))
+        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, config.getUInt(config_prefix + ".thread_pool_size", 16))
     {
     }
 
     explicit IDisk(const String & name_)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
+        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, 16)
     {
     }
 
@@ -303,14 +302,12 @@ public:
     struct LocalPathWithObjectStoragePaths
     {
         std::string local_path;
+        std::string common_prefix_for_objects;
         StoredObjects objects;
 
         LocalPathWithObjectStoragePaths(
-            const std::string & local_path_,
-            StoredObjects && objects_)
-            : local_path(local_path_)
-            , objects(std::move(objects_))
-        {}
+            const std::string & local_path_, const std::string & common_prefix_for_objects_, StoredObjects && objects_)
+            : local_path(local_path_), common_prefix_for_objects(common_prefix_for_objects_), objects(std::move(objects_)) {}
     };
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)

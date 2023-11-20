@@ -33,7 +33,6 @@ class BackupsWorker
 {
 public:
     BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
-    ~BackupsWorker();
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -89,15 +88,11 @@ private:
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
-    enum class ThreadPoolId;
-    ThreadPool & getThreadPool(ThreadPoolId thread_pool_id);
+    std::unique_ptr<ThreadPool> backups_thread_pool;
+    std::unique_ptr<ThreadPool> restores_thread_pool;
 
-    class ThreadPools;
-    std::unique_ptr<ThreadPools> thread_pools;
-
-    const bool allow_concurrent_backups;
-    const bool allow_concurrent_restores;
-    Poco::Logger * log;
+    std::unique_ptr<ThreadPool> backup_async_executor_pool;
+    std::unique_ptr<ThreadPool> restore_async_executor_pool;
 
     std::unordered_map<BackupOperationID, BackupOperationInfo> infos;
     std::shared_ptr<BackupLog> backup_log;
@@ -105,6 +100,9 @@ private:
     std::atomic<size_t> num_active_backups = 0;
     std::atomic<size_t> num_active_restores = 0;
     mutable std::mutex infos_mutex;
+    Poco::Logger * log;
+    const bool allow_concurrent_backups;
+    const bool allow_concurrent_restores;
 };
 
 }

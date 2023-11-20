@@ -900,6 +900,8 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex>>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
+    using namespace std::placeholders;
+
     factory.registerLayout("hashed_array",
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
         {

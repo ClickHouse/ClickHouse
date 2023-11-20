@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2633 
+personal_ws-1.1 en 543
 AArch
 ACLs
 ALTERs
@@ -356,7 +356,6 @@ IOUringPendingEvents
 IOWriterThreads
 IOWriterThreadsActive
 IPTrie
-IProcessor
 IPv
 Identifiant
 Incrementing
@@ -1125,7 +1124,6 @@ azureBlobStorageCluster
 backend
 backoff
 backticks
-backupview
 balancer
 basename
 bcrypt
@@ -1502,7 +1500,6 @@ formated
 formatschema
 formatter
 freezed
-fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
@@ -1543,7 +1540,6 @@ github
 glibc
 globalIn
 globalNotIn
-globbing
 glushkovds
 golang
 googletest
@@ -2288,8 +2284,6 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
-stringJaccardIndex
-stringJaccardIndexUTF
 stringToH
 stripelog
 strtod

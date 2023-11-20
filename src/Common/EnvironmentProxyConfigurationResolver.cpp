@@ -13,9 +13,8 @@ namespace DB
 static constexpr auto PROXY_HTTP_ENVIRONMENT_VARIABLE = "http_proxy";
 static constexpr auto PROXY_HTTPS_ENVIRONMENT_VARIABLE = "https_proxy";
 
-EnvironmentProxyConfigurationResolver::EnvironmentProxyConfigurationResolver(
-    Protocol request_protocol_, bool disable_tunneling_for_https_requests_over_http_proxy_)
-    : ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_)
+EnvironmentProxyConfigurationResolver::EnvironmentProxyConfigurationResolver(Protocol protocol_)
+    : protocol(protocol_)
 {}
 
 namespace
@@ -38,7 +37,7 @@ namespace
 
 ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
 {
-    const auto * proxy_host = getProxyHost(request_protocol);
+    const auto * proxy_host = getProxyHost(protocol);
 
     if (!proxy_host)
     {
@@ -55,9 +54,7 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
     return ProxyConfiguration {
         host,
         ProxyConfiguration::protocolFromString(scheme),
-        port,
-        useTunneling(request_protocol, ProxyConfiguration::protocolFromString(scheme), disable_tunneling_for_https_requests_over_http_proxy),
-        request_protocol
+        port
     };
 }
 

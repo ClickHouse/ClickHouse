@@ -1224,9 +1224,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
-        database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (need_add_to_database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
@@ -1240,9 +1240,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         chassert(!ddl_guard);
         return executeQueryOnCluster(create);
     }
-
-    if (need_add_to_database && !database)
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
     if (create.replace_table)
     {
@@ -1447,21 +1444,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
-
-    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
-    if (replicated_storage)
-    {
-        const auto probability = getContext()->getSettingsRef().create_replicated_merge_tree_fault_injection_probability;
-        std::bernoulli_distribution fault(probability);
-        if (fault(thread_local_rng))
-        {
-            /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
-            if (!create.attach)
-                replicated_storage->dropIfEmpty();
-
-            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
-        }
-    }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 

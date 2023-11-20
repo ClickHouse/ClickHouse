@@ -18,7 +18,7 @@ uint8_t CompressionCodecNone::getMethodByte() const
 
 void CompressionCodecNone::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 UInt32 CompressionCodecNone::doCompressData(const char * source, UInt32 source_size, char * dest) const
