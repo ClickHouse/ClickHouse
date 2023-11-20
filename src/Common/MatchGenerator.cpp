@@ -57,7 +57,8 @@ private:
     class NodeFunction
     {
     public:
-        virtual String operator() () = 0;
+        virtual size_t operator() (char * out, size_t size) = 0;
+        virtual size_t getRequiredSize() = 0;
         virtual ~NodeFunction() = default;
     };
 
@@ -87,26 +88,28 @@ private:
         {
         }
 
-        String operator () () override
+        size_t operator () (char * out, size_t size) override
         {
             size_t total_size = 0;
 
-            std::vector<String> part_result;
-            part_result.reserve(children.size());
             for (auto & child: children)
             {
-                part_result.push_back(child->operator()());
-                total_size += part_result.back().size();
+                size_t consumed = child->operator()(out, size);
+                chassert(consumed <= size);
+                out += consumed;
+                size -= consumed;
+                total_size += consumed;
             }
 
-            String result;
-            result.reserve(total_size);
-            for (auto & part: part_result)
-            {
-                result += part;
-            }
+            return total_size;
+        }
 
-            return result;
+        size_t getRequiredSize() override
+        {
+            size_t total_size = 0;
+            for (auto & child: children)
+                total_size += child->getRequiredSize();
+            return total_size;
         }
 
     private:
@@ -121,11 +124,21 @@ private:
         {
         }
 
-        String operator () () override
+        size_t operator () (char * out, size_t size) override
         {
             std::uniform_int_distribution<int> distribution(0, static_cast<int>(children.size()-1));
             int chosen = distribution(thread_local_rng);
-            return children[chosen]->operator()();
+            size_t consumed = children[chosen]->operator()(out, size);
+            chassert(consumed <= size);
+            return consumed;
+        }
+
+        size_t getRequiredSize() override
+        {
+            size_t total_size = 0;
+            for (auto & child: children)
+                total_size = std::max(total_size, child->getRequiredSize());
+            return total_size;
         }
 
     private:
@@ -142,15 +155,26 @@ private:
         {
         }
 
-        String operator () () override
+        size_t operator () (char * out, size_t size) override
         {
             std::uniform_int_distribution<int> distribution(min_repeat, max_repeat);
-            int chosen = distribution(thread_local_rng);
+            int ntimes = distribution(thread_local_rng);
 
-            String result;
-            for (int i = 0; i < chosen; ++i)
-                result += func->operator()();
-            return result;
+            size_t total_size = 0;
+            for (int i = 0; i < ntimes; ++i)
+            {
+                size_t consumed =func->operator()(out, size);
+                chassert(consumed <= size);
+                out += consumed;
+                size -= consumed;
+                total_size += consumed;
+            }
+            return total_size;
+        }
+
+        size_t getRequiredSize() override
+        {
+            return max_repeat * func->getRequiredSize();
         }
 
     private:
@@ -180,8 +204,10 @@ private:
             }
         }
 
-        String operator () () override
+        size_t operator () (char * out, size_t size) override
         {
+            chassert(UTFmax <= size);
+
             std::uniform_int_distribution<int> distribution(1, char_count);
             int chosen = distribution(thread_local_rng);
             int count_down = chosen;
@@ -203,12 +229,16 @@ private:
 
             auto [lo, _] = *it;
             Rune r = lo + count_down - 1;
-            int n = re2::runetochar(buffer, &r);
-            return String(buffer, n);
+            int n = re2::runetochar(out, &r);
+            return n;
+        }
+
+        size_t getRequiredSize() override
+        {
+            return UTFmax;
         }
 
     private:
-        char buffer[UTFmax];
         int char_count = 0;
         CharRanges char_ranges;
     };
@@ -229,9 +259,17 @@ private:
             }
         }
 
-        String operator () () override
+        size_t operator () (char * out, size_t size) override
         {
-            return literal_string;
+            chassert(literal_string.size() <= size);
+
+            memcpy(out, literal_string.data(), literal_string.size());
+            return literal_string.size();
+        }
+
+        size_t getRequiredSize() override
+        {
+            return literal_string.size();
         }
 
     private:
@@ -250,9 +288,17 @@ private:
             literal = String(buffer, n);
         }
 
-        String operator () () override
+        size_t operator () (char * out, size_t size) override
         {
-            return literal;
+            chassert(literal.size() <= size);
+
+            memcpy(out, literal.data(), literal.size());
+            return literal.size();
+        }
+
+        size_t getRequiredSize() override
+        {
+            return literal.size();
         }
 
     private:
@@ -267,12 +313,17 @@ private:
         {
         }
 
-        String operator () () override
+        size_t operator () (char *, size_t) override
         {
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
                 "RandomStringPrepareWalker: regexp node '{}' is not supported for generating a random match",
                 operation);
+        }
+
+        size_t getRequiredSize() override
+        {
+            return 0;
         }
 
     private:
@@ -296,14 +347,21 @@ public:
         if (generators.size() == 0)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "no generators");
 
-        auto result = [root_func = generators.at(root)] () -> String {
-            return root_func->operator()();
+        auto root_func = generators.at(root);
+        auto required_buffer_size = root_func->getRequiredSize();
+        auto generator_func = [=] ()
+            -> String
+        {
+            auto buffer = String(required_buffer_size, '\0');
+            size_t size = root_func->operator()(buffer.data(), buffer.size());
+            buffer.resize(size);
+            return buffer;
         };
 
         root = nullptr;
-        generators.clear();
+        generators = {};
 
-        return std::move(result);
+        return std::move(generator_func);
     }
 
 private:

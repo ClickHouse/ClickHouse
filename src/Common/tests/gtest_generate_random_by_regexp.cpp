@@ -71,12 +71,12 @@ UInt64 elapsed(DB::ObjectStorageKeysGeneratorPtr generator)
 
     Stopwatch watch;
 
-    for (int i = 0; i < 20000; ++i)
+    for (int i = 0; i < 100000; ++i)
     {
         [[ maybe_unused ]] auto result = generator->generate(path).serialize();
     }
 
-    return watch.elapsedMilliseconds();
+    return watch.elapsedMicroseconds();
 }
 
 TEST(ObjectStorageKey, Performance)
@@ -95,7 +95,7 @@ TEST(ObjectStorageKey, Performance)
             std::cerr << "slow ratio: +" << float(elapsed_new) / elapsed_old << std::endl;
         else
             std::cerr << "fast ratio: " << float(elapsed_old) / elapsed_new << std::endl;
-        ASSERT_LT(elapsed_new, 2 * elapsed_old);
+        ASSERT_LT(elapsed_new, 1.2 * elapsed_old);
     }
 
 }
