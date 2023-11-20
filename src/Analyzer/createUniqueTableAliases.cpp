@@ -1,8 +1,9 @@
+#include <memory>
 #include <unordered_map>
 #include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
-#include "Common/logger_useful.h"
+#include <Analyzer/LambdaNode.h>
 
 namespace DB
 {
@@ -15,11 +16,11 @@ class CreateUniqueTableAliasesVisitor : public InDepthQueryTreeVisitorWithContex
 public:
     using Base = InDepthQueryTreeVisitorWithContext<CreateUniqueTableAliasesVisitor>;
 
-    explicit CreateUniqueTableAliasesVisitor(const ContextPtr & context, const QueryTreeNodePtr & table_expression)
+    explicit CreateUniqueTableAliasesVisitor(const ContextPtr & context)
         : Base(context)
     {
-        if (table_expression)
-            scope_nodes_stack.push_back(table_expression);
+        // Insert a fake node on top of the stack.
+        scope_nodes_stack.push_back(std::make_shared<LambdaNode>(Names{}, nullptr));
     }
 
     void enterImpl(QueryTreeNodePtr & node)
@@ -106,9 +107,9 @@ private:
 }
 
 
-void createUniqueTableAliases(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, const ContextPtr & context)
+void createUniqueTableAliases(QueryTreeNodePtr & node, const QueryTreeNodePtr &  /*table_expression*/, const ContextPtr & context)
 {
-    CreateUniqueTableAliasesVisitor(context, table_expression).visit(node);
+    CreateUniqueTableAliasesVisitor(context).visit(node);
 }
 
 }
