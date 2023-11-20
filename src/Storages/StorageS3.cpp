@@ -172,7 +172,7 @@ private:
 };
 
 
-static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, const String & bucket, const Strings & keys)
+static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, const String & bucket, const std::unordered_set<String> & keys)
 {
     Block virtual_columns_block;
     fs::path bucket_path(bucket);
@@ -226,31 +226,31 @@ static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, con
     return virtual_columns_block;
 }
 
-static void filterKeysForPartitionPruning(std::vector<String> & keys,
-                                          const String & bucket,
-                                          const NamesAndTypesList & virtual_columns,
-                                          const std::vector<ActionsDAGPtr> & filter_dags,
-                                          ContextPtr context)
+static std::vector<String> filterKeysForPartitionPruning(
+    const std::vector<String> & keys,
+    const String & bucket,
+    const NamesAndTypesList & virtual_columns,
+    const std::vector<ActionsDAGPtr> & filter_dags,
+    ContextPtr context)
 {
+    std::unordered_set<String> result_keys(keys.begin(), keys.end());
     for (const auto & filter_dag : filter_dags)
     {
-        if (keys.empty())
+        if (result_keys.empty())
             break;
 
-        auto block = getBlockWithVirtuals(virtual_columns, bucket, keys);
+        auto block = getBlockWithVirtuals(virtual_columns, bucket, result_keys);
 
         auto filter_actions = VirtualColumnUtils::splitFilterDagForAllowedInputs(block, filter_dag, context);
         if (!filter_actions)
             continue;
         VirtualColumnUtils::filterBlockWithQuery(filter_actions, block, context);
 
-        std::unordered_set<String> filtered_keys = VirtualColumnUtils::extractSingleValueFromBlock<String>(block, "_key");
-        LOG_DEBUG(&Poco::Logger::get("StorageS3"), "Applied partition pruning {} from {} keys left", filtered_keys.size(), keys.size());
-        keys.clear();
-        keys.reserve(filtered_keys.size());
-        for (auto && key : filtered_keys)
-            keys.emplace_back(key);
+        result_keys = VirtualColumnUtils::extractSingleValueFromBlock<String>(block, "_key");
     }
+
+    LOG_DEBUG(&Poco::Logger::get("StorageS3"), "Applied partition pruning {} from {} keys left", result_keys.size(), keys.size());
+    return std::vector<String>(result_keys.begin(), result_keys.end());
 }
 
 class IOutputFormat;
@@ -1161,8 +1161,7 @@ static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
     }
     else
     {
-        Strings keys = configuration.keys;
-        filterKeysForPartitionPruning(keys, configuration.url.bucket, virtual_columns, filter_dags, local_context);
+        Strings keys = filterKeysForPartitionPruning(configuration.keys, configuration.url.bucket, virtual_columns, filter_dags, local_context);
         return std::make_shared<StorageS3Source::KeysIterator>(
             *configuration.client, configuration.url.version_id, keys,
             configuration.url.bucket, configuration.request_settings, read_keys, file_progress_callback);
@@ -1266,6 +1265,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
 
 void ReadFromStorageS3Step::applyFilters()
 {
+    /// We will use filter_dags in filterKeysForPartitionPruning called from initializePipeline, nothing to do here
 }
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
