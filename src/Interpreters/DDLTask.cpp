@@ -113,9 +113,6 @@ String DDLLogEntry::toString() const
         writeChar('\n', wb);
     }
 
-    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
-        wb << "is_backup_restore: " << is_backup_restore << "\n";
-
     return wb.str();
 }
 
@@ -168,12 +165,6 @@ void DDLLogEntry::parse(const String & data)
         checkChar('\n', rb);
     }
 
-    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
-    {
-        checkString("is_backup_restore: ", rb);
-        readBoolText(is_backup_restore, rb);
-        checkChar('\n', rb);
-    }
 
     assertEOF(rb);
 

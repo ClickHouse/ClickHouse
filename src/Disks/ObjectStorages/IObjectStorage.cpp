@@ -1,6 +1,6 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/Exception.h>
+#include <Common/getRandomASCIIString.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -93,6 +93,23 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
     WriteSettings settings{write_settings};
     settings.for_object_storage = true;
     return settings;
+}
+
+std::string IObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+{
+    /// Path to store the new S3 object.
+
+    /// Total length is 32 a-z characters for enough randomness.
+    /// First 3 characters are used as a prefix for
+    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+
+    constexpr size_t key_name_total_size = 32;
+    constexpr size_t key_name_prefix_size = 3;
+
+    /// Path to store new S3 object.
+    return fmt::format("{}/{}",
+        getRandomASCIIString(key_name_prefix_size),
+        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
 
 }

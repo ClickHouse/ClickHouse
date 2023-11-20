@@ -13,7 +13,6 @@ namespace CurrentMetrics
 {
     extern const Metric DestroyAggregatesThreads;
     extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
 }
 
 namespace DB
@@ -96,7 +95,6 @@ struct ManyAggregatedData
             const auto pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::DestroyAggregatesThreads,
                 CurrentMetrics::DestroyAggregatesThreadsActive,
-                CurrentMetrics::DestroyAggregatesThreadsScheduled,
                 variants.size());
 
             for (auto && variant : variants)
@@ -172,8 +170,22 @@ public:
     void work() override;
     Processors expandPipeline() override;
 
+    PartialResultStatus getPartialResultProcessorSupportStatus() const override
+    {
+        /// Currently AggregatingPartialResultTransform support only single-thread aggregation without key.
+
+        /// TODO: check that insert results from aggregator.prepareBlockAndFillWithoutKey return values without
+        /// changing of the aggregator state when aggregation with keys will be supported in AggregatingPartialResultTransform.
+        bool is_partial_result_supported = params->params.keys_size == 0 /// Aggregation without key.
+                                    && many_data->variants.size() == 1; /// Use only one stream for aggregation.
+
+        return is_partial_result_supported ? PartialResultStatus::FullSupported : PartialResultStatus::NotSupported;
+    }
+
 protected:
     void consume(Chunk chunk);
+
+    ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
 
 private:
     /// To read the data that was flushed into the temporary data file.
@@ -205,7 +217,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    std::atomic<bool> is_generate_initialized = false;
+    bool is_generate_initialized = false;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 
@@ -213,6 +225,13 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    friend class AggregatingPartialResultTransform;
+    /// The mutex protects variables that are used for creating a snapshot of the current processor.
+    /// The current implementation of AggregatingPartialResultTransform uses the 'is_generate_initialized' variable to check
+    /// whether the processor has started sending data through the main pipeline, and the corresponding partial result processor should stop creating snapshots.
+    /// Additionally, the mutex protects the 'params->aggregator' and 'many_data->variants' variables, which are used to get data from them for a snapshot.
+    std::mutex snapshot_mutex;
 
     void initGenerate();
 };

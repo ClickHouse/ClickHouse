@@ -55,11 +55,7 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
-            user_configs=[
-                "configs/access.xml",
-                "configs/users.xml",
-                "configs/s3_retry.xml",
-            ],
+            user_configs=["configs/access.xml", "configs/users.xml"],
         )
         cluster.add_instance(
             "dummy_without_named_collections",
@@ -75,7 +71,7 @@ def started_cluster():
             "s3_max_redirects",
             with_minio=True,
             main_configs=["configs/defaultS3.xml"],
-            user_configs=["configs/s3_max_redirects.xml", "configs/s3_retry.xml"],
+            user_configs=["configs/s3_max_redirects.xml"],
         )
         cluster.add_instance(
             "s3_non_default",
@@ -818,15 +814,6 @@ def test_storage_s3_get_unstable(started_cluster):
     assert result.splitlines() == ["500001,500000,0"]
 
 
-def test_storage_s3_get_slow(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-    table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
-    get_query = f"SELECT count(), sum(column3), sum(column4) FROM s3('http://resolver:8081/{started_cluster.minio_bucket}/slow_send_test.csv', 'CSV', '{table_format}') FORMAT CSV"
-    result = run_query(instance, get_query)
-    assert result.splitlines() == ["500001,500000,0"]
-
-
 def test_storage_s3_put_uncompressed(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
@@ -954,6 +941,13 @@ def test_predefined_connection_configuration(started_cluster):
 
     instance.query(f"drop table if exists {name}", user="user")
     error = instance.query_and_get_error(
+        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')"
+    )
+    assert (
+        "To execute this query, it's necessary to have the grant NAMED COLLECTION ON s3_conf1"
+        in error
+    )
+    error = instance.query_and_get_error(
         f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
         user="user",
     )
@@ -977,6 +971,11 @@ def test_predefined_connection_configuration(started_cluster):
     )
     assert result == instance.query("SELECT number FROM numbers(10)")
 
+    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
+    assert (
+        "To execute this query, it's necessary to have the grant NAMED COLLECTION ON no_collection"
+        in error
+    )
     error = instance.query_and_get_error("SELECT * FROM s3(no_collection)", user="user")
     assert (
         "To execute this query, it's necessary to have the grant NAMED COLLECTION ON no_collection"

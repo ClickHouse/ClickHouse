@@ -429,7 +429,7 @@ SELECT format('{} {}', 'Hello', 'World')
 
 ## concat
 
-Concatenates the given arguments.
+Concatenates the strings listed in the arguments without separator.
 
 **Syntax**
 
@@ -439,9 +439,7 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-At least two values of arbitrary type.
-
-Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
+Values of type String or FixedString.
 
 **Returned values**
 
@@ -450,8 +448,6 @@ The String created by concatenating the arguments.
 If any of arguments is `NULL`, the function returns `NULL`.
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT concat('Hello, ', 'World!');
@@ -463,20 +459,6 @@ Result:
 ┌─concat('Hello, ', 'World!')─┐
 │ Hello, World!               │
 └─────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT concat(42, 144);
-```
-
-Result:
-
-```result
-┌─concat(42, 144)─┐
-│ 42144           │
-└─────────────────┘
 ```
 
 ## concatAssumeInjective
@@ -543,8 +525,6 @@ Concatenates the given strings with a given separator.
 ``` sql
 concatWithSeparator(sep, expr1, expr2, expr3...)
 ```
-
-Alias: `concat_ws`
 
 **Arguments**
 
@@ -1390,86 +1370,6 @@ Result:
 │ A240             │
 └──────────────────┘
 ```
-
-## byteHammingDistance
-
-Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
-
-**Syntax**
-
-```sql
-byteHammingDistance(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT byteHammingDistance('karolin', 'kathrin');
-```
-
-Result:
-
-``` text
-┌─byteHammingDistance('karolin', 'kathrin')─┐
-│                                         3 │
-└───────────────────────────────────────────┘
-```
-
-Alias: mismatches
-
-## stringJaccardIndex
-
-Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
-
-**Syntax**
-
-```sql
-stringJaccardIndex(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT stringJaccardIndex('clickhouse', 'mouse');
-```
-
-Result:
-
-``` text
-┌─stringJaccardIndex('clickhouse', 'mouse')─┐
-│                                       0.4 │
-└───────────────────────────────────────────┘
-```
-
-## stringJaccardIndexUTF8
-
-Like [stringJaccardIndex](#stringJaccardIndex) but for UTF8-encoded strings.
-
-## editDistance
-
-Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
-
-**Syntax**
-
-```sql
-editDistance(string1, string2)
-```
-
-**Examples**
-
-``` sql
-SELECT editDistance('clickhouse', 'mouse');
-```
-
-Result:
-
-``` text
-┌─editDistance('clickhouse', 'mouse')─┐
-│                                   6 │
-└─────────────────────────────────────┘
-```
-
-Alias: levenshteinDistance
 
 ## initcap
 

@@ -26,14 +26,12 @@
 #include <Interpreters/executeQuery.h>
 #include <Storages/StorageMergeTree.h>
 #include <Common/quoteString.h>
-#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTIdentifier.h>
-#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -77,7 +75,7 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, ContextMutable
         if (!database.empty())
             query_context->setCurrentDatabase(database);
 
-        return executeQuery("/*" + comment + "*/ " + query_to_execute, query_context, QueryFlags{ .internal = true }).second;
+        return executeQuery("/*" + comment + "*/ " + query_to_execute, query_context, true);
     }
     catch (...)
     {
@@ -430,8 +428,9 @@ static inline void dumpDataForTables(
 
 static inline UInt32 randomNumber()
 {
-    pcg64_fast rng{randomSeed()};
-    std::uniform_int_distribution<pcg64_fast::result_type> dist6(
+    std::mt19937 rng;
+    rng.seed(std::random_device()());
+    std::uniform_int_distribution<std::mt19937::result_type> dist6(
         std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
     return static_cast<UInt32>(dist6(rng));
 }

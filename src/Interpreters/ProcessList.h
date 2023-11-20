@@ -413,34 +413,16 @@ public:
         max_size = max_size_;
     }
 
-    size_t getMaxSize() const
-    {
-        auto lock = unsafeLock();
-        return max_size;
-    }
-
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
         auto lock = unsafeLock();
         max_insert_queries_amount = max_insert_queries_amount_;
     }
 
-    size_t getMaxInsertQueriesAmount() const
-    {
-        auto lock = unsafeLock();
-        return max_insert_queries_amount;
-    }
-
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
         auto lock = unsafeLock();
         max_select_queries_amount = max_select_queries_amount_;
-    }
-
-    size_t getMaxSelectQueriesAmount() const
-    {
-        auto lock = unsafeLock();
-        return max_select_queries_amount;
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user

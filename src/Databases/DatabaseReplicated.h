@@ -46,7 +46,7 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags) override;
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal) override;
 
     bool canExecuteReplicatedMetadataAlter() const override;
 
@@ -56,7 +56,6 @@ public:
 
     String getShardName() const { return shard_name; }
     String getReplicaName() const { return replica_name; }
-    String getReplicaGroupName() const { return replica_group_name; }
     String getFullReplicaName() const;
     static String getFullReplicaName(const String & shard, const String & replica);
     static std::pair<String, String> parseFullReplicaName(const String & name);
@@ -127,7 +126,6 @@ private:
     String zookeeper_path;
     String shard_name;
     String replica_name;
-    String replica_group_name;
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 

@@ -177,7 +177,7 @@ void CSVFormatReader::skipRow()
     }
 }
 
-static void skipEndOfLine(ReadBuffer & in, bool allow_cr_end_of_line)
+static void skipEndOfLine(ReadBuffer & in)
 {
     /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
 
@@ -192,7 +192,7 @@ static void skipEndOfLine(ReadBuffer & in, bool allow_cr_end_of_line)
         ++in.position();
         if (!in.eof() && *in.position() == '\n')
             ++in.position();
-        else if (!allow_cr_end_of_line)
+        else
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
                 " Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.");
@@ -258,7 +258,7 @@ void CSVFormatReader::skipRowEndDelimiter()
     if (buf->eof())
         return;
 
-    skipEndOfLine(*buf, format_settings.csv.allow_cr_end_of_line);
+    skipEndOfLine(*buf);
 }
 
 void CSVFormatReader::skipHeaderRow()
@@ -343,7 +343,7 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
         return false;
     }
 
-    skipEndOfLine(*buf, format_settings.csv.allow_cr_end_of_line);
+    skipEndOfLine(*buf);
     return true;
 }
 
@@ -552,6 +552,11 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 continue;
             }
 
+            ++number_of_rows;
+            if ((number_of_rows >= min_rows)
+                && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+                need_more_data = false;
+
             if (*pos == '\n')
             {
                 ++pos;
@@ -563,15 +568,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 ++pos;
                 if (loadAtPosition(in, memory, pos) && *pos == '\n')
                     ++pos;
-                else
-                    continue;
             }
-
-            ++number_of_rows;
-            if ((number_of_rows >= min_rows)
-                && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
-                need_more_data = false;
-
         }
     }
 

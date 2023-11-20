@@ -98,7 +98,7 @@
 #include <unordered_set>
 
 #include "config.h"
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if defined(OS_LINUX)
 #    include <cstdlib>
@@ -536,16 +536,6 @@ static void sanityChecks(Server & server)
     {
     }
 
-    try
-    {
-        const char * filename = "/proc/sys/kernel/task_delayacct";
-        if (readNumber(filename) == 0)
-            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. Check " + String(filename));
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
         server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
@@ -674,10 +664,6 @@ try
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
-#endif
-
-#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
-    global_context->addWarningMessage("Server was built with code coverage. It will work slowly.");
 #endif
 
     const size_t physical_server_memory = getMemoryAmount();
@@ -1376,8 +1362,6 @@ try
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
-                global_context->reloadQueryMaskingRulesIfChanged(config);
-
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
@@ -1490,7 +1474,7 @@ try
 
     {
         std::lock_guard lock(servers_lock);
-        /// We should start interserver communications before (and more important shutdown after) tables.
+        /// We should start interserver communications before (and more imporant shutdown after) tables.
         /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
         /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
         /// communicate with zookeeper, execute merges, etc.
@@ -1697,7 +1681,7 @@ try
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
-        database_catalog.startupBackgroundTasks();
+        database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
@@ -1822,9 +1806,6 @@ try
         try
         {
             global_context->loadOrReloadDictionaries(config());
-
-            if (config().getBool("wait_dictionaries_load_at_startup", false))
-                global_context->waitForDictionariesLoad();
         }
         catch (...)
         {
