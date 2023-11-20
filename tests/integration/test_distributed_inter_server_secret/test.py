@@ -31,7 +31,7 @@ backward = make_instance(
     "configs/remote_servers_backward.xml",
     image="clickhouse/clickhouse-server",
     # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    tag="23.2.3",
+    tag="22.6",
     with_installed_binary=True,
     allow_analyzer=False,
 )
