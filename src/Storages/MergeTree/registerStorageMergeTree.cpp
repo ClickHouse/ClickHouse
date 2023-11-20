@@ -620,8 +620,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
                 constraints.push_back(constraint);
-        if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing || 
-            merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing) && 
+        if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+            merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing) &&
             storage_settings->add_implicit_sign_column_constraint_for_collapsing_engine)
         {
             auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
