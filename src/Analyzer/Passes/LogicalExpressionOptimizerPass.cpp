@@ -59,9 +59,11 @@ private:
     static bool tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node, const ContextPtr & context)
     {
         auto & function_node = node->as<FunctionNode &>();
-        assert(function_node.getFunctionName() == "or");
+        chassert(function_node.getFunctionName() == "or");
+
 
         QueryTreeNodes or_operands;
+        or_operands.reserve(function_node.getArguments()->getNodes().size());  
 
         /// Indices of `equals` or `isNotDistinctFrom` functions in the vector above
         std::vector<size_t> equals_functions_indices;
@@ -88,9 +90,10 @@ private:
 
             const auto & func_name = argument_function->getFunctionName();
             if (func_name == "equals" || func_name == "isNotDistinctFrom")
+            {
                 equals_functions_indices.push_back(or_operands.size() - 1);
-
-            if (func_name == "and")
+            }
+            else if (func_name == "and")
             {
                 for (const auto & and_argument : argument_function->getArguments().getNodes())
                 {
@@ -169,7 +172,7 @@ private:
                 if (function->getFunctionName() == "equals")
                 {
                     /// We should replace `a = b` with `a <=> b` because we removed checks for IS NULL
-                    need_reresolve = need_reresolve || function->getResultType()->isNullable();
+                    need_reresolve |= function->getResultType()->isNullable();
                     function->resolveAsFunction(strict_equals_function_resolver);
                     new_or_operands.emplace_back(std::move(or_operands[i]));
                 }
