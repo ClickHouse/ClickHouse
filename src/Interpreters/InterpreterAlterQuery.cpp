@@ -114,7 +114,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
@@ -137,10 +136,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))
         {
-            if (mut_command->type == MutationCommand::MATERIALIZE_TTL && !metadata_snapshot->hasAnyTTL())
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}",
-                    table->getStorageID().getNameForLogs());
-
             if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
@@ -171,8 +166,30 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                                                          "to execute ALTERs of different types (replicated and non replicated) in single query");
     }
 
+    if (!alter_commands.empty())
+    {
+        auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
+        StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
+        alter_commands.validate(table, getContext());
+        alter_commands.prepare(metadata);
+        table->checkAlterIsPossible(alter_commands, getContext());
+        table->alter(alter_commands, getContext(), alter_lock);
+    }
+
+    /// Get newest metadata_snapshot after execute ALTER command, in order to
+    /// support like materialize index in the same ALTER query that creates it.
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+
     if (mutation_commands.hasNonEmptyMutationCommands())
     {
+        for (const auto & command : mutation_commands)
+        {
+            /// Check it after alter finished, so we can add TTL and materialize TTL in the same ALTER query.
+            if (command.type == MutationCommand::MATERIALIZE_TTL && !metadata_snapshot->hasAnyTTL())
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}",
+                    table->getStorageID().getNameForLogs());
+
+        }
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter::Settings settings(false);
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), settings).validate();
@@ -185,16 +202,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         auto partition_commands_pipe = table->alterPartition(metadata_snapshot, partition_commands, getContext());
         if (!partition_commands_pipe.empty())
             res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
-    }
-
-    if (!alter_commands.empty())
-    {
-        auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
-        StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
-        alter_commands.validate(table, getContext());
-        alter_commands.prepare(metadata);
-        table->checkAlterIsPossible(alter_commands, getContext());
-        table->alter(alter_commands, getContext(), alter_lock);
     }
 
     return res;
