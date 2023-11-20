@@ -118,7 +118,15 @@ public:
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
             bool use_virtual_addressing);
 
-    std::unique_ptr<Client> clone() const;
+    /// Create a client with adjusted settings:
+    ///  * override_retry_strategy can be used to disable retries to avoid nested retries when we have
+    ///    a retry loop outside of S3 client. Specifically, for read and write buffers. Currently not
+    ///    actually used.
+    ///  * override_request_timeout_ms is used to increase timeout for CompleteMultipartUploadRequest
+    ///    because it often sits idle for 10 seconds: https://github.com/ClickHouse/ClickHouse/pull/42321
+    std::unique_ptr<Client> clone(
+        std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy = std::nullopt,
+        std::optional<Int64> override_request_timeout_ms = std::nullopt) const;
 
     Client & operator=(const Client &) = delete;
 

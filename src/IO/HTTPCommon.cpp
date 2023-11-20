@@ -50,6 +50,12 @@ namespace ErrorCodes
 
 namespace
 {
+    void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+    {
+        session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+        session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
+    }
+
     Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const ProxyConfiguration & proxy_configuration)
     {
         Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
@@ -351,12 +357,6 @@ namespace
             return session;
         }
     };
-}
-
-void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
-{
-    session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
-    session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
 }
 
 void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout)
