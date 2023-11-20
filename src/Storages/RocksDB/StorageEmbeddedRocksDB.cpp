@@ -720,7 +720,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(const Settings & /*sett
     if (!rocksdb_ptr)
         return {};
     UInt64 estimated_bytes;
-    if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
+    if (!rocksdb_ptr->GetAggregatedIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
         return {};
     return estimated_bytes;
 }
