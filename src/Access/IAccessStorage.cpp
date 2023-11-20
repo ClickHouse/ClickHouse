@@ -488,7 +488,7 @@ bool IAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_
 }
 
 
-UUID IAccessStorage::authenticate(
+AuthResult IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
@@ -499,7 +499,7 @@ UUID IAccessStorage::authenticate(
 }
 
 
-std::optional<UUID> IAccessStorage::authenticate(
+std::optional<AuthResult> IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
@@ -511,7 +511,7 @@ std::optional<UUID> IAccessStorage::authenticate(
 }
 
 
-std::optional<UUID> IAccessStorage::authenticateImpl(
+std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
@@ -523,6 +523,7 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
+            AuthResult auth_result { .user_id = *id };
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
@@ -531,10 +532,10 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
                 ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
                 throwAuthenticationTypeNotAllowed(auth_type);
 
-            if (!areCredentialsValid(*user, credentials, external_authenticators))
+            if (!areCredentialsValid(*user, credentials, external_authenticators, auth_result.settings))
                 throwInvalidCredentials();
 
-            return id;
+            return auth_result;
         }
     }
 
@@ -548,7 +549,8 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
 bool IAccessStorage::areCredentialsValid(
     const User & user,
     const Credentials & credentials,
-    const ExternalAuthenticators & external_authenticators) const
+    const ExternalAuthenticators & external_authenticators,
+    SettingsChanges & settings) const
 {
     if (!credentials.isReady())
         return false;
@@ -556,7 +558,15 @@ bool IAccessStorage::areCredentialsValid(
     if (credentials.getUserName() != user.getName())
         return false;
 
-    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators);
+    if (user.valid_until)
+    {
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+        if (now > user.valid_until)
+            return false;
+    }
+
+    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators, settings);
 }
 
 

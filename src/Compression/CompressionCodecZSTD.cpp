@@ -60,7 +60,7 @@ uint8_t CompressionCodecZSTD::getMethodByte() const
 
 void CompressionCodecZSTD::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -82,7 +82,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
     ZSTD_freeCCtx(cctx);
 
     if (ZSTD_isError(compressed_size))
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress block with ZSTD: {}", std::string(ZSTD_getErrorName(compressed_size)));
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", std::string(ZSTD_getErrorName(compressed_size)));
 
     return static_cast<UInt32>(compressed_size);
 }
@@ -93,7 +93,7 @@ void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_s
     size_t res = ZSTD_decompress(dest, uncompressed_size, source, source_size);
 
     if (ZSTD_isError(res))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot ZSTD_decompress: {}", std::string(ZSTD_getErrorName(res)));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_) : level(level_), enable_long_range(true), window_log(window_log_)

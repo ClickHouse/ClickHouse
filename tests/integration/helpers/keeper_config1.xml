@@ -11,6 +11,9 @@
 
     <keeper_server>
         <tcp_port>2181</tcp_port>
+        <availability_zone>
+            <value>az-zoo1</value>
+        </availability_zone>
         <server_id>1</server_id>
 
         <coordination_settings>
@@ -20,6 +23,8 @@
             <force_sync>false</force_sync>
             <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
+
+            <async_replication>1</async_replication>
         </coordination_settings>
 
         <raft_configuration>

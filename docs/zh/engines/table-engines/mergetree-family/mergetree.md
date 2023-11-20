@@ -124,15 +124,18 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 <details markdown="1">
 <summary>已弃用的建表方法</summary>
 
-    :::attention "注意"
-    不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::attention "注意"
+不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::
 
-    CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-    (
-        name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-        name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-        ...
-    ) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+```
 
 **MergeTree() 参数**
 
@@ -742,8 +745,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </s3>
     </disks>
@@ -769,8 +770,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 - `single_read_retries` - 读过程中连接丢失后重试次数，默认值为4。
 - `min_bytes_for_seek` - 使用查找操作，而不是顺序读操作的最小字节数，默认值为1000。
 - `metadata_path` - 本地存放S3元数据文件的路径，默认值为`/var/lib/clickhouse/disks/<disk_name>/`
-- `cache_enabled` - 是否允许缓存标记和索引文件。默认值为`true`。
-- `cache_path` - 本地缓存标记和索引文件的路径。默认值为`/var/lib/clickhouse/disks/<disk_name>/cache/`。
 - `skip_access_check` - 如果为`true`，Clickhouse启动时不检查磁盘是否可用。默认为`false`。
 - `server_side_encryption_customer_key_base64` - 如果指定该项的值，请求时会加上为了访问SSE-C加密数据而必须的头信息。
 
@@ -820,4 +819,3 @@ S3磁盘也可以设置冷热存储：
 -    `_part_uuid` - 唯一部分标识符（如果 MergeTree 设置`assign_part_uuids` 已启用）。
 -    `_partition_value` — `partition by` 表达式的值（元组）。
 -    `_sample_factor` - 采样因子（来自请求）。
-

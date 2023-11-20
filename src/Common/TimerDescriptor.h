@@ -18,7 +18,7 @@ public:
     TimerDescriptor(const TimerDescriptor &) = delete;
     TimerDescriptor & operator=(const TimerDescriptor &) = delete;
     TimerDescriptor(TimerDescriptor && other) noexcept;
-    TimerDescriptor & operator=(TimerDescriptor &&) = default;
+    TimerDescriptor & operator=(TimerDescriptor &&) noexcept;
 
     int getDescriptor() const { return timer_fd; }
 

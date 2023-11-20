@@ -64,7 +64,6 @@ private:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 
     void initialize(size_t offset, size_t size);
-    void assertCorrectness() const;
 
     /**
      * Return a list of file segments ordered in ascending order. This list represents

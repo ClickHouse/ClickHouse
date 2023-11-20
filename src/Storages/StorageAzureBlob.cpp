@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <re2/re2.h>
 
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -39,6 +38,14 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -46,6 +53,7 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
+    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -471,7 +479,12 @@ StorageAzureBlob::StorageAzureBlob(
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in File storage.
+        if (!columns_.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine AzureBlobStorage doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -687,7 +700,7 @@ Pipe StorageAzureBlob::read(
             query_info.query, virtual_columns, local_context, nullptr, local_context->getFileProgressCallback());
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -792,9 +805,9 @@ bool StorageAzureBlob::supportsPartitionBy() const
     return true;
 }
 
-bool StorageAzureBlob::supportsSubsetOfColumns() const
+bool StorageAzureBlob::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
 }
 
 bool StorageAzureBlob::prefersLargeBlocks() const
@@ -831,10 +844,14 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
     /// We don't have to list bucket, because there is no asterisks.
     if (key_prefix.size() == blob_path_with_globs.size())
     {
-        ObjectMetadata object_metadata = object_storage->getObjectMetadata(blob_path_with_globs);
-        blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
+        auto object_metadata = object_storage->getObjectMetadata(blob_path_with_globs);
+        blobs_with_metadata.emplace_back(
+            blob_path_with_globs,
+            object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
+        if (file_progress_callback)
+            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
         is_finished = true;
         return;
     }
@@ -909,8 +926,10 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
         blobs_with_metadata = std::move(new_batch);
         if (file_progress_callback)
         {
-            for (const auto & [_, info] : blobs_with_metadata)
+            for (const auto & [relative_path, info] : blobs_with_metadata)
+            {
                 file_progress_callback(FileProgress(0, info.size_bytes));
+            }
         }
     }
 
@@ -956,7 +975,7 @@ StorageAzureBlobSource::KeysIterator::KeysIterator(
         ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
-        keys.emplace_back(RelativePathWithMetadata{key, object_metadata});
+        keys.emplace_back(key, object_metadata);
     }
 
     if (outer_blobs)
@@ -1069,7 +1088,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
     , query_info(query_info_)
-    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
+    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, CurrentMetrics::ObjectStorageAzureThreadsScheduled, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
@@ -1100,7 +1119,8 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
+    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files
+        ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
     if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
@@ -1123,7 +1143,6 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
                 format, *read_buf, sample_block, getContext(), max_block_size,
                 format_settings, max_parsing_threads, std::nullopt,
                 /* is_remote_fs */ true, compression_method);
-        input_format->setQueryInfo(query_info, getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();

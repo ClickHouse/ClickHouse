@@ -71,7 +71,7 @@ void IRowInputFormat::logError()
         diagnostic = "Cannot get diagnostic: " + exception.message();
         raw_data = "Cannot get raw data: " + exception.message();
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Error while trying to obtain verbose diagnostic. Ok to ignore.
     }
@@ -215,7 +215,7 @@ Chunk IRowInputFormat::generate()
         {
             verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
@@ -239,7 +239,7 @@ Chunk IRowInputFormat::generate()
         {
             verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }

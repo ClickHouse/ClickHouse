@@ -33,7 +33,7 @@ Columns:
     - `MemoryPeak` represents collecting updates of peak memory usage.
     - `ProfileEvent` represents collecting of increments of profile events.
 
-- `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
+- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
 

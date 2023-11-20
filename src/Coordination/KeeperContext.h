@@ -3,7 +3,6 @@
 #include <Disks/DiskSelector.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <cstdint>
 #include <memory>
 
@@ -54,6 +53,10 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
+    /// set to true when we have preprocessed or committed all the logs
+    /// that were already present locally during startup
+    std::atomic<bool> local_logs_preprocessed = false;
+    std::atomic<bool> shutdown_called = false;
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
