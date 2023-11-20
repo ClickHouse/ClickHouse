@@ -112,7 +112,6 @@ StorageS3Queue::StorageS3Queue(
     , s3queue_settings(std::move(s3queue_settings_))
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *s3queue_settings))
     , after_processing(s3queue_settings->after_processing)
-    , files_metadata(S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings))
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
@@ -157,6 +156,13 @@ StorageS3Queue::StorageS3Queue(
 
 void StorageS3Queue::startup()
 {
+    if (!files_metadata)
+    {
+        /// Get metadata manager from S3QueueMetadataFactory,
+        /// it will increase the ref count for the metadata object.
+        /// The ref count is decreased when StorageS3Queue::drop() method is called.
+        files_metadata = S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings);
+    }
     if (task)
         task->activateAndSchedule();
 }
