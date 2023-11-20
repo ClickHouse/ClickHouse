@@ -550,6 +550,7 @@ public:
 
         return std::make_unique<WriteBufferFromS3>(
                     client,
+                    client,
                     bucket,
                     file_name,
                     DBMS_DEFAULT_BUFFER_SIZE,

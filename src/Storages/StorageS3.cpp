@@ -825,6 +825,7 @@ public:
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
                 configuration_.client,
+                configuration_.client_with_long_timeout,
                 bucket,
                 key,
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -1329,6 +1330,8 @@ void StorageS3::Configuration::connect(ContextPtr context)
                 context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
         });
+
+    client_with_long_timeout = client->clone(std::nullopt, request_settings.long_request_timeout_ms);
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
