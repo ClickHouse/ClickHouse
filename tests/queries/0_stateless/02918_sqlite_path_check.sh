@@ -12,4 +12,4 @@ function get_exception_message()
 }
 
 get_exception_message "Select * from sqlite('/etc/passwd', 'something');"
-get_exception_message "Select * from sqlite('../../../../etc/passwd', 'something');
+get_exception_message "Select * from sqlite('../../../../etc/passwd', 'something');"
