@@ -64,6 +64,9 @@ Three arguments test
 42144255
 42144
 42144255
+-- Single argument tests
 42
 foo
+\N
+\N
 Testing the alias

@@ -439,7 +439,7 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-At least two values of arbitrary type.
+At least one value of arbitrary type.
 
 Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
