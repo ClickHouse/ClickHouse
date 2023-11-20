@@ -6,7 +6,6 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageSnapshot.h>
 
 namespace DB

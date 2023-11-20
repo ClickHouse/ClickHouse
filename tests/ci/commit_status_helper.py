@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 
-import csv
-import os
-import time
-from typing import Dict, List, Optional, Union
 from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+import csv
 import logging
+import time
 
 from github import Github
-from github.GithubObject import _NotSetType, NotSet as NotSet
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
+from github.GithubException import GithubException
+from github.GithubObject import _NotSetType, NotSet as NotSet
 from github.IssueComment import IssueComment
 from github.PullRequest import PullRequest
 from github.Repository import Repository
@@ -240,9 +241,16 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     hidden_table_rows = []  # type: List[str]
     for desc, gs in grouped_statuses.items():
         state = get_worst_state(gs)
+        state_text = f"{STATUS_ICON_MAP[state]} {state}"
+        # take the first target_url with the worst state
+        for status in gs:
+            if status.target_url and status.state == state:
+                state_text = f'<a href="{status.target_url}">{state_text}</a>'
+                break
+
         table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
-            f"<td>{STATUS_ICON_MAP[state]} {state}</td></tr>\n"
+            f"<td>{state_text}</td></tr>\n"
         )
         if state == SUCCESS:
             hidden_table_rows.append(table_row)
@@ -292,9 +300,9 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
 
 def post_commit_status_to_file(
-    file_path: str, description: str, state: str, report_url: str
+    file_path: Path, description: str, state: str, report_url: str
 ) -> None:
-    if os.path.exists(file_path):
+    if file_path.exists():
         raise Exception(f'File "{file_path}" already exists!')
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
@@ -329,7 +337,18 @@ def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     repo = get_repo(gh)
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
-        pull_request.remove_from_labels(label)
+        try:
+            pull_request.remove_from_labels(label)
+        except GithubException as exc:
+            if not (
+                exc.status == 404
+                and isinstance(exc.data, dict)
+                and exc.data.get("message", "") == "Label does not exist"
+            ):
+                raise
+            logging.warning(
+                "The label '%s' does not exist in PR #%s", pr_info.number, label
+            )
         pr_info.labels.remove(label)
 
 

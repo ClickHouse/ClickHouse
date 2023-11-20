@@ -1035,7 +1035,7 @@ namespace MySQLReplication
             throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
         UInt16 header = static_cast<unsigned char>(*payload.position());
-        switch (header)
+        switch (header) // NOLINT(bugprone-switch-missing-default-case)
         {
             case PACKET_EOF:
                 throw ReplicationError(ErrorCodes::CANNOT_READ_ALL_DATA, "Master maybe lost");

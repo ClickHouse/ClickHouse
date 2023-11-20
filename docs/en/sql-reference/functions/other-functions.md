@@ -2755,3 +2755,77 @@ message Root
     uint32 column2 = 2;
 }
 ```
+
+## formatQuery
+
+Returns a formatted, possibly multi-line, version of the given SQL query.
+
+Throws an exception if the query is not well-formed. To return `NULL` instead, function `formatQueryOrNull()` may be used.
+
+**Syntax**
+
+```sql
+formatQuery(query)
+formatQueryOrNull(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT
+    a,
+    b
+FROM tab
+WHERE (a > 3) AND (b < 3)            │
+└───────────────────────────────────────────────────────────────┘
+```
+
+## formatQuerySingleLine
+
+Like formatQuery() but the returned formatted string contains no line breaks.
+
+Throws an exception if the query is not well-formed. To return `NULL` instead, function `formatQuerySingleLineOrNull()` may be used.
+
+**Syntax**
+
+```sql
+formatQuerySingleLine(query)
+formatQuerySingleLineOrNull(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```

@@ -209,6 +209,10 @@ constraint_name_1 CHECK length(vectors) = 256`. Also, empty `Arrays` and unspeci
 values) are not supported.
 :::
 
+The creation of Annoy indexes (whenever a new part is build, e.g. at the end of a merge) is a relatively slow process. You can increase
+setting `max_threads_for_annoy_index_creation` (default: 4) which controls how many threads are used to create an Annoy index. Please be
+careful with this setting, it is possible that multiple indexes are created in parallel in which case there can be overparallelization.
+
 Setting `annoy_index_search_k_nodes` (default: `NumTrees * LIMIT`) determines how many tree nodes are inspected during SELECTs. Larger
 values mean more accurate results at the cost of longer query runtime:
 

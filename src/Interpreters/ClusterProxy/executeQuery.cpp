@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/ResizeProcessor.h>
 #include <QueryPipeline/Pipe.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -138,6 +139,14 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
         }
         if (disable_parallel_replicas)
             new_settings.allow_experimental_parallel_reading_from_replicas = false;
+    }
+
+    if (settings.max_execution_time_leaf.value > 0)
+    {
+        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
+        /// with 'timeout_overflow_mode_leaf'
+        new_settings.max_execution_time = settings.max_execution_time_leaf;
+        new_settings.timeout_overflow_mode = settings.timeout_overflow_mode_leaf;
     }
 
     auto new_context = Context::createCopy(context);

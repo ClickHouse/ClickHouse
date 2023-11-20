@@ -54,6 +54,7 @@ enum class DataPartRemovalState
     NON_UNIQUE_OWNERSHIP,
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
+    EMPTY_PART_COVERS_OTHER_PARTS,
     REMOVED,
 };
 
@@ -131,7 +132,7 @@ public:
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
-    virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
+    virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
     virtual ~IMergeTreeDataPart();
 
@@ -209,6 +210,8 @@ public:
 
 private:
     String mutable_name;
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
+
 public:
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
@@ -273,7 +276,7 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    MergeTreeDataPartState getState() const;
+    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
     static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
     constexpr std::string_view stateString() const { return stateString(state); }
@@ -501,6 +504,37 @@ public:
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
 
+    static std::optional<String> getStreamNameOrHash(
+        const String & name,
+        const IMergeTreeDataPart::Checksums & checksums);
+
+    static std::optional<String> getStreamNameOrHash(
+        const String & name,
+        const String & extension,
+        const IDataPartStorage & storage_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const String & column_name,
+        const ISerialization::SubstreamPath & substream_path,
+        const Checksums & checksums_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const NameAndTypePair & column,
+        const ISerialization::SubstreamPath & substream_path,
+        const Checksums & checksums_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const String & column_name,
+        const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
+        const IDataPartStorage & storage_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const NameAndTypePair & column,
+        const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
+        const IDataPartStorage & storage_);
+
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
@@ -643,8 +677,6 @@ private:
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
-
-    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

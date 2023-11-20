@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/optimizing-performance/profile-guided-optimization
 sidebar_position: 54
 sidebar_label: Profile Guided Optimization (PGO)
 ---

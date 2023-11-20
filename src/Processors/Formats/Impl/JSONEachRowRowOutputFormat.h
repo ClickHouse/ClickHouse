@@ -2,7 +2,9 @@
 
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
+#include <IO/PeekableWriteBuffer.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
+#include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -11,7 +13,7 @@ namespace DB
 
 /** The stream for outputting data in JSON format, by object per line.
   */
-class JSONEachRowRowOutputFormat : public RowOutputFormatWithUTF8ValidationAdaptor
+class JSONEachRowRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
     JSONEachRowRowOutputFormat(
@@ -37,13 +39,16 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
 
+    void resetFormatterImpl() override;
+
     size_t field_number = 0;
     bool pretty_json;
 
+    FormatSettings settings;
+    WriteBuffer * ostr;
+
 private:
     Names fields;
-
-    FormatSettings settings;
 };
 
 }

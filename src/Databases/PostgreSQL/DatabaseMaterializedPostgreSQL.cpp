@@ -52,10 +52,29 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
-    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ startSynchronization(); }))
+    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
 {
 }
 
+void DatabaseMaterializedPostgreSQL::tryStartSynchronization()
+{
+    if (shutdown_called)
+        return;
+
+    try
+    {
+        startSynchronization();
+        LOG_INFO(log, "Successfully loaded tables from PostgreSQL and started replication");
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to start replication from PostgreSQL, "
+                  "will retry. Error: {}", getCurrentExceptionMessage(true));
+
+        if (!shutdown_called)
+            startup_task->scheduleAfter(5000);
+    }
+}
 
 void DatabaseMaterializedPostgreSQL::startSynchronization()
 {
@@ -64,9 +83,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         return;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
-            /* replication_identifier */ TSA_SUPPRESS_WARNING_FOR_READ(database_name),    /// FIXME
             remote_database_name,
+            /* table_name */"",
             TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
+            toString(getUUID()),
             connection_info,
             getContext(),
             is_attach,
@@ -114,15 +134,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
 
-    try
-    {
-        replication_handler->startup(/* delayed */false);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        throw;
-    }
+    replication_handler->startup(/* delayed */false);
 }
 
 
@@ -401,6 +413,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
 
 void DatabaseMaterializedPostgreSQL::shutdown()
 {
+    shutdown_called = true;
     startup_task->deactivate();
     stopReplication();
     DatabaseAtomic::shutdown();
@@ -413,7 +426,6 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
     if (replication_handler)
         replication_handler->shutdown();
 
-    shutdown_called = true;
     /// Clear wrappers over nested, all access is not done to nested tables directly.
     materialized_tables.clear();
 }
