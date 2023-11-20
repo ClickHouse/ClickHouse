@@ -118,7 +118,11 @@ StorageS3Queue::StorageS3Queue(
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
     , log(&Poco::Logger::get("StorageS3Queue (" + table_id_.table_name + ")"))
 {
-    if (configuration.url.key.ends_with('/'))
+    if (configuration.url.key.empty())
+    {
+        configuration.url.key = "/*";
+    }
+    else if (configuration.url.key.ends_with('/'))
     {
         configuration.url.key += '*';
     }
