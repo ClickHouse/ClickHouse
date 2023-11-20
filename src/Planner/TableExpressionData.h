@@ -240,9 +240,29 @@ public:
         is_remote = is_remote_value;
     }
 
+    bool isMergeTree() const
+    {
+        return is_merge_tree;
+    }
+
+    void setIsMergeTree(bool is_merge_tree_value)
+    {
+        is_merge_tree = is_merge_tree_value;
+    }
+
     const ActionsDAGPtr & getPrewhereFilterActions() const
     {
         return prewhere_filter_actions;
+    }
+
+    void setRowLevelFilterActions(ActionsDAGPtr row_level_filter_actions_value)
+    {
+        row_level_filter_actions = std::move(row_level_filter_actions_value);
+    }
+
+    const ActionsDAGPtr & getRowLevelFilterActions() const
+    {
+        return row_level_filter_actions;
     }
 
     void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
@@ -290,8 +310,14 @@ private:
     /// Valid for table, table function
     ActionsDAGPtr prewhere_filter_actions;
 
+    /// Valid for table, table function
+    ActionsDAGPtr row_level_filter_actions;
+
     /// Is storage remote
     bool is_remote = false;
+
+    /// Is storage merge tree
+    bool is_merge_tree = false;
 };
 
 }

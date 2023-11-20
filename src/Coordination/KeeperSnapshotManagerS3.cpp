@@ -149,7 +149,6 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         {
             return WriteBufferFromS3(
                 s3_client->client,
-                s3_client->client,
                 s3_client->uri.bucket,
                 key,
                 DBMS_DEFAULT_BUFFER_SIZE,

@@ -32,6 +32,7 @@ namespace CurrentMetrics
 {
     extern const Metric StartupSystemTablesThreads;
     extern const Metric StartupSystemTablesThreadsActive;
+    extern const Metric StartupSystemTablesThreadsScheduled;
 }
 
 namespace DB
@@ -282,7 +283,7 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
     LOG_INFO(log, "Will convert database {} from Ordinary to Atomic", name_quoted);
 
     String create_database_query = fmt::format("CREATE DATABASE IF NOT EXISTS {}", tmp_name_quoted);
-    auto res = executeQuery(create_database_query, context, true).second;
+    auto res = executeQuery(create_database_query, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
     res = {};
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
@@ -322,7 +323,7 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
         String tmp_qualified_quoted_name = id.getFullTableName();
 
         String move_table_query = fmt::format("RENAME TABLE {} TO {}", qualified_quoted_name, tmp_qualified_quoted_name);
-        res = executeQuery(move_table_query, context, true).second;
+        res = executeQuery(move_table_query, context, QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
         res = {};
     }
@@ -334,12 +335,12 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
 
     String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
     context->setSetting("force_remove_data_recursively_on_drop", false);
-    res = executeQuery(drop_query, context, true).second;
+    res = executeQuery(drop_query, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
     res = {};
 
     String rename_query = fmt::format("RENAME DATABASE {} TO {}", tmp_name_quoted, name_quoted);
-    res = executeQuery(rename_query, context, true).second;
+    res = executeQuery(rename_query, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
 
     LOG_INFO(log, "Finished database engine conversion of {}", name_quoted);
@@ -377,7 +378,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         if (!tables_started)
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
+            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive, CurrentMetrics::StartupSystemTablesThreadsScheduled);
             DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
         }
 
@@ -409,7 +410,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         /// Reload database just in case (and update logger name)
         String detach_query = fmt::format("DETACH DATABASE {}", backQuoteIfNeed(database_name));
-        auto res = executeQuery(detach_query, context, true).second;
+        auto res = executeQuery(detach_query, context, QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
         res = {};
 
@@ -472,7 +473,7 @@ void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
 
 void startupSystemTables()
 {
-    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
+    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive, CurrentMetrics::StartupSystemTablesThreadsScheduled);
     DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
 }
 

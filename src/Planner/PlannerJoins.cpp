@@ -191,7 +191,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
 
-    if (function_name == "equals" || is_asof_join_inequality)
+    if (function_name == "equals" || function_name == "isNotDistinctFrom" || is_asof_join_inequality)
     {
         const auto * left_child = join_expressions_actions_node->children.at(0);
         const auto * right_child = join_expressions_actions_node->children.at(1);
@@ -253,7 +253,8 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
                 }
                 else
                 {
-                    join_clause.addKey(left_key, right_key);
+                    bool null_safe_comparison = function_name == "isNotDistinctFrom";
+                    join_clause.addKey(left_key, right_key, null_safe_comparison);
                 }
             }
             else
@@ -472,6 +473,24 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
 
                 if (!right_key_node->result_type->equals(*common_type))
                     right_key_node = &join_expression_actions->addCast(*right_key_node, common_type, {});
+            }
+
+            if (join_clause.isNullsafeCompareKey(i) && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
+            {
+                /**
+                  * In case of null-safe comparison (a IS NOT DISTICT FROM b),
+                  * we need to wrap keys with a non-nullable type.
+                  * The type `tuple` can be used for this purpose,
+                  * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
+                  * Thus, join algorithm will match keys with values tuple(NULL).
+                  * Example:
+                  *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
+                  * This will be semantically transformed to:
+                  *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
+                  */
+                auto wrap_nullsafe_function = FunctionFactory::instance().get("tuple", planner_context->getQueryContext());
+                left_key_node = &join_expression_actions->addFunction(wrap_nullsafe_function, {left_key_node}, {});
+                right_key_node = &join_expression_actions->addFunction(wrap_nullsafe_function, {right_key_node}, {});
             }
 
             join_expression_actions->addOrReplaceInOutputs(*left_key_node);
