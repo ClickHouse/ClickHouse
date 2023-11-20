@@ -649,6 +649,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!attach && !is_restore_from_backup && context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
+
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 
@@ -755,49 +756,22 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         Block as_select_sample;
 
-        if (getContext()->getSettingsRef().allow_experimental_analyzer)
+        if (!create.isParameterizedView())
         {
-            if (create.isParameterizedView())
-            {
-                auto select = create.select->clone();
-
-                ///Get all query parameters
-                const auto parameters = analyzeReceiveQueryParamsWithType(select);
-                NameToNameMap parameter_values;
-
-                for (const auto & parameter : parameters)
-                {
-                    const auto data_type = DataTypeFactory::instance().get(parameter.second);
-                    /// Todo improve getting default values & include more datatypes
-                    if (data_type->isValueRepresentedByNumber() || parameter.second == "String")
-                        parameter_values[parameter.first] = "1";
-                    else if (parameter.second.starts_with("Array") || parameter.second.starts_with("Map"))
-                        parameter_values[parameter.first] = "[]";
-                    else
-                        parameter_values[parameter.first] = " ";
-                }
-
-                /// Replace with default parameters
-                ReplaceQueryParameterVisitor visitor(parameter_values);
-                visitor.visit(select);
-
-                as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select, getContext());
-            }
-            else
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
             {
                 as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
             }
+            else
+            {
+                as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
+                    getContext(),
+                    false /* is_subquery */,
+                    create.isParameterizedView());
+            }
 
+            properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
         }
-        else
-        {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                getContext(),
-                false /* is_subquery */,
-                create.isParameterizedView());
-        }
-
-        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
     {

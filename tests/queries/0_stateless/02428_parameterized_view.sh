@@ -37,7 +37,7 @@ $CLICKHOUSE_CLIENT -q "CREATE VIEW test_02428_pv1 AS SELECT * FROM test_02428_Ca
 $CLICKHOUSE_CLIENT -q "SELECT Price FROM test_02428_pv1(price=20)"
 $CLICKHOUSE_CLIENT -q "SELECT Price FROM \`test_02428_pv1\`(price=20)"
 
-$CLICKHOUSE_CLIENT -q "SELECT Price FROM test_02428_pv1" 2>&1 |  grep -Fq "UNKNOWN_QUERY_PARAMETER" && echo 'ERROR' || echo 'OK'
+$CLICKHOUSE_CLIENT -q "SELECT Price FROM test_02428_pv1" 2>&1 |  grep -q "UNKNOWN_QUERY_PARAMETER\|UNKNOWN_IDENTIFIER" && echo 'ERROR' || echo 'OK'
 $CLICKHOUSE_CLIENT --param_p 10 -q "SELECT Price FROM test_02428_pv1(price={p:UInt64})"
 
 $CLICKHOUSE_CLIENT --param_l 1 -q "SELECT Price FROM test_02428_pv1(price=50) LIMIT ({l:UInt64})"
