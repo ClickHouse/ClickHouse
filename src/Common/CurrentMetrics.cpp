@@ -208,6 +208,10 @@
     M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
+    M(AttachedTables, "Number of attached tables") \
+    M(AttachedDatabases, "Number of created databases") \
+    M(ActivePartitions, "Number of active partitions") \
+    M(ActiveParts, "Number of active parts") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

@@ -22,6 +22,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include <Common/CurrentMetrics.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
@@ -123,6 +124,11 @@ struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
     }
 };
 
+namespace CurrentMetrics
+{
+    extern const Metric ActiveParts;
+    extern const Metric AttachedDatabases;
+}
 
 namespace fs = std::filesystem;
 
@@ -145,6 +151,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric AttachedDataParts;
 }
 
 
@@ -1669,7 +1676,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         active_parts.emplace_back(node);
     });
 
+    std::cout<<"========== FLAG 1"<<std::endl;
     num_parts += active_parts.size();
+    CurrentMetrics::add(CurrentMetrics::AttachedDataParts, num_parts);
 
     auto part_lock = lockParts();
     LOG_TEST(log, "loadDataParts: clearing data_parts_indexes (had {} parts)", data_parts_indexes.size());
@@ -6318,6 +6327,7 @@ void MergeTreeData::Transaction::clear()
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock * acquired_parts_lock)
 {
+    std::cout<<"============== FLAG 2"<<std::endl;
     DataPartsVector total_covered_parts;
 
     if (!isEmpty())
@@ -6328,6 +6338,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
         for (const auto & part : precommitted_parts)
             if (part->getDataPartStorage().hasActiveTransaction())
+            {
                 part->getDataPartStorage().commitTransaction();
 
         if (txn)

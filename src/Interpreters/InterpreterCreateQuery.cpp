@@ -10,6 +10,7 @@
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -78,6 +79,11 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric AttachedTables;
+    extern const Metric AttachedDatabases;
+}
 
 namespace DB
 {
@@ -344,6 +350,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         throw;
     }
+    CurrentMetrics::add(CurrentMetrics::AttachedDatabases, 1);
+    std::cout<<"============="<<getContext()->getSettingsRef().max_databases_size_to_warn<<std::endl;
 
     return {};
 }
@@ -1635,7 +1643,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
     }
-
+    CurrentMetrics::add(CurrentMetrics::AttachedTables, 1);
     return {};
 }
 

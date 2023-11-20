@@ -15,6 +15,7 @@ namespace CurrentMetrics
 {
     extern const Metric TablesLoaderThreads;
     extern const Metric TablesLoaderThreadsActive;
+    extern const Metric AttachedTables;
 }
 
 namespace DB
@@ -185,6 +186,7 @@ void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool_)
 void TablesLoader::startLoadingTables(ThreadPool & pool_, ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level)
 {
     size_t total_tables = metadata.parsed_tables.size();
+    CurrentMetrics::add(CurrentMetrics::AttachedTables, total_tables);
 
     LOG_INFO(log, "Loading {} tables with dependency level {}", tables_to_load.size(), level);
 

@@ -11,6 +11,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/CurrentMetrics.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
@@ -22,6 +23,12 @@
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric AttachedTables;
+    extern const Metric AttachedDatabases;
+}
 
 namespace DB
 {
@@ -227,6 +234,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
                 /// Drop table from memory, don't touch data and metadata
                 database->detachTable(context_, table_id.table_name);
             }
+            CurrentMetrics::sub(CurrentMetrics::AttachedTables, 1);
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
@@ -280,6 +288,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             /// to avoid reading old data if new table with the same name is created
             if (database->getUUID() == UUIDHelpers::Nil)
                 context_->clearMMappedFileCache();
+
+            CurrentMetrics::sub(CurrentMetrics::AttachedTables, 1);
         }
 
         db = database;
@@ -311,10 +321,12 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             else if (kind == ASTDropQuery::Kind::Drop)
             {
                 context_handle->removeExternalTable(table_name);
+                CurrentMetrics::sub(CurrentMetrics::AttachedTables, 1);
             }
             else if (kind == ASTDropQuery::Kind::Detach)
             {
                 table->is_detached = true;
+                CurrentMetrics::sub(CurrentMetrics::AttachedTables, 1);
             }
         }
     }
@@ -433,6 +445,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
             if (!truncate)
                 DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+            CurrentMetrics::sub(CurrentMetrics::AttachedDatabases, 1);
         }
     }
 
