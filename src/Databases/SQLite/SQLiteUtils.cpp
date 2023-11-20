@@ -28,7 +28,7 @@ String validateSQLiteDatabasePath(const String & path, const String & user_files
 {
     
     String absolute_path = fs::absolute(path).lexically_normal();
-    
+
     if (fs::path(path).is_relative())
         absolute_path = fs::absolute(fs::path(user_files_path) / path).lexically_normal();
 
