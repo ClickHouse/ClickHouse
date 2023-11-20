@@ -11,8 +11,6 @@
 namespace DB
 {
 
-
-
 void DDLQueryIdentifiers::addQueryIdentifiers(const DDLQueryIdentifiers & other)
 {
     used_identifiers.insert(other.used_identifiers.begin(), other.used_identifiers.end());
@@ -93,12 +91,11 @@ DDLQueryIdentifiers collectIdentifiersForDDLQuery(const ASTPtr & ddl_query, Cont
     if (ddl_query->as<ASTCreateQuery>() || ddl_query->as<ASTAlterQuery>())
     {
         auto create_dependencies = getDependenciesFromCreateQuery(context, storage_id.getQualifiedName(), ddl_query);
-        for (const auto & depedency : create_dependencies)
-            result.used_identifiers.insert(depedency.getFullName());
+        for (const auto & dependency : create_dependencies)
+            result.used_identifiers.insert(dependency.getFullName());
     }
 
     return result;
 }
-
 
 }

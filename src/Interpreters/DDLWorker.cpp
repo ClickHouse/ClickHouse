@@ -92,7 +92,7 @@ DDLWorker::DDLWorker(
 
     if (1 < pool_size)
     {
-        LOG_WARNING(log, "DDLWorker is configured to use multiple threads. "
+        LOG_INFO(log, "DDLWorker is configured to use multiple threads. "
                          "It's not recommended because queries can be reordered. Also it may cause some unknown issues to appear.");
         worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
     }
