@@ -327,7 +327,8 @@ public:
         return name;
     }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -387,6 +388,7 @@ private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
     friend class StorageS3Queue;
+    friend class ReadFromStorageS3Step;
 
     Configuration configuration;
     std::mutex configuration_update_mutex;

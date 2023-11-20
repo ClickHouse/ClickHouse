@@ -42,6 +42,8 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
@@ -128,6 +130,48 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
+
+class ReadFromStorageS3Step : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromStorageS3Step"; }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    void applyFilters() override;
+
+    ReadFromStorageS3Step(
+        Block sample_block,
+        const Names & column_names_,
+        StorageSnapshotPtr storage_snapshot_,
+        StorageS3 & storage_,
+        SelectQueryInfo query_info_,
+        ContextPtr context_,
+        size_t max_block_size_,
+        size_t num_streams_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        , column_names(column_names_)
+        , storage_snapshot(std::move(storage_snapshot_))
+        , storage(storage_)
+        , query_info(std::move(query_info_))
+        , local_context(std::move(context_))
+        , max_block_size(max_block_size_)
+        , num_streams(num_streams_)
+    {
+    }
+
+private:
+    Names column_names;
+    StorageSnapshotPtr storage_snapshot;
+    StorageS3 & storage;
+    SelectQueryInfo query_info;
+    ContextPtr local_context;
+
+    size_t max_block_size;
+    size_t num_streams;
+};
+
+
 static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, const String & bucket, const Strings & keys)
 {
     Block virtual_columns_block;
@@ -182,50 +226,17 @@ static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, con
     return virtual_columns_block;
 }
 
-static Block renameColumnsInBlock(const Block & source_block, const std::unordered_map<String, String> & rename_map)
+static void filterKeysForPartitionPruning(std::vector<String> & keys,
+                                          const String & bucket,
+                                          const NamesAndTypesList & virtual_columns,
+                                          const SelectQueryInfo & query_info,
+                                          const std::vector<ActionsDAGPtr> & filter_dags,
+                                          ContextPtr context)
 {
-    auto columns = source_block.getColumnsWithTypeAndName();
-    for (auto & col : columns)
-    {
-        auto it = rename_map.find(col.name);
-        if (it != rename_map.end())
-            col.name = it->second;
-    }
-    return Block(std::move(columns));
-}
+    if (keys.empty())
+        return;
 
-static ActionsDAGPtr getFilterForPartitionPruning(const SelectQueryInfo & query_info,
-                                                  const NamesAndTypesList & virtual_columns,
-                                                  NameToNameMap & column_rename,
-                                                  ContextPtr context)
-{
-    if (!query_info.query_tree || !query_info.planner_context)
-        return nullptr;
-
-    const auto * query_node = query_info.query_tree->as<QueryNode>();
-    if (!query_node || !query_node->getWhere())
-        return nullptr;
-
-    Block header = getBlockWithVirtuals(virtual_columns, "", {});
-
-    const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
-    for (const auto & [column_name, column_identifier] : table_expression_data.getColumnNameToIdentifier())
-        column_rename.emplace(column_name, column_identifier);
-
-    header = renameColumnsInBlock(header, column_rename);
-    auto filter_dag = buildActionsDAGFromExpressionNode(
-        query_node->getWhere(), header.getColumnsWithTypeAndName(), query_info.planner_context);
-
-    if (filter_dag)
-        return VirtualColumnUtils::splitFilterDagForAllowedInputs(header, filter_dag, context);
-    return {};
-}
-
-static void filterKeysForPartitionPruning(std::vector<String> & keys, const String & bucket, const NamesAndTypesList & virtual_columns, const SelectQueryInfo & query_info, ContextPtr context)
-{
-    ASTPtr filter_ast;
-    if (!keys.empty())
-        filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query_info.query, virtual_columns, fs::path(bucket) / keys[0], context);
+    ASTPtr filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query_info.query, virtual_columns, fs::path(bucket) / keys[0], context);
 
     if (filter_ast)
     {
@@ -240,12 +251,13 @@ static void filterKeysForPartitionPruning(std::vector<String> & keys, const Stri
     }
 
     NameToNameMap column_rename;
-    auto filter_actions = getFilterForPartitionPruning(query_info, virtual_columns, column_rename, context);
-    if (filter_actions)
+    for (const auto & filter_dag : filter_dags)
     {
         auto block = getBlockWithVirtuals(virtual_columns, bucket, keys);
-        block = renameColumnsInBlock(block, column_rename);
 
+        auto filter_actions = VirtualColumnUtils::splitFilterDagForAllowedInputs(block, filter_dag, context);
+        if (!filter_actions)
+            continue;
         VirtualColumnUtils::filterBlockWithQuery(filter_actions, block, context);
 
         String key_column_name = "_key";
@@ -1150,6 +1162,7 @@ static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
     bool distributed_processing,
     ContextPtr local_context,
     const SelectQueryInfo & query_info,
+    const std::vector<ActionsDAGPtr> & filter_dags,
     const NamesAndTypesList & virtual_columns,
     StorageS3::KeysWithInfo * read_keys = nullptr,
     std::function<void(FileProgress)> file_progress_callback = {})
@@ -1170,7 +1183,7 @@ static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
     else
     {
         Strings keys = configuration.keys;
-        filterKeysForPartitionPruning(keys, configuration.url.bucket, virtual_columns, query_info, local_context);
+        filterKeysForPartitionPruning(keys, configuration.url.bucket, virtual_columns, query_info, filter_dags, local_context);
         return std::make_shared<StorageS3Source::KeysIterator>(
             *configuration.client, configuration.url.version_id, keys,
             configuration.url.bucket, configuration.request_settings, read_keys, file_progress_callback);
@@ -1192,7 +1205,8 @@ bool StorageS3::parallelizeOutputAfterReading(ContextPtr context) const
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
 }
 
-Pipe StorageS3::read(
+void StorageS3::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -1201,15 +1215,34 @@ Pipe StorageS3::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto query_configuration = updateConfigurationAndGetCopy(local_context);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), virtual_columns);
 
-    if (partition_by && query_configuration.withWildcard())
+    auto reading = std::make_unique<ReadFromStorageS3Step>(
+        read_from_format_info.source_header,
+        column_names,
+        storage_snapshot,
+        *this,
+        query_info,
+        local_context,
+        max_block_size,
+        num_streams);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    auto query_configuration = storage.updateConfigurationAndGetCopy(local_context);
+
+    if (storage.partition_by && query_configuration.withWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    auto virtual_columns = storage.getVirtuals();
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, storage.supportsSubsetOfColumns(local_context), virtual_columns);
 
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
-        query_configuration, distributed_processing, local_context, query_info, virtual_columns, nullptr, local_context->getFileProgressCallback());
+        query_configuration, storage.distributed_processing, local_context, query_info, filter_dags,
+        virtual_columns, nullptr, local_context->getFileProgressCallback());
 
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
     if (estimated_keys_count > 1)
@@ -1232,9 +1265,9 @@ Pipe StorageS3::read(
         pipes.emplace_back(std::make_shared<StorageS3Source>(
             read_from_format_info,
             query_configuration.format,
-            getName(),
+            storage.getName(),
             local_context,
-            format_settings,
+            storage.format_settings,
             max_block_size,
             query_configuration.request_settings,
             query_configuration.compression_method,
@@ -1248,7 +1281,12 @@ Pipe StorageS3::read(
             query_info));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+}
+
+
+void ReadFromStorageS3Step::applyFilters()
+{
 }
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -1690,7 +1728,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 {
     KeysWithInfo read_keys;
 
-    auto file_iterator = createFileIterator(configuration, false, ctx, {}, {}, &read_keys);
+    auto file_iterator = createFileIterator(configuration, false, ctx, {}, {}, {}, &read_keys);
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (ctx->getSettingsRef().schema_inference_use_cache_for_s3)
