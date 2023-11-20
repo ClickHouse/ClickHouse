@@ -6,7 +6,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Poco/Logger.h>
-#include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 #include "libaccel_config.h"
 #include <Common/MemorySanitizer.h>
@@ -30,7 +29,7 @@ DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 
 DeflateQplJobHWPool::DeflateQplJobHWPool()
     : max_hw_jobs(0)
-    , random_engine(randomSeed())
+    , random_engine(std::random_device()())
 {
     Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
     const char * qpl_version = qpl_get_library_version();
@@ -377,7 +376,7 @@ uint8_t CompressionCodecDeflateQpl::getMethodByte() const
 
 void CompressionCodecDeflateQpl::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 UInt32 CompressionCodecDeflateQpl::getMaxCompressedDataSize(UInt32 uncompressed_size) const

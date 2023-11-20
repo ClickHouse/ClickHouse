@@ -28,12 +28,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
-#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
-
-#include <ranges>
 
 namespace DB
 {
@@ -397,35 +394,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         column.ttl = ttl;
 
+        metadata.columns.add(column, after_column, first);
+
+        /// Slow, because each time a list is copied
         if (context->getSettingsRef().flatten_nested)
-        {
-            StorageInMemoryMetadata temporary_metadata;
-            temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
-            temporary_metadata.columns.flattenNested();
-
-            const auto transformed_columns = temporary_metadata.columns.getAll();
-
-            auto add_column = [&](const String & name)
-            {
-                const auto & transformed_column = temporary_metadata.columns.get(name);
-                metadata.columns.add(transformed_column, after_column, first);
-            };
-
-            if (!after_column.empty() || first)
-            {
-                for (const auto & col: transformed_columns | std::views::reverse)
-                    add_column(col.name);
-            }
-            else
-            {
-                for (const auto & col: transformed_columns)
-                    add_column(col.name);
-            }
-        }
-        else
-        {
-            metadata.columns.add(column, after_column, first);
-        }
+            metadata.columns.flattenNested();
     }
     else if (type == DROP_COLUMN)
     {
@@ -811,7 +784,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
         return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
-            column_name == LightweightDeleteDescription::FILTER_COLUMN.name || column_name == BlockNumberColumn::name;
+            column_name == LightweightDeleteDescription::FILTER_COLUMN.name;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -870,12 +843,6 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
 bool AlterCommand::isRemovingProperty() const
 {
     return to_remove != RemoveProperty::NO_PROPERTY;
-}
-
-bool AlterCommand::isDropSomething() const
-{
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
-        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
@@ -1121,10 +1088,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
                                 "this column name is reserved for lightweight delete feature", backQuote(column_name));
 
-            if (column_name == BlockNumberColumn::name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
-                                                            "this column name is reserved for _block_number persisting feature", backQuote(column_name));
-
             if (command.codec)
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
 
@@ -1185,7 +1148,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// So we don't allow to do it for now.
             if (command.data_type)
             {
-                const GetColumnsOptions options(GetColumnsOptions::All);
+                const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
                 bool new_type_has_object = command.data_type->hasDynamicSubcolumns();
@@ -1218,7 +1181,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         "Column {} doesn't have MATERIALIZED, cannot remove it",
                         backQuote(column_name));
 
-                const auto & column_from_table = all_columns.get(column_name);
+                auto column_from_table = all_columns.get(column_name);
                 if (command.to_remove == AlterCommand::RemoveProperty::TTL && column_from_table.ttl == nullptr)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -1334,10 +1297,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
                                 "this column name is reserved for lightweight delete feature", backQuote(command.rename_to));
 
-            if (command.rename_to == BlockNumberColumn::name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
-                                                            "this column name is reserved for _block_number persisting feature", backQuote(command.rename_to));
-
             if (modified_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
                                                              "in a single ALTER query", backQuote(column_name));
@@ -1418,14 +1377,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::hasNonReplicatedAlterCommand() const
+bool AlterCommands::hasSettingsAlterCommand() const
 {
-    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
-}
-
-bool AlterCommands::areNonReplicatedAlterCommands() const
-{
-    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
+    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const

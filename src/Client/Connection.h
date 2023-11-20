@@ -3,7 +3,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include <Common/SSH/Wrappers.h>
+#include "config.h"
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -20,8 +20,6 @@
 
 #include <atomic>
 #include <optional>
-
-#include "config.h"
 
 namespace DB
 {
@@ -53,7 +51,6 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
-        const ssh::SSHKey & ssh_private_key_,
         const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
@@ -170,7 +167,6 @@ private:
     String default_database;
     String user;
     String password;
-    ssh::SSHKey ssh_private_key;
     String quota_key;
 
     /// For inter-server authorization
@@ -263,10 +259,6 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
-    String packStringForSshSign(String challenge);
-
-    void performHandshakeForSSHAuth();
-
     void sendAddendum();
     void receiveHello(const Poco::Timespan & handshake_timeout);
 
@@ -284,7 +276,7 @@ private:
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
-    InitialAllRangesAnnouncement receiveInitialParallelReadAnnouncement() const;
+    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

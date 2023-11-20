@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash -f
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

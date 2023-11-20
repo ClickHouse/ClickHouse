@@ -1106,7 +1106,7 @@ public:
     {
         if (isInteger(data_type))
         {
-            if (isUInt(data_type))
+            if (isUnsignedInteger(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
             else
                 return std::make_unique<SignedIntegerModel>(seed);

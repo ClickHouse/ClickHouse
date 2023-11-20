@@ -324,7 +324,8 @@ struct FileSegmentsHolder : private boost::noncopyable
 {
     FileSegmentsHolder() = default;
 
-    explicit FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_ = true);
+    explicit FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_ = true)
+        : file_segments(std::move(file_segments_)), complete_on_dtor(complete_on_dtor_) {}
 
     ~FileSegmentsHolder();
 
@@ -340,7 +341,11 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegment & back() { return *file_segments.back(); }
 
-    FileSegment & add(FileSegmentPtr && file_segment);
+    FileSegment & add(FileSegmentPtr && file_segment)
+    {
+        file_segments.push_back(file_segment);
+        return *file_segments.back();
+    }
 
     FileSegments::iterator begin() { return file_segments.begin(); }
     FileSegments::iterator end() { return file_segments.end(); }

@@ -129,12 +129,7 @@ IStorageURLBase::IStorageURLBase(
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        /// We don't allow special columns in URL storage.
-        if (!columns_.hasOnlyOrdinary())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine URL doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -170,11 +165,24 @@ namespace
         return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
     }
 
+    auto proxyConfigurationToPocoProxyConfiguration(const ProxyConfiguration & proxy_configuration)
+    {
+        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+        poco_proxy_config.host = proxy_configuration.host;
+        poco_proxy_config.port = proxy_configuration.port;
+        poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
+
+        return poco_proxy_config;
+    }
+
     auto getProxyConfiguration(const std::string & protocol_string)
     {
         auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
                                              : ProxyConfigurationResolver::Protocol::HTTP;
-        return ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+        auto proxy_config = ProxyConfigurationResolverProvider::get(protocol)->resolve();
+
+        return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }
 }
 
@@ -259,12 +267,12 @@ StorageURLSource::StorageURLSource(
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
     size_t max_parsing_threads,
-    const SelectQueryInfo &,
+    const SelectQueryInfo & query_info,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
+    : ISource(info.source_header, false), WithContext(context_)
     , name(std::move(name_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
@@ -340,14 +348,11 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                max_parsing_threads,
+                need_only_count ? 1 : max_parsing_threads,
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
-                compression_method,
-                need_only_count);
-
-            if (key_condition)
-                input_format->setKeyCondition(key_condition);
+                compression_method);
+            input_format->setQueryInfo(query_info, getContext());
 
             if (need_only_count)
                 input_format->needOnlyCount();

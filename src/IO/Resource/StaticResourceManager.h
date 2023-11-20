@@ -22,11 +22,6 @@ public:
 
     ClassifierPtr acquire(const String & classifier_name) override;
 
-    void forEachNode(VisitorFunc visitor) override
-    {
-        UNUSED(visitor);
-    }
-
 private:
     struct Resource
     {

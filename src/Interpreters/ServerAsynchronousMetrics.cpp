@@ -15,6 +15,7 @@
 #include <IO/MMappedFileCache.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MarkCache.h>
@@ -123,6 +124,14 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
+
+#if USE_ROCKSDB
+    if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
+    {
+        new_values["MergeTreeMetadataCacheSize"] = { metadata_cache->getEstimateNumKeys(),
+            "The size of the metadata cache for tables. This cache is experimental and not used in production." };
+    }
+#endif
 
 #if USE_EMBEDDED_COMPILER
     if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())

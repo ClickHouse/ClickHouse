@@ -29,9 +29,9 @@ public:
 
 private:
     const S3::URI s3_uri;
+    const std::shared_ptr<S3::Client> client;
+    S3Settings::RequestSettings request_settings;
     const DataSourceDescription data_source_description;
-    S3Settings s3_settings;
-    std::shared_ptr<S3::Client> client;
 };
 
 
@@ -49,8 +49,6 @@ public:
     void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                           bool copy_encrypted, UInt64 start_pos, UInt64 length) override;
 
-    void copyFile(const String & destination, const String & source, size_t size) override;
-
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
@@ -59,10 +57,10 @@ private:
     void removeFilesBatch(const Strings & file_names);
 
     const S3::URI s3_uri;
-    const DataSourceDescription data_source_description;
-    S3Settings s3_settings;
-    std::shared_ptr<S3::Client> client;
+    const std::shared_ptr<S3::Client> client;
+    S3Settings::RequestSettings request_settings;
     std::optional<bool> supports_batch_delete;
+    const DataSourceDescription data_source_description;
 };
 
 }
