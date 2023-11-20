@@ -85,7 +85,9 @@ SELECT concat(42, 144, 255);
 
 SELECT '-- Single argument tests';
 SELECT concat(42);
+SELECT concat(materialize(42));
 SELECT concat('foo');
+SELECT concat(materialize('foo'));
 SELECT concat(NULL);
 SELECT concat(materialize(NULL :: Nullable(UInt64)));
 
