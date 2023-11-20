@@ -57,11 +57,18 @@ private:
 /// use it and won't create a read buffer.
 /// For formats that have a schema reader from the data,
 /// read buffer will be created by the provided iterator and
-/// the schema will be extracted from the data. If schema reader
-/// couldn't determine the schema we will try the next read buffer
-/// from the provided iterator if it makes sense. If the format doesn't
-/// have any schema reader or we couldn't determine the schema,
-/// an exception will be thrown.
+/// the schema will be extracted from the data. If the format doesn't
+/// have any schema reader an exception will be thrown.
+/// Reading schema can be performed in 2 modes depending on setting schema_inference_mode:
+/// 1) Default mode. In this mode ClickHouse assumes that all files have the same schema
+/// and tries to infer the schema by reading files one by one until it succeeds.
+/// If schema reader couldn't determine the schema for some file, ClickHouse will try the next
+/// file (next read buffer from the provided iterator) if it makes sense. If ClickHouse couldn't determine
+/// the resulting schema, an exception will be thrown.
+/// 2) Union mode. In this mode ClickHouse assumes that files can have different schemas,
+/// so it infer schemas of all files and then union them to the common schema. In this mode
+/// all read buffers from provided iterator will be used. If ClickHouse couldn't determine
+/// the schema for some file, an exception will be thrown.
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,

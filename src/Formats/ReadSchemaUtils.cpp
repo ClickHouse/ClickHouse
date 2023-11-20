@@ -55,7 +55,14 @@ try
     NamesAndTypesList names_and_types;
     SchemaInferenceMode mode = context->getSettingsRef().schema_inference_mode;
     if (mode == SchemaInferenceMode::UNION && !FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION schema inference mode is not supported for format {}, because it doesn't support reading subset of columns", format_name);
+    {
+        String additional_message;
+        /// Better exception message for WithNames(AndTypes) formats.
+        if (format_name.ends_with("WithNames") || format_name.ends_with("WithNamesAndTypes"))
+            additional_message = " (formats -WithNames(AndTypes) support reading subset of columns only when setting input_format_with_names_use_header is enabled)";
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION schema inference mode is not supported for format {}, because it doesn't support reading subset of columns{}", format_name, additional_message);
+    }
 
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
     {

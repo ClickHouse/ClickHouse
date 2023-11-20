@@ -577,7 +577,7 @@ namespace
         element_types.reserve(names_to_types.size());
         for (const auto & name : element_names)
         {
-            auto types = names_to_types[name];
+            auto & types = names_to_types[name];
             transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
             /// If some element have different types in different tuples, we can't do anything
             if (!checkIfTypesAreEqual(types))
