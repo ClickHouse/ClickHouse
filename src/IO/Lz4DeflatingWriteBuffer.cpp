@@ -7,7 +7,7 @@ namespace
     using namespace DB;
 
     /// SinkToOut provides the safe way to do direct write into buffer's memory
-    /// When out->capacity() is not less that guaranteed_capacity, SinkToOut is pointing directly to out_'s memory.
+    /// When out->capacity() is not less than guaranteed_capacity, SinkToOut is pointing directly to out_'s memory.
     /// Otherwise the writes are directed to the temporary memory. That data is copied to out_ at finalize call.
     class SinkToOut
     {
