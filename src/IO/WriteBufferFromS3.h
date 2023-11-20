@@ -30,8 +30,6 @@ class WriteBufferFromS3 final : public WriteBufferFromFileBase
 public:
     WriteBufferFromS3(
         std::shared_ptr<const S3::Client> client_ptr_,
-        /// for CompleteMultipartUploadRequest, because it blocks on recv() for a few seconds on big uploads
-        std::shared_ptr<const S3::Client> client_with_long_timeout_ptr_,
         const String & bucket_,
         const String & key_,
         size_t buf_size_,
@@ -90,7 +88,6 @@ private:
     const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
-    const std::shared_ptr<const S3::Client> client_with_long_timeout_ptr;
     const std::optional<std::map<String, String>> object_metadata;
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
     LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
