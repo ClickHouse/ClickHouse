@@ -48,7 +48,7 @@ public:
     }
     void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     // Case 1  APPLY (quantile(0.9))
     String func_name;
@@ -80,7 +80,7 @@ public:
     const std::shared_ptr<re2::RE2> & getMatcher() const;
     bool isColumnMatching(const String & column_name) const;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -103,7 +103,7 @@ public:
         }
 
         void appendColumnName(WriteBuffer & ostr) const override;
-        void updateTreeHashImpl(SipHash & hash_state) const override;
+        void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
         String name;
 
@@ -121,7 +121,7 @@ public:
     }
     void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

@@ -5,6 +5,7 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -24,6 +25,7 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -59,7 +61,7 @@ void ClusterCopier::init()
     getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
-    task_cluster->random_engine.seed(task_cluster->random_device());
+    task_cluster->random_engine.seed(randomSeed());
     for (auto & task_table : task_cluster->table_tasks)
     {
         task_table.cluster_pull = getContext()->getCluster(task_table.cluster_pull_name);
@@ -199,7 +201,7 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
 {
     /// Fetch partitions list from a shard
     {
-        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
+        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
         for (const TaskShardPtr & task_shard : task_table.all_shards)
             thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]()

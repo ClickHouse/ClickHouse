@@ -1,3 +1,5 @@
+add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
@@ -432,12 +434,24 @@ if (USE_BINARY_HASH)
     add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
 endif()
 
+if (CHECK_LARGE_OBJECT_SIZES)
+    add_custom_command(TARGET clickhouse POST_BUILD
+        COMMAND "${CMAKE_SOURCE_DIR}/utils/check-style/check-large-objects.sh" "${CMAKE_BINARY_DIR}")
+endif ()
+
 if (SPLIT_DEBUG_SYMBOLS)
     clickhouse_split_debug_symbols(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLITTED_DEBUG_SYMBOLS_DIR} BINARY_PATH clickhouse)
 else()
     clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLITTED_DEBUG_SYMBOLS_DIR})
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
+
+# A target to get stripped binary.
+# Note: this is different to the above (extract debug symbols to a separate place)
+add_custom_target(clickhouse-stripped ALL
+    COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"
+    DEPENDS clickhouse
+    COMMENT "Stripping clickhouse binary" VERBATIM)
 
 if (ENABLE_TESTS)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)

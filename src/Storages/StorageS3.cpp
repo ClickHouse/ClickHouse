@@ -6,8 +6,6 @@
 
 #include <Common/isValidUTF8.h>
 
-#include <Functions/FunctionsConversion.h>
-
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/ParallelReadBuffer.h>
@@ -79,6 +77,7 @@ namespace CurrentMetrics
 {
     extern const Metric StorageS3Threads;
     extern const Metric StorageS3ThreadsActive;
+    extern const Metric StorageS3ThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -149,7 +148,7 @@ public:
         , virtual_columns(virtual_columns_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
-        , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
+        , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
         , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
         , file_progress_callback(file_progress_callback_)
     {
@@ -501,7 +500,7 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     size_t max_threads_count)
     : callback(callback_)
 {
-    ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, max_threads_count);
+    ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, max_threads_count);
     auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "S3ReadTaskItr");
 
     std::vector<std::future<String>> keys;
@@ -566,7 +565,7 @@ StorageS3Source::StorageS3Source(
     , file_iterator(file_iterator_)
     , max_parsing_threads(max_parsing_threads_)
     , need_only_count(need_only_count_)
-    , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
+    , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
 }

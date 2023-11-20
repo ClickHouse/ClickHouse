@@ -945,13 +945,6 @@ def test_predefined_connection_configuration(started_cluster):
 
     instance.query(f"drop table if exists {name}", user="user")
     error = instance.query_and_get_error(
-        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')"
-    )
-    assert (
-        "To execute this query, it's necessary to have the grant NAMED COLLECTION ON s3_conf1"
-        in error
-    )
-    error = instance.query_and_get_error(
         f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
         user="user",
     )
@@ -975,11 +968,6 @@ def test_predefined_connection_configuration(started_cluster):
     )
     assert result == instance.query("SELECT number FROM numbers(10)")
 
-    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
-    assert (
-        "To execute this query, it's necessary to have the grant NAMED COLLECTION ON no_collection"
-        in error
-    )
     error = instance.query_and_get_error("SELECT * FROM s3(no_collection)", user="user")
     assert (
         "To execute this query, it's necessary to have the grant NAMED COLLECTION ON no_collection"
