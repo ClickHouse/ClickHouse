@@ -734,6 +734,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         bool is_create_parameterized_view = false;
         if (const auto * create_query = ast->as<ASTCreateQuery>())
             is_create_parameterized_view = create_query->isParameterizedView();
+        else if (const auto * explain_query = ast->as<ASTExplainQuery>())
+        {
+            assert(!explain_query->children.empty());
+            if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
+                is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+        }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
