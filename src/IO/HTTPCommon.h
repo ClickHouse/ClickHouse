@@ -8,6 +8,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 #include <Common/PoolBase.h>
+#include <Common/ProxyConfiguration.h>
 #include <Poco/URIStreamFactory.h>
 
 #include <IO/ConnectionTimeouts.h>
@@ -78,7 +79,7 @@ void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_
 HTTPSessionPtr makeHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    Poco::Net::HTTPClientSession::ProxyConfig proxy_config = {}
+    ProxyConfiguration proxy_config = {}
 );
 
 /// As previous method creates session, but takes it from pool, without and with proxy uri.
@@ -97,14 +98,8 @@ PooledHTTPSessionPtr makePooledHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
     size_t per_endpoint_pool_size,
-    bool wait_on_pool_size_limit = true);
-
-PooledHTTPSessionPtr makePooledHTTPSession(
-    const Poco::URI & uri,
-    const Poco::URI & proxy_uri,
-    const ConnectionTimeouts & timeouts,
-    size_t per_endpoint_pool_size,
-    bool wait_on_pool_size_limit = true);
+    bool wait_on_pool_size_limit = true,
+    ProxyConfiguration proxy_config = {});
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
 
@@ -118,4 +113,6 @@ std::istream * receiveResponse(
 
 void assertResponseIsOk(
     const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
+
+void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts);
 }

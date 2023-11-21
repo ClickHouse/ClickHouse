@@ -101,6 +101,7 @@
     M(ReplicatedPartChecks, "Number of times we had to perform advanced search for a data part on replicas or to clarify the need of an existing data part.") \
     M(ReplicatedPartChecksFailed, "Number of times the advanced search for a data part on replicas did not give result or when unexpected part has been found and moved away.") \
     M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.") \
+    M(ReplicatedCoveredPartsInZooKeeperOnStart, "For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.") \
     \
     M(InsertedRows, "Number of rows INSERTed to all tables.") \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.") \
@@ -236,7 +237,7 @@
     M(DictCacheLockWriteNs, "Number of nanoseconds spend in waiting for write lock to update the data for the dictionaries of 'cache' types.") \
     M(DictCacheLockReadNs, "Number of nanoseconds spend in waiting for read lock to lookup the data for the dictionaries of 'cache' types.") \
     \
-    M(DistributedSyncInsertionTimeoutExceeded, "A timeout has exceeded while waiting for shards during synchronous insertion into a Distributed table (with 'insert_distributed_sync' = 1)") \
+    M(DistributedSyncInsertionTimeoutExceeded, "A timeout has exceeded while waiting for shards during synchronous insertion into a Distributed table (with 'distributed_foreground_insert' = 1)") \
     M(DataAfterMergeDiffersFromReplica, R"(
 Number of times data after merge is not byte-identical to the data on another replicas. There could be several reasons:
 1. Using newer version of compression library after server update.
@@ -316,6 +317,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a query profiler signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
+    M(QueryProfilerConcurrencyOverruns, "Number of times we drop processing of a query profiler signal due to too many concurrent query profilers in other threads, which may indicate overload.") \
     M(QueryProfilerRuns, "Number of times QueryProfiler had been run.") \
     \
     M(CreatedLogEntryForMerge, "Successfully created log entry to merge parts in ReplicatedMergeTree.") \
@@ -422,6 +424,8 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentUseMicroseconds, "File segment use() time") \
     M(FileSegmentRemoveMicroseconds, "File segment remove() time") \
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
+    M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold") \
+    M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -530,11 +534,26 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
     \
+    M(S3QueueSetFileProcessingMicroseconds, "Time spent to set file as processing")\
+    M(S3QueueSetFileProcessedMicroseconds, "Time spent to set file as processed")\
+    M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed")\
+    M(S3QueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
+    M(S3QueuePullMicroseconds, "Time spent to read file data")\
+    M(S3QueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\
+    \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
     M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
     M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
     M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
+    \
+    M(BackupsOpenedForRead, "Number of backups opened for reading") \
+    M(BackupsOpenedForWrite, "Number of backups opened for writing") \
+    M(BackupReadMetadataMicroseconds, "Time spent reading backup metadata from .backup file") \
+    M(BackupWriteMetadataMicroseconds, "Time spent writing backup metadata to .backup file") \
+    M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries") \
+    M(BackupEntriesCollectorForTablesDataMicroseconds, "Time spent making backup entries for tables data") \
+    M(BackupEntriesCollectorRunPostTasksMicroseconds, "Time spent running post tasks after making backup entries") \
     \
     M(ReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the initiator server side.") \
     M(MergeTreeReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the initiator server side.") \
@@ -589,9 +608,14 @@ Timer::Timer(Counters & counters_, Event timer_event_, Event counter_event, Reso
     counters.increment(counter_event);
 }
 
+UInt64 Timer::get()
+{
+    return watch.elapsedNanoseconds() / static_cast<UInt64>(resolution);
+}
+
 void Timer::end()
 {
-    counters.increment(timer_event, watch.elapsedNanoseconds() / static_cast<UInt64>(resolution));
+    counters.increment(timer_event, get());
     watch.reset();
 }
 

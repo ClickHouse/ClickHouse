@@ -424,7 +424,7 @@ void LocalServer::setupUsers()
 
 void LocalServer::connect()
 {
-    connection_parameters = ConnectionParameters(config());
+    connection_parameters = ConnectionParameters(config(), "localhost");
     connection = LocalConnection::createConnection(
         connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
@@ -494,6 +494,7 @@ try
     registerFormats();
 
     processConfig();
+    adjustSettings();
     initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     applyCmdSettings(global_context);
@@ -576,6 +577,8 @@ void LocalServer::processConfig()
 
     if (config().has("multiquery"))
         is_multiquery = true;
+
+    pager = config().getString("pager", "");
 
     delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
     if (!is_interactive || delayed_interactive)
@@ -760,7 +763,7 @@ void LocalServer::processConfig()
         {
             DatabaseCatalog::instance().createBackgroundTasks();
             loadMetadata(global_context);
-            DatabaseCatalog::instance().startupBackgroundCleanup();
+            DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
@@ -783,15 +786,6 @@ void LocalServer::processConfig()
 
     global_context->setQueryKindInitial();
     global_context->setQueryKind(query_kind);
-
-    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
-    {
-        Settings settings = global_context->getSettings();
-        settings.input_format_values_allow_data_after_semicolon = true;
-        /// Do not send it to the server
-        settings.input_format_values_allow_data_after_semicolon.changed = false;
-        global_context->setSettings(settings);
-    }
 }
 
 
