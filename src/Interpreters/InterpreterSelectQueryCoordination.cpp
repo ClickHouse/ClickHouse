@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ReplaceDistributedTableNameVisitor.h>
 #include <Optimizer/CostBasedOptimizer.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryCoordination/Coordinator.h>
@@ -37,7 +38,11 @@ bool optimizeTrivialCount(const ASTPtr & query, const Settings & settings)
     {
         for (const auto & union_child_query : select_with_union_query->list_of_selects->children)
         {
-            auto select_query = union_child_query->as<ASTSelectQuery>();
+            auto * select_query = union_child_query->as<ASTSelectQuery>();
+            /// Skip union t1 union t2 union t3 and except queries
+            if (!select_query)
+                continue;
+
             optimize_trivial_count = settings.optimize_trivial_count_query && !select_query->where() && !select_query->prewhere()
                 && !select_query->groupBy() && !select_query->having() && !select_query->sampleSize() && !select_query->sampleOffset()
                 && !select_query->final();
@@ -69,6 +74,29 @@ bool optimizeTrivialCount(const ASTPtr & query, const Settings & settings)
     return optimize_trivial_count;
 }
 
+void addSettings(ASTPtr & query, const String & name, const Field & value)
+{
+    if (auto * select_query = query->as<ASTSelectQuery>())
+    {
+        if (select_query->settings())
+        {
+            if (auto * set = select_query->settings()->as<ASTSetQuery>())
+                set->changes.setSetting(name, value);
+        }
+        else
+        {
+            auto set = std::make_shared<ASTSetQuery>();
+            set->changes.setSetting(name, value);
+            select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(set));
+        }
+    }
+    else if (auto * union_query = query->as<ASTSelectWithUnionQuery>())
+    {
+        for (auto & select : union_query->list_of_selects->children)
+            addSettings(select, name, value);
+    }
+}
+
 }
 
 InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
@@ -84,24 +112,22 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
 {
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
-        setIncompatibleSettings();
+        auto cloned_query = query_ptr->clone();
+        auto setting_changes = setIncompatibleSettings(cloned_query);
 
         /// Expand CET in advance
         if (!options.is_subquery)
         {
             if (context->getSettingsRef().enable_global_with_statement)
-                ApplyWithAliasVisitor().visit(query_ptr);
-            ApplyWithSubqueryVisitor().visit(query_ptr);
+                ApplyWithAliasVisitor().visit(cloned_query);
+            ApplyWithSubqueryVisitor().visit(cloned_query);
         }
 
         ReplaceDistributedTableNameVisitor visitor(context);
-        visitor.visit(query_ptr);
+        visitor.visit(cloned_query);
 
-        if (visitor.has_table_function)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support table function query");
-
-        if (visitor.has_local_table && visitor.has_distributed_table)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support distributed table and local table mix query");
+        if (visitor.has_table_function || visitor.has_local_table)
+            context->setDistributedForQueryCoord(false);
 
         String cluster_name;
         if (visitor.has_distributed_table)
@@ -109,19 +135,18 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
             cluster_name = visitor.clusters[0]->getName();
             /// remote() cluster_name is empty
             if (cluster_name.empty())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support remote function query");
+                context->setDistributedForQueryCoord(false);
+
             for (size_t i = 1; i < visitor.clusters.size(); ++i)
+                /// multiple cluster
                 if (cluster_name != visitor.clusters[i]->getName())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query");
+                    context->setDistributedForQueryCoord(false);
 
             if (context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys))
                 context->setDistributedForQueryCoord(true);
             else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query"); /// maybe union query
+                context->setDistributedForQueryCoord(false); /// maybe union query
         }
-
-        if (visitor.has_local_table)
-            context->setDistributedForQueryCoord(false);
 
         /// TODO remove the code block when we send query plan instead of SQL to nodes.
         if (visitor.has_non_merge_tree_table)
@@ -132,6 +157,15 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
         /// TODO remove the code block when we send query plan instead of SQL to nodes.
         if (optimizeTrivialCount(query_ptr, context->getSettingsRef()))
             context->setDistributedForQueryCoord(false);
+
+        if (context->isDistributedForQueryCoord())
+            query_ptr = cloned_query;
+        else
+            /// restore changed settings
+            for (auto & change : setting_changes)
+                context->setSetting(change.name, change.value);
+
+        addSettings(query_ptr, "allow_experimental_query_coordination", context->isDistributedForQueryCoord());
     }
     else
     {
@@ -139,11 +173,21 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     }
 
     query_coordination_enabled = context->isDistributedForQueryCoord();
+    LOG_DEBUG(log, "query_coordination_enabled = {}", query_coordination_enabled);
 }
 
-void InterpreterSelectQueryCoordination::setIncompatibleSettings()
+/// add settings to query_ptr to propagate to others
+SettingsChanges InterpreterSelectQueryCoordination::setIncompatibleSettings(ASTPtr & query_)
 {
-    context->getSettings().use_index_for_in_with_subqueries = false;
+    SettingsChanges changes;
+    if (context->getSettings().use_index_for_in_with_subqueries)
+    {
+        addSettings(query_, "use_index_for_in_with_subqueries", false);
+        /// add settings to query_ptr to propagate to others
+        context->getSettings().use_index_for_in_with_subqueries = false;
+        changes.setSetting("use_index_for_in_with_subqueries", false);
+    }
+    return changes;
 }
 
 static String formattedAST(const ASTPtr & ast)

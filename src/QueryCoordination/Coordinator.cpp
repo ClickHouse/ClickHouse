@@ -32,7 +32,7 @@ Coordinator::Coordinator(const FragmentPtrs & fragments_, ContextMutablePtr cont
 
 void Coordinator::schedulePrepareDistributedPipelines()
 {
-    // If the fragment has an scan step, it is scheduled according to the cluster copy fragment
+    // If the fragment has a scan step, it is scheduled according to the cluster copy fragment
     assignFragmentToHost();
 
     for (auto & [host, fragment_ids] : host_fragments)
@@ -117,7 +117,7 @@ void Coordinator::assignFragmentToHost()
 {
     const std::unordered_map<UInt32, std::vector<String>> & scan_fragment_hosts = assignSourceFragment();
 
-    // For a fragment with a scanstep, process its dest fragment.
+    // For a fragment with a scan step, process its dest fragment.
 
     auto process_other_fragment
         = [this](std::unordered_map<UInt32, std::vector<String>> & fragment_hosts_) -> std::unordered_map<UInt32, std::vector<String>>
