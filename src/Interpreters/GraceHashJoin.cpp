@@ -527,10 +527,26 @@ public:
 
     Block nextImpl() override
     {
+        ExtraBlockPtr not_processed = nullptr;
+
+        {
+            std::lock_guard lock(extra_block_mutex);
+            if (!not_processed_blocks.empty())
+            {
+                not_processed = std::move(not_processed_blocks.front());
+                not_processed_blocks.pop_front();
+            }
+        }
+
         if (not_processed)
         {
-            Block block = not_processed->block;
+            Block block = std::move(not_processed->block);
             hash_join->joinBlock(block, not_processed);
+            if (not_processed)
+            {
+                std::lock_guard lock(extra_block_mutex);
+                not_processed_blocks.emplace_back(std::move(not_processed));
+            }
             return block;
         }
 
@@ -572,6 +588,11 @@ public:
         } while (block.rows() == 0);
 
         hash_join->joinBlock(block, not_processed);
+        if (not_processed)
+        {
+            std::lock_guard lock(extra_block_mutex);
+            not_processed_blocks.emplace_back(std::move(not_processed));
+        }
         return block;
     }
 
@@ -584,7 +605,8 @@ public:
     Names left_key_names;
     Names right_key_names;
 
-    ExtraBlockPtr not_processed = nullptr;
+    std::mutex extra_block_mutex;
+    std::list<ExtraBlockPtr> not_processed_blocks TSA_GUARDED_BY(extra_block_mutex);
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
