@@ -93,7 +93,7 @@
   * See https://habr.com/en/company/yandex/blog/457612/
   */
 
-
+__attribute__((no_sanitize("coverage")))
 static inline void * inline_memcpy(void * __restrict dst_, const void * __restrict src_, size_t size)
 {
     /// We will use pointer arithmetic, so char pointer will be used.
