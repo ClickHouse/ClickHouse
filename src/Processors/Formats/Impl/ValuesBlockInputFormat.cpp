@@ -98,7 +98,7 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
     return true;
 }
 
-Chunk ValuesBlockInputFormat::generate()
+Chunk ValuesBlockInputFormat::read()
 {
     if (total_rows == 0)
         readPrefix();

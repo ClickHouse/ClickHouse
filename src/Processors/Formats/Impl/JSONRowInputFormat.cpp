@@ -41,15 +41,8 @@ void JSONRowInputFormat::readPrefix()
         JSONUtils::skipArrayStart(*peekable_buf);
         data_in_square_brackets = true;
     }
-    catch (const ParsingException &)
+    catch (const Exception &)
     {
-        parse_as_json_each_row = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() != ErrorCodes::INCORRECT_DATA)
-            throw;
-
         parse_as_json_each_row = true;
     }
 

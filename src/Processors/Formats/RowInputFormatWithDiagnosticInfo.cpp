@@ -26,8 +26,6 @@ RowInputFormatWithDiagnosticInfo::RowInputFormatWithDiagnosticInfo(const Block &
 
 void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
 {
-    ++row_num;
-
     bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
     bytes_read_at_start_of_buffer_on_current_row = in->count() - in->offset();
 
@@ -73,7 +71,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
     {
         in->position() = in->buffer().begin() + offset_of_prev_row;
 
-        out_diag << "\nRow " << (row_num - 1) << ":\n";
+        out_diag << "\nRow " << getRowNum() - 1 << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(columns, out_diag))
             return std::make_pair(out_diag.str(), out_data.str());
     }
@@ -96,7 +94,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
         ++data;
     }
 
-    out_diag << "\nRow " << row_num << ":\n";
+    out_diag << "\nRow " << getRowNum() << ":\n";
     parseRowAndPrintDiagnosticInfo(columns, out_diag);
     out_diag << "\n";
 
@@ -193,7 +191,6 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
 void RowInputFormatWithDiagnosticInfo::resetParser()
 {
     IRowInputFormat::resetParser();
-    row_num = 0;
     bytes_read_at_start_of_buffer_on_current_row = 0;
     bytes_read_at_start_of_buffer_on_prev_row = 0;
     offset_of_current_row = std::numeric_limits<size_t>::max();

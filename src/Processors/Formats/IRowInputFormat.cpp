@@ -83,7 +83,7 @@ void IRowInputFormat::logError()
     errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
 }
 
-Chunk IRowInputFormat::generate()
+Chunk IRowInputFormat::read()
 {
     if (total_rows == 0)
     {
@@ -93,10 +93,6 @@ Chunk IRowInputFormat::generate()
         }
         catch (Exception & e)
         {
-            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
-            if (!file_name.empty())
-                e.addMessage(fmt::format("(in file/uri {})", file_name));
-
             e.addMessage("(while reading header)");
             throw;
         }
@@ -204,27 +200,6 @@ Chunk IRowInputFormat::generate()
             }
         }
     }
-    catch (ParsingException & e)
-    {
-        String verbose_diagnostic;
-        try
-        {
-            verbose_diagnostic = getDiagnosticInfo();
-        }
-        catch (const Exception & exception)
-        {
-            verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// Error while trying to obtain verbose diagnostic. Ok to ignore.
-        }
-
-        e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
-        e.setLineNumber(static_cast<int>(total_rows));
-        e.addMessage(verbose_diagnostic);
-        throw;
-    }
     catch (Exception & e)
     {
         if (!isParseError(e.code()))
@@ -243,10 +218,6 @@ Chunk IRowInputFormat::generate()
         {
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
-
-        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
-        if (!file_name.empty())
-            e.addMessage(fmt::format("(in file/uri {})", file_name));
 
         e.addMessage(fmt::format("(at row {})\n", total_rows));
         e.addMessage(verbose_diagnostic);
