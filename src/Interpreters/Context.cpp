@@ -372,6 +372,7 @@ struct ContextSharedPart : boost::noncopyable
     Context::StartStopServersCallback stop_servers_callback;
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
+    size_t max_tables_size_to_warn;
 
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
@@ -3289,6 +3290,18 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->http_header_filter;
+}
+
+void Context::setMaxTablesSizeToWarn(size_t max_table_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_tables_size_to_warn = max_table_to_warn;
+}
+
+size_t Context::getMaxTableSizeToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_tables_size_to_warn;
 }
 
 UInt16 Context::getTCPPort() const

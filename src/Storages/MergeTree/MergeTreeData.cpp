@@ -1676,9 +1676,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         active_parts.emplace_back(node);
     });
 
-    std::cout<<"========== FLAG 1"<<std::endl;
     num_parts += active_parts.size();
-    CurrentMetrics::add(CurrentMetrics::AttachedDataParts, num_parts);
 
     auto part_lock = lockParts();
     LOG_TEST(log, "loadDataParts: clearing data_parts_indexes (had {} parts)", data_parts_indexes.size());
@@ -6338,7 +6336,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
         for (const auto & part : precommitted_parts)
             if (part->getDataPartStorage().hasActiveTransaction())
-            {
                 part->getDataPartStorage().commitTransaction();
 
         if (txn)

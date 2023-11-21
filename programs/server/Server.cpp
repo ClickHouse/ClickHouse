@@ -1278,6 +1278,7 @@ try
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
+            global_context->setMaxTablesSizeToWarn(server_settings_.max_tables_size_to_warn);
 
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
             if (server_settings_.concurrent_threads_soft_limit_num > 0 && server_settings_.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)

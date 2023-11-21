@@ -351,7 +351,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw;
     }
     CurrentMetrics::add(CurrentMetrics::AttachedDatabases, 1);
-    std::cout<<"============="<<getContext()->getSettingsRef().max_databases_size_to_warn<<std::endl;
+    std::cout<<"============="<<getContext()->getMaxTableSizeToWarn()<<std::endl;
 
     return {};
 }
@@ -1644,6 +1644,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
     }
     CurrentMetrics::add(CurrentMetrics::AttachedTables, 1);
+    getContext()->addWarningMessage("Too many attached tables. More than 5000");
     return {};
 }
 
