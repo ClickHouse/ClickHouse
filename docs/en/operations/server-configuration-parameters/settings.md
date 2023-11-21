@@ -214,7 +214,7 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 1024
+Default: 10
 
 
 ## index_mark_cache_policy
@@ -961,9 +961,13 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 
 Lazy loading of dictionaries.
 
-If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
+If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 
-If `false`, all dictionaries are created when the server starts, if the dictionary or dictionaries are created too long or are created with errors, then the server boots without of these dictionaries and continues to try to create these dictionaries.
+If `false`, then the server starts loading all dictionaries at startup.
+Dictionaries are loaded in background.
+The server doesn't wait at startup until all the dictionaries finish their loading
+(exception: if `wait_dictionaries_load_at_startup` is set to `true` - see below).
+When a dictionary is used in a query for the first time then the query waits until the dictionary is loaded if it's not loaded yet.
 
 The default is `true`.
 
@@ -2389,6 +2393,24 @@ Path to the file that contains:
 
 ``` xml
 <users_config>users.xml</users_config>
+```
+
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
+
+If `false`, then the server will not wait at startup until all the dictionaries finish their loading.
+This allows to start ClickHouse faster.
+
+If `true`, then the server will wait at startup until all the dictionaries finish their loading (successfully or not)
+before listening to any connections.
+This can make ClickHouse start slowly, however after that some queries can be executed faster
+(because they won't have to wait for the used dictionaries to be load).
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<wait_dictionaries_load_at_startup>false</wait_dictionaries_load_at_startup>
 ```
 
 ## zookeeper {#server-settings_zookeeper}

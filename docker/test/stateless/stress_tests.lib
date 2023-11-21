@@ -53,7 +53,7 @@ function configure()
       > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
-    function randomize_keeper_config_boolean_value {
+    function randomize_config_boolean_value {
         value=$(($RANDOM % 2))
         sudo cat /etc/clickhouse-server/config.d/$2.xml \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
@@ -72,9 +72,11 @@ function configure()
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
 
-    randomize_config_boolean_value use_compression zookeeper
-
-    randomize_config_boolean_value allow_experimental_block_number_column merge_tree_settings
+    if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
+        randomize_config_boolean_value use_compression zookeeper_fault_injection
+    else
+        randomize_config_boolean_value use_compression zookeeper
+    fi
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment

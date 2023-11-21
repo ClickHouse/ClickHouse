@@ -1246,8 +1246,6 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         }
     };
 
-    using namespace std::placeholders;
-
     factory.registerLayout("hashed",
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Simple, /* sparse = */ false); }, false);
     factory.registerLayout("sparse_hashed",
