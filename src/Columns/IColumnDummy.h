@@ -98,7 +98,10 @@ public:
     UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
     void gather(ColumnGathererStream &) override;
-    void getExtremes(Field &, Field &) const override;
+
+    void getExtremes(Field &, Field &) const override
+    {
+    }
 
     void addSize(size_t delta)
     {
