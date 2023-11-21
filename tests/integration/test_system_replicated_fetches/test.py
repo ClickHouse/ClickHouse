@@ -12,7 +12,9 @@ import json
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True)
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/replicated_fetches_log.xml"], with_zookeeper=True
+)
 
 
 @pytest.fixture(scope="module")
@@ -131,6 +133,11 @@ def test_system_replicated_fetches(started_cluster):
             prev_elapsed, elem["elapsed"]
         )
         prev_elapsed = elem["elapsed"]
+
+    # test replicated fetches log
+    node2.query("SYSTEM FLUSH LOGS")
+
+    assert int(node2.query("SELECT count() FROM system.replicated_fetches_log")) > 0
 
     node1.query("DROP TABLE IF EXISTS t SYNC")
     node2.query("DROP TABLE IF EXISTS t SYNC")

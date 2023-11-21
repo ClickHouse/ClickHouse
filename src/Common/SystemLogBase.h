@@ -31,6 +31,7 @@
     M(FilesystemCacheLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
     M(AsynchronousInsertLogElement) \
+    M(ReplicatedFetchLogElement) \
     M(BackupLogElement)
 
 namespace Poco

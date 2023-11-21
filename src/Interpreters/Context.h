@@ -104,6 +104,7 @@ class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
+class ReplicatedFetchesLog;
 class S3QueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
@@ -1063,6 +1064,8 @@ public:
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
+
+    std::shared_ptr<ReplicatedFetchesLog> getReplicatedFetchesLog() const;
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;

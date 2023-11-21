@@ -49,6 +49,7 @@ class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
+class ReplicatedFetchesLog;
 class BackupLog;
 class S3QueueLog;
 
@@ -87,6 +88,7 @@ struct SystemLogs
     /// Used to log processors profiling
     std::shared_ptr<ProcessorsProfileLog> processors_profile_log;
     std::shared_ptr<AsynchronousInsertLog> asynchronous_insert_log;
+    std::shared_ptr<ReplicatedFetchesLog> replicated_fetches_log;
     /// Backup and restore events
     std::shared_ptr<BackupLog> backup_log;
 
