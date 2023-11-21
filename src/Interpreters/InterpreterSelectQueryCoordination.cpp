@@ -1,3 +1,4 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -24,6 +25,50 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 extern const int INCORRECT_QUERY;
+}
+
+namespace
+{
+
+bool optimizeTrivialCount(const ASTPtr & query, const Settings & settings)
+{
+    bool optimize_trivial_count = false;
+    if (auto * select_with_union_query = query->as<ASTSelectWithUnionQuery>())
+    {
+        for (const auto & union_child_query : select_with_union_query->list_of_selects->children)
+        {
+            auto select_query = union_child_query->as<ASTSelectQuery>();
+            optimize_trivial_count = settings.optimize_trivial_count_query && !select_query->where() && !select_query->prewhere()
+                && !select_query->groupBy() && !select_query->having() && !select_query->sampleSize() && !select_query->sampleOffset()
+                && !select_query->final();
+
+            if (optimize_trivial_count)
+            {
+                bool found_function_count = false;
+                bool has_other_agg_function = false;
+                for (const auto & expr : select_query->select()->as<ASTExpressionList>()->children)
+                {
+                    if (auto * func = expr->as<ASTFunction>())
+                    {
+                        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
+                        {
+                            if (Poco::toLower(func->name) != "count")
+                            {
+                                has_other_agg_function = true;
+                                break;
+                            }
+                            else
+                                found_function_count = true;
+                        }
+                    }
+                }
+                optimize_trivial_count = found_function_count && !has_other_agg_function;
+            }
+        }
+    }
+    return optimize_trivial_count;
+}
+
 }
 
 InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
@@ -78,7 +123,14 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
         if (visitor.has_local_table)
             context->setDistributedForQueryCoord(false);
 
+        /// TODO remove the code block when we send query plan instead of SQL to nodes.
         if (visitor.has_non_merge_tree_table)
+            context->setDistributedForQueryCoord(false);
+
+        /// Temporarily disable query coordination for trivial count optimization.
+        /// The judgment for optimize_trivial_count is not strict, but it is sufficient.
+        /// TODO remove the code block when we send query plan instead of SQL to nodes.
+        if (optimizeTrivialCount(query_ptr, context->getSettingsRef()))
             context->setDistributedForQueryCoord(false);
     }
     else
@@ -91,7 +143,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
 
 void InterpreterSelectQueryCoordination::setIncompatibleSettings()
 {
-    context->getSettings().use_index_for_in_with_subqueries = 0;
+    context->getSettings().use_index_for_in_with_subqueries = false;
 }
 
 static String formattedAST(const ASTPtr & ast)
