@@ -592,19 +592,19 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
         });
     }
 
-    auto exc_buffer = decltype(this->exceptions_buffer){};
-    auto num_exc = decltype(this->num_exceptions){};
+    KafkaConsumer::ExceptionsBuffer exc_buffer;
+    UInt64 num_exc;
     {
         std::lock_guard<std::mutex> lock(exception_mutex);
-        exc_buffer = this->exceptions_buffer;
-        num_exc = this->num_exceptions;
+        exc_buffer = exceptions_buffer;
+        num_exc = num_exceptions;
     }
 
-    auto rdkafka_stat_copy = [&]()
+    String rdkafka_stat_copy;
     {
         std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
-        return this->rdkafka_stat;
-    }();
+        rdkafka_stat_copy = rdkafka_stat;
+    }
 
     return {
         .consumer_id = getMemberId() /* consumer->get_member_id() */,
