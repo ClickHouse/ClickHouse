@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/checkStackSize.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -412,7 +413,7 @@ FutureSetPtr makeExplicitSet(
 
     auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
 
-    auto set_key = right_arg->getTreeHash();
+    auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 
@@ -691,6 +692,8 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 
 void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 {
+    checkStackSize();
+
     if (const auto * identifier = ast->as<ASTIdentifier>())
         visit(*identifier, ast, data);
     else if (const auto * table = ast->as<ASTTableIdentifier>())
@@ -1388,7 +1391,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             set_key = query_tree->getTreeHash();
         }
         else
-            set_key = right_in_operand->getTreeHash();
+            set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);
 
         if (auto set = data.prepared_sets->findSubquery(set_key))
             return set;

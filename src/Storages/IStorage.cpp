@@ -167,7 +167,7 @@ void IStorage::readFromPipe(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info.storage_limits);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info);
         query_plan.addStep(std::move(read_step));
     }
 }
@@ -210,7 +210,10 @@ void IStorage::checkMutationIsPossible(const MutationCommands & /*commands*/, co
 }
 
 void IStorage::checkAlterPartitionIsPossible(
-    const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
+    const PartitionCommands & /*commands*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr /*context*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
 }
@@ -270,6 +273,16 @@ bool IStorage::isStaticStorage() const
         return true;
     }
     return false;
+}
+
+IStorage::DataValidationTasksPtr IStorage::getCheckTaskList(const CheckTaskFilter &, ContextPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName());
+}
+
+std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* check_task_list */)
+{
+    return {};
 }
 
 void IStorage::adjustCreateQueryForBackup(ASTPtr &) const

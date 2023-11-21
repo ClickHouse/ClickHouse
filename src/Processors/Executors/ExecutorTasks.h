@@ -58,7 +58,7 @@ public:
     void tryGetTask(ExecutionThreadContext & context);
     void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback, UInt64 partial_result_duration_ms);
+    void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
     void fill(Queue & queue);
     void upscale(size_t use_threads_);
 

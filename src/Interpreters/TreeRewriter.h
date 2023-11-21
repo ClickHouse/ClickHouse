@@ -81,10 +81,6 @@ struct TreeRewriterResult
     /// Rewrite _shard_num to shardNum()
     bool has_virtual_shard_num = false;
 
-    /// Results of scalar sub queries
-    Scalars scalars;
-    Scalars local_scalars;
-
     explicit TreeRewriterResult(
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage_ = {},
@@ -96,7 +92,6 @@ struct TreeRewriterResult
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
     NameSet getArrayJoinSourceNameSet() const;
-    const Scalars & getScalars() const { return scalars; }
 };
 
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;

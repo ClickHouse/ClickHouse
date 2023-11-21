@@ -9,6 +9,7 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     FunctionHelpers.cpp
     extractTimeZoneFromFunctionArguments.cpp
     FunctionsLogical.cpp
+    CastOverloadResolver.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
     IFunction.h
@@ -16,6 +17,7 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
     FunctionHelpers.h
     extractTimeZoneFromFunctionArguments.h
     FunctionsLogical.h
+    CastOverloadResolver.h
 )
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})

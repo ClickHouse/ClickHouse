@@ -18,6 +18,13 @@ namespace ErrorCodes
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
 }
 
+std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
+{
+    auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);
+    res->data = std::move(data_);
+    return res;
+}
+
 void StorageSnapshot::init()
 {
     for (const auto & [name, type] : storage.getVirtuals())

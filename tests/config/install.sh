@@ -82,6 +82,7 @@ ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 
 if [[ -n "$USE_NEW_ANALYZER" ]] && [[ "$USE_NEW_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
@@ -169,10 +170,16 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     chgrp clickhouse /etc/clickhouse-server2
     sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server1
     sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server2
+
     rm /etc/clickhouse-server1/config.d/macros.xml
     rm /etc/clickhouse-server2/config.d/macros.xml
     sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > /etc/clickhouse-server1/config.d/macros.xml
     sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > /etc/clickhouse-server2/config.d/macros.xml
+
+    rm /etc/clickhouse-server1/config.d/transactions.xml
+    rm /etc/clickhouse-server2/config.d/transactions.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > /etc/clickhouse-server1/config.d/transactions.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > /etc/clickhouse-server2/config.d/transactions.xml
 
     sudo mkdir -p /var/lib/clickhouse1
     sudo mkdir -p /var/lib/clickhouse2

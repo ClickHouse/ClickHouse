@@ -118,16 +118,9 @@ std::unique_ptr<Client> Client::create(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
 }
 
-std::unique_ptr<Client> Client::clone(
-    std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy,
-    std::optional<Int64> override_request_timeout_ms) const
+std::unique_ptr<Client> Client::clone() const
 {
-    PocoHTTPClientConfiguration new_configuration = client_configuration;
-    if (override_retry_strategy.has_value())
-        new_configuration.retryStrategy = *override_retry_strategy;
-    if (override_request_timeout_ms.has_value())
-        new_configuration.requestTimeoutMs = *override_request_timeout_ms;
-    return std::unique_ptr<Client>(new Client(*this, new_configuration));
+    return std::unique_ptr<Client>(new Client(*this, client_configuration));
 }
 
 namespace
@@ -387,27 +380,44 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const Comp
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
-    if (!outcome.IsSuccess() || provider_type != ProviderType::GCS)
-        return outcome;
-
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
-    /// for the object (e.g. for backups)
-    /// We don't care if the compose fails, because the upload was still successful, only the
-    /// performance for copying the object will be affected
-    S3::ComposeObjectRequest compose_req;
-    compose_req.SetBucket(bucket);
-    compose_req.SetKey(key);
-    compose_req.SetComponentNames({key});
-    compose_req.SetContentType("binary/octet-stream");
-    auto compose_outcome = ComposeObject(compose_req);
+    if (!outcome.IsSuccess()
+        && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
+    {
+        auto check_request = HeadObjectRequest()
+                                 .WithBucket(bucket)
+                                 .WithKey(key);
+        auto check_outcome = HeadObject(check_request);
 
-    if (compose_outcome.IsSuccess())
-        LOG_TRACE(log, "Composing object was successful");
-    else
-        LOG_INFO(log, "Failed to compose object. Message: {}, Key: {}, Bucket: {}", compose_outcome.GetError().GetMessage(), key, bucket);
+        /// if the key exists, than MultipartUpload has been completed at some of the retries
+        /// rewrite outcome with success status
+        if (check_outcome.IsSuccess())
+            outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+    }
+
+    if (outcome.IsSuccess() && provider_type == ProviderType::GCS)
+    {
+        /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
+        /// for the object (e.g. for backups)
+        /// We don't care if the compose fails, because the upload was still successful, only the
+        /// performance for copying the object will be affected
+        S3::ComposeObjectRequest compose_req;
+        compose_req.SetBucket(bucket);
+        compose_req.SetKey(key);
+        compose_req.SetComponentNames({key});
+        compose_req.SetContentType("binary/octet-stream");
+        auto compose_outcome = ComposeObject(compose_req);
+
+        if (compose_outcome.IsSuccess())
+            LOG_TRACE(log, "Composing object was successful");
+        else
+            LOG_INFO(
+                log,
+                "Failed to compose object. Message: {}, Key: {}, Bucket: {}",
+                compose_outcome.GetError().GetMessage(), key, bucket);
+    }
 
     return outcome;
 }
@@ -888,6 +898,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
+        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
         get_request_throttler,
         put_request_throttler,
         error_report);
