@@ -142,27 +142,32 @@ StorageS3Queue::StorageS3Queue(
     {
         storage_metadata.setColumns(columns_);
     }
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-
-    createOrCheckMetadata(storage_metadata);
     setInMemoryMetadata(storage_metadata);
-
     virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
-    task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
+    task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
+
+    /// Get metadata manager from S3QueueMetadataFactory,
+    /// it will increase the ref count for the metadata object.
+    /// The ref count is decreased when StorageS3Queue::drop() method is called.
+    files_metadata = S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings);
+    try
+    {
+        createOrCheckMetadata(storage_metadata);
+    }
+    catch (...)
+    {
+        S3QueueMetadataFactory::instance().remove(zk_path);
+        throw;
+    }
 }
 
 void StorageS3Queue::startup()
 {
-    if (!files_metadata)
-    {
-        /// Get metadata manager from S3QueueMetadataFactory,
-        /// it will increase the ref count for the metadata object.
-        /// The ref count is decreased when StorageS3Queue::drop() method is called.
-        files_metadata = S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings);
-    }
     if (task)
         task->activateAndSchedule();
 }
