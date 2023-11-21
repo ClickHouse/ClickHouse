@@ -84,8 +84,11 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// they must handle the nullability themselves
     auto properties = tryGetProperties(name);
     bool is_window_function = properties.has_value() && properties->is_window_function;
-    if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
-        [](const auto & type) { return type->isNullable(); }))
+    /// Functions with RESPECT NULLS modifier handle nulls themselves.
+    bool does_function_handles_null = name == "first_value_respect_nulls" || name == "last_value_respect_nulls";
+    bool is_any_argument_nullable = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+                                                [](const auto & type) { return type->isNullable(); });
+    if (!is_window_function && !does_function_handles_null && is_any_argument_nullable)
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
