@@ -243,6 +243,11 @@ public:
         return access("get", !paths.empty() ? paths.front() : "", [&]() { return keeper->get(paths); });
     }
 
+    zkutil::ZooKeeper::MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
+    {
+        return access("tryGet", !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGet(paths); });
+    }
+
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
         return access("exists", path, [&]() { return keeper->exists(path, stat, watch); });

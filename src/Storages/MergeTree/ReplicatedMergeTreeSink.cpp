@@ -924,6 +924,14 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
         if (multi_code == Coordination::Error::ZOK)
         {
+            auto sleep_before_commit_local_part_in_replicated_table_ms = storage.getSettings()->sleep_before_commit_local_part_in_replicated_table_ms;
+            if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
+            {
+                LOG_INFO(log, "committing part {}, triggered sleep_before_commit_local_part_in_replicated_table_ms {}",
+                         part->name, sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds());
+                sleepForMilliseconds(sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds());
+            }
+
             part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
             transaction.commit();
             storage.merge_selecting_task->schedule();

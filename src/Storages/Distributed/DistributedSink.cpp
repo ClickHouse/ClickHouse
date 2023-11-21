@@ -31,8 +31,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
-#include <base/range.h>
-#include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
 
 #include <filesystem>
@@ -43,6 +41,7 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
     extern const Metric DistributedInsertThreads;
     extern const Metric DistributedInsertThreadsActive;
+    extern const Metric DistributedInsertThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -465,6 +464,7 @@ void DistributedSink::writeSync(const Block & block)
         pool.emplace(
             CurrentMetrics::DistributedInsertThreads,
             CurrentMetrics::DistributedInsertThreadsActive,
+            CurrentMetrics::DistributedInsertThreadsScheduled,
             max_threads, max_threads, jobs_count);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))

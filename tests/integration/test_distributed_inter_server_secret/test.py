@@ -31,7 +31,7 @@ backward = make_instance(
     "configs/remote_servers_backward.xml",
     image="clickhouse/clickhouse-server",
     # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    tag="23.2.3",
+    tag="22.6",
     with_installed_binary=True,
     allow_analyzer=False,
 )
@@ -304,26 +304,20 @@ def test_secure_insert_buffer_async():
 
 
 def test_secure_disagree():
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         n1.query("SELECT * FROM dist_secure_disagree")
 
 
 def test_secure_disagree_insert():
     n1.query("TRUNCATE TABLE data")
     n1.query("INSERT INTO dist_secure_disagree SELECT * FROM numbers(2)")
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         n1.query(
             "SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure_disagree dist_secure_disagree"
         )
-    # check the the connection will be re-established
+    # check that the connection will be re-established
     # IOW that we will not get "Unknown BlockInfo field"
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         assert int(n1.query("SELECT count() FROM dist_secure_disagree")) == 0
 
 

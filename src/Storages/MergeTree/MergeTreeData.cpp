@@ -1556,43 +1556,6 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 }
 
 
-void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal)
-{
-    std::sort(parts_from_wal.begin(), parts_from_wal.end(), [](const auto & lhs, const auto & rhs)
-    {
-        return std::tie(lhs->info.level, lhs->info.mutation) > std::tie(rhs->info.level, rhs->info.mutation);
-    });
-
-    for (auto & part : parts_from_wal)
-    {
-        part->modification_time = time(nullptr);
-        auto lo = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{DataPartState::Active, part->info});
-
-        if (lo != data_parts_by_state_and_info.begin() && (*std::prev(lo))->info.contains(part->info))
-            continue;
-
-        if (lo != data_parts_by_state_and_info.end() && (*lo)->info.contains(part->info))
-            continue;
-
-        part->setState(DataPartState::Active);
-        LOG_TEST(log, "loadDataPartsFromWAL: inserting {} into data_parts_indexes", part->getNameWithState());
-        auto [it, inserted] = data_parts_indexes.insert(part);
-
-        if (!inserted)
-        {
-            if ((*it)->checksums.getTotalChecksumHex() == part->checksums.getTotalChecksumHex())
-                LOG_ERROR(log, "Remove duplicate part {}", part->getDataPartStorage().getFullPath());
-            else
-                throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists but with different checksums", part->name);
-        }
-        else
-        {
-            addPartContributionToDataVolume(part);
-        }
-    }
-}
-
-
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
     LOG_DEBUG(log, "Loading data parts");

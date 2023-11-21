@@ -21,8 +21,11 @@ include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
 include (cmake/utils.cmake)
 
+# This is needed to set up the CMAKE_INSTALL_BINDIR variable.
+include (GNUInstallDirs)
+
 # Ignore export() since we don't use it,
-# but it gets broken with a global targets via link_libraries()
+# but it gets broken with global targets via link_libraries()
 macro (export)
 endmacro ()
 
@@ -187,9 +190,10 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
-    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
-    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+if (NOT (SANITIZE_COVERAGE OR WITH_COVERAGE)
+    AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
+        OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
+        OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL"))
     set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT ON)
 else()
     set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT OFF)
@@ -291,9 +295,6 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Compiler-specific coverage flags e.g. -fcoverage-mapping
-option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
-
 if (COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
     # See https://reviews.llvm.org/D112921
@@ -309,18 +310,12 @@ if (COMPILER_CLANG)
         set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
         set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
     endif()
-
-    if (WITH_COVERAGE)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-        # If we want to disable coverage for specific translation units
-        set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
-    endif()
 endif ()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 # Our built-in unwinder only supports DWARF version up to 4.
-set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
+set (DEBUG_INFO_FLAGS "-g")
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
@@ -468,14 +463,6 @@ endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
-include (GNUInstallDirs)
-
-# When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
-
-if (TARGET global-group)
-    install (EXPORT global DESTINATION cmake)
-endif ()
-
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
 if (NOT ENABLE_JEMALLOC)
@@ -569,7 +556,6 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 add_subdirectory (base)
 add_subdirectory (src)
 add_subdirectory (programs)
-add_subdirectory (tests)
 add_subdirectory (utils)
 
 if (FUZZER)
