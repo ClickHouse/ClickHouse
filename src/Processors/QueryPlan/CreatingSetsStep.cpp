@@ -104,9 +104,9 @@ QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders p
     QueryPipelineBuilder delayed_pipeline;
     if (pipelines.size() > 1)
     {
-        QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
-        processors = collector.detachProcessors();
+        delayed_pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
+        for (auto & processor : processors)
+            processor->setQueryPlanStep(this);
     }
     else
         delayed_pipeline = std::move(*pipelines.front());
