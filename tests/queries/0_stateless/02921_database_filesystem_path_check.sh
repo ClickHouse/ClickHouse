@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function get_exception_message()
 {
-  $CLICKHOUSE_CLIENT --query "$1" |& grep -o 'Path must.*path'
+  $CLICKHOUSE_CLIENT --query "$1" |& grep -o 'Path must be inside user-files path'
 }
 
 get_exception_message "create database db_filesystem ENGINE=Filesystem('/etc');"
