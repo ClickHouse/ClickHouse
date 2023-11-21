@@ -2483,6 +2483,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
 
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
+        /// Possible filters: row-security, additional filter, replica filter (before array join), where (after array join)
+        query_info.has_filters_and_no_array_join_before_filter =
+            (!query_info.projection && row_policy_filter)
+            || additional_filter_info
+            || parallel_replicas_custom_filter_info
+            || (!query_info.projection && analysis_result.hasWhere() && !analysis_result.before_where->hasArrayJoin()
+                && !analysis_result.array_join);
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
 
         if (context->hasQueryContext() && !options.is_internal)
