@@ -44,8 +44,9 @@ public:
     using Entry = IConnectionPool::Entry;
 
     /** Allocates connection to work. */
+    Entry get(const ConnectionTimeouts & timeouts) override;
     Entry get(const ConnectionTimeouts & timeouts,
-              const Settings * settings,
+              const Settings & settings,
               bool force_connected) override; /// From IConnectionPool
 
     Priority getPriority() const override; /// From IConnectionPool
@@ -110,7 +111,7 @@ private:
             IConnectionPool & pool,
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
-            const Settings * settings,
+            const Settings & settings,
             const QualifiedTableName * table_to_check = nullptr,
             AsyncCallback async_callback = {});
 

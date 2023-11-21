@@ -387,7 +387,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     if (!connection_pool)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
 
-                    job.connection_entry = connection_pool->get(timeouts, &settings);
+                    job.connection_entry = connection_pool->get(timeouts, settings);
                     if (job.connection_entry.isNull())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
                 }

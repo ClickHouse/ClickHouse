@@ -41,7 +41,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
 {
     shuffled_pools = pool->getShuffledPools(settings_);
     for (auto shuffled_pool : shuffled_pools)
-        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, &settings_, log, table_to_check.get()));
+        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 }
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
