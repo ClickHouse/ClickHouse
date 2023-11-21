@@ -75,10 +75,6 @@ private:
     /// if there were a little bit more retries.
     RenewerCallback callback;
     ZooKeeperRetriesInfo global_zookeeper_retries_info;
-
-    /// This is needed only to protect zookeeper object
-    mutable std::mutex zookeeper_mutex;
-    mutable zkutil::ZooKeeperPtr zookeeper;
 };
 
 }
