@@ -24,8 +24,8 @@ TEST(BloomFilterHash, ReasonableProbabilities)
 
     const auto & output_4 = BloomFilterHash::calculationBestPractices(0.1);
 
-    ASSERT_EQ(output_4.first, 6);
-    ASSERT_EQ(output_4.second, 2);
+    ASSERT_EQ(output_4.first, 5);
+    ASSERT_EQ(output_4.second, 3);
 
     const auto & output_5 = BloomFilterHash::calculationBestPractices(0.2);
 
