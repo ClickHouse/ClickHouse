@@ -75,6 +75,10 @@ if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
 endif()
 
+if (TARGET ch_contrib::stl-cpp)
+    list (APPEND PRIVATE_LIBS ch_contrib::stl-cpp)
+endif()
+
 if (ENABLE_NLP)
     list (APPEND PRIVATE_LIBS ch_contrib::cld2)
 endif()
