@@ -737,6 +737,9 @@ void DiskObjectStorageTransaction::createHardLink(const std::string & src_path, 
         }));
 }
 
+bool DiskObjectStorageTransaction::lock(std::string_view, DiskLockMode) { return false; }
+void DiskObjectStorageTransaction::unlock(std::string_view) { }
+
 void DiskObjectStorageTransaction::setReadOnly(const std::string & path)
 {
     operations_to_execute.emplace_back(

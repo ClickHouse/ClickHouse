@@ -137,17 +137,11 @@ def test_s3_vfs(started_cluster, policy):
     # Based on version 21.x - two parts
     wait_for_large_objects_count(cluster, 2)
 
+    time.sleep(11)  # wait for GC to start but not remove anything
+
     node1.query("DROP TABLE s3_test ON CLUSTER test_cluster SYNC")
-    time.sleep(11)  # wait for GC to start and clean data
 
-    zk = cluster.get_kazoo_client("zoo1")
-    log_items = [
-        zk.get(f"/vfs_log/ops/{log_pointer}")[0].decode("utf-8")
-        for log_pointer in sorted(zk.get_children("/vfs_log/ops"))
-    ]
-
-    for item in log_items:
-        logging.info(item)
+    time.sleep(10)  # wait for GC to start and clean data
 
     # Merges don't work as for now
     #     node1.query("OPTIMIZE TABLE s3_test FINAL")

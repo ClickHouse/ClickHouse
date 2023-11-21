@@ -250,5 +250,38 @@ ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTask
     return CheckExistingPartResult::OK;
 }
 
+// In zero copy replication / object storage VFS only one replica executes merge/mutation,
+// others just download parts metadata.
+// Here we are trying to mitigate the skew of execution because of faster/slower replicas.
+// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step
+// behind because of bigger queue.
+// In this case faster replica can pick up all merges/mutations execution, especially large ones while
+// other replicas can just idle. And even in this case the fast replica is not overloaded because amount
+// of executing merges/mutations doesn't affect the ability to acquire locks for new entries.
+// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for
+// 1GB part and up to 7 seconds for 300GB part.
+// It can sound too much, but we are trying to acquire these locks in background tasks which can be
+// scheduled each 5 seconds or so.
+void ReplicatedMergeMutateTaskBase::mitigateReplicaSkew(size_t estimated_space) const
+{
+    pcg64 rng(randomSeed());
 
+    // TODO myrrc probably shouldn't reuse this setting for DiskObjectStorageVFS
+    const size_t min_size_sleep = storage.getSettings()->zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
+    if (min_size_sleep == 0 || estimated_space < min_size_sleep)
+        return;
+
+    double start_to_sleep_seconds = std::logf(min_size_sleep);
+    uint64_t right_border_to_sleep_ms = static_cast<uint64_t>(
+        (std::log(estimated_space) - start_to_sleep_seconds + 0.5) * 1000);
+    uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL,
+        std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
+
+    LOG_INFO(log,
+        "Merge/mutation size is {} bytes (it's more than sleep threshold {}) so we will intentionally "
+        "sleep for {} ms to allow other replicas to take this merge/mutation",
+        estimated_space, min_size_sleep, time_to_sleep_milliseconds);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
+}
 }

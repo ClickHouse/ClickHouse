@@ -71,6 +71,10 @@ protected:
     ProfileEvents::Counters profile_counters;
     ContextMutablePtr task_context;
 
+    IDisk::LockEntry vfs_lock;
+
+    void mitigateReplicaSkew(size_t estimated_space) const;
+
 private:
     enum class CheckExistingPartResult
     {

@@ -395,8 +395,10 @@ public:
 
     // TODO myrrc not sure we need a generic locking interface similar to flock/fcntl as this
     // will be used only for remote disks with VFS support for merges and mutations.
-    enum class LockMode { Set, SetBlocking, Unlock };
-    virtual bool lock(const String & path, LockMode mode);
+    // Moreover, the paths that we'd like to "lock" wouldn't be really existing ones so this looks
+    // quite hacky
+    virtual bool lock(std::string_view path, DiskLockMode mode);
+    virtual void unlock(std::string_view path);
 
     /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }

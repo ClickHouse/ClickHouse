@@ -33,7 +33,6 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
         storage_,
         selected_entry_,
         task_result_callback_)
-    , rng(randomSeed())
 {
 }
 
@@ -234,36 +233,17 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             };
         }
 
-        // TODO myrrc probably shouldn't reuse this setting for DiskObjectStorageVFS
-        const size_t min_size_sleep =
-            storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
-
-        /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
-        /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
-        /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
-        /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
-        /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
-        ///
-        /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
-        /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
-        if (min_size_sleep != 0 && estimated_space_for_merge >= min_size_sleep)
-        {
-            double start_to_sleep_seconds = std::logf(min_size_sleep);
-            uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_merge) - start_to_sleep_seconds + 0.5) * 1000);
-            uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
-
-            LOG_INFO(log,
-                "Merge size is {} bytes (it's more than sleep threshold {}) so we will intentionally "
-                "sleep for {} ms to allow other replicas to take this big merge",
-                estimated_space_for_merge, min_size_sleep, time_to_sleep_milliseconds);
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
-        }
+        mitigateReplicaSkew(estimated_space_for_merge);
 
         if (is_zerocopy)
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
+        const bool zerocopy_lock_already_acquired = is_zerocopy
+            && (!zero_copy_lock || !zero_copy_lock->isLocked());
 
-        if (is_zerocopy && (!zero_copy_lock || !zero_copy_lock->isLocked()))
+        const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
+        vfs_lock = disk->lock(vfs_lock_path, IDisk::LockMode::TryLock);
+
+        if (zerocopy_lock_already_acquired || vfs_lock)
         {
             LOG_DEBUG(
                 log,
@@ -289,6 +269,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             ///
             /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
             zero_copy_lock->lock->unlock();
+            vfs_lock = {};
 
             LOG_DEBUG(log,
                 "We took lock but merge of part {} finished by some other replica, will "
@@ -420,6 +401,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
     if (zero_copy_lock)
         zero_copy_lock->lock->unlock();
+    vfs_lock = {};
 
     /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
      */
