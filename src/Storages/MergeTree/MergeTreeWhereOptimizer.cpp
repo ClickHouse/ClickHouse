@@ -98,9 +98,11 @@ void MergeTreeWhereOptimizer::optimize(
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = select.final();
 
+    Settings query_settings = context->getSettings();
+
     //default to false, need to set to true to use this optimization
-    bool optimize_project_query = context->getSettingsRef().optimize_project_query && !projections.empty();
-    if (optimize_project_query && !proj_optimized) {
+    if (query_settings.optimize_project_query && !projections.empty() && !proj_optimized)
+    {
         const auto main_table_name = getTableName(select.tables());
         auto pkoptimized_where_ast = pkOptimization(projections, select.where(), main_table_name, primary_key);
         select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(pkoptimized_where_ast));
@@ -298,26 +300,20 @@ ASTPtr MergeTreeWhereOptimizer::pkOptimization(
     const String & main_table,
     const String & main_primary_key) const
 {
-    if (projections.size() > 1)
-        return where_ast;
-
     auto where_column_name = where_ast->getColumnName();
-    bool proj_pk_is_where_col = false;
+    NameSet proj_pks = {};
     for (auto & projection: projections)
     {
         if (projection.type == ProjectionDescription::Type::Normal){
             //sorting key of projection
             const auto & projection_primary_key = projection.metadata->getSortingKey().column_names.at(0);
+            proj_pks.insert(projection_primary_key);
             auto projection_columns = projection.getRequiredColumns();
 
             // projection columns needs to include projection primary key and main table primary key
             // in order to use this optimization
             bool proj_col_include_ppk = std::find(projection_columns.begin(), projection_columns.end(), projection_primary_key) != projection_columns.end();
             bool proj_col_include_mpk = std::find(projection_columns.begin(), projection_columns.end(), main_primary_key) != projection_columns.end();
-
-            if (!proj_pk_is_where_col) {
-                proj_pk_is_where_col = (projection_primary_key==where_column_name);
-            }
 
             if(!proj_col_include_ppk || !proj_col_include_mpk)
             {
@@ -327,25 +323,62 @@ ASTPtr MergeTreeWhereOptimizer::pkOptimization(
 
     }
 
-    if (!proj_pk_is_where_col)
-    {
-        return where_ast;
-    }
-    /**
-     * @brief Manually rewrite the WHERE query, Insert a new where condition in order to
-     * leverage projection features
-     *
-     * For example, a qualified table with projection
-     * CREATE TABLE test_a(`src` String,`dst` String, `other_cols` String,
-     * PROJECTION p1(SELECT src, dst ORDER BY dst)) ENGINE = MergeTree ORDER BY src;
-     *
-     * A qualified SELECT query would looks like this
-     * select * from test_a where dst='-42';
-     * The new where key is the projection table primary key.
-     * The following code will convert this select query to the following
-     * select * from test_a where src in (select src from test_a where dst='-42') and dst='-42';
-     */
+    const auto and_function =  makeASTFunction("and");
+    //for keys in where_ast
+    bool contains_primay_key = false;
+    analyze_where_ast(where_ast, and_function, proj_pks, main_table, main_primary_key, contains_primay_key);
+    and_function->arguments->children.push_back(where_ast->clone());
 
+    return and_function;
+}
+
+void MergeTreeWhereOptimizer::analyze_where_ast(const ASTPtr & ast, const ASTPtr & func, NameSet & proj_pks, const String & main_table, const String & main_primary_key, bool & contains_pk) const
+{
+    if (contains_pk)
+        return;
+    const auto * ast_function_node = ast->as<ASTFunction>();
+    if(ast_function_node->name == "equals" && ast_function_node->arguments->children.size() == 2)
+    {
+        auto lhs = ast_function_node->arguments->children.at(0)->as<ASTIdentifier>()->name();
+        if (lhs == main_primary_key)
+        {
+            contains_pk = true;
+            return;
+        }
+        if(proj_pks.contains(lhs))
+        {
+            ASTPtr new_ast = create_proj_optimized_ast(ast, main_table, main_primary_key);
+            auto * function_node = func->as<ASTFunction>();
+            function_node->arguments->children.push_back(new_ast);
+        }
+    }
+    else
+    {
+        auto arg_size = ast_function_node->arguments ? ast_function_node->arguments->children.size() : 0;
+        for (size_t i = 0; i < arg_size; i++)
+        {
+            auto argument = ast_function_node->arguments->children[i];
+            analyze_where_ast(argument, func, proj_pks, main_table, main_primary_key, contains_pk);
+        }
+    }
+}
+
+/**
+ * @brief Manually rewrite the WHERE query, Insert a new where condition in order to
+ * leverage projection features
+ *
+ * For example, a qualified table with projection
+ * CREATE TABLE test_a(`src` String,`dst` String, `other_cols` String,
+ * PROJECTION p1(SELECT src, dst ORDER BY dst)) ENGINE = MergeTree ORDER BY src;
+ *
+ * A qualified SELECT query would looks like this
+ * select * from test_a where dst='-42';
+ * The where key is the projection table primary key.
+ * The following code will convert this select query to the following
+ * select * from test_a where src in (select src from test_a where dst='-42') and dst='-42';
+ */
+ASTPtr MergeTreeWhereOptimizer::create_proj_optimized_ast(const ASTPtr & ast, const String & main_table, const String & main_primary_key) const
+{
     auto select_query = std::make_shared<ASTSelectQuery>();
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
     const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
@@ -367,7 +400,7 @@ ASTPtr MergeTreeWhereOptimizer::pkOptimization(
     select_query->select()->children.push_back(std::make_shared<ASTIdentifier>(main_primary_key));
 
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
-    select_query->setExpression(ASTSelectQuery::Expression::WHERE, where_ast->clone());
+    select_query->setExpression(ASTSelectQuery::Expression::WHERE, ast->clone());
 
     select_with_union_query->list_of_selects->children.push_back(select_query);
 
@@ -375,9 +408,8 @@ ASTPtr MergeTreeWhereOptimizer::pkOptimization(
     subquery->children.push_back(select_with_union_query);
 
     const auto in_function = makeASTFunction("in", std::make_shared<ASTIdentifier>(main_primary_key), subquery);
-    const auto and_function =  makeASTFunction("and", where_ast->clone(), in_function);
 
-    return and_function;
+    return in_function;
 }
 /// Transform conjunctions chain in WHERE expression to Conditions list.
 MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBuilderTreeNode & node,

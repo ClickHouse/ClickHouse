@@ -114,6 +114,9 @@ private:
     Conditions analyze(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
     ASTPtr pkOptimization(const ProjectionsDescription & projections, const ASTPtr & where_ast, const String & main_table, const String & main_primary_key) const;
+    ASTPtr create_proj_optimized_ast(const ASTPtr & ast, const String & main_table, const String & main_primary_key) const;
+    void analyze_where_ast(const ASTPtr & ast, const ASTPtr & func, NameSet & proj_pks, const String & main_table, const String & main_primary_key, bool & contains_pk) const;
+
     /// Reconstruct AST from conditions
     static ASTPtr reconstructAST(const Conditions & conditions);
 

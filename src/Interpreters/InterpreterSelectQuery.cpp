@@ -663,7 +663,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     supported_prewhere_columns,
                     log};
 
-                where_optimizer.optimize(current_info, context, metadata_snapshot->getProjections(), primary_key, options.projection_optimized);
+                where_optimizer.optimize(current_info, context, metadata_snapshot->getProjections(), primary_key, options.is_projection_optimized);
             }
         }
 
