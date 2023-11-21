@@ -127,9 +127,6 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
 
         if (config.has(key + ".connection_timeout_ms"))
             connection_info.connection_timeout_ms = config.getInt(key + ".connection_timeout_ms");
-
-        if (config.has(key + ".use_compression"))
-            connection_info.use_compression = config.getBool(key + ".use_compression");
     };
 
     fill_connection_details("connections", default_connection_info);
@@ -419,23 +416,22 @@ void Runner::createConnections()
 
         for (size_t session = 0; session < connection_info.sessions; ++session)
         {
-            connections.emplace_back(getConnection(connection_info, connection_info_idx));
+            connections.emplace_back(getConnection(connection_info));
             connections_to_info_map[connections.size() - 1] = connection_info_idx;
         }
     }
     std::cerr << "---- Done creating connections ----\n" << std::endl;
 }
 
-std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx)
+std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info)
 {
-    Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, static_cast<UInt8>(connection_info_idx), connection_info.secure};
+    Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, connection_info.secure};
     std::vector<Coordination::ZooKeeper::Node> nodes;
     nodes.push_back(node);
     zkutil::ZooKeeperArgs args;
     args.session_timeout_ms = connection_info.session_timeout_ms;
-    args.connection_timeout_ms = connection_info.connection_timeout_ms;
-    args.operation_timeout_ms = connection_info.operation_timeout_ms;
-    args.use_compression = connection_info.use_compression;
+    args.connection_timeout_ms = connection_info.operation_timeout_ms;
+    args.operation_timeout_ms = connection_info.connection_timeout_ms;
     return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
 }
 
@@ -448,7 +444,7 @@ std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections
         if (connection->isExpired())
         {
             const auto & connection_info = connection_infos[connections_to_info_map[connection_idx]];
-            connection = getConnection(connection_info, connection_idx);
+            connection = getConnection(connection_info);
         }
     }
     return connections;

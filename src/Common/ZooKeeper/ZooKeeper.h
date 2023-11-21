@@ -51,7 +51,6 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
-    UInt8 original_index = 0;
     Priority priority;
     UInt64 random = 0;
 
@@ -552,9 +551,10 @@ public:
 
     void setServerCompletelyStarted();
 
-    Int8 getConnectedHostIdx() const;
-    String getConnectedHostPort() const;
-    int32_t getConnectionXid() const;
+    String getConnectedZooKeeperHost() const { return connected_zk_host; }
+    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
+    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
+    UInt64 getConnectedTime() const { return connected_time; }
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
@@ -621,6 +621,11 @@ private:
 
     ZooKeeperArgs args;
 
+    String connected_zk_host;
+    UInt16 connected_zk_port;
+    size_t connected_zk_index;
+    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
+
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;
@@ -639,18 +644,11 @@ class EphemeralNodeHolder
 public:
     using Ptr = std::shared_ptr<EphemeralNodeHolder>;
 
-    EphemeralNodeHolder(const std::string & path_, ZooKeeper & zookeeper_, bool create, bool try_create, bool sequential, const std::string & data)
+    EphemeralNodeHolder(const std::string & path_, ZooKeeper & zookeeper_, bool create, bool sequential, const std::string & data)
             : path(path_), zookeeper(zookeeper_)
     {
         if (create)
-        {
             path = zookeeper.create(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
-            need_remove = created = true;
-        }
-        else if (try_create)
-        {
-            need_remove = created = Coordination::Error::ZOK == zookeeper.tryCreate(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
-        }
     }
 
     std::string getPath() const
@@ -658,32 +656,19 @@ public:
         return path;
     }
 
-    bool isCreated() const
-    {
-        return created;
-    }
-
     static Ptr create(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
     {
-        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, false, false, data);
-    }
-
-    static Ptr tryCreate(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
-    {
-        auto node = std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, true, false, data);
-        if (node->isCreated())
-            return node;
-        return nullptr;
+        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, false, data);
     }
 
     static Ptr createSequential(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
     {
-        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, false, true, data);
+        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, true, data);
     }
 
     static Ptr existing(const std::string & path, ZooKeeper & zookeeper)
     {
-        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, false, "");
+        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, "");
     }
 
     void setAlreadyRemoved()
@@ -717,7 +702,6 @@ private:
     ZooKeeper & zookeeper;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::EphemeralNode};
     bool need_remove = true;
-    bool created = false;
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;

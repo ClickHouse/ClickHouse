@@ -27,6 +27,4 @@ public:
 private:
     String dictionary_name;
     ColumnsDescription dictionary_columns;
-};
-
-}
+};}

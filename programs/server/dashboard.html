@@ -420,10 +420,6 @@
             color: var(--auth-error-color);
         }
 
-        #charts > div:only-child .display-only-if-more-than-one-chart {
-            display: none;
-        }
-
         /* Source: https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css
          * It is copy-pasted to lower the number of requests.
          */
@@ -821,85 +817,77 @@ function insertChart(i) {
     let move_text = document.createTextNode('✥');
     move.appendChild(move_text);
 
-    let drag_state = {
-        is_dragging: false,
-        idx: null,
-        offset_x: null,
-        offset_y: null,
-        displace_idx: null,
-        displace_chart: null
-    };
-
-    function dragStop(e) {
-        drag_state.is_dragging = false;
-        chart.className = 'chart';
-        chart.style.left = null;
-        chart.style.top = null;
-
-        if (drag_state.displace_idx !== null) {
-            const elem = queries[drag_state.idx];
-            queries.splice(drag_state.idx, 1);
-            queries.splice(drag_state.displace_idx, 0, elem);
-
-            drag_state.displace_chart.className = 'chart';
-            drawAll();
-        }
-    }
-
-    function dragMove(e) {
-        if (!drag_state.is_dragging) return;
-
-        let x = e.clientX - drag_state.offset_x;
-        let y = e.clientY - drag_state.offset_y;
-
-        chart.style.left = `${x}px`;
-        chart.style.top = `${y}px`;
-
-        drag_state.displace_idx = null;
-        drag_state.displace_chart = null;
-        let current_idx = -1;
-        for (const elem of charts.querySelectorAll('.chart')) {
-            ++current_idx;
-            if (current_idx == drag_state.idx) {
-                continue;
-            }
-
-            const this_rect = chart.getBoundingClientRect();
-            const this_center_x = this_rect.left + this_rect.width / 2;
-            const this_center_y = this_rect.top + this_rect.height / 2;
-
-            const elem_rect = elem.getBoundingClientRect();
-
-            if (this_center_x >= elem_rect.left && this_center_x <= elem_rect.right
-                && this_center_y >= elem_rect.top && this_center_y <= elem_rect.bottom) {
-
-                elem.className = 'chart chart-displaced';
-                drag_state.displace_idx = current_idx;
-                drag_state.displace_chart = elem;
-            } else {
-                elem.className = 'chart';
-            }
-        }
-    }
-
-    function dragStart(e) {
-        if (e.button !== 0) return; /// left button only
-        move.setPointerCapture(e.pointerId);
-
-        drag_state.is_dragging = true;
-        drag_state.idx = getCurrentIndex();
+    let is_dragging = false;
+    move.addEventListener('mousedown', e => {
+        const idx = getCurrentIndex();
+        is_dragging = true;
         chart.className = 'chart chart-moving';
 
-        drag_state.offset_x = e.clientX;
-        drag_state.offset_y = e.clientY;
-    }
+        let offset_x = e.clientX;
+        let offset_y = e.clientY;
 
-    /// Read https://www.redblobgames.com/making-of/draggable/
-    move.addEventListener('pointerdown', dragStart);
-    move.addEventListener('pointermove', dragMove);
-    move.addEventListener('pointerup', dragStop);
-    move.addEventListener('pointerancel', dragStop);
-    move.addEventListener('touchstart', (e) => e.preventDefault());
+        let displace_idx = null;
+        let displace_chart = null;
+
+        function mouseup(e) {
+            is_dragging = false;
+            chart.className = 'chart';
+            chart.style.left = null;
+            chart.style.top = null;
+
+            if (displace_idx !== null) {
+                const elem = queries[idx];
+                queries.splice(idx, 1);
+                queries.splice(displace_idx, 0, elem);
+
+                displace_chart.className = 'chart';
+                drawAll();
+            }
+        }
+
+        function mousemove(e) {
+            if (!is_dragging) {
+                document.body.removeEventListener('mousemove', mousemove);
+                document.body.removeEventListener('mouseup', mouseup);
+                return;
+            }
+
+            let x = e.clientX - offset_x;
+            let y = e.clientY - offset_y;
+
+            chart.style.left = `${x}px`;
+            chart.style.top = `${y}px`;
+
+            displace_idx = null;
+            displace_chart = null;
+            let current_idx = -1;
+            for (const elem of charts.querySelectorAll('.chart')) {
+                ++current_idx;
+                if (current_idx == idx) {
+                    continue;
+                }
+
+                const this_rect = chart.getBoundingClientRect();
+                const this_center_x = this_rect.left + this_rect.width / 2;
+                const this_center_y = this_rect.top + this_rect.height / 2;
+
+                const elem_rect = elem.getBoundingClientRect();
+
+                if (this_center_x >= elem_rect.left && this_center_x <= elem_rect.right
+                    && this_center_y >= elem_rect.top && this_center_y <= elem_rect.bottom) {
+
+                    elem.className = 'chart chart-displaced';
+                    displace_idx = current_idx;
+                    displace_chart = elem;
+                } else {
+                    elem.className = 'chart';
+                }
+            }
+        }
+
+        document.body.addEventListener('mouseup', mouseup);
+        document.body.addEventListener('mousemove', mousemove);
+    });
 
     let maximize = document.createElement('a');
     let maximize_text = document.createTextNode('🗖');
@@ -942,9 +930,6 @@ function insertChart(i) {
         resize();
         saveState();
     });
-
-    move.classList.add('display-only-if-more-than-one-chart');
-    maximize.classList.add('display-only-if-more-than-one-chart');
 
     edit_buttons.appendChild(move);
     edit_buttons.appendChild(maximize);

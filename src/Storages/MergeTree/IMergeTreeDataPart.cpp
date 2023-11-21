@@ -381,6 +381,11 @@ void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
     incrementStateMetric(state);
 }
 
+MergeTreeDataPartState IMergeTreeDataPart::getState() const
+{
+    return state;
+}
+
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
@@ -662,7 +667,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     {
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
         // into meta data before exception, need to clean them all.
-        LOG_ERROR(storage.log, "Part {} is broken and need manual correction", getDataPartStorage().getFullPath());
         metadata_manager->deleteAll(/*include_projection*/ true);
         metadata_manager->assertAllDeleted(/*include_projection*/ true);
         throw;

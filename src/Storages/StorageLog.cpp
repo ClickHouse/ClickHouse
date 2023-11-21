@@ -7,8 +7,6 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 
-#include <Parsers/ASTCheckQuery.h>
-
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -59,7 +57,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -877,23 +874,15 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(
-    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
+CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
 {
-    if (!std::holds_alternative<std::monostate>(check_task_filter))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CHECK PART/PARTITION are not supported for {}", getName());
-
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
+    return file_checker.check();
 }
 
-std::optional<CheckResult> StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list)
-{
-    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
-}
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 {

@@ -1,5 +1,4 @@
 #include <Databases/DDLLoadingDependencyVisitor.h>
-#include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
@@ -8,7 +7,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
 
 
@@ -24,7 +22,6 @@ TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, c
     data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
     data.global_context = global_context;
-    data.table_name = table;
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(table);
@@ -116,12 +113,6 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
 
 void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
-    if (storage.ttl_table)
-    {
-        auto ttl_dependensies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr());
-        data.dependencies.merge(ttl_dependensies);
-    }
-
     if (!storage.engine)
         return;
 

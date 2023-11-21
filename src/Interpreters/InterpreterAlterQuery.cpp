@@ -42,7 +42,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DATABASE;
 }
 
 
@@ -75,14 +74,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
-    auto table_id = getContext()->tryResolveStorageID(alter, Context::ResolveOrdinary);
-    StoragePtr table;
-
-    if (table_id)
-    {
-        query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
-        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-    }
+    auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
+    query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+    StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
@@ -95,9 +89,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 
     getContext()->checkAccess(getRequiredAccess());
-
-    if (!table_id)
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
@@ -181,7 +172,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!partition_commands.empty())
     {
-        table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, getContext()->getSettingsRef(), getContext());
+        table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, getContext()->getSettingsRef());
         auto partition_commands_pipe = table->alterPartition(metadata_snapshot, partition_commands, getContext());
         if (!partition_commands_pipe.empty())
             res.pipeline = QueryPipeline(std::move(partition_commands_pipe));

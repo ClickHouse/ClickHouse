@@ -846,12 +846,6 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-bool AlterCommand::isDropSomething() const
-{
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
-        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
-}
-
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata))
@@ -1159,7 +1153,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// So we don't allow to do it for now.
             if (command.data_type)
             {
-                const GetColumnsOptions options(GetColumnsOptions::All);
+                const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
                 bool new_type_has_object = command.data_type->hasDynamicSubcolumns();

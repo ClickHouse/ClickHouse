@@ -285,7 +285,7 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        if rg --quiet "$(basename $test)" changed-test-definitions.txt
+        if [ "$(rg -c $(basename $test) changed-test-definitions.txt)" -gt 0 ]
         then
           # Run all queries from changed test files to ensure that all new queries will be tested.
           max_queries=0
