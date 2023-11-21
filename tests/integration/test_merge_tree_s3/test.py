@@ -885,7 +885,7 @@ def test_s3_engine_heavy_write_check_mem(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS "
         f" max_memory_usage={2*memory}"
-        # f", max_threads=1" # ParallelFormattingOutputFormat consumption depends on it
+        f", max_threads=1" # ParallelFormattingOutputFormat consumption depends on it
         f", s3_max_inflight_parts_for_one_file={in_flight}",
         query_id=query_id,
     )
