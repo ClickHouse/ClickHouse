@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include <Common/checkStackSize.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ActionsDAG.h>

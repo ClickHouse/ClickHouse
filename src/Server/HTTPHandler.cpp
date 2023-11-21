@@ -887,6 +887,7 @@ void HTTPHandler::processQuery(
         /* allow_into_outfile = */ false,
         context,
         set_query_result,
+        QueryFlags{},
         {},
         handle_exception_in_output_format);
 

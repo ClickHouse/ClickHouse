@@ -104,15 +104,14 @@
     </url_scheme_mappers>
 
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
-    <!-- It is off by default. Next headers are obligate for CORS.-->
-    <!-- http_options_response>
+    <http_options_response>
         <header>
             <name>Access-Control-Allow-Origin</name>
             <value>*</value>
         </header>
         <header>
             <name>Access-Control-Allow-Headers</name>
-            <value>origin, x-requested-with</value>
+            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
         </header>
         <header>
             <name>Access-Control-Allow-Methods</name>
@@ -122,7 +121,7 @@
             <name>Access-Control-Max-Age</name>
             <value>86400</value>
         </header>
-    </http_options_response -->
+    </http_options_response>
 
     <!-- It is the name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.
@@ -245,7 +244,7 @@
     <max_connections>4096</max_connections>
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
-    <keep_alive_timeout>3</keep_alive_timeout>
+    <keep_alive_timeout>10</keep_alive_timeout>
 
     <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
     <!-- <grpc_port>9100</grpc_port> -->
@@ -326,7 +325,7 @@
          Query can upscale to desired number of threads during execution if more threads become available.
     -->
     <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
-    <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
+    <concurrent_threads_soft_limit_ratio_to_cores>2</concurrent_threads_soft_limit_ratio_to_cores>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>1000</max_concurrent_queries>
@@ -1266,6 +1265,17 @@
          https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
     <dictionaries_config>*_dictionary.*ml</dictionaries_config>
+
+    <!-- Load dictionaries lazily, i.e. a dictionary will be loaded when it's used for the first time.
+         "false" means ClickHouse will start loading dictionaries immediately at startup.
+    -->
+    <dictionaries_lazy_load>true</dictionaries_lazy_load>
+
+    <!-- Wait at startup until all the dictionaries finish their loading (successfully or not)
+         before listening to connections. Setting this to 1 can make ClickHouse start slowly,
+         however some queries can be executed faster (because it won't have to wait for the used dictionaries to be load).
+    -->
+    <wait_dictionaries_load_at_startup>false</wait_dictionaries_load_at_startup>
 
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>

@@ -75,7 +75,7 @@ namespace DB
     \
     M(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
     M(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
-    M(UInt32, dns_max_consecutive_failures, 1024, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
+    M(UInt32, dns_max_consecutive_failures, 10, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
     \
     M(UInt64, max_table_size_to_drop, 50000000000lu, "If size of a table is greater than this value (in bytes) than table could not be dropped with any DROP query.", 0) \
     M(UInt64, max_partition_size_to_drop, 50000000000lu, "Same as max_table_size_to_drop, but for the partitions.", 0) \
@@ -100,7 +100,8 @@ namespace DB
     M(UInt64, total_memory_profiler_sample_max_allocation_size, 0, "Collect random allocations of size less or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.", 0) \
     M(String, get_client_http_header_forbidden_headers, "", "Comma separated list of http header names that will not be returned by function getClientHTTPHeader.", 0) \
     M(Bool, allow_get_client_http_header, false, "Allow function getClientHTTPHeader", 0) \
-    M(Bool, validate_tcp_client_information, false, "Validate client_information in the query packet over the native TCP protocol.", 0)
+    M(Bool, validate_tcp_client_information, false, "Validate client_information in the query packet over the native TCP protocol.", 0) \
+    M(Bool, storage_metadata_write_full_object_key, false, "Write disk metadata files with VERSION_FULL_OBJECT_KEY format", 0) \
 
 DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, SERVER_SETTINGS)
 

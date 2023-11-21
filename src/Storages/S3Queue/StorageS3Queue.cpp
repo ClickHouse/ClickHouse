@@ -118,7 +118,11 @@ StorageS3Queue::StorageS3Queue(
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
     , log(&Poco::Logger::get("StorageS3Queue (" + table_id_.table_name + ")"))
 {
-    if (configuration.url.key.ends_with('/'))
+    if (configuration.url.key.empty())
+    {
+        configuration.url.key = "/*";
+    }
+    else if (configuration.url.key.ends_with('/'))
     {
         configuration.url.key += '*';
     }
@@ -161,8 +165,9 @@ void StorageS3Queue::startup()
         task->activateAndSchedule();
 }
 
-void StorageS3Queue::shutdown()
+void StorageS3Queue::shutdown(bool is_drop)
 {
+    table_is_being_dropped = is_drop;
     shutdown_called = true;
 
     if (task)
@@ -257,7 +262,7 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     return std::make_shared<StorageS3QueueSource>(
         getName(), read_from_format_info.source_header, std::move(internal_source),
         files_metadata, after_processing, file_deleter, read_from_format_info.requested_virtual_columns,
-        local_context, shutdown_called, s3_queue_log, getStorageID());
+        local_context, shutdown_called, table_is_being_dropped, s3_queue_log, getStorageID(), log);
 }
 
 bool StorageS3Queue::hasDependencies(const StorageID & table_id)
