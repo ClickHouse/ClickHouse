@@ -4,11 +4,14 @@
 #include <memory>
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <base/defines.h>
 #include <Core/Defines.h>
 #include <Common/memcpySmall.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Allocator.h>
+
+#if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
+#   include <sanitizer/asan_interface.h>
+#endif
 
 
 namespace ProfileEvents
