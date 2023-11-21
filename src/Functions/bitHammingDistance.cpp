@@ -15,6 +15,9 @@ struct BitHammingDistanceImpl
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
+        /// Note: it's unspecified if signed integers should be promoted with sign-extension or with zero-fill.
+        /// This behavior can change in the future.
+
         if constexpr (sizeof(A) <= sizeof(UInt64) && sizeof(B) <= sizeof(UInt64))
         {
             UInt64 res = static_cast<UInt64>(a) ^ static_cast<UInt64>(b);
