@@ -251,7 +251,10 @@ struct BloomFilterHash
         static const size_t MIN_BITS_PER_ROW = 2;
         static const size_t MIN_HASH_FUNCTION_COUNT = 2;
 
-        /// Return the smaller possible parameters for false positive rates bigger than 0.283
+        /// Return the smaller possible parameters for false positive rates higher or equal than 0.283
+        /// Otherwise, for those rates the loop won't find any possible values in the lookup table
+        /// returning bits_per_row = 19 & size_of_hash_functions = 13. Which are the most restrictive values
+        /// to be used with the smallest false positive rates.
         if (max_conflict_probability >= 0.283)
             return std::pair<size_t, size_t>(MIN_BITS_PER_ROW, MIN_HASH_FUNCTION_COUNT);
 
