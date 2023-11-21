@@ -236,8 +236,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
                 std::move(metadata_storage),
                 std::move(s3_storage),
                 config,
-                config_prefix,
-                context->getZooKeeper());
+                config_prefix);
 
             disk->startup(context, skip_access_check);
             return disk;

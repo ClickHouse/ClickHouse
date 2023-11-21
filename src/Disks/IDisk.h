@@ -500,6 +500,7 @@ protected:
         const std::function<void()> & cancellation_hook);
 
     virtual void checkAccessImpl(const String & path);
+    virtual void preAccessCheck(ContextPtr context);
 
 private:
     ThreadPool copying_thread_pool;

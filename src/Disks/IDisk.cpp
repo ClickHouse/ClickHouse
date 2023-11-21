@@ -191,10 +191,14 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
+void IDisk::preAccessCheck(ContextPtr) {}
+
 void IDisk::startup(ContextPtr context, bool skip_access_check)
 {
     if (!skip_access_check)
     {
+        preAccessCheck(context);
+
         if (isReadOnly())
         {
             LOG_DEBUG(&Poco::Logger::get("IDisk"),

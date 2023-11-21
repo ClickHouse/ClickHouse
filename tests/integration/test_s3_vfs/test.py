@@ -137,21 +137,17 @@ def test_s3_vfs(started_cluster, policy):
     # Based on version 21.x - two parts
     wait_for_large_objects_count(cluster, 2)
 
-    time.sleep(11)  # wait for GC to start but not remove anything
+    node1.query("OPTIMIZE TABLE s3_test FINAL")
 
-    node1.query("DROP TABLE s3_test ON CLUSTER test_cluster SYNC")
+    # Based on version 21.x - after merge, two old parts, one merged,
+    # and one snapshot
+    wait_for_large_objects_count(cluster, 4)
 
-    time.sleep(10)  # wait for GC to start and clean data
+    # Based on version 21.x - after cleanup - merged part and snapshot
+    wait_for_large_objects_count(cluster, 2, timeout=60)
 
-    # Merges don't work as for now
-    #     node1.query("OPTIMIZE TABLE s3_test FINAL")
-    #
-    #     # Based on version 21.x - after merge, two old parts and one merged
-    #     wait_for_large_objects_count(cluster, 3)
-    #
-    #     # Based on version 21.x - after cleanup - only one merged part
-    #     wait_for_large_objects_count(cluster, 1, timeout=60)
-    #
-    #     node1.query("DROP TABLE IF EXISTS s3_test SYNC")
-    #     node2.query("DROP TABLE IF EXISTS s3_test SYNC")
-    assert False
+    node1.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node2.query("DROP TABLE IF EXISTS s3_test SYNC")
+
+    # to get GC logs with empty snapshot after cleaning table
+    time.sleep(10)
