@@ -18,7 +18,7 @@ echo "SELECT getClientHTTPHeader('NOT-FOUND-KEY')"| curl -s -H 'X-Clickhouse-Use
 
 #Code: 36. DB::Exception: The header FORBIDDEN-KEY is in headers_forbidden_to_return, you can config it in config file.
 echo "SELECT getClientHTTPHeader('FORBIDDEN-KEY1')" | curl -s -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: ' \
-    -H 'FORBIDDEN-KEY1: forbbiden1' 'http://localhost:8123/' -d @- | grep -o -e "FORBIDDEN-KEY1 is in headers_forbidden_to_return_list"
+    -H 'FORBIDDEN-KEY1: forbbiden1' 'http://localhost:8123/' -d @- | grep -o -e "FORBIDDEN-KEY1 is in get_client_http_header_forbidden_headers"
 
 db_name=${CLICKHOUSE_DATABASE}
 
