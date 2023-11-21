@@ -198,7 +198,7 @@ private:
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
         Names && real_column_names,
-        const RowPolicyDataOpt & row_policy_data_ptr,
+        const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num);
 
@@ -209,7 +209,7 @@ private:
         QueryProcessingStage::Enum processed_stage,
         const Block & header,
         const Aliases & aliases,
-        const RowPolicyDataOpt & row_policy_data_ptr,
+        const RowPolicyDataOpt & row_policy_data_opt,
         const StorageWithLockAndName & storage_with_lock,
         ContextMutablePtr modified_context,
         bool concat_streams = false) const;
@@ -223,7 +223,7 @@ private:
         const Block & header,
         const StorageMetadataPtr & metadata_snapshot,
         const Aliases & aliases,
-        const RowPolicyDataOpt & row_policy_data_ptr,
+        const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
         QueryPipelineBuilder & builder,
         QueryProcessingStage::Enum processed_stage);
