@@ -449,9 +449,10 @@ zkutil::ZooKeeper::FutureExists ZooKeeperWithFaultInjection::asyncExists(std::st
     if (injectFailureBeforeOperationPromise(__func__, promise, path))
         return future;
 
+    const char * function_name = __func__;
     auto callback = [&, promise](const Coordination::ExistsResponse & response) mutable
     {
-        if (injectFailureAfterOperationPromise(__func__, promise, path))
+        if (injectFailureAfterOperationPromise(function_name, promise, path))
             return;
 
         if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
@@ -474,9 +475,10 @@ zkutil::ZooKeeper::FutureGet ZooKeeperWithFaultInjection::asyncTryGet(std::strin
     if (injectFailureBeforeOperationPromise(__func__, promise, path))
         return future;
 
+    const char * function_name = __func__;
     auto callback = [&, promise](const Coordination::GetResponse & response) mutable
     {
-        if (injectFailureAfterOperationPromise(__func__, promise, path))
+        if (injectFailureAfterOperationPromise(function_name, promise, path))
             return;
 
         if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
@@ -496,9 +498,9 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
     /// asyncTryMultiNoThrow is not setup to handle faults with ephemeral nodes
     /// To do it we'd need to look at ops and save the indexes BEFORE the callback, as the ops are not
     /// guaranteed to live until then
-    for (size_t i = 0; i < ops.size(); i++)
+    for (const auto & op : ops)
     {
-        const auto * create_req = dynamic_cast<const Coordination::CreateRequest *>(ops[i].get());
+        const auto * create_req = dynamic_cast<const Coordination::CreateRequest *>(op.get());
         if (create_req)
             chassert(!create_req->is_ephemeral);
     }
@@ -525,6 +527,7 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
         return future;
     }
 
+    const char * function_name = __func__;
     auto callback = [&, promise](const Coordination::MultiResponse & response) mutable
     {
         if (unlikely(fault_policy) && fault_policy->afterOperation())
@@ -532,7 +535,11 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
             resetKeeper();
             if (logger)
                 LOG_TRACE(
-                    logger, "ZooKeeperWithFaultInjection injected fault after operation: seed={} func={} path={}", seed, __func__, path);
+                    logger,
+                    "ZooKeeperWithFaultInjection injected fault after operation: seed={} func={} path={}",
+                    seed,
+                    function_name,
+                    path);
             Coordination::MultiResponse errors;
             for (size_t i = 0; i < request_size; i++)
             {
@@ -560,9 +567,10 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemove(std:
     if (injectFailureBeforeOperationPromise(__func__, promise, path))
         return future;
 
+    const char * function_name = __func__;
     auto callback = [&, promise](const Coordination::RemoveResponse & response) mutable
     {
-        if (injectFailureAfterOperationPromise(__func__, promise, path))
+        if (injectFailureAfterOperationPromise(function_name, promise, path))
             return;
 
         if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE
@@ -594,6 +602,7 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
         return future;
     }
 
+    const char * function_name = __func__;
     auto callback = [&, promise](const Coordination::RemoveResponse & response) mutable
     {
         if (unlikely(fault_policy) && fault_policy->afterOperation())
@@ -601,7 +610,11 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
             resetKeeper();
             if (logger)
                 LOG_TRACE(
-                    logger, "ZooKeeperWithFaultInjection injected fault after operation: seed={} func={} path={}", seed, __func__, path);
+                    logger,
+                    "ZooKeeperWithFaultInjection injected fault after operation: seed={} func={} path={}",
+                    seed,
+                    function_name,
+                    path);
             Coordination::RemoveResponse r;
             r.error = RandomFaultInjection::error_after_op;
             promise->set_value(r);
