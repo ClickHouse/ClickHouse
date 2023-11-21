@@ -684,7 +684,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     }
 
     /// seems ok
-    auto object = StoredObject(object_key.serialize());
+    auto object = StoredObject(object_key.serialize(), path);
     std::function<void(size_t count)> create_metadata_callback;
 
     if (autocommit)
@@ -782,7 +782,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     }
 
     /// seems ok
-    auto object = StoredObject(object_key.serialize());
+    auto object = StoredObject(object_key.serialize(), path);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
     operations_to_execute.emplace_back(std::move(write_operation));

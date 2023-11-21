@@ -107,6 +107,7 @@ class FilesystemReadPrefetchesLog;
 class S3QueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
+class BlobStorageLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
@@ -1057,6 +1058,7 @@ public:
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
+    std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
     std::vector<ISystemLog *> getSystemLogs() const;
 

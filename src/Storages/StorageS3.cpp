@@ -711,7 +711,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
 
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
-        StoredObjects{StoredObject{key, object_size}},
+        StoredObjects{StoredObject{key, /* local_path */ "", object_size}},
         read_settings,
         /* cache_log */nullptr, /* use_external_buffer */true);
 
@@ -822,6 +822,13 @@ public:
         , sample_block(sample_block_)
         , format_settings(format_settings_)
     {
+        BlobStorageLogWriterPtr blob_log = nullptr;
+        if (auto blob_storage_log = context->getBlobStorageLog())
+        {
+            blob_log = std::make_shared<BlobStorageLogWriter>(std::move(blob_storage_log));
+            blob_log->query_id = context->getCurrentQueryId();
+        }
+
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
                 configuration_.client,
@@ -829,6 +836,7 @@ public:
                 key,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 configuration_.request_settings,
+                std::move(blob_log),
                 std::nullopt,
                 threadPoolCallbackRunner<void>(getIOThreadPool().get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
@@ -1241,6 +1249,15 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     request.SetDelete(delkeys);
 
     auto response = query_configuration.client->DeleteObjects(request);
+
+    const auto * response_error = response.IsSuccess() ? nullptr : &response.GetError();
+    auto time_now = std::chrono::system_clock::now();
+    if (auto blob_storage_log = BlobStorageLogWriter::create())
+    {
+        for (const auto & key : query_configuration.keys)
+            blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete, query_configuration.url.bucket, key, {}, 0, response_error, time_now);
+    }
+
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();

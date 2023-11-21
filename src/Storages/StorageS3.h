@@ -24,6 +24,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
 namespace Aws::S3
 {
