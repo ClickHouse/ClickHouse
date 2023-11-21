@@ -111,8 +111,8 @@ VFSSnapshot VFSSnapshot::deserialize(std::string_view str)
             ObjectWithRefcount{
                 StoredObject(
                     /*remote_path*/ object_parts[2],
-                    /*bytes_size*/ parseFromString<size_t>(object_parts[3]),
-                    /*local_path*/ object_parts[1]),
+                    /*local_path*/ object_parts[1],
+                    /*bytes_size*/ parseFromString<size_t>(object_parts[3])),
                 links});
     }
 
