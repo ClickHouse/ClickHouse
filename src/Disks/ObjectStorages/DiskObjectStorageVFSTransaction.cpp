@@ -139,16 +139,6 @@ void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, co
     addStoredObjectsOp(Link, metadata_storage.getStorageObjects(src_path));
 }
 
-bool DiskObjectStorageVFSTransaction::lock(std::string_view path, bool block)
-{
-    return false;
-}
-
-void DiskObjectStorageVFSTransaction::unlock(std::string_view path)
-{
-
-}
-
 // Unfortunately, knowledge of object storage blob path doesn't go beyond
 // this structure, so we need to write to Zookeeper inside of execute().
 // Another option is to add another operation that would deserialize metadata file at to_path,

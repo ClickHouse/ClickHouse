@@ -35,6 +35,9 @@ public:
     DiskObjectStoragePtr createDiskObjectStorage() override;
     String getStructure() const;
 
+    bool lock(std::string_view path, bool block) override;
+    void unlock(std::string_view path) override;
+
 private:
     // TODO myrrc not sure we should couple object storage and garbage collector this way
     // This has a downside that e.g. clickhouse-disks usage spins up a GC each time we issue

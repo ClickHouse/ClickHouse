@@ -7,6 +7,7 @@ namespace DB
 {
 // TODO myrrc not sure this one belongs here, used for locking only
 static constexpr auto VFS_BASE_NODE = "/vfs_log";
+static constexpr auto VFS_LOCKS_NODE = "/vfs_log/locks";
 static const String VFS_LOG_BASE_NODE = "/vfs_log/ops";
 static constexpr auto VFS_LOG_ITEM = "/vfs_log/ops/log-";
 

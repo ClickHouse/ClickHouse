@@ -228,18 +228,6 @@ public:
         delegate_transaction->createHardLink(wrapped_src_path, wrapped_dst_path);
     }
 
-    bool lock(std::string_view path, bool block) override
-    {
-        // TODO myrrc we don't wrap paths
-        return delegate_transaction->lock(path, block);
-    }
-
-    void unlock(std::string_view path) override
-    {
-        // TODO myrrc we don't wrap paths
-        delegate_transaction->unlock(path);
-    }
-
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
     {
         auto wrapped_path = wrappedPath(path);

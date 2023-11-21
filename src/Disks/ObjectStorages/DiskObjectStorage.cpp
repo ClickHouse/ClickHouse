@@ -285,21 +285,6 @@ void DiskObjectStorage::createHardLink(const String & src_path, const String & d
     createHardLink(src_path, dst_path, send_metadata);
 }
 
-bool DiskObjectStorage::lock(std::string_view path, bool block)
-{
-    auto tx = createObjectStorageTransaction();
-    const bool res = tx->lock(path, block);
-    tx->commit();
-    return res;
-}
-
-void DiskObjectStorage::unlock(std::string_view path)
-{
-    auto tx = createObjectStorageTransaction();
-    tx->unlock(path);
-    tx->commit();
-}
-
 void DiskObjectStorage::setReadOnly(const String & path)
 {
     /// We should store read only flag inside metadata file (instead of using FS flag),

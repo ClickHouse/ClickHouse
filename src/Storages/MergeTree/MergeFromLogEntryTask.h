@@ -47,6 +47,7 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
+    DiskPtr disk; // TODO myrrc should remove
 };
 
 

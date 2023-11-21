@@ -61,6 +61,7 @@ private:
 
     MutateTaskPtr mutate_task;
     pcg64 rng;
+    DiskPtr disk; // TODO myrrc should remove
 };
 
 

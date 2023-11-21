@@ -215,7 +215,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     future_merged_part->updatePath(storage, reserved_space.get());
     future_merged_part->merge_type = entry.merge_type;
 
-    auto disk = reserved_space->getDisk();
+    disk = reserved_space->getDisk();
     const bool is_zerocopy = storage_settings_ptr->allow_remote_fs_zero_copy_replication
         && disk->supportZeroCopyReplication();
     const bool is_vfs = disk->isObjectStorageVFS();
@@ -240,10 +240,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         const bool zerocopy_lock_already_acquired = is_zerocopy
             && (!zero_copy_lock || !zero_copy_lock->isLocked());
 
+        // TODO myrrc revisit whether we need table shared id
         const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
-        vfs_lock = disk->lock(vfs_lock_path, IDisk::LockMode::TryLock);
+        const bool vfs_lock_already_acquired = disk->lock(vfs_lock_path, /*block=*/false);
 
-        if (zerocopy_lock_already_acquired || vfs_lock)
+        if (zerocopy_lock_already_acquired || vfs_lock_already_acquired)
         {
             LOG_DEBUG(
                 log,
@@ -269,7 +270,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             ///
             /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
             zero_copy_lock->lock->unlock();
-            vfs_lock = {};
+            disk->unlock(vfs_lock_path);
 
             LOG_DEBUG(log,
                 "We took lock but merge of part {} finished by some other replica, will "
@@ -401,7 +402,8 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
     if (zero_copy_lock)
         zero_copy_lock->lock->unlock();
-    vfs_lock = {};
+    const String lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
+    disk->unlock(lock_path);
 
     /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
      */

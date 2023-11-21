@@ -114,7 +114,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     future_mutated_part->updatePath(storage, reserved_space.get());
     future_mutated_part->part_format = source_part->getFormat();
 
-    auto disk = reserved_space->getDisk();
+    disk = reserved_space->getDisk();
     const bool is_zerocopy = storage_settings_ptr->allow_remote_fs_zero_copy_replication
         && disk->supportZeroCopyReplication();
     const bool is_vfs = disk->isObjectStorageVFS();
@@ -138,10 +138,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         const bool zerocopy_lock_already_acquired = is_zerocopy
             && (!zero_copy_lock || !zero_copy_lock->isLocked());
 
+        // TODO myrrc revisit whether we need table shared id
         const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
-        vfs_lock = disk->lock(vfs_lock_path, IDisk::LockMode::TryLock);
+        const bool vfs_lock_already_acquired = disk->lock(vfs_lock_path, /*block=*/false);
 
-        if (zerocopy_lock_already_acquired || vfs_lock)
+        if (zerocopy_lock_already_acquired || vfs_lock_already_acquired)
         {
             LOG_DEBUG(
                 log,
@@ -167,7 +168,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             ///
             /// In case of DROP_RANGE on fast replica and stale replica we can have some failed select queries in case of zero copy replication.
             zero_copy_lock->lock->unlock();
-            vfs_lock = {};
+            disk->unlock(vfs_lock_path);
 
             LOG_DEBUG(log, "We took zero copy lock, but mutation of part {} finished by some other replica, will release lock and download mutated part to avoid data duplication", entry.new_part_name);
             return PrepareResult{
@@ -256,7 +257,8 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         LOG_DEBUG(log, "Removing zero-copy lock");
         zero_copy_lock->lock->unlock();
     }
-    vfs_lock = {};
+    const String lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
+    disk->unlock(lock_path);
 
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
          * This is not a problem, because in this case the entry will remain in the queue, and we will try again.

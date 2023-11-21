@@ -25,6 +25,8 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     , zookeeper(std::move(zookeeper_))
 {
     zookeeper->createAncestors(VFS_LOG_ITEM);
+    // TODO myrrc ugly hack to create locks root node, remove
+    zookeeper->createAncestors(fs::path(VFS_LOCKS_NODE) / "dummy");
 }
 
 DiskObjectStorageVFS::~DiskObjectStorageVFS() = default;
@@ -59,6 +61,37 @@ void DiskObjectStorageVFS::shutdown()
 String DiskObjectStorageVFS::getStructure() const
 {
     return fmt::format("DiskObjectStorageVFS-{}({})", getName(), object_storage->getName());
+}
+
+String lockPathToFullPath(std::string_view path)
+{
+    String lock_path{path};
+    std::ranges::replace(lock_path, '/', '_');
+    return fs::path(VFS_LOCKS_NODE) / lock_path;
+}
+
+bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
+{
+    // TODO myrrc should have something better
+    using enum Coordination::Error;
+    const String lock_path_full = lockPathToFullPath(path);
+    const auto mode = zkutil::CreateMode::Persistent;
+
+    if (block)
+    {
+        zookeeper->create(lock_path_full, "", mode);
+        return true;
+    }
+
+    auto code = zookeeper->tryCreate(lock_path_full, "", mode);
+    if (code == ZOK) return true;
+    if (code == ZNODEEXISTS) return false;
+    throw Coordination::Exception(code);
+}
+
+void DiskObjectStorageVFS::unlock(std::string_view path)
+{
+    zookeeper->remove(lockPathToFullPath(path));
 }
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
