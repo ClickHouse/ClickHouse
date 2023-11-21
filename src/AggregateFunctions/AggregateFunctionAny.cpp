@@ -14,13 +14,12 @@ AggregateFunctionPtr createAggregateFunctionAny(const std::string & name, const 
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types, parameters, settings));
 }
 
-template <bool RespectNulls = false>
 AggregateFunctionPtr createAggregateFunctionNullableAny(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     return AggregateFunctionPtr(
-        createAggregateFunctionSingleNullableValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData, RespectNulls>(
-            name, argument_types, parameters, settings));
+        createAggregateFunctionSingleNullableValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(
+            name, argument_types, parameters));
 }
 
 AggregateFunctionPtr createAggregateFunctionAnyLast(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -28,13 +27,11 @@ AggregateFunctionPtr createAggregateFunctionAnyLast(const std::string & name, co
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyLastData>(name, argument_types, parameters, settings));
 }
 
-template <bool RespectNulls = false>
-AggregateFunctionPtr createAggregateFunctionNullableAnyLast(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+AggregateFunctionPtr createAggregateFunctionNullableAnyLast(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     return AggregateFunctionPtr(createAggregateFunctionSingleNullableValue<
                                 AggregateFunctionsSingleValue,
-                                AggregateFunctionAnyLastData,
-                                RespectNulls>(name, argument_types, parameters, settings));
+                                AggregateFunctionAnyLastData>(name, argument_types, parameters));
 }
 
 AggregateFunctionPtr createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -58,13 +55,13 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
         { createAggregateFunctionAny, properties },
         AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("first_value_respect_nulls",
-        { createAggregateFunctionNullableAny<true>, properties },
+        { createAggregateFunctionNullableAny, properties },
         AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("last_value",
         { createAggregateFunctionAnyLast, properties },
         AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("last_value_respect_nulls",
-        { createAggregateFunctionNullableAnyLast<true>, properties },
+        { createAggregateFunctionNullableAnyLast, properties },
         AggregateFunctionFactory::CaseInsensitive);
 }
 

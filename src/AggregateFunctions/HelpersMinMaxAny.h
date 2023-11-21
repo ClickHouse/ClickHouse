@@ -47,25 +47,15 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
     return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<>>>(argument_type);
 }
 
-template <template <typename> class AggregateFunctionTemplate, template <typename> class Data, bool RespectNulls = false>
-static IAggregateFunction * createAggregateFunctionSingleNullableValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
+static IAggregateFunction * createAggregateFunctionSingleNullableValue(const String & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
     const DataTypePtr & argument_type = argument_types[0];
-    WhichDataType which(argument_type);
-    // If the result value could be null (excluding the case that no row is matched),
-    // use SingleValueDataGeneric.
-    if constexpr (!RespectNulls)
-    {
-        return createAggregateFunctionSingleValue<AggregateFunctionTemplate, Data>(name, argument_types, Array(), settings);
-    }
-    else
-    {
-        return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true>>>(argument_type);
-    }
-    UNREACHABLE();
+    /// The result value could be null (excluding the case that no row is matched), use SingleValueDataGeneric.
+    return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true>>>(argument_type);
 }
 
 
