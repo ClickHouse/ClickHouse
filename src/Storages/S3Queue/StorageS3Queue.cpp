@@ -112,7 +112,6 @@ StorageS3Queue::StorageS3Queue(
     , s3queue_settings(std::move(s3queue_settings_))
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *s3queue_settings))
     , after_processing(s3queue_settings->after_processing)
-    , files_metadata(S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings))
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
@@ -147,16 +146,28 @@ StorageS3Queue::StorageS3Queue(
     {
         storage_metadata.setColumns(columns_);
     }
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-
-    createOrCheckMetadata(storage_metadata);
     setInMemoryMetadata(storage_metadata);
-
     virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
-    task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
+    task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
+
+    /// Get metadata manager from S3QueueMetadataFactory,
+    /// it will increase the ref count for the metadata object.
+    /// The ref count is decreased when StorageS3Queue::drop() method is called.
+    files_metadata = S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings);
+    try
+    {
+        createOrCheckMetadata(storage_metadata);
+    }
+    catch (...)
+    {
+        S3QueueMetadataFactory::instance().remove(zk_path);
+        throw;
+    }
 }
 
 void StorageS3Queue::startup()
