@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
+    extern const int BROKEN_PROJECTION;
 }
 
 
@@ -272,6 +273,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
+    std::string broken_projections_message;
     for (const auto & [name, projection] : data_part->getProjectionParts())
     {
         if (is_cancelled())
@@ -307,7 +309,15 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
             is_broken_projection = true;
             if (throw_on_broken_projection)
-                throw;
+            {
+                if (!broken_projections_message.empty())
+                    broken_projections_message += "\n";
+
+                broken_projections_message += fmt::format(
+                    "Part {} has a broken projection {} (error: {})",
+                    data_part->name, name, getCurrentExceptionMessage(false));
+                continue;
+            }
 
             projections_on_disk.erase(projection_file);
             checksums_txt.remove(projection_file);
@@ -318,6 +328,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             projection_checksums.getTotalChecksumUInt128());
 
         projections_on_disk.erase(projection_file);
+    }
+
+    if (throw_on_broken_projection && !broken_projections_message.empty())
+    {
+        throw Exception(ErrorCodes::BROKEN_PROJECTION, broken_projections_message.data());
     }
 
     if (require_checksums && !projections_on_disk.empty())

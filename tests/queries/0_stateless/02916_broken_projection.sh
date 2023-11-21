@@ -24,7 +24,7 @@ CREATE TABLE test
         SELECT d ORDER BY c
     )
 )
-ENGINE = ReplicatedMergeTree('/test3/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '1') PRIMARY KEY (a)
+ENGINE = ReplicatedMergeTree('/test4/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '1') PRIMARY KEY (a)
 SETTINGS min_bytes_for_wide_part = 0,
     max_parts_to_merge_at_once=3,
     enable_vertical_merge_algorithm=1,
@@ -65,18 +65,13 @@ function break_projection()
     LIMIT 1;
     ")
 
-    path=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.disks WHERE name='$disk_name'")
-
-    # make sure path is absolute
-    $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" || exit
-
     if [ "$break_type" = "data" ]
         then
-           rm "$path/$part_path/d.bin"
-           rm "$path/$part_path/c.bin"
+           rm "$part_path/d.bin"
+           rm "$part_path/c.bin"
            echo "broke data of part '$part_name' (parent part: $parent_name)"
         else
-           rm "$path/$part_path/columns.txt"
+           rm "$part_path/columns.txt"
            echo "broke metadata of part '$part_name' (parent part: $parent_name)"
     fi
 }
@@ -115,12 +110,12 @@ function check()
     WHERE table='test' AND database=currentDatabase()
     ORDER BY name;"
 
-    echo "select from projection 'proj'"
+    echo "select from projection 'proj', expect error: $expect_broken_part"
     query_id=$(random 8)
 
     if [ "$expect_broken_part" = "proj" ]
         then
-            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT c FROM test WHERE d == 12 ORDER BY c;" 2>&1 | grep -o $expected_error
+            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --send_logs_level 'fatal' --query_id $query_id -q "SELECT c FROM test WHERE d == 12 ORDER BY c;" 2>&1 | grep -o $expected_error
         else
             $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;"
             echo 'used projections'
@@ -130,12 +125,12 @@ function check()
             "
     fi
 
-    echo "select from projection 'proj_2'"
+    echo "select from projection 'proj_2', expect error: $expect_broken_part"
     query_id=$(random 8)
 
     if [ "$expect_broken_part" = "proj_2" ]
         then
-            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT d FROM test WHERE c == 12 ORDER BY d;" 2>&1 | grep -o $expected_error
+            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --send_logs_level 'fatal' --query_id $query_id -q "SELECT d FROM test WHERE c == 12 ORDER BY d;" 2>&1 | grep -o $expected_error
         else
             $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;"
             echo 'used projections'
@@ -146,7 +141,9 @@ function check()
     fi
 
     echo 'check table'
-    $CLICKHOUSE_CLIENT -q "CHECK TABLE test"
+    $CLICKHOUSE_CLIENT -nm -q "
+    SET send_logs_level='fatal';
+    CHECK TABLE test;"
 }
 
 function optimize()
@@ -159,16 +156,21 @@ function optimize()
 
     if [ $final -eq 1 ]; then
         query="$query FINAL"
+    fi
     if [ $no_wait -eq 1 ]; then
         query="$query SETTINGS alter_sync=0"
+    fi
 
-    $CLICKHOUSE_CLIENT -nm -q $query
+    echo $query
+
+    $CLICKHOUSE_CLIENT -q "$query"
 }
 
 function reattach()
 {
     echo 'Detach - Attach'
     $CLICKHOUSE_CLIENT -nm -q "
+    SET send_logs_level='fatal';
     DETACH TABLE test;
     ATTACH TABLE test;
     "
@@ -184,7 +186,10 @@ function materialize_projection
 function check_table_full()
 {
     echo 'check table full'
-    $CLICKHOUSE_CLIENT -q "CHECK TABLE test SETTINGS check_query_single_value_result = 0" | grep "broken"
+    $CLICKHOUSE_CLIENT -nm -q "
+    SET send_logs_level='fatal';
+    CHECK TABLE test SETTINGS check_query_single_value_result = 0;
+" | grep "broken"
 }
 
 
@@ -300,5 +305,5 @@ optimize 1 0
 check
 
 $CLICKHOUSE_CLIENT -nm -q "
-DROP TABLE test;
+DROP TABLE test SYNC;
 "

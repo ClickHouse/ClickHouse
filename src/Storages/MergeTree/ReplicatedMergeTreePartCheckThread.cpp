@@ -63,7 +63,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     if (parts_set.contains(name))
         return;
 
-    LOG_TRACE(log, "Enqueueing {} for check after after {}s", name, delay_to_check_seconds);
+    LOG_TRACE(log, "Enqueueing {} for check after {}s", name, delay_to_check_seconds);
     parts_queue.emplace_back(name, std::chrono::steady_clock::now() + std::chrono::seconds(delay_to_check_seconds));
     parts_set.insert(name);
     task->schedule();
@@ -385,17 +385,19 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             if (isRetryableException(std::current_exception()))
                 throw;
 
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
             PreformattedMessage message;
             if (is_broken_projection)
             {
-                message = PreformattedMessage::create("Part {} has a broken projection. It will be ignored.", part_name);
+                message = PreformattedMessage::create(
+                    "Part {} has a broken projections. It will be ignored. Broken projections info: \n{}",
+                    part_name, getCurrentExceptionMessage(false));
                 LOG_DEBUG(log, message);
                 result.action = ReplicatedCheckResult::DoNothing;
             }
             else
             {
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
                 message = PreformattedMessage::create("Part {} looks broken. Removing it and will try to fetch.", part_name);
                 LOG_ERROR(log, message);
                 result.action = ReplicatedCheckResult::TryFetchMissing;
