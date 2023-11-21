@@ -135,7 +135,6 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
 
     if (!params.copy_instead_of_hardlink && params.hardlinked_files)
     {
-        // think of a name for this method
         handleHardLinkedParameterFiles(src_part, params);
         handleProjections(src_part, params);
     }
@@ -176,7 +175,6 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
 
     if (!params.copy_instead_of_hardlink && params.hardlinked_files)
     {
-        // think of a name for this method
         handleHardLinkedParameterFiles(src_part, params);
         handleProjections(src_part, params);
     }

@@ -2020,7 +2020,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
-    // TODO should this error out instead?
     /// ATTACH empty part set
     if (!replace && src_parts.empty())
         return;
