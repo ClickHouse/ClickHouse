@@ -17,8 +17,8 @@ public:
     public:
         UInt8 byte;
         Flag(UInt8 t, UInt8 s) : byte(t | s) { }
-        UInt8 Type() const { return byte & flagTypeMask; }
-        UInt8 SubFlag() const { return byte & subFlagMask; }
+        [[maybe_unused]] UInt8 Type() const { return byte & flagTypeMask; }
+        [[maybe_unused]] UInt8 SubFlag() const { return byte & subFlagMask; }
     };
 
     // FLAG TYPES

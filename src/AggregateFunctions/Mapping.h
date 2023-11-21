@@ -61,7 +61,7 @@ public:
         return min_possible;
     }
 
-    Float64 getMaxPossible() const
+    [[maybe_unused]] Float64 getMaxPossible() const
     {
         return max_possible;
     }
