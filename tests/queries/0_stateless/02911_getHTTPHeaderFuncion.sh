@@ -14,11 +14,11 @@ echo "SELECT getClientHTTPHeader('test-' || 'key' || '-1'), getClientHTTPHeader(
 
 #Code: 36. DB::Exception: NOT-FOUND-KEY is not in HTTP request headers
 echo "SELECT getClientHTTPHeader('NOT-FOUND-KEY')"| curl -s -H 'X-Clickhouse-User: default' \
-    -H 'X-ClickHouse-Key: ' -H 'key1: value1' -H 'key2: value2' 'http://localhost:8123/' -d @- | grep -o -e BAD_ARGUMENTS
+    -H 'X-ClickHouse-Key: ' -H 'key1: value1' -H 'key2: value2' 'http://localhost:8123/' -d @- | grep -o -e "NOT-FOUND-KEY is not in HTTP request headers" 
 
-#Code: 36. DB::Exception: The header FORBIDDEN-KEY is in headers_forbidden_to_return_list, you can config it in config file.
-echo "SELECT getClientHTTPHeader('FORBIDDEN-KEY')" | curl -s -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: ' -H 'FORBIDDEN-KEY1: forbbiden1' 'http://localhost:8123/' -d @-  | grep -o -e BAD_ARGUMENTS
-echo "SELECT getClientHTTPHeader('FORBIDDEN-KEY')" | curl -s -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: ' -H 'FORBIDDEN-KEY2: forbbiden2' 'http://localhost:8123/' -d @-  | grep -o -e BAD_ARGUMENTS
+#Code: 36. DB::Exception: The header FORBIDDEN-KEY is in headers_forbidden_to_return, you can config it in config file.
+echo "SELECT getClientHTTPHeader('FORBIDDEN-KEY1')" | curl -s -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: ' \
+    -H 'FORBIDDEN-KEY1: forbbiden1' 'http://localhost:8123/' -d @- | grep -o -e "FORBIDDEN-KEY1 is in headers_forbidden_to_return_list"
 
 db_name=${CLICKHOUSE_DATABASE}
 

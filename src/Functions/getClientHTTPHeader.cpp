@@ -83,23 +83,20 @@ public:
         auto result_column = ColumnString::create();
 
         const String default_value;
-        String forbidden_header_names = getContext()->getClientHTTPHeaderForbiddenHeaders();
-        std::vector<String> forbidden_header_list;
-        boost::split(forbidden_header_list, forbidden_header_names, [](char c) { return c == ','; });
-        String header_list;
+        const std::unordered_set<String> & forbidden_header_list = getContext()->getClientHTTPHeaderForbiddenHeaders();
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             auto header_name = arg_string->getDataAt(row).toString();
 
-            if (!headers.has(header_name)) 
+            if (!headers.has(header_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} is not in HTTP request headers.", header_name);
             else
             {
-                auto it = std::find(forbidden_header_list.begin(), forbidden_header_list.end(), header_name);
+                auto it = forbidden_header_list.find(header_name);
                 if (it != forbidden_header_list.end())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The header {} is in headers_forbidden_to_return_list, you can config it in config file.", header_name);
-                    
+
                 const String & value = headers[header_name];
                 result_column->insertData(value.data(), value.size());
             }

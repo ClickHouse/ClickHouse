@@ -1072,8 +1072,8 @@ public:
     size_t getMaxTableSizeToDrop() const;
     void setClientHTTPHeaderForbiddenHeaders(const String & forbidden_headers);
     /// Return the forbiddent headers that users cant get via getClientHTTPHeader function
-    String getClientHTTPHeaderForbiddenHeaders() const;
-    void setAllowGetHTTPHeaderFunction(const bool allow_get_http_header_function);
+    const std::unordered_set<String> & getClientHTTPHeaderForbiddenHeaders() const;
+    void setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function);
     bool allowGetHTTPHeaderFunction() const;
     void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const;
 

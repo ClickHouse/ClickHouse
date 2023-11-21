@@ -317,7 +317,7 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
-    String get_client_http_header_forbidden_headers;
+    std::unordered_set<String> get_client_http_header_forbidden_headers;
     bool allow_get_client_http_header;
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
@@ -3903,7 +3903,9 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 
 void Context::setClientHTTPHeaderForbiddenHeaders(const String & forbidden_headers)
 {
-    shared->get_client_http_header_forbidden_headers = forbidden_headers;
+    std::unordered_set<String> forbidden_header_list;
+    boost::split(forbidden_header_list, forbidden_headers, [](char c) { return c == ','; });
+    shared->get_client_http_header_forbidden_headers = forbidden_header_list;
 }
 
 void Context::setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function)
@@ -3911,7 +3913,7 @@ void Context::setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function)
     shared->allow_get_client_http_header= allow_get_http_header_function;
 }
 
-String Context::getClientHTTPHeaderForbiddenHeaders() const
+const std::unordered_set<String> & Context::getClientHTTPHeaderForbiddenHeaders() const
 {
     return shared->get_client_http_header_forbidden_headers;
 }
