@@ -18,6 +18,6 @@ for code in "${RETRYABLE_EXCEPTION_CODES[@]}"
 do
   echo "-- Code: $code"
   RES=$(${CLICKHOUSE_CURL} -vs "${CLICKHOUSE_URL}" -d "select throwIf(1, 'test', toInt16($code)) settings allow_custom_error_code_in_throwif=1" 2>&1)
-  echo $RES | grep -c "X-ClickHouse-Exception-Code: $code"
+  echo $RES | grep -c "< X-ClickHouse-Exception-Code: $code"
   echo $RES | grep -c '< X-ClickHouse-Exception-Retryable: 1'
 done
