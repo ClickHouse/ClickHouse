@@ -909,7 +909,11 @@ try
     if (response.sent() && used_output.out)
         used_output.out->setExceptionCode(exception_code);
     else
+    {
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+        if (ErrorCodes::is_retryable(exception_code))
+            response.set("X-ClickHouse-Exception-Retryable", "1");
+    }
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
 

@@ -32,6 +32,7 @@ namespace ErrorCodes
     /// for test hints, and it does not worth to keep another structure for
     /// this.
     ErrorCode getErrorCodeByName(std::string_view error_name);
+    bool is_retryable(int code);
 
     struct Error
     {

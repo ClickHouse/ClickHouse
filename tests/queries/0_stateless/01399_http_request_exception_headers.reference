@@ -1,0 +1,48 @@
+-- Non-retryable exceptions
+1
+0
+1
+0
+-- Retryable exceptions
+-- Code: 3
+1
+1
+-- Code: 159
+1
+1
+-- Code: 164
+1
+1
+-- Code: 202
+1
+1
+-- Code: 203
+1
+1
+-- Code: 209
+1
+1
+-- Code: 210
+1
+1
+-- Code: 242
+1
+1
+-- Code: 252
+1
+1
+-- Code: 285
+1
+1
+-- Code: 319
+1
+1
+-- Code: 425
+1
+1
+-- Code: 999
+1
+1
+-- Code: 1002
+1
+1

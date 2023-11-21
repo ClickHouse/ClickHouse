@@ -1,6 +1,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <chrono>
+#include <set>
 
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
@@ -610,6 +611,23 @@ namespace ErrorCodes
     constexpr ErrorCode END = 1002;
     ErrorPairHolder values[END + 1]{};
 
+    std::set retryable_errors = {
+        3,   // UNEXPECTED_END_OF_FILE
+        159, // TIMEOUT_EXCEEDED
+        164, // READONLY
+        202, // TOO_MANY_SIMULTANEOUS_QUERIES
+        203, // NO_FREE_CONNECTION
+        209, // SOCKET_TIMEOUT
+        210, // NETWORK_ERROR
+        242, // TABLE_IS_READ_ONLY
+        252, // TOO_MANY_PARTS
+        285, // TOO_FEW_LIVE_REPLICAS
+        319, // UNKNOWN_STATUS_OF_INSERT
+        425, // SYSTEM_ERROR
+        999, // KEEPER_EXCEPTION
+        1002 // UNKNOWN_EXCEPTION
+    };
+
     struct ErrorCodesNames
     {
         std::string_view names[END + 1];
@@ -641,6 +659,11 @@ namespace ErrorCodes
                 return i;
         }
         throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
+    }
+
+    bool is_retryable(int code)
+    {
+        return retryable_errors.contains(code);
     }
 
     ErrorCode end() { return END + 1; }
