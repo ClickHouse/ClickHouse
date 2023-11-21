@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int DICTIONARIES_WAS_NOT_LOADED;
     extern const int FUNCTION_NOT_ALLOWED;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ACCESS_DENIED;
@@ -150,7 +149,6 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
             /// Some functions throw because they need special configuration or setup before use.
             if (e.code() == ErrorCodes::DICTIONARIES_WAS_NOT_LOADED
                 || e.code() == ErrorCodes::FUNCTION_NOT_ALLOWED
-                || e.code() == ErrorCodes::LOGICAL_ERROR
                 || e.code() == ErrorCodes::NOT_IMPLEMENTED
                 || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
                 || e.code() == ErrorCodes::ACCESS_DENIED)

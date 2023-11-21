@@ -22,6 +22,7 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   fi
 fi
 
+
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
 # export CCACHE_LOGFILE=/build/ccache.log
@@ -31,6 +32,7 @@ fi
 mkdir -p /build/build_docker
 cd /build/build_docker
 rm -f CMakeCache.txt
+
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
@@ -177,11 +179,12 @@ then
     tar c -C /build/ --exclude='.git/modules/**' .git | tar x -C "$PERF_OUTPUT"/ch
     # Create branch pr and origin/master to have them for the following performance comparison
     git -C "$PERF_OUTPUT"/ch branch pr
-    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin master:origin/master
+    git -C "$PERF_OUTPUT"/ch fetch --no-tags --no-recurse-submodules --depth 50 origin master:origin/master
     # Clean remote, to not have it stale
     git -C "$PERF_OUTPUT"/ch remote | xargs -n1 git -C "$PERF_OUTPUT"/ch remote remove
     # And clean all tags
-    git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d
+    echo "Deleting $(git -C "$PERF_OUTPUT"/ch tag | wc -l) tags"
+    git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d >/dev/null
     git -C "$PERF_OUTPUT"/ch reset --soft pr
     git -C "$PERF_OUTPUT"/ch log -5
     (

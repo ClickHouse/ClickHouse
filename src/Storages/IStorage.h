@@ -717,6 +717,9 @@ public:
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
 
+    /// Re initialize disks in case the underlying storage policy changed
+    virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
+
     /// A helper to implement read()
     static void readFromPipe(
         QueryPlan & query_plan,

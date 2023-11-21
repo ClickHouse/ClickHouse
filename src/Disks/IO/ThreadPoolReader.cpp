@@ -64,6 +64,7 @@ namespace CurrentMetrics
     extern const Metric Read;
     extern const Metric ThreadPoolFSReaderThreads;
     extern const Metric ThreadPoolFSReaderThreadsActive;
+    extern const Metric ThreadPoolFSReaderThreadsScheduled;
 }
 
 
@@ -88,7 +89,7 @@ static bool hasBugInPreadV2()
 #endif
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
-    : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, pool_size, pool_size, queue_size_))
+    : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, CurrentMetrics::ThreadPoolFSReaderThreadsScheduled, pool_size, pool_size, queue_size_))
 {
 }
 

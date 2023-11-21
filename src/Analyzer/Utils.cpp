@@ -152,6 +152,17 @@ void makeUniqueColumnNamesInBlock(Block & block)
     }
 }
 
+bool isQueryOrUnionNode(const IQueryTreeNode * node)
+{
+    auto node_type = node->getNodeType();
+    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
+{
+    return isQueryOrUnionNode(node.get());
+}
+
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     const DataTypePtr & type,
     const ContextPtr & context,
