@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 Field IColumnDummy::operator[](size_t) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName()); 
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
 void IColumnDummy::get(size_t, Field &) const
