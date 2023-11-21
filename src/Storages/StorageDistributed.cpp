@@ -1040,7 +1040,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         else
         {
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-            auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
+            auto connections = shard_info.pool->getMany(timeouts, settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
                     shard_info.shard_num);
