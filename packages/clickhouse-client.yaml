@@ -36,7 +36,7 @@ overrides:
     - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
 
 contents:
-- src: root/etc/clickhouse-client/config.xml
+- src: ../programs/client/clickhouse-client.xml
   dst: /etc/clickhouse-client/config.xml
   type: config|noreplace
 - src: root/usr/bin/clickhouse-benchmark

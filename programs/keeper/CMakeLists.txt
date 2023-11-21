@@ -15,8 +15,6 @@ set (CLICKHOUSE_KEEPER_LINK
 
 clickhouse_program_add(keeper)
 
-install(FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-keeper" COMPONENT clickhouse-keeper)
-
 if (BUILD_STANDALONE_KEEPER)
     # Straight list of all required sources
     set(CLICKHOUSE_KEEPER_STANDALONE_SOURCES

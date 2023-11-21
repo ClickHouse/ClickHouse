@@ -28,7 +28,7 @@ suggests:
 - clickhouse-keeper-dbg
 
 contents:
-- src: root/etc/clickhouse-keeper/keeper_config.xml
+- src: ../programs/keeper/keeper_config.xml
   dst: /etc/clickhouse-keeper/keeper_config.xml
   type: config|noreplace
 - src: clickhouse-keeper.service
