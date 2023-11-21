@@ -76,8 +76,8 @@ public:
             return false;
         };
 
-        const bool success = try_type(UInt8{}) || try_type(UInt16{}) || try_type(UInt32{}) || try_type(UInt64{}) || try_type(Int8{})
-            || try_type(Int16{}) || try_type(Int32{}) || try_type(Int64{});
+        const bool success = try_type(UInt8{}) || try_type(UInt16{}) || try_type(UInt32{}) || try_type(UInt64{})
+                                || try_type(Int8{}) || try_type(Int16{}) || try_type(Int32{}) || try_type(Int64{});
 
         if (!success)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
@@ -99,7 +99,7 @@ public:
             auto raw_value = src_data[i];
             if (raw_value < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected a non-negative integer, got: {}", std::to_string(raw_value));
-            auto value = static_cast<equivalent_integer>(raw_value);
+            auto value = static_cast<equivalent_integer>(raw_value); /// NOLINT(bugprone-signed-char-misuse,cert-str34-c)
             dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
         }
     }
