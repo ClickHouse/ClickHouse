@@ -152,8 +152,8 @@ private:
             auto chunk = std::make_unique<MemoryChunk>(next_size);
             head.swap(*chunk);
             head.prev = std::move(chunk);
-            allocated_bytes += head.size();
         }
+        allocated_bytes += head.size();
     }
 
     friend class ArenaAllocator;
