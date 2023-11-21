@@ -148,6 +148,7 @@ TEST(MergeTree, CombineFilters)
     EXPECT_TRUE(testCombineFilters(65));
     EXPECT_TRUE(testCombineFilters(200));
     EXPECT_TRUE(testCombineFilters(201));
+    EXPECT_TRUE(testCombineFilters(300));
     /// Extended tests: combination of two UInt8 columns.
     EXPECT_TRUE(testCombineColumns(1));
     EXPECT_TRUE(testCombineColumns(2));
