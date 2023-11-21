@@ -12,6 +12,7 @@ class DiskObjectStorageVFS : public DiskObjectStorage
 {
 public:
     using DiskObjectStorage::DiskObjectStorage;
+    ~DiskObjectStorageVFS() override = default;
 
     void startupImpl(ContextPtr context) override;
     void shutdown() override;
