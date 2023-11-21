@@ -1147,7 +1147,8 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     {
         checkSessionDeadline();
         info.time = clock::now();
-        if (zk_log)
+        auto maybe_zk_log = std::atomic_load(&zk_log);
+        if (maybe_zk_log)
         {
             info.request->thread_id = getThreadId();
             info.request->query_id = String(CurrentThread::getQueryId());

@@ -255,11 +255,11 @@ private:
 
     UInt64 genRandom(UInt64 limit)
     {
-        assert(limit > 0);
+        chassert(limit > 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (limit <= static_cast<UInt64>(rng.max()))
-            return static_cast<UInt32>(rng()) % static_cast<UInt32>(limit);
+            return rng() % limit;
         else
             return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }

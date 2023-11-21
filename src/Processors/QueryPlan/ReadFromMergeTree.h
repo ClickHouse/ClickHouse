@@ -197,13 +197,9 @@ public:
     bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
     void setAnalyzedResult(MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    void resetParts(MergeTreeData::DataPartsVector parts)
-    {
-        prepared_parts = std::move(parts);
-        alter_conversions_for_parts = {};
-    }
-
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
+    const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
+
     const MergeTreeData & getMergeTreeData() const { return data; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
@@ -310,6 +306,7 @@ struct MergeTreeDataSelectAnalysisResult
     bool error() const;
     size_t marks() const;
     UInt64 rows() const;
+    const RangesInDataParts & partsWithRanges() const;
 };
 
 }
