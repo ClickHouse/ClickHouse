@@ -1238,7 +1238,6 @@ void Client::processConfig()
             global_context->setCurrentQueryId(query_id);
     }
     print_stack_trace = config().getBool("stacktrace", false);
-    logging_initialized = true;
 
     if (config().has("multiquery"))
         is_multiquery = true;
