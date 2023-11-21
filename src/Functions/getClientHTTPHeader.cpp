@@ -95,7 +95,7 @@ public:
             {
                 auto it = forbidden_header_list.find(header_name);
                 if (it != forbidden_header_list.end())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The header {} is in headers_forbidden_to_return_list, you can config it in config file.", header_name);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The header {} is in get_client_http_header_forbidden_headers, you can config it in config file.", header_name);
 
                 const String & value = headers[header_name];
                 result_column->insertData(value.data(), value.size());
