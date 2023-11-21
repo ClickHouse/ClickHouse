@@ -63,7 +63,7 @@ Pipe StorageSystemDisks::read(
     for (const auto & [disk_name, disk_ptr] : context->getDisksMap())
     {
         col_name->insert(disk_name);
-        col_path->insert(fs::absolute(disk_ptr->getPath()).string());
+        col_path->insert(disk_ptr->getPath());
         col_free->insert(disk_ptr->getAvailableSpace().value_or(std::numeric_limits<UInt64>::max()));
         col_total->insert(disk_ptr->getTotalSpace().value_or(std::numeric_limits<UInt64>::max()));
         col_unreserved->insert(disk_ptr->getUnreservedSpace().value_or(std::numeric_limits<UInt64>::max()));

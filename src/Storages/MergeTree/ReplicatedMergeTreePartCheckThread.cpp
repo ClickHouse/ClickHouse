@@ -388,8 +388,9 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             PreformattedMessage message;
             if (is_broken_projection)
             {
+                WriteBufferFromOwnString wb;
                 message = PreformattedMessage::create(
-                    "Part {} has a broken projections. It will be ignored. Broken projections info: \n{}",
+                    "Part {} has a broken projections. It will be ignored. Broken projections info: {}",
                     part_name, getCurrentExceptionMessage(false));
                 LOG_DEBUG(log, message);
                 result.action = ReplicatedCheckResult::DoNothing;

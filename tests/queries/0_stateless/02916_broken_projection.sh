@@ -121,7 +121,7 @@ function check()
             echo 'used projections'
             $CLICKHOUSE_CLIENT -nm -q "
             SYSTEM FLUSH LOGS;
-            SELECT query, projections FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
+            SELECT query, splitByChar('.', arrayJoin(projections))[-1] FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
             "
     fi
 
@@ -136,7 +136,7 @@ function check()
             echo 'used projections'
             $CLICKHOUSE_CLIENT -nm -q "
             SYSTEM FLUSH LOGS;
-            SELECT query, projections FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
+            SELECT query, splitByChar('.', arrayJoin(projections))[-1] FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
             "
     fi
 
@@ -185,11 +185,20 @@ function materialize_projection
 
 function check_table_full()
 {
-    echo 'check table full'
-    $CLICKHOUSE_CLIENT -nm -q "
-    SET send_logs_level='fatal';
-    CHECK TABLE test SETTINGS check_query_single_value_result = 0;
-" | grep "broken"
+    echo "check table full ($1)"
+    expect_broken_part=$1
+    if [ "$expect_broken_part" = "" ]
+       then
+           $CLICKHOUSE_CLIENT -nm -q "
+           SET send_logs_level='fatal';
+           CHECK TABLE test SETTINGS check_query_single_value_result = 0;
+           " | grep "broken"
+       else
+           $CLICKHOUSE_CLIENT -nm -q "
+           SET send_logs_level='fatal';
+           CHECK TABLE test SETTINGS check_query_single_value_result = 0;
+           " | grep "broken" | grep -o $expect_broken_part | head -n 1
+    fi
 }
 
 
@@ -216,7 +225,7 @@ check
 broken_projections_info
 
 # Check table query will also show a list of parts which have broken projections.
-check_table_full
+check_table_full "all_2_2_0"
 
 # Break data file of projection 'proj_2' for part all_2_2_0
 break_projection proj_2 all_2_2_0 data
@@ -280,7 +289,7 @@ broken_projections_info
 
 check
 
-check_table_full
+check_table_full all_1_1_0
 
 materialize_projection proj
 
