@@ -83,6 +83,9 @@ private:
 
         ~MemoryChunk()
         {
+            if (empty())
+                return;
+
             /// We must unpoison the memory before returning to the allocator,
             /// because the allocator might not have asan integration, and the
             /// memory would stay poisoned forever. If the allocator supports
@@ -92,6 +95,7 @@ private:
             Allocator<false>::free(begin, size());
         }
 
+        bool empty() const { return begin == end;}
         size_t size() const { return end + pad_right - begin; }
         size_t remaining() const { return end - pos; }
     };
@@ -102,8 +106,8 @@ private:
 
     /// Last contiguous MemoryChunk of memory.
     MemoryChunk head;
-    size_t allocated_bytes;
-    size_t used_bytes;
+    size_t allocated_bytes = 0;
+    size_t used_bytes = 0;
     size_t page_size;
 
     static size_t roundUpToPageSize(size_t s, size_t page_size)
@@ -117,7 +121,7 @@ private:
     {
         size_t size_after_grow = 0;
 
-        if (head.size() == 0)
+        if (head.empty())
         {
             size_after_grow = initial_size;
         }
@@ -146,7 +150,7 @@ private:
     void NO_INLINE addMemoryChunk(size_t min_size)
     {
         size_t next_size = nextSize(min_size + pad_right);
-        if (!head.begin)
+        if (head.empty())
         {
             head = MemoryChunk(next_size);
         }
@@ -167,8 +171,6 @@ public:
         : initial_size(initial_size_)
         , growth_factor(growth_factor_)
         , linear_growth_threshold(linear_growth_threshold_)
-        , allocated_bytes(head.size())
-        , used_bytes(0)
         , page_size(static_cast<size_t>(::getPageSize()))
     {
     }
