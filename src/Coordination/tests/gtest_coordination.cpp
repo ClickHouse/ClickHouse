@@ -71,15 +71,6 @@ protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
     Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
 
-    void SetUp() override
-    {
-        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
-
-        keeper_context->local_logs_preprocessed = true;
-    }
-
     void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
 
     void setSnapshotDirectory(const std::string & path)
@@ -307,9 +298,7 @@ TEST_P(CoordinationTest, ChangelogTestSimple)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
     auto entry = getLogEntry("hello world", 77);
     changelog.append(entry);
@@ -339,9 +328,7 @@ TEST_P(CoordinationTest, ChangelogTestFile)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
     auto entry = getLogEntry("hello world", 77);
     changelog.append(entry);
@@ -373,9 +360,7 @@ TEST_P(CoordinationTest, ChangelogReadWrite)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 10; ++i)
@@ -390,9 +375,7 @@ TEST_P(CoordinationTest, ChangelogReadWrite)
     waitDurableLogs(changelog);
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000}, keeper_context);
     changelog_reader.init(1, 0);
     EXPECT_EQ(changelog_reader.size(), 10);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), changelog.last_entry()->get_term());
@@ -415,9 +398,7 @@ TEST_P(CoordinationTest, ChangelogWriteAt)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000}, keeper_context);
     changelog.init(1, 0);
     for (size_t i = 0; i < 10; ++i)
     {
@@ -440,9 +421,7 @@ TEST_P(CoordinationTest, ChangelogWriteAt)
     EXPECT_EQ(changelog.next_slot(), 8);
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000}, keeper_context);
     changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), changelog.size());
@@ -459,9 +438,7 @@ TEST_P(CoordinationTest, ChangelogTestAppendAfterRead)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
     for (size_t i = 0; i < 7; ++i)
     {
@@ -478,9 +455,7 @@ TEST_P(CoordinationTest, ChangelogTestAppendAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), 7);
@@ -545,9 +520,7 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 3; ++i)
@@ -597,9 +570,7 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
     EXPECT_EQ(changelog.last_entry()->get_term(), 60);
     /// And we able to read it
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog_reader.init(7, 0);
 
     EXPECT_EQ(changelog_reader.size(), 1);
@@ -615,9 +586,7 @@ TEST_P(CoordinationTest, ChangelogTestBatchOperations)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
     changelog.init(1, 0);
     for (size_t i = 0; i < 10; ++i)
     {
@@ -633,9 +602,7 @@ TEST_P(CoordinationTest, ChangelogTestBatchOperations)
     auto entries = changelog.pack(1, 5);
 
     DB::KeeperLogStore apply_changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
     apply_changelog.init(1, 0);
 
     for (size_t i = 0; i < 10; ++i)
@@ -672,9 +639,7 @@ TEST_P(CoordinationTest, ChangelogTestBatchOperationsEmpty)
     nuraft::ptr<nuraft::buffer> entries;
     {
         DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog.init(1, 0);
         for (size_t i = 0; i < 10; ++i)
         {
@@ -693,9 +658,7 @@ TEST_P(CoordinationTest, ChangelogTestBatchOperationsEmpty)
     ChangelogDirTest test1("./logs1");
     setLogDirectory("./logs1");
     DB::KeeperLogStore changelog_new(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
     changelog_new.init(1, 0);
     EXPECT_EQ(changelog_new.size(), 0);
 
@@ -718,9 +681,7 @@ TEST_P(CoordinationTest, ChangelogTestBatchOperationsEmpty)
     EXPECT_EQ(changelog_new.next_slot(), 11);
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
     changelog_reader.init(5, 0);
 }
 
@@ -732,9 +693,7 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 33; ++i)
@@ -776,9 +735,7 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
 
     DB::KeeperLogStore changelog_read(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog_read.init(1, 0);
     EXPECT_EQ(changelog_read.size(), 7);
     EXPECT_EQ(changelog_read.start_index(), 1);
@@ -793,9 +750,7 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtFileBorder)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 33; ++i)
@@ -837,9 +792,7 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtFileBorder)
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
 
     DB::KeeperLogStore changelog_read(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog_read.init(1, 0);
     EXPECT_EQ(changelog_read.size(), 11);
     EXPECT_EQ(changelog_read.start_index(), 1);
@@ -854,9 +807,7 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtAllFiles)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
     for (size_t i = 0; i < 33; ++i)
     {
@@ -904,9 +855,7 @@ TEST_P(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
@@ -928,9 +877,7 @@ TEST_P(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     EXPECT_FALSE(fs::exists("./logs/changelog_36_40.bin" + params.extension));
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog_reader.init(1, 0);
 
     auto entry = getLogEntry("36_hello_world", 360);
@@ -977,9 +924,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     setLogDirectory(log_folder);
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
@@ -1004,9 +949,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     plain_buf.truncate(0);
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog_reader.init(1, 0);
     changelog_reader.end_of_append_batch(0, 0);
 
@@ -1040,15 +983,12 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
 
     DB::KeeperLogStore changelog_reader2(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog_reader2.init(1, 0);
     EXPECT_EQ(changelog_reader2.size(), 11);
     EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
 }
 
-/// Truncating all entries
 TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 {
     auto params = GetParam();
@@ -1056,9 +996,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
@@ -1077,9 +1015,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     plain_buf.truncate(30);
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20}, keeper_context);
     changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), 0);
@@ -1095,67 +1031,10 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
 
     DB::KeeperLogStore changelog_reader2(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1}, keeper_context);
     changelog_reader2.init(1, 0);
     EXPECT_EQ(changelog_reader2.size(), 1);
     EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
-}
-
-/// Truncating only some entries from the end
-TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
-{
-    auto params = GetParam();
-
-    /// For compressed logs we have no reliable way of knowing how many log entries were lost 
-    /// after we truncate some bytes from the end
-    if (!params.extension.empty())
-        return;
-
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20},
-        DB::FlushSettings(),
-        keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 35; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-        changelog.append(entry);
-    }
-
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
-
-    DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-    plain_buf.truncate(plain_buf.size() - 30);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20},
-        DB::FlushSettings(),
-        keeper_context);
-    changelog_reader.init(1, 0);
-
-    EXPECT_EQ(changelog_reader.size(), 19);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
-    EXPECT_TRUE(fs::exists("./logs/changelog_20_39.bin" + params.extension));
-    auto entry = getLogEntry("hello_world", 7777);
-    changelog_reader.append(entry);
-    changelog_reader.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog_reader);
-
-    EXPECT_EQ(changelog_reader.size(), 20);
-    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
 }
 
 TEST_P(CoordinationTest, ChangelogTestLostFiles)
@@ -1165,9 +1044,7 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
@@ -1184,9 +1061,7 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
     fs::remove("./logs/changelog_1_20.bin" + params.extension);
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20}, keeper_context);
     /// It should print error message, but still able to start
     changelog_reader.init(5, 0);
     assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
@@ -1199,9 +1074,7 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles2)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10}, keeper_context);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
@@ -1222,9 +1095,7 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles2)
     fs::remove("./logs/changelog_21_30.bin" + params.extension);
 
     DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10}, keeper_context);
     /// It should print error message, but still able to start
     changelog_reader.init(5, 0);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
@@ -1384,32 +1255,26 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     n2.setData("123456");
     n2.addChild("");
 
-    /// Note: Below, we check in many cases only that getApproximateDataSize() > 0. This is because
-    ///       the SnapshotableHashTable's approximate data size includes Node's sizeInBytes(). The
-    ///       latter includes sizeof(absl::flat_hash_set) which is surprisingly not constant across
-    ///       different runs. The approximate size is only used for statistics accounting, so this
-    ///       should be okay.
-
     world.disableSnapshotMode();
     world.insert("world", n1);
-    EXPECT_GT(world.getApproximateDataSize(), 0);
+    EXPECT_EQ(world.getApproximateDataSize(), 193);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_GT(world.getApproximateDataSize(), 0);
+    EXPECT_EQ(world.getApproximateDataSize(), 211);
 
     world.erase("world");
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 
     world.enableSnapshotMode(100000);
     world.insert("world", n1);
-    EXPECT_GT(world.getApproximateDataSize(), 0);
+    EXPECT_EQ(world.getApproximateDataSize(), 193);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_GT(world.getApproximateDataSize(), 0);
+    EXPECT_EQ(world.getApproximateDataSize(), 404);
 
     world.clearOutdatedNodes();
-    EXPECT_GT(world.getApproximateDataSize(), 0);
+    EXPECT_EQ(world.getApproximateDataSize(), 211);
 
     world.erase("world");
-    EXPECT_GT(world.getApproximateDataSize(), 0);
+    EXPECT_EQ(world.getApproximateDataSize(), 211);
 
     world.clear();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
@@ -1690,7 +1555,6 @@ void testLogAndStateMachine(
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = enable_compression, .rotate_interval = settings->rotate_log_storage_interval},
-        DB::FlushSettings(),
         keeper_context);
     changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
     for (size_t i = 1; i < total_logs + 1; ++i)
@@ -1735,7 +1599,6 @@ void testLogAndStateMachine(
     DB::KeeperLogStore restore_changelog(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = enable_compression, .rotate_interval = settings->rotate_log_storage_interval},
-        DB::FlushSettings(),
         keeper_context);
     restore_changelog.init(restore_machine->last_commit_index() + 1, settings->reserved_log_items);
 
@@ -1988,9 +1851,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     setLogDirectory("./logs");
     {
         DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
 
         changelog.init(0, 3);
         for (size_t i = 1; i < 55; ++i)
@@ -2009,9 +1870,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin" + params.extension));
 
     DB::KeeperLogStore changelog_1(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10}, keeper_context);
     changelog_1.init(0, 50);
     for (size_t i = 0; i < 55; ++i)
     {
@@ -2028,9 +1887,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
 
     DB::KeeperLogStore changelog_2(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 7},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 7}, keeper_context);
     changelog_2.init(98, 55);
 
     for (size_t i = 0; i < 17; ++i)
@@ -2054,9 +1911,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin" + params.extension));
 
     DB::KeeperLogStore changelog_3(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
     changelog_3.init(116, 3);
     for (size_t i = 0; i < 17; ++i)
     {
@@ -2106,9 +1961,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     ChangelogDirTest logs("./logs");
     setLogDirectory("./logs");
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
 
     changelog.init(0, 3);
     for (size_t i = 1; i < 55; ++i)
@@ -2123,9 +1976,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     waitDurableLogs(changelog);
 
     DB::KeeperLogStore changelog1(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
     changelog1.init(0, 3);
     for (size_t i = 55; i < 70; ++i)
     {
@@ -2139,9 +1990,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     waitDurableLogs(changelog1);
 
     DB::KeeperLogStore changelog2(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
     changelog2.init(0, 3);
     for (size_t i = 70; i < 80; ++i)
     {
@@ -2207,10 +2056,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     setLogDirectory("./logs");
     {
         LOG_INFO(log, "================First time=====================");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+        DB::KeeperLogStore changelog(DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
         changelog.append(entry);
@@ -2222,9 +2068,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     {
         LOG_INFO(log, "================Second time=====================");
         DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
         changelog.append(entry);
@@ -2236,9 +2080,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     {
         LOG_INFO(log, "================Third time=====================");
         DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
         changelog.append(entry);
@@ -2250,9 +2092,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
     {
         LOG_INFO(log, "================Fourth time=====================");
         DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
         changelog.append(entry);
@@ -2272,9 +2112,7 @@ TEST_P(CoordinationTest, ChangelogInsertMultipleTimesSmooth)
     {
         LOG_INFO(log, "================First time=====================");
         DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog.init(1, 0);
         for (size_t j = 0; j < 7; ++j)
         {
@@ -2286,9 +2124,7 @@ TEST_P(CoordinationTest, ChangelogInsertMultipleTimesSmooth)
     }
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
     changelog.init(1, 0);
     EXPECT_EQ(changelog.next_slot(), 36 * 7 + 1);
 }
@@ -2301,9 +2137,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     {
         LOG_INFO(log, "================First time=====================");
         DB::KeeperLogStore changelog1(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog1.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
         changelog1.append(entry);
@@ -2315,9 +2149,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     {
         LOG_INFO(log, "================Second time=====================");
         DB::KeeperLogStore changelog2(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog2.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
         changelog2.append(entry);
@@ -2329,9 +2161,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     {
         LOG_INFO(log, "================Third time=====================");
         DB::KeeperLogStore changelog3(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog3.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
         changelog3.append(entry);
@@ -2343,9 +2173,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     {
         LOG_INFO(log, "================Fourth time=====================");
         DB::KeeperLogStore changelog4(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100},
-            DB::FlushSettings(),
-            keeper_context);
+            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
         changelog4.init(1, 0);
         auto entry = getLogEntry("hello_world", 1000);
         changelog4.append(entry);
@@ -2407,9 +2235,7 @@ TEST_P(CoordinationTest, TestLogGap)
     setLogDirectory("./logs");
 
     DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
 
     changelog.init(0, 3);
     for (size_t i = 1; i < 55; ++i)
@@ -2422,9 +2248,7 @@ TEST_P(CoordinationTest, TestLogGap)
     }
 
     DB::KeeperLogStore changelog1(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100},
-        DB::FlushSettings(),
-        keeper_context);
+        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
     changelog1.init(61, 3);
 
     /// Logs discarded
@@ -2773,7 +2597,6 @@ TEST_P(CoordinationTest, ChangelogTestMaxLogSize)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{
                 .force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20, .max_size = 50 * 1024 * 1024},
-            DB::FlushSettings(),
             keeper_context);
         changelog.init(1, 0);
 
@@ -2793,7 +2616,6 @@ TEST_P(CoordinationTest, ChangelogTestMaxLogSize)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{
                 .force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100'000, .max_size = 4000},
-            DB::FlushSettings(),
             keeper_context);
         changelog.init(1, 0);
 
@@ -2815,7 +2637,6 @@ TEST_P(CoordinationTest, ChangelogTestMaxLogSize)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{
                 .force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100'000, .max_size = 4000},
-            DB::FlushSettings(),
             keeper_context);
         changelog.init(1, 0);
         ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
@@ -2931,7 +2752,7 @@ TEST_P(CoordinationTest, TestReapplyingDeltas)
     commit_initial_data(storage1);
 
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
-        storage1.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
+        storage1.preprocessRequest(create_request, 1, 0, zxid);
 
     /// create identical new storage
     KeeperStorage storage2{500, "", keeper_context};
@@ -2975,5 +2796,14 @@ TEST_P(CoordinationTest, TestReapplyingDeltas)
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,
     ::testing::ValuesIn(std::initializer_list<CompressionParam>{CompressionParam{true, ".zstd"}, CompressionParam{false, ""}}));
+
+int main(int argc, char ** argv)
+{
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("trace");
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
 
 #endif

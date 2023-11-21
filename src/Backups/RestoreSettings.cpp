@@ -164,7 +164,6 @@ namespace
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, allow_s3_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
-    M(Bool, restore_broken_parts_as_detached) \
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalString, storage_policy) \

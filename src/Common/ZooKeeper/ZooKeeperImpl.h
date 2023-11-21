@@ -15,8 +15,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -105,11 +103,11 @@ public:
     struct Node
     {
         Poco::Net::SocketAddress address;
-        UInt8 original_index;
         bool secure;
     };
 
     using Nodes = std::vector<Node>;
+    using ConnectedCallback = std::function<void(size_t, const Node&)>;
 
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
@@ -118,17 +116,14 @@ public:
     ZooKeeper(
         const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_,
+        std::optional<ConnectedCallback> && connected_callback_ = {});
 
     ~ZooKeeper() override;
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
-
-    Int8 getConnectedNodeIdx() const override { return original_index; }
-    String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
-    int32_t getConnectionXid() const override { return next_xid.load(); }
 
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.
@@ -224,7 +219,7 @@ private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
-    Int8 original_index = -1;
+    std::optional<ConnectedCallback> connected_callback = {};
 
     /// Fault injection
     void maybeInjectSendFault();
@@ -241,13 +236,8 @@ private:
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
     Poco::Net::SocketAddress socket_address;
-
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
-    std::optional<CompressedReadBuffer> compressed_in;
-    std::optional<CompressedWriteBuffer> compressed_out;
-
-    bool use_compression = false;
 
     int64_t session_id = 0;
 
@@ -334,10 +324,6 @@ private:
 
     template <typename T>
     void read(T &);
-
-    WriteBuffer & getWriteBuffer();
-    void flushWriteBuffer();
-    ReadBuffer & getReadBuffer();
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 

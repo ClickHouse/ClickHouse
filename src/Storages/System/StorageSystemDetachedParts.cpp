@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -232,19 +231,6 @@ private:
                 new_columns[res_index++]->insert(bytes_on_disk);
             }
             if (columns_mask[src_index++])
-            {
-                Poco::Timestamp modification_time{};
-                try
-                {
-                    modification_time = p.disk->getLastModified(fs::path(current_info.data->getRelativeDataPath()) / MergeTreeData::DETACHED_DIR_NAME / p.dir_name);
-                }
-                catch (const fs::filesystem_error &)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
-                new_columns[res_index++]->insert(static_cast<UInt64>(modification_time.epochTime()));
-            }
-            if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(p.disk->getName());
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert((fs::path(current_info.data->getFullPathOnDisk(p.disk)) / MergeTreeData::DETACHED_DIR_NAME / p.dir_name).string());
@@ -274,13 +260,12 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
         {"partition_id",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"name",             std::make_shared<DataTypeString>()},
         {"bytes_on_disk",    std::make_shared<DataTypeUInt64>()},
-        {"modification_time",std::make_shared<DataTypeDateTime>()},
         {"disk",             std::make_shared<DataTypeString>()},
         {"path",             std::make_shared<DataTypeString>()},
         {"reason",           std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
         {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
-        {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())},
+        {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())}
     }});
     setInMemoryMetadata(storage_metadata);
 }

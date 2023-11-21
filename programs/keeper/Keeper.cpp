@@ -35,7 +35,7 @@
 
 #include "Core/Defines.h"
 #include "config.h"
-#include <Common/config_version.h>
+#include "config_version.h"
 #include "config_tools.h"
 
 
@@ -50,9 +50,6 @@
 
 #include <Disks/registerDisks.h>
 
-#include <incbin.h>
-/// A minimal file used when the keeper is run without installation
-INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
@@ -161,8 +158,6 @@ int Keeper::run()
 
 void Keeper::initialize(Poco::Util::Application & self)
 {
-    ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(gkeeper_resource_embedded_xmlData), gkeeper_resource_embedded_xmlSize));
-
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -490,8 +485,6 @@ try
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
-            updateLevels(*config, logger());
-
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
 
@@ -562,13 +555,11 @@ catch (...)
 
 void Keeper::logRevision() const
 {
-    LOG_INFO(&Poco::Logger::get("Application"),
-        "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
-        VERSION_STRING,
-        ClickHouseRevision::getVersionRevision(),
-        git_hash.empty() ? "<unknown>" : git_hash,
-        build_id.empty() ? "<unknown>" : build_id,
-        getpid());
+    Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
+        + "(revision : " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
+        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
+        + ", PID " + std::to_string(getpid()));
 }
 
 

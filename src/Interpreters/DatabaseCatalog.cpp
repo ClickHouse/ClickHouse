@@ -1,5 +1,4 @@
 #include <string>
-#include <mutex>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
@@ -62,7 +61,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
-class DatabaseNameHints : public IHints<>
+class DatabaseNameHints : public IHints<1, DatabaseNameHints>
 {
 public:
     explicit DatabaseNameHints(const DatabaseCatalog & database_catalog_)
@@ -201,14 +200,11 @@ void DatabaseCatalog::createBackgroundTasks()
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto drop_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
-    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
-
-    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->reloadDisksTask(); });
-    reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
+    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
 }
 
-void DatabaseCatalog::startupBackgroundTasks()
+void DatabaseCatalog::startupBackgroundCleanup()
 {
     /// And it has to be done after all databases are loaded, otherwise cleanup_task may remove something that should not be removed
     if (cleanup_task)
@@ -901,37 +897,19 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
     /// TSA does not support unique_lock
     auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database);
+    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
 }
 
-DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)
+std::unique_lock<SharedMutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
 {
     DDLGuards::iterator db_guard_iter;
     {
         std::lock_guard lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
+        assert(db_guard_iter->second.first.contains(""));
     }
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return db_guard;
-}
-
-std::unique_lock<SharedMutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
-{
-    return std::unique_lock{getDatabaseGuard(database).database_ddl_mutex};
-}
-
-std::unique_lock<SharedMutex> DatabaseCatalog::getLockForDropDatabase(const String & database)
-{
-    return std::unique_lock{getDatabaseGuard(database).restart_replica_mutex};
-}
-
-std::optional<std::shared_lock<SharedMutex>> DatabaseCatalog::tryGetLockForRestartReplica(const String & database)
-{
-    DatabaseGuard & db_guard = getDatabaseGuard(database);
-    std::shared_lock lock(db_guard.restart_replica_mutex, std::defer_lock);
-    if (lock.try_lock())
-        return lock;
-    return {};
+    return std::unique_lock{db_guard.second};
 }
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
@@ -1578,37 +1556,6 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
                                                 unused_dir, disk->getName(), disk->getPath()));
         return false;
     }
-}
-
-void DatabaseCatalog::reloadDisksTask()
-{
-    std::set<String> disks;
-    {
-        std::lock_guard lock{reload_disks_mutex};
-        disks.swap(disks_to_reload);
-    }
-
-    for (auto & database : getDatabases())
-    {
-        auto it = database.second->getTablesIterator(getContext());
-        while (it->isValid())
-        {
-            auto table = it->table();
-            table->initializeDiskOnConfigChange(disks);
-            it->next();
-        }
-    }
-
-    std::lock_guard lock{reload_disks_mutex};
-    if (!disks_to_reload.empty()) /// during reload, another disks configuration change
-        (*reload_disks_task)->scheduleAfter(DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC * 1000);
-}
-
-void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
-{
-    std::lock_guard lock{reload_disks_mutex};
-    disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
-    (*reload_disks_task)->schedule();
 }
 
 static void maybeUnlockUUID(UUID uuid)

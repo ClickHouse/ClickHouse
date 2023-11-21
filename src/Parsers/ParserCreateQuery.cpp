@@ -29,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -527,7 +526,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         break;
     }
-
     // If any part of storage definition is found create storage node
     if (!storage_like)
         return false;
@@ -1343,7 +1341,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserKeyword s_populate("POPULATE");
-    ParserKeyword s_empty("EMPTY");
     ParserKeyword s_or_replace("OR REPLACE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -1439,26 +1436,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (s_populate.ignore(pos, expected))
             is_populate = true;
-        else if (s_empty.ignore(pos, expected))
+        else if (ParserKeyword{"EMPTY"}.ignore(pos, expected))
             is_create_empty = true;
-
-        if (ParserKeyword{"TO"}.ignore(pos, expected))
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'ENGINE' and 'TO [db].[table]'");
-    }
-    else
-    {
-        if (storage_p.ignore(pos, expected))
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
-
-        if (s_populate.ignore(pos, expected))
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
-
-        if (s_empty.ignore(pos, expected))
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
     }
 
     /// AS SELECT ...
@@ -1517,8 +1496,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
-    ParserKeyword s_not_overridable("NOT OVERRIDABLE");
-    ParserKeyword s_overridable("OVERRIDABLE");
     ParserIdentifier name_p;
     ParserToken s_comma(TokenType::Comma);
 
@@ -1549,7 +1526,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         return false;
 
     SettingsChanges changes;
-    std::unordered_map<String, bool> overridability;
 
     while (true)
     {
@@ -1560,10 +1536,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
         if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
             return false;
-        if (s_not_overridable.ignore(pos, expected))
-            overridability.emplace(changes.back().name, false);
-        else if (s_overridable.ignore(pos, expected))
-            overridability.emplace(changes.back().name, true);
     }
 
     auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
@@ -1572,7 +1544,6 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     query->if_not_exists = if_not_exists;
     query->changes = changes;
     query->cluster = std::move(cluster_str);
-    query->overridability = overridability;
 
     node = query;
     return true;

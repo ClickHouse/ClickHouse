@@ -113,13 +113,6 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
 }
 
 template <class Queue>
-size_t MergeTreeBackgroundExecutor<Queue>::getMaxThreads() const
-{
-    std::lock_guard lock(mutex);
-    return threads_count;
-}
-
-template <class Queue>
 size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 {
     return max_tasks_count.load(std::memory_order_relaxed);
@@ -281,8 +274,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
-        if (item->task->printExecutionException())
-            printExceptionWithRespectToAbort(log, query_id);
+        printExceptionWithRespectToAbort(log, query_id);
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
         release_task(std::move(item));
