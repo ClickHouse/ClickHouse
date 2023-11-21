@@ -23,9 +23,9 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr, co
     for (const auto & pair : formats)
     {
         const auto & [format_name, creators] = pair;
-        UInt64 has_input_format(creators.input_creator != nullptr || creators.random_access_input_creator != nullptr);
+        UInt64 has_input_format(creators.input_creator != nullptr);
         UInt64 has_output_format(creators.output_creator != nullptr);
-        UInt64 supports_parallel_parsing(creators.file_segmentation_engine != nullptr || creators.random_access_input_creator != nullptr);
+        UInt64 supports_parallel_parsing(creators.file_segmentation_engine != nullptr);
         UInt64 supports_parallel_formatting(creators.supports_parallel_formatting);
 
         res_columns[0]->insert(format_name);

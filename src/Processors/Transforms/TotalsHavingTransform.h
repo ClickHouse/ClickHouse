@@ -2,9 +2,13 @@
 
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
+#include <Common/Arena.h>
 
 namespace DB
 {
+
+class Arena;
+using ArenaPtr = std::shared_ptr<Arena>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;

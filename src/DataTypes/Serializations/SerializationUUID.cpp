@@ -1,11 +1,12 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationUUID.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
-#include <ranges>
 
 namespace DB
 {
@@ -50,11 +51,19 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     {
         assertChar('\'', istr);
         char * next_pos = find_first_symbols<'\\', '\''>(istr.position(), istr.buffer().end());
-        const size_t len = next_pos - istr.position();
-        if ((len == 32 || len == 36) && istr.position()[len] == '\'')
+        size_t len = next_pos - istr.position();
+        if ((len == 32) && (istr.position()[32] == '\''))
         {
-            uuid = parseUUID(std::span(reinterpret_cast<const UInt8 *>(istr.position()), len));
-            istr.ignore(len + 1);
+            parseUUIDWithoutSeparator(
+                reinterpret_cast<const UInt8 *>(istr.position()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+            istr.ignore(33);
+            fast = true;
+        }
+        else if ((len == 36) && (istr.position()[36] == '\''))
+        {
+            parseUUID(
+                reinterpret_cast<const UInt8 *>(istr.position()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+            istr.ignore(37);
             fast = true;
         }
         else
@@ -110,62 +119,48 @@ void SerializationUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     UUID x = field.get<UUID>();
-    writeBinaryLittleEndian(x, ostr);
+    writeBinary(x, ostr);
 }
 
 void SerializationUUID::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
-    readBinaryLittleEndian(x, istr);
+    readBinary(x, istr);
     field = NearestFieldType<UUID>(x);
 }
 
 void SerializationUUID::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeBinaryLittleEndian(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
+    writeBinary(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
 }
 
 void SerializationUUID::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
-    readBinaryLittleEndian(x, istr);
+    readBinary(x, istr);
     assert_cast<ColumnVector<UUID> &>(column).getData().push_back(x);
 }
 
 void SerializationUUID::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const typename ColumnVector<UUID>::Container & x = typeid_cast<const ColumnVector<UUID> &>(column).getData();
-    if (const size_t size = x.size(); limit == 0 || offset + limit > size)
+
+    size_t size = x.size();
+
+    if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    if (limit == 0)
-        return;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
-    if constexpr (std::endian::native == std::endian::big)
-    {
-        for (size_t i = offset; i < offset + limit; ++i)
-            writeBinaryLittleEndian(x[i], ostr);
-    }
-    else
+    if (limit)
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(UUID) * limit);
-#pragma clang diagnostic pop
 }
 
 void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     typename ColumnVector<UUID>::Container & x = typeid_cast<ColumnVector<UUID> &>(column).getData();
-    const size_t initial_size = x.size();
+    size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(UUID) * limit);
+    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(UUID) * limit);
     x.resize(initial_size + size / sizeof(UUID));
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
-    if constexpr (std::endian::native == std::endian::big)
-        for (size_t i = initial_size; i < x.size(); ++i)
-            transformEndianness<std::endian::big, std::endian::little>(x[i]);
-#pragma clang diagnostic pop
 }
+
 }

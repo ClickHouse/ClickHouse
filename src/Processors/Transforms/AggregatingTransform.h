@@ -7,7 +7,6 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 
 namespace CurrentMetrics
 {
@@ -107,7 +106,7 @@ struct ManyAggregatedData
                 {
                     // variant is moved here and will be destroyed in the destructor of the lambda function.
                     pool->trySchedule(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
+                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
                             SCOPE_EXIT_SAFE(
                                 if (thread_group)
@@ -203,7 +202,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    std::atomic<bool> is_generate_initialized = false;
+    bool is_generate_initialized = false;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 

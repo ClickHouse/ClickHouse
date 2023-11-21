@@ -5,7 +5,6 @@
 #include <memory>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
-#include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/logger_useful.h>
 #include "Poco/Timer.h"
@@ -35,7 +34,7 @@ RabbitMQConsumer::RabbitMQConsumer(
 {
 }
 
-void RabbitMQConsumer::stop()
+void RabbitMQConsumer::shutdown()
 {
     stopped = true;
     cv.notify_one();
@@ -54,9 +53,10 @@ void RabbitMQConsumer::subscribe()
         consumer_channel->consume(queue_name)
         .onSuccess([&](const std::string & /* consumer_tag */)
         {
-            LOG_TRACE(
-                log, "Consumer on channel {} ({}/{}) is subscribed to queue {}",
-                channel_id, subscriptions_num, queues.size(), queue_name);
+            LOG_TRACE(log, "Consumer on channel {} is subscribed to queue {}", channel_id, queue_name);
+
+            if (++subscribed == queues.size())
+                wait_subscription.store(false);
         })
         .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
@@ -64,15 +64,9 @@ void RabbitMQConsumer::subscribe()
             {
                 String message_received = std::string(message.body(), message.body() + message.bodySize());
 
-                MessageData result{
-                    .message = message_received,
-                    .message_id = message.hasMessageID() ? message.messageID() : "",
-                    .timestamp = message.hasTimestamp() ? message.timestamp() : 0,
-                    .redelivered = redelivered,
-                    .delivery_tag = delivery_tag,
-                    .channel_id = channel_id};
-
-                if (!received.push(std::move(result)))
+                if (!received.push({message_received, message.hasMessageID() ? message.messageID() : "",
+                        message.hasTimestamp() ? message.timestamp() : 0,
+                        redelivered, AckTracker(delivery_tag, channel_id)}))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
 
                 cv.notify_one();
@@ -80,99 +74,97 @@ void RabbitMQConsumer::subscribe()
         })
         .onError([&](const char * message)
         {
-            /* End up here either if channel ends up in an error state (then there will be resubscription)
-             * or consume call error, which arises from queue settings mismatch or queue level error,
-             * which should not happen as no one else is supposed to touch them
+            /* End up here either if channel ends up in an error state (then there will be resubscription) or consume call error, which
+             * arises from queue settings mismatch or queue level error, which should not happen as no one else is supposed to touch them
              */
             LOG_ERROR(log, "Consumer failed on channel {}. Reason: {}", channel_id, message);
-            state = State::ERROR;
+            wait_subscription.store(false);
         });
     }
 }
 
 
-bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
+bool RabbitMQConsumer::ackMessages()
 {
-    if (state != State::OK)
-        return false;
+    AckTracker record_info = last_inserted_record_info;
 
-    /// Nothing to ack.
-    if (!commit_info.delivery_tag)
-        return false;
-
-    /// Do not send ack to server if message's channel is not the same as
-    /// current running channel because delivery tags are scoped per channel,
-    /// so if channel fails, all previous delivery tags become invalid.
-    if (commit_info.channel_id != channel_id)
-        return false;
-
-    /// Duplicate ack?
-    if (commit_info.delivery_tag > last_commited_delivery_tag
-        && consumer_channel->ack(commit_info.delivery_tag, AMQP::multiple))
+    /* Do not send ack to server if message's channel is not the same as current running channel because delivery tags are scoped per
+     * channel, so if channel fails, all previous delivery tags become invalid
+     */
+    if (record_info.channel_id == channel_id && record_info.delivery_tag && record_info.delivery_tag > prev_tag)
     {
-        last_commited_delivery_tag = commit_info.delivery_tag;
+        /// Commit all received messages with delivery tags from last committed to last inserted
+        if (!consumer_channel->ack(record_info.delivery_tag, AMQP::multiple))
+        {
+            LOG_ERROR(log, "Failed to commit messages with delivery tags from last committed to {} on channel {}",
+                     record_info.delivery_tag, channel_id);
+            return false;
+        }
 
-        LOG_TRACE(
-            log, "Consumer committed messages with deliveryTags up to {} on channel {}",
-            last_commited_delivery_tag, channel_id);
-
-        return true;
+        prev_tag = record_info.delivery_tag;
+        LOG_TRACE(log, "Consumer committed messages with deliveryTags up to {} on channel {}", record_info.delivery_tag, channel_id);
     }
 
-    LOG_ERROR(
-        log,
-        "Did not commit messages for {}:{}, (current commit point {}:{})",
-        commit_info.channel_id, commit_info.delivery_tag,
-        channel_id, last_commited_delivery_tag);
-
-    return false;
+    return true;
 }
 
 
-void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
+void RabbitMQConsumer::updateAckTracker(AckTracker record_info)
 {
-    state = State::INITIALIZING;
-    last_commited_delivery_tag = 0;
+    if (record_info.delivery_tag && channel_error.load())
+        return;
 
-    consumer_channel = connection.createChannel();
+    if (!record_info.delivery_tag)
+        prev_tag = 0;
+
+    last_inserted_record_info = record_info;
+}
+
+
+void RabbitMQConsumer::setupChannel()
+{
+    if (!consumer_channel)
+        return;
+
+    wait_subscription.store(true);
+
     consumer_channel->onReady([&]()
     {
-        try
-        {
-            /// 1. channel_id_base - indicates current consumer buffer.
-            /// 2. channel_id_couner - indicates serial number of created channel for current buffer
-            ///    (incremented on each channel update).
-            /// 3. channel_base is to guarantee that channel_id is unique for each table.
-            channel_id = fmt::format("{}_{}_{}", channel_id_base, channel_id_counter++, channel_base);
+        /* First number indicates current consumer buffer; second number indicates serial number of created channel for current buffer,
+         * i.e. if channel fails - another one is created and its serial number is incremented; channel_base is to guarantee that
+         * channel_id is unique for each table
+         */
+        channel_id = std::to_string(channel_id_base) + "_" + std::to_string(channel_id_counter++) + "_" + channel_base;
+        LOG_TRACE(log, "Channel {} is created", channel_id);
 
-            LOG_TRACE(log, "Channel {} is successfully created", channel_id);
-
-            subscriptions_num = 0;
-            subscribe();
-
-            state = State::OK;
-        }
-        catch (...)
-        {
-            state = State::ERROR;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        subscribed = 0;
+        subscribe();
+        channel_error.store(false);
     });
 
     consumer_channel->onError([&](const char * message)
     {
-        LOG_ERROR(log, "Channel {} in an error state: {}", channel_id, message);
-        state = State::ERROR;
+        LOG_ERROR(log, "Channel {} error: {}", channel_id, message);
+
+        channel_error.store(true);
+        wait_subscription.store(false);
     });
 }
 
 
 bool RabbitMQConsumer::needChannelUpdate()
 {
-    chassert(consumer_channel);
-    return state == State::ERROR;
+    if (wait_subscription)
+        return false;
+
+    return channel_error || !consumer_channel || !consumer_channel->usable();
 }
 
+
+void RabbitMQConsumer::iterateEventLoop()
+{
+    event_handler.iterateLoop();
+}
 
 ReadBufferPtr RabbitMQConsumer::consume()
 {

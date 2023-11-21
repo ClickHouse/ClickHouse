@@ -517,11 +517,12 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     SipHash sip_hash;
     sip_hash.update(original_name);
     if (create.columns_list)
-        create.columns_list->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
+        create.columns_list->updateTreeHash(sip_hash);
     if (create.storage)
-        create.storage->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
+        create.storage->updateTreeHash(sip_hash);
 
-    const auto hash = getSipHash128AsPair(sip_hash);
+    IAST::Hash hash;
+    sip_hash.get128(hash);
 
     /// Save only tables with unique definition.
     if (created_tables_hashes.insert(hash).second)
@@ -847,9 +848,6 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
 
 void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 {
-    if (ast == nullptr)
-        return;
-
     auto remove_fuzzed_table = [this](const auto & table_name)
     {
         auto pos = table_name.find("__fuzz_");
@@ -1246,7 +1244,7 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     std::cout << std::endl;
     WriteBufferFromOStream ast_buf(std::cout, 4096);
     formatAST(*ast, ast_buf, false /*highlight*/);
-    ast_buf.finalize();
+    ast_buf.next();
     std::cout << std::endl << std::endl;
 }
 

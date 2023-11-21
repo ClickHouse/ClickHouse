@@ -9,6 +9,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <re2/re2.h>
+
 namespace DB
 {
 
@@ -128,7 +130,7 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
                             "Named collection of connection parameters is missing some "
                             "of the parameters and dictionary parameters are not added");
         }
-        return ExternalDataSourceInfo{.configuration = configuration, .settings_changes = config_settings};
+        return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = {}, .settings_changes = config_settings };
     }
     return std::nullopt;
 }

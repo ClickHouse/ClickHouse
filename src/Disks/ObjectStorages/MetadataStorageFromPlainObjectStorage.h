@@ -29,10 +29,12 @@ private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
     ObjectStoragePtr object_storage;
-    String storage_path_prefix;
+    std::string object_storage_root_path;
 
 public:
-    MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_);
+    MetadataStorageFromPlainObjectStorage(
+        ObjectStoragePtr object_storage_,
+        const std::string & object_storage_root_path_);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -54,6 +56,8 @@ public:
 
     StoredObjects getStorageObjects(const std::string & path) const override;
 
+    std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
+
     Poco::Timestamp getLastModified(const std::string & /* path */) const override
     {
         /// Required by MergeTree
@@ -62,11 +66,14 @@ public:
 
     uint32_t getHardlinkCount(const std::string & /* path */) const override
     {
-        return 0;
+        return 1;
     }
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
+
+private:
+    std::filesystem::path getAbsolutePath(const std::string & path) const;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction
@@ -82,14 +89,14 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+    void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
     void createEmptyMetadataFile(const std::string & /* path */) override
     {
         /// No metadata, no need to create anything.
     }
 
-    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
+    void createMetadataFile(const std::string & /* path */, const std::string & /* blob_name */, uint64_t /* size_in_bytes */) override
     {
         /// Noop
     }

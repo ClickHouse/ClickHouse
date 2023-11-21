@@ -107,9 +107,8 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(
         const WriteSettings & write_settings_,
         size_t buf_size_,
         int flags_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_)
     , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, replication_, write_settings_, flags_))
-    , filename(hdfs_name_)
 {
 }
 
