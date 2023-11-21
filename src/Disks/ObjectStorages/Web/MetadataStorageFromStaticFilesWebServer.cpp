@@ -87,7 +87,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
     remote_path = remote_path.substr(object_storage.url.size());
 
     std::shared_lock shared_lock(object_storage.metadata_mutex);
-    return {StoredObject(remote_path, object_storage.files.at(path).size, path)};
+    return {StoredObject(remote_path, path, object_storage.files.at(path).size)};
 }
 
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const

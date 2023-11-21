@@ -12,6 +12,7 @@ node = cluster.add_instance(
         "configs/disk_s3.xml",
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
+        "configs/blob_log.xml",
     ],
     user_configs=[
         "configs/zookeeper_retries.xml",
@@ -51,10 +52,12 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
             """
         )
     )
-    return {
+    result = {
         event: int(value)
         for event, value in [line.split("\t") for line in events.lines]
     }
+    result["query_id"] = query_id
+    return result
 
 
 def format_settings(settings):
@@ -118,7 +121,7 @@ def check_backup_and_restore(
         )
 
 
-def check_system_tables():
+def check_system_tables(backup_query_id=None):
     disks = [
         tuple(disk.split("\t"))
         for disk in node.query("SELECT name, type FROM system.disks").split("\n")
@@ -135,6 +138,14 @@ def check_system_tables():
     for expected_disk in expected_disks:
         if expected_disk not in disks:
             raise AssertionError(f"Missed {expected_disk} in {disks}")
+
+    if backup_query_id is not None:
+        blob_storage_log = node.query(
+            f"SELECT count() FROM system.blob_storage_log WHERE query_id = '{backup_query_id}' AND error = '' AND event_type = 'Upload'"
+        ).strip()
+        assert int(blob_storage_log) >= 1, node.query(
+            "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
+        )
 
 
 @pytest.mark.parametrize(
@@ -179,8 +190,8 @@ def test_backup_to_s3():
     backup_destination = (
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
-    check_backup_and_restore(storage_policy, backup_destination)
-    check_system_tables()
+    (backup_events, _) = check_backup_and_restore(storage_policy, backup_destination)
+    check_system_tables(backup_events["query_id"])
 
 
 def test_backup_to_s3_named_collection():
@@ -201,6 +212,15 @@ def test_backup_to_s3_multipart():
     )
     assert node.contains_in_log(
         f"copyDataToS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
+    )
+
+    backup_query_id = backup_events["query_id"]
+    blob_storage_log = node.query(
+        f"SELECT countIf(event_type == 'MultiPartUploadCreate') * countIf(event_type == 'MultiPartUploadComplete') * countIf(event_type == 'MultiPartUploadWrite') "
+        f"FROM system.blob_storage_log WHERE query_id = '{backup_query_id}' AND error = ''"
+    ).strip()
+    assert int(blob_storage_log) >= 1, node.query(
+        "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
     )
 
     s3_backup_events = (
