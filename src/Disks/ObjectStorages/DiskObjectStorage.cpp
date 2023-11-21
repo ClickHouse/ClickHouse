@@ -285,10 +285,10 @@ void DiskObjectStorage::createHardLink(const String & src_path, const String & d
     createHardLink(src_path, dst_path, send_metadata);
 }
 
-bool DiskObjectStorage::lock(std::string_view path, DiskLockMode mode)
+bool DiskObjectStorage::lock(std::string_view path, bool block)
 {
     auto tx = createObjectStorageTransaction();
-    const bool res = tx->lock(path, mode);
+    const bool res = tx->lock(path, block);
     tx->commit();
     return res;
 }

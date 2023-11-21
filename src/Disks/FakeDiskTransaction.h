@@ -134,6 +134,9 @@ public:
         disk.createHardLink(src_path, dst_path);
     }
 
+    bool lock(std::string_view, bool) override { return false; }
+    void unlock(std::string_view) override {}
+
 private:
     IDisk & disk;
 };

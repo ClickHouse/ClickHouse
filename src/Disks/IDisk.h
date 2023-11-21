@@ -397,7 +397,7 @@ public:
     // will be used only for remote disks with VFS support for merges and mutations.
     // Moreover, the paths that we'd like to "lock" wouldn't be really existing ones so this looks
     // quite hacky
-    virtual bool lock(std::string_view path, DiskLockMode mode);
+    virtual bool lock(std::string_view path, bool block);
     virtual void unlock(std::string_view path);
 
     /// Invoked on partitions freeze query.

@@ -103,7 +103,7 @@ public:
     void createHardLink(const String & src_path, const String & dst_path) override;
     void createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata);
 
-    bool lock(std::string_view path, DiskLockMode mode) override;
+    bool lock(std::string_view path, bool blocking) override;
     void unlock(std::string_view path) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;

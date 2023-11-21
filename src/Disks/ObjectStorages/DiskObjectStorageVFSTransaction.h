@@ -35,7 +35,7 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
-    bool lock(std::string_view path, DiskLockMode mode) override;
+    bool lock(std::string_view path, bool block) override;
     void unlock(std::string_view path) override;
 
     auto shared_from_this()
