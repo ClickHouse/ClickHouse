@@ -851,7 +851,9 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 def test_s3_engine_heavy_write_check_mem(
     cluster, broken_s3, node_name, in_flight_memory
 ):
-    pytest.skip("Disabled, will be fixed after https://github.com/ClickHouse/ClickHouse/issues/51152")
+    pytest.skip(
+        "Disabled, will be fixed after https://github.com/ClickHouse/ClickHouse/issues/51152"
+    )
 
     in_flight = in_flight_memory[0]
     memory = in_flight_memory[1]
@@ -874,7 +876,9 @@ def test_s3_engine_heavy_write_check_mem(
     broken_s3.setup_fake_multpartuploads()
     slow_responces = 10
     slow_timeout = 15
-    broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=slow_timeout, count=slow_responces)
+    broken_s3.setup_slow_answers(
+        10 * 1024 * 1024, timeout=slow_timeout, count=slow_responces
+    )
 
     query_id = f"INSERT_INTO_S3_ENGINE_QUERY_ID_{in_flight}"
     node.query(
