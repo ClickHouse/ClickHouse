@@ -426,7 +426,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
         if (worker_pool)
         {
-            DDLQueryIdentifiers identifiers = collectIdentifiersForDDLQuery(task->query, context);
+            DDLQueryIdentifiers identifiers = collectIdentifiersForDDLQuery(saved_task.query, context);
             std::unique_lock lock(currently_executing_identifiers_mutex);
 
             currently_executing_identifiers_cv.wait(lock, [&] {return !hasIntersection(identifiers, currently_executing_identifiers); });
