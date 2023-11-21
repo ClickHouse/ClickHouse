@@ -209,7 +209,7 @@ public:
     /// is not going to be changed. Completed states: DOWNALODED, DETACHED.
     bool isCompleted(bool sync = false) const;
 
-    void use();
+    void increasePriority();
 
     /**
      * ========== Methods used by `cache` ========================

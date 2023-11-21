@@ -58,6 +58,12 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
 
     if (has("load_metadata_threads"))
         load_metadata_threads = get_uint("load_metadata_threads");
+
+    if (has("cache_policy"))
+        cache_policy = get_string("cache_policy");
+
+    // if (has("slru_size_ratio"))
+    //     slru_size_ratio = get_double("slru_size_ratio");
 }
 
 void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)

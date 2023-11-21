@@ -906,7 +906,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     setDetachedState(lock);
 }
 
-void FileSegment::use()
+void FileSegment::increasePriority()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentUseMicroseconds);
 
@@ -920,7 +920,7 @@ void FileSegment::use()
     if (it)
     {
         auto cache_lock = cache->lockCache();
-        hits_count = it->use(cache_lock);
+        hits_count = it->increasePriority(cache_lock);
     }
 }
 

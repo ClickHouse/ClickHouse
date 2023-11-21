@@ -31,6 +31,9 @@ struct FileCacheSettings
 
     size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
 
+    std::string cache_policy = "LRU";
+    double slru_size_ratio = 0.5;
+
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
     void loadFromCollection(const NamedCollection & collection);
 

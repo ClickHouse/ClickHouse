@@ -6,11 +6,6 @@
 #include <Common/logger_useful.h>
 #include "Interpreters/Cache/Guards.h"
 
-namespace CurrentMetrics
-{
-    extern const Metric FilesystemCacheSizeLimit;
-}
-
 namespace DB
 {
 
@@ -22,12 +17,10 @@ private:
     class LRUFileCacheIterator;
     using LRUQueue = std::list<Entry>;
     using LRUQueueIterator = typename LRUQueue::iterator;
+    friend class SLRUFileCachePriority;
 
 public:
-    LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_)
-    {
-        CurrentMetrics::set(CurrentMetrics::FilesystemCacheSizeLimit, max_size_);
-    }
+    LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_) {}
 
     size_t getSize(const CacheGuard::Lock &) const override { return current_size; }
 
@@ -35,13 +28,19 @@ public:
 
     Iterator add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
 
-    void pop(const CacheGuard::Lock &) override;
-
-    void removeAll(const CacheGuard::Lock &) override;
-
-    void iterate(IterateFunc && func, const CacheGuard::Lock &) override;
+    bool collectCandidatesForEviction(
+        size_t size,
+        FileCacheReserveStat & stat,
+        IFileCachePriority::EvictionCandidates & res,
+        IFileCachePriority::Iterator it,
+        FinalizeEvictionFunc & finalize_eviction_func,
+        const CacheGuard::Lock &) override;
 
     void shuffle(const CacheGuard::Lock &) override;
+
+    FileSegments dump(const CacheGuard::Lock &) override;
+
+    void pop(const CacheGuard::Lock & lock) { remove(queue.begin(), lock); }
 
 private:
     void updateElementsCount(int64_t num);
@@ -55,7 +54,19 @@ private:
     /// because of invalidated entries.
     std::atomic<size_t> current_elements_num = 0;
 
-    LRUQueueIterator remove(LRUQueueIterator it);
+    LRUQueueIterator remove(LRUQueueIterator it, const CacheGuard::Lock &);
+
+    enum class IterationResult
+    {
+        BREAK,
+        CONTINUE,
+        REMOVE_AND_CONTINUE,
+    };
+    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
+    void iterate(IterateFunc && func, const CacheGuard::Lock &);
+
+    size_t increasePriority(LRUQueueIterator it, const CacheGuard::Lock &);
+    LRUQueueIterator move(LRUQueueIterator it, LRUFileCachePriority & other, const CacheGuard::Lock &);
 };
 
 class LRUFileCachePriority::LRUFileCacheIterator : public IFileCachePriority::IIterator
@@ -67,9 +78,7 @@ public:
 
     const Entry & getEntry() const override { return *queue_iter; }
 
-    Entry & getEntry() override { return *queue_iter; }
-
-    size_t use(const CacheGuard::Lock &) override;
+    size_t increasePriority(const CacheGuard::Lock &) override;
 
     void remove(const CacheGuard::Lock &) override;
 

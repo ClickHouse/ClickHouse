@@ -516,7 +516,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
         return false;
 
     current_file_segment = &file_segments->front();
-    current_file_segment->use();
+    current_file_segment->increasePriority();
     implementation_buffer = getImplementationBuffer(*current_file_segment);
 
     LOG_TEST(
@@ -842,7 +842,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     else
     {
         implementation_buffer = getImplementationBuffer(file_segments->front());
-        file_segments->front().use();
+        file_segments->front().increasePriority();
     }
 
     chassert(!internal_buffer.empty());

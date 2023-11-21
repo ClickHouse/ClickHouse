@@ -40,7 +40,29 @@ struct FileCacheReserveStat
         size_t non_releasable_count;
     };
 
+    Stat stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
+
+    void update(size_t size, FileSegmentKind kind, bool releasable)
+    {
+        auto & local_stat = stat_by_kind[kind];
+        if (releasable)
+        {
+            stat.releasable_size += size;
+            ++stat.releasable_count;
+
+            local_stat.releasable_size += size;
+            ++local_stat.releasable_count;
+        }
+        else
+        {
+            stat.non_releasable_size += size;
+            ++stat.non_releasable_count;
+
+            local_stat.non_releasable_size += size;
+            ++local_stat.non_releasable_count;
+        }
+    }
 };
 
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
@@ -53,7 +75,6 @@ public:
     using Priority = IFileCachePriority;
     using PriorityEntry = IFileCachePriority::Entry;
     using PriorityIterator = IFileCachePriority::Iterator;
-    using PriorityIterationResult = IFileCachePriority::IterationResult;
 
     FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
@@ -172,15 +193,13 @@ private:
 
     struct HitsCountStash
     {
-        HitsCountStash(size_t hits_threashold_, size_t queue_size_)
-            : hits_threshold(hits_threashold_), queue(std::make_unique<LRUFileCachePriority>(0, queue_size_))
-        {
-            if (!queue_size_)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Queue size for hits queue must be non-zero");
-        }
+        HitsCountStash(size_t hits_threashold_, size_t queue_size_);
+        void clear();
 
         const size_t hits_threshold;
-        FileCachePriorityPtr queue;
+        const size_t queue_size;
+
+        std::unique_ptr<LRUFileCachePriority> queue;
         using Records = std::unordered_map<KeyAndOffset, PriorityIterator, FileCacheKeyAndOffsetHash>;
         Records records;
     };
