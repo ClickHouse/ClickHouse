@@ -176,10 +176,11 @@ public:
     }
 
     /// Get piece of memory, without alignment.
+    /// Note: we expect it will return a non-nullptr even if the size is zero.
     char * alloc(size_t size)
     {
         used_bytes += size;
-        if (unlikely(static_cast<std::ptrdiff_t>(size) > head.end - head.pos))
+        if (unlikely(head.empty() || static_cast<std::ptrdiff_t>(size) > head.end - head.pos))
             addMemoryChunk(size);
 
         char * res = head.pos;
