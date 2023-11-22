@@ -6,6 +6,9 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Common/SipHash.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -67,6 +70,14 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     is_deleted_column = data.merging_params.is_deleted_column;
     columns_to_sum = fmt::format("{}", fmt::join(data.merging_params.columns_to_sum.begin(), data.merging_params.columns_to_sum.end(), ","));
     version_column = data.merging_params.version_column;
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        SipHash graphite_hash;
+        data.merging_params.graphite_params.updateHash(graphite_hash);
+        WriteBufferFromOwnString wb;
+        writeText(graphite_hash.get128(), wb);
+        graphite_params_hash = std::move(wb.str());
+    }
 
     /// This code may looks strange, but previously we had only one entity: PRIMARY KEY (or ORDER BY, it doesn't matter)
     /// Now we have two different entities ORDER BY and it's optional prefix -- PRIMARY KEY.
@@ -120,6 +131,7 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
         out << "version column: " << version_column << "\n";
         out << "is delete column: " << is_deleted_column << "\n";
         out << "columns to sum: " << columns_to_sum << "\n";
+        out << "graphite hash: " << graphite_params_hash << "\n";
     }
 
     out << "primary key: " << primary_key << "\n";
@@ -169,6 +181,7 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBufferFromString & in)
         in >> "version column: " >> version_column >> "\n";
         in >> "is delete column: " >> is_deleted_column >> "\n";
         in >> "columns to sum: " >> columns_to_sum >> "\n";
+        in >> "graphite hash: " >> graphite_params_hash >> "\n";
     }
     in >> "primary key: " >> primary_key >> "\n";
 
@@ -255,6 +268,10 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
         if (columns_to_sum != from_zk.columns_to_sum)
             throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in sum columns. "
                 "Stored in ZooKeeper: {}, local: {}", from_zk.columns_to_sum, columns_to_sum);
+
+        if (graphite_params_hash != from_zk.graphite_params_hash)
+            throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in graphite params. "
+                "Stored in ZooKeeper hash: {}, local hash: {}", from_zk.graphite_params_hash, graphite_params_hash);
     }
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes

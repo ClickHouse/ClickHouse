@@ -1,3 +1,4 @@
+-- Tags: zookeeper, no-replicated-database
 CREATE TABLE t
 (
     `id` UInt64,
@@ -52,4 +53,28 @@ CREATE TABLE t3_r
     `metrics2` UInt64
 )
 ENGINE = ReplicatedSummingMergeTree('/tables/{database}/t3/', 'r2', metrics2)
+ORDER BY key; -- { serverError METADATA_MISMATCH }
+
+CREATE TABLE t4
+(
+    `key` UInt32,
+    `Path` String,
+    `Time` DateTime('UTC'),
+    `Value` Float64,
+    `Version` UInt32,
+    `col` UInt64
+)
+ENGINE = ReplicatedGraphiteMergeTree('/tables/{database}/t4/', 'r1', 'graphite_rollup')
+ORDER BY key;
+
+CREATE TABLE t4_r
+(
+    `key` UInt32,
+    `Path` String,
+    `Time` DateTime('UTC'),
+    `Value` Float64,
+    `Version` UInt32,
+    `col` UInt64
+)
+ENGINE = ReplicatedGraphiteMergeTree('/tables/{database}/t4/', 'r2', 'graphite_rollup_2')
 ORDER BY key; -- { serverError METADATA_MISMATCH }

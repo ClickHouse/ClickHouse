@@ -154,7 +154,7 @@ struct Params
     Graphite::Patterns patterns;
     Graphite::Patterns patterns_plain;
     Graphite::Patterns patterns_tagged;
-    void updateHash(SipHash & hash)
+    void updateHash(SipHash & hash) const
     {
         hash.update(path_column_name);
         hash.update(time_column_name);

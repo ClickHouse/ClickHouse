@@ -30,6 +30,7 @@ struct ReplicatedMergeTreeTableMetadata
     String version_column;
     String is_deleted_column;
     String columns_to_sum;
+    String graphite_params_hash;
     String primary_key;
     MergeTreeDataFormatVersion data_format_version;
     String partition_key;
