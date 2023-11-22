@@ -18,6 +18,7 @@ namespace CurrentMetrics
 {
     extern const Metric ParallelParsingInputFormatThreads;
     extern const Metric ParallelParsingInputFormatThreadsActive;
+    extern const Metric ParallelParsingInputFormatThreadsScheduled;
 }
 
 namespace DB
@@ -101,7 +102,7 @@ public:
         , min_chunk_bytes(params.min_chunk_bytes)
         , max_block_size(params.max_block_size)
         , is_server(params.is_server)
-        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, params.max_threads)
+        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, CurrentMetrics::ParallelParsingInputFormatThreadsScheduled, params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
@@ -202,7 +203,7 @@ private:
     const size_t max_block_size;
 
     BlockMissingValues last_block_missing_values;
-    size_t last_approx_bytes_read_for_chunk;
+    size_t last_approx_bytes_read_for_chunk = 0;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;

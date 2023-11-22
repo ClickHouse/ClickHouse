@@ -82,6 +82,11 @@ struct LogFileSettings
     uint64_t overallocate_size = 0;
 };
 
+struct FlushSettings
+{
+    uint64_t max_flush_batch_size = 1000;
+};
+
 /// Simplest changelog with files rotation.
 /// No compression, no metadata, just entries with headers one by one.
 /// Able to read broken files/entries and discard them. Not thread safe.
@@ -91,6 +96,7 @@ public:
     Changelog(
         Poco::Logger * log_,
         LogFileSettings log_file_settings,
+        FlushSettings flush_settings,
         KeeperContextPtr keeper_context_);
 
     Changelog(Changelog &&) = delete;
@@ -161,9 +167,9 @@ private:
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
 
     using ChangelogIter = decltype(existing_changelogs)::iterator;
+
     void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
 
-    static void removeLog(const std::filesystem::path & path, const std::filesystem::path & detached_folder);
     /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
     /// Remove all logs from disk
@@ -176,6 +182,7 @@ private:
 
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
+    const bool compress_logs;
     Poco::Logger * log;
 
     std::mutex writer_mutex;
@@ -228,6 +235,8 @@ private:
     nuraft::wptr<nuraft::raft_server> raft_server;
 
     KeeperContextPtr keeper_context;
+
+    const FlushSettings flush_settings;
 
     bool initialized = false;
 };

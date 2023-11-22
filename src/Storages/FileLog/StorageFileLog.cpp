@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -346,7 +347,8 @@ Pipe StorageFileLog::read(
             getMaxBlockSize(),
             getPollTimeoutMillisecond(),
             stream_number,
-            max_streams_number));
+            max_streams_number,
+            filelog_settings->handle_error_mode));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -380,7 +382,7 @@ void StorageFileLog::startup()
         task->holder->activateAndSchedule();
 }
 
-void StorageFileLog::shutdown()
+void StorageFileLog::shutdown(bool)
 {
     if (task)
     {
@@ -708,7 +710,8 @@ bool StorageFileLog::streamToViews()
             getPollMaxBatchSize(),
             getPollTimeoutMillisecond(),
             stream_number,
-            max_streams_number));
+            max_streams_number,
+            filelog_settings->handle_error_mode));
     }
 
     auto input= Pipe::unitePipes(std::move(pipes));
@@ -719,6 +722,7 @@ bool StorageFileLog::streamToViews()
     {
         block_io.pipeline.complete(std::move(input));
         block_io.pipeline.setNumThreads(max_streams_number);
+        block_io.pipeline.setConcurrencyControl(new_context->getSettingsRef().use_concurrency_control);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -977,13 +981,17 @@ bool StorageFileLog::updateFileInfos()
 
 NamesAndTypesList StorageFileLog::getVirtuals() const
 {
-    return NamesAndTypesList{
+    auto virtuals = NamesAndTypesList{
         {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_offset", std::make_shared<DataTypeUInt64>()}};
+
+    if (filelog_settings->handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        virtuals.push_back({"_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+    }
+
+    return virtuals;
 }
 
-Names StorageFileLog::getVirtualColumnNames()
-{
-    return {"_filename", "_offset"};
-}
 }

@@ -208,8 +208,6 @@ public:
 
     ASTPtr clone() const override;
 
-    static const char * typeToString(Type type);
-
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -240,6 +238,8 @@ public:
     bool isDropPartitionAlter() const;
 
     bool isMovePartitionToDiskOrVolumeAlter() const;
+
+    bool isCommentAlter() const;
 
     String getID(char) const override;
 

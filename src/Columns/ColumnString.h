@@ -11,6 +11,7 @@
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
+#include <Common/Arena.h>
 
 
 class Collator;
@@ -168,7 +169,7 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 

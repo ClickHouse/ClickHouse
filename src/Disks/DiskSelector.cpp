@@ -27,7 +27,7 @@ void DiskSelector::assertInitialized() const
 }
 
 
-void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -46,6 +46,9 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
 
+        if (disk_validator && !disk_validator(config, disk_config_prefix))
+            continue;
+
         disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));
     }
     if (!has_default_disk)
@@ -53,7 +56,7 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
         disks.emplace(
             default_disk_name,
             std::make_shared<DiskLocal>(
-                default_disk_name, context->getPath(), 0, context, config.getUInt("local_disk_check_period_ms", 0)));
+                default_disk_name, context->getPath(), 0, context, config, config_prefix));
     }
 
     is_initialized = true;

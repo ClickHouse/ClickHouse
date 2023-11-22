@@ -163,6 +163,61 @@ Result:
 │ 4 │ -4 │   4 │
 └───┴────┴─────┘
 ```
+
+## NULL values in JOIN keys
+
+The NULL is not equal to any value, including itself. It means that if a JOIN key has a NULL value in one table, it won't match a NULL value in the other table.
+
+**Example**
+
+Table `A`:
+
+```
+┌───id─┬─name────┐
+│    1 │ Alice   │
+│    2 │ Bob     │
+│ ᴺᵁᴸᴸ │ Charlie │
+└──────┴─────────┘
+```
+
+Table `B`:
+
+```
+┌───id─┬─score─┐
+│    1 │    90 │
+│    3 │    85 │
+│ ᴺᵁᴸᴸ │    88 │
+└──────┴───────┘
+```
+
+```sql
+SELECT A.name, B.score FROM A LEFT JOIN B ON A.id = B.id
+```
+
+```
+┌─name────┬─score─┐
+│ Alice   │    90 │
+│ Bob     │     0 │
+│ Charlie │     0 │
+└─────────┴───────┘
+```
+
+Notice that the row with `Charlie` from table `A` and the row with score 88 from table `B` are not in the result because of the NULL value in the JOIN key.
+
+In case you want to match NULL values, use the `isNotDistinctFrom` function to compare the JOIN keys.
+
+```sql
+SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
+```
+
+```
+┌─name────┬─score─┐
+│ Alice   │    90 │
+│ Bob     │     0 │
+│ Charlie │    88 │
+└─────────┴───────┘
+```
+
 ## ASOF JOIN Usage
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
@@ -279,6 +334,7 @@ For multiple `JOIN` clauses in a single `SELECT` query:
 
 - Taking all the columns via `*` is available only if tables are joined, not subqueries.
 - The `PREWHERE` clause is not available.
+- The `USING` clause is not available.
 
 For `ON`, `WHERE`, and `GROUP BY` clauses:
 

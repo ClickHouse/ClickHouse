@@ -1,9 +1,15 @@
 #!/bin/bash
 
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
+
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
 # Choose random timezone for this test run.
+#
+# NOTE: that clickhouse-test will randomize session_timezone by itself as well
+# (it will choose between default server timezone and something specific).
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
@@ -13,13 +19,18 @@ dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
+# Check that the tools are available under short names
+ch --query "SELECT 1" || exit 1
+chl --query "SELECT 1" || exit 1
+chc --version || exit 1
+
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # shellcheck disable=SC1091
-source /usr/share/clickhouse-test/ci/attach_gdb.lib || true  # FIXME: to not break old builds, clean on 2023-09-01
+source /attach_gdb.lib
 
 # shellcheck disable=SC1091
-source /usr/share/clickhouse-test/ci/utils.lib || true # FIXME: to not break old builds, clean on 2023-09-01
+source /utils.lib
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
@@ -32,6 +43,8 @@ fi
 
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
+
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -54,13 +67,23 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
     mkdir -p /var/run/clickhouse-server
-    # simpliest way to forward env variables to server
+    # simplest way to forward env variables to server
     sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
 else
     sudo clickhouse start
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    sudo cat /etc/clickhouse-server1/config.d/filesystem_caches_path.xml \
+    | sed "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" \
+    > /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp
+    mv /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server1/config.d/filesystem_caches_path.xml
+
+    sudo cat /etc/clickhouse-server2/config.d/filesystem_caches_path.xml \
+    | sed "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_2/</filesystem_caches_path>|" \
+    > /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp
+    mv /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server2/config.d/filesystem_caches_path.xml
+
     mkdir -p /var/run/clickhouse-server1
     sudo chown clickhouse:clickhouse /var/run/clickhouse-server1
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
@@ -89,7 +112,15 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
-sleep 5
+
+# Wait for the server to start, but not for too long.
+for _ in {1..100}
+do
+    clickhouse-client --query "SELECT 1" && break
+    sleep 1
+done
+
+setup_logs_replication
 
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
@@ -199,6 +230,12 @@ rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
 rg -A50 -Fa "============" /var/log/clickhouse-server/stderr.log ||:
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst &
 
+data_path_config="--path=/var/lib/clickhouse/"
+if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+    # We need s3 storage configuration (but it's more likely that clickhouse-local will fail for some reason)
+    data_path_config="--config-file=/etc/clickhouse-server/config.xml"
+fi
+
 # Compress tables.
 #
 # NOTE:
@@ -208,7 +245,7 @@ zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_outp
 #   for files >64MB, we want this files to be compressed explicitly
 for table in query_log zookeeper_log trace_log transactions_info_log
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+    clickhouse-local "$data_path_config" --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
         clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
@@ -218,7 +255,7 @@ done
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "
+    clickhouse-local "$data_path_config" --only-system-tables -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples

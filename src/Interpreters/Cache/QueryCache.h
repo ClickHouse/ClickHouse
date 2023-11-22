@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Common/CacheBase.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Poco/Util/LayeredConfiguration.h>
 #include <Processors/Chunk.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -24,13 +24,21 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
+    enum class Usage
+    {
+        Unknown,  /// we don't know what what happened
+        None,     /// query result neither written nor read into/from query cache
+        Write,    /// query result written into query cache
+        Read,     /// query result read from query cache
+    };
+
     /// Represents a query result in the cache.
     struct Key
     {
         /// ----------------------------------------------------
         /// The actual key (data which gets hashed):
 
-        /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select)
+        /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
         const ASTPtr ast;
 
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
@@ -58,6 +66,11 @@ public:
         /// (we could theoretically apply compression also to the totals and extremes but it's an obscure use case)
         const bool is_compressed;
 
+        /// The SELECT query as plain string, displayed in SYSTEM.QUERY_CACHE. Stored explicitly, i.e. not constructed from the AST, for the
+        /// sole reason that QueryCache-related SETTINGS are pruned from the AST (see removeQueryCacheSettings()) which will look ugly in
+        /// SYSTEM.QUERY_CACHE.
+        const String query_string;
+
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             Block header_,
@@ -69,7 +82,6 @@ public:
         Key(ASTPtr ast_, const String & user_name_);
 
         bool operator==(const Key & other) const;
-        String queryStringFromAst() const;
     };
 
     struct Entry
@@ -97,9 +109,6 @@ private:
 
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryCacheEntryWeight>;
-
-    /// query --> query execution count
-    using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
 
 public:
     /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
@@ -136,6 +145,7 @@ public:
         Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<Entry>();
         std::atomic<bool> skip_insert = false;
         bool was_finalized = false;
+        Poco::Logger * logger = &Poco::Logger::get("QueryCache");
 
         Writer(Cache & cache_, const Key & key_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
@@ -162,17 +172,21 @@ public:
         std::unique_ptr<SourceFromChunks> source_from_chunks;
         std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
         std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
+        Poco::Logger * logger = &Poco::Logger::get("QueryCache");
         friend class QueryCache; /// for createReader()
     };
 
-    QueryCache();
+    QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
-    void reset();
+    void clear();
+
+    size_t sizeInBytes() const;
+    size_t count() const;
 
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
@@ -181,16 +195,17 @@ public:
     std::vector<QueryCache::Cache::KeyMapped> dump() const;
 
 private:
-    Cache cache;
+    Cache cache; /// has its own locking --> not protected by mutex
 
     mutable std::mutex mutex;
+
+    /// query --> query execution count
+    using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);
 
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
-
-    size_t cache_size_in_bytes TSA_GUARDED_BY(mutex) = 0; /// Updated in each cache insert/delete
 
     friend class StorageSystemQueryCache;
 };

@@ -154,8 +154,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
             if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
+                LOG_DEBUG(
+                    log,
+                    "Mutation of part {} started by some other replica, will wait for it and mutated merged part. Number of tries {}",
+                    entry.new_part_name,
+                    entry.num_tries);
                 storage.watchZeroCopyLock(entry.new_part_name, disk);
-                LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and mutated merged part", entry.new_part_name);
 
                 return PrepareResult{
                     .prepared_successfully = false,
@@ -191,7 +195,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     task_context = Context::createCopy(storage.getContext());
     task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
+    task_context->setCurrentQueryId(getQueryId());
 
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),

@@ -6,7 +6,7 @@ sidebar_label:  MergeTree
 
 # MergeTree
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most commonly used and most robust ClickHouse table engines.
 
 Engines in the `MergeTree` family are designed for inserting a very large amount of data into a table. The data is quickly written to the table part by part, then rules are applied for merging the parts in the background. This method is much more efficient than continually rewriting the data in storage during insert.
 
@@ -32,13 +32,15 @@ Main features:
 The [Merge](/docs/en/engines/table-engines/special/merge.md/#merge) engine does not belong to the `*MergeTree` family.
 :::
 
+If you need to update rows frequently, we recommend using the [`ReplacingMergeTree`](/docs/en/engines/table-engines/mergetree-family/replacingmergetree.md) table engine. Using `ALTER TABLE my_table UPDATE` to update rows triggers a mutation, which causes parts to be re-written and uses IO/resources. With `ReplacingMergeTree`, you can simply insert the updated rows and the old rows will be replaced according to the table sorting key.
+
 ## Creating a Table {#table_engine-mergetree-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [TTL expr1] [PRIMARY KEY],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [TTL expr2] [PRIMARY KEY],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -73,7 +75,7 @@ A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID,
 
 ClickHouse uses the sorting key as a primary key if the primary key is not defined explicitly by the `PRIMARY KEY` clause.
 
-Use the `ORDER BY tuple()` syntax, if you do not need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
+Use the `ORDER BY tuple()` syntax, if you do not need sorting, or set `create_table_empty_primary_key_by_default` to `true` to use the `ORDER BY tuple()` syntax by default. See [Selecting the Primary Key](#selecting-the-primary-key).
 
 #### PARTITION BY
 
@@ -439,41 +441,41 @@ Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, 
 - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
 - `random_seed` — The seed for Bloom filter hash functions.
 
-Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:  
+Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:
 
 ```sql
-CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]   
-AS  
-(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));   
-  
-CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]   
-AS  
-(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));  
-    
-CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]  
-AS   
-(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);  
-  
-CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]   
-AS  
+CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+
+CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);
+
+CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
+AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
 
-```  
+```
 To use those functions,we need to specify two parameter at least.
-For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:   
-  
+For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:
+
 
 ```sql
 --- estimate number of bits in the filter
-SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;  
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;
 
 ┌─size_of_bloom_filter_in_bytes─┐
 │                         10304 │
 └───────────────────────────────┘
-  
+
 --- estimate number of hash functions
 SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_hash_functions
-  
+
 ┌─number_of_hash_functions─┐
 │                       13 │
 └──────────────────────────┘
@@ -866,6 +868,7 @@ Tags:
 - `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
+- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
 
 Configuration examples:
 
@@ -991,7 +994,7 @@ use a local disk to cache data from a table stored at a URL. Neither the cache d
 nor the web storage is configured in the ClickHouse configuration files; both are
 configured in the CREATE/ATTACH query settings.
 
-In the settings highlighted below notice that the disk of `type=web` is nested within 
+In the settings highlighted below notice that the disk of `type=web` is nested within
 the disk of `type=cache`.
 
 ```sql
@@ -1139,6 +1142,8 @@ Optional parameters:
 - `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
 - `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
 - `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
+- `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+- `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
 
 ### Configuring the cache
 
@@ -1220,7 +1225,6 @@ Configuration markup:
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_enabled>true</cache_enabled>
             <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
@@ -1248,15 +1252,15 @@ Limit parameters (mainly for internal usage):
 
 Other parameters:
 * `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
-* `cache_enabled` - Allows to cache mark and index files on local FS. Default value is `true`.
-* `cache_path` - Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 * `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+* `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+* `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
 
-  :::note Zero-copy replication is not ready for production
-  Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-  :::
+:::note Zero-copy replication is not ready for production
+Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+:::
 
 ## HDFS storage {#hdfs-storage}
 
@@ -1308,7 +1312,7 @@ configuration file.
 In this sample configuration:
 - the disk is of type `web`
 - the data is hosted at `http://nginx:80/test1/`
-- a cache on local storage is used 
+- a cache on local storage is used
 
 ```xml
 <clickhouse>
@@ -1353,3 +1357,4 @@ In this sample configuration:
 - `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 - `_partition_value` — Values (a tuple) of a `partition by` expression.
 - `_sample_factor` — Sample factor (from the query).
+- `_block_number` — Block number of the row, it is persisted on merges when `allow_experimental_block_number_column` is set to true.

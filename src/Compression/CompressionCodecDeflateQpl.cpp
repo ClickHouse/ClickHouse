@@ -1,15 +1,18 @@
 #ifdef ENABLE_QPL_COMPRESSION
+
 #include <cstdio>
 #include <thread>
 #include <Compression/CompressionCodecDeflateQpl.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Poco/Logger.h>
+#include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 #include "libaccel_config.h"
 #include <Common/MemorySanitizer.h>
 #include <base/scope_guard.h>
+#include <immintrin.h>
+
 
 namespace DB
 {
@@ -27,7 +30,7 @@ DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 
 DeflateQplJobHWPool::DeflateQplJobHWPool()
     : max_hw_jobs(0)
-    , random_engine(std::random_device()())
+    , random_engine(randomSeed())
 {
     Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
     const char * qpl_version = qpl_get_library_version();
@@ -374,7 +377,7 @@ uint8_t CompressionCodecDeflateQpl::getMethodByte() const
 
 void CompressionCodecDeflateQpl::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecDeflateQpl::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -398,6 +401,14 @@ UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 so
     return res;
 }
 
+inline void touchBufferWithZeroFilling(char * buffer, UInt32 buffer_size)
+{
+    for (char * p = buffer; p < buffer + buffer_size; p += ::getPageSize()/(sizeof(*p)))
+    {
+        *p = 0;
+    }
+}
+
 void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
 /// QPL library is using AVX-512 with some shuffle operations.
@@ -405,6 +416,10 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
 #if defined(MEMORY_SANITIZER)
     __msan_unpoison(dest, uncompressed_size);
 #endif
+/// Device IOTLB miss has big perf. impact for IAA accelerators.
+/// To avoid page fault, we need touch buffers related to accelerator in advance.
+    touchBufferWithZeroFilling(dest, uncompressed_size);
+
     switch (getDecompressMode())
     {
         case CodecMode::Synchronous:

@@ -116,11 +116,6 @@ public:
     /// Try get prepared set from node that match data types
     FutureSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
 
-    /// Try get prepared set from node that match indexes mapping and data types
-    FutureSetPtr tryGetPreparedSet(
-        const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-        const DataTypes & data_types) const;
-
     /** Convert node to function node.
       * Node must be function before calling these method, otherwise exception is thrown.
       */

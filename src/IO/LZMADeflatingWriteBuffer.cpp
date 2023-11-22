@@ -44,7 +44,11 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
             LZMA_VERSION_STRING);
 }
 
-LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer() = default;
+LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
+{
+    /// It is OK to call deflateEnd() twice (one from the finalizeAfter())
+    lzma_end(&lstr);
+}
 
 void LZMADeflatingWriteBuffer::nextImpl()
 {

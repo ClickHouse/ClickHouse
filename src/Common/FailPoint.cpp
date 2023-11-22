@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Config/ConfigHelper.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <chrono>
@@ -33,7 +34,12 @@ static struct InitFiu
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
+    ONCE(replicated_merge_tree_insert_quorum_fail_0) \
+    REGULAR(use_delayed_remote_source) \
+    REGULAR(cluster_discovery_faults) \
+    REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
+    REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
     PAUSEABLE(dummy_pausable_failpoint)
 
@@ -161,6 +167,21 @@ void FailPointInjection::wait(const String & fail_point_name)
         auto ptr = iter->second;
         ptr->wait();
     }
-};
+}
+
+void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    String root_key = "fail_points_active";
+
+    Poco::Util::AbstractConfiguration::Keys fail_point_names;
+    config.keys(root_key, fail_point_names);
+
+    for (const auto & fail_point_name : fail_point_names)
+    {
+        if (ConfigHelper::getBool(config, root_key + "." + fail_point_name))
+            FailPointInjection::enableFailPoint(fail_point_name);
+    }
+}
+
 
 }

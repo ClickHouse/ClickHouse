@@ -36,6 +36,7 @@ namespace ErrorCodes
 
 static const auto suffix = ".removed";
 static const auto cleaner_reschedule_ms = 60000;
+static const auto reschedule_error_multiplier = 10;
 
 DatabasePostgreSQL::DatabasePostgreSQL(
         ContextPtr context_,
@@ -54,6 +55,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , cache_tables(cache_tables_)
     , log(&Poco::Logger::get("DatabasePostgreSQL(" + dbname_ + ")"))
 {
+    fs::create_directories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
@@ -296,7 +298,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
+void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/)
 {
     {
         std::lock_guard lock{mutex};
@@ -321,8 +323,26 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard lock{mutex};
-    auto connection_holder = pool->get();
-    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+
+    std::set<std::string> actual_tables;
+    try
+    {
+        auto connection_holder = pool->get();
+        actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /** Avoid repeated interrupting other normal routines (they acquire locks!)
+          * for the case of unavailable connection, since it is possible to be
+          * unsuccessful again, and the unsuccessful conn is very time-consuming:
+          * connection period is exclusive and timeout is at least 2 seconds for
+          * PostgreSQL.
+          */
+        cleaner_task->scheduleAfter(reschedule_error_multiplier * cleaner_reschedule_ms);
+        return;
+    }
 
     if (cache_tables)
     {
@@ -390,6 +410,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
     auto table_storage_define = database_engine_define->clone();
+    table_storage_define->as<ASTStorage>()->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
     create_table_query->set(create_table_query->storage, table_storage_define);
 
     auto columns_declare_list = std::make_shared<ASTColumns>();

@@ -102,6 +102,8 @@ The function also works for strings.
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
 
+Alias: `OCTET_LENGTH`
+
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64
 
 ## emptyArrayInt8, emptyArrayInt16, emptyArrayInt32, emptyArrayInt64
@@ -142,6 +144,7 @@ range([start, ] end [, step])
 
 - All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
 - An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
+- Returns Null if any argument has Nullable(Nothing) type. An exception is thrown if any argument has Null value (Nullable(T) type).
 
 **Examples**
 
@@ -180,9 +183,8 @@ arrayConcat(arrays)
 **Arguments**
 
 - `arrays` – Arbitrary number of arguments of [Array](../../sql-reference/data-types/array.md) type.
-    **Example**
 
-<!-- -->
+**Example**
 
 ``` sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
@@ -655,7 +657,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, …) {#array_functions-sort}
+## arraySort(\[func,\] arr, …) {#sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -714,7 +716,7 @@ SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
 └─────────┘
 ```
 
-For each element of the source array, the lambda function returns the sorting key, that is, \[1 –\> -1, 2 –\> -2, 3 –\> -3\]. Since the `arraySort` function sorts the keys in ascending order, the result is \[3, 2, 1\]. Thus, the `(x) –> -x` lambda function sets the [descending order](#array_functions-reverse-sort) in a sorting.
+For each element of the source array, the lambda function returns the sorting key, that is, \[1 –\> -1, 2 –\> -2, 3 –\> -3\]. Since the `arraySort` function sorts the keys in ascending order, the result is \[3, 2, 1\]. Thus, the `(x) –> -x` lambda function sets the [descending order](#reverse-sort) in a sorting.
 
 The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
@@ -760,7 +762,7 @@ To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.
 
 Same as `arraySort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in ascending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
 
-## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, …) {#reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -878,7 +880,7 @@ A special function. See the section [“ArrayJoin function”](../../sql-referen
 
 ## arrayDifference
 
-Calculates an array of differences between adjacent array elements. The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc. The type of elements in the result array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
+Calculates an array of differences between adjacent array elements. The first element of the result array will be 0, the second `a[1] - a[0]`, the third `a[2] - a[1]`, etc. The type of elements in the result array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
 
 **Syntax**
 
@@ -996,6 +998,24 @@ SELECT
 └──────────────┴───────────┘
 ```
 
+## arrayJaccardIndex
+
+Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.
+
+**Example**
+
+Query:
+``` sql
+SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
+```
+
+Result:
+``` text
+┌─res────────────────┐
+│ 0.3333333333333333 │
+└────────────────────┘
+```
+
 ## arrayReduce
 
 Applies an aggregate function to array elements and returns its result. The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`. When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
@@ -1061,6 +1081,10 @@ Result:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**See also**
+
+- [arrayFold](#arrayFold)
+
 ## arrayReduceInRanges
 
 Applies an aggregate function to array elements in given ranges and returns an array containing the result corresponding to each range. The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
@@ -1102,6 +1126,56 @@ Result:
 │ [1234500,234000,34560,4567] │
 └─────────────────────────────┘
 ```
+
+## arrayFold
+
+Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.
+
+**Syntax**
+
+``` sql
+arrayFold(lambda_function, arr1, arr2, ..., accumulator)
+```
+
+**Example**
+
+Query:
+
+``` sql
+SELECT arrayFold( acc,x -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
+```
+
+Result:
+
+``` text
+┌─res─┐
+│  23 │
+└─────┘
+```
+
+**Example with the Fibonacci sequence**
+
+```sql
+SELECT arrayFold( acc,x -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci
+FROM numbers(1,10);
+
+┌─fibonacci─┐
+│         0 │
+│         1 │
+│         1 │
+│         2 │
+│         3 │
+│         5 │
+│         8 │
+│        13 │
+│        21 │
+│        34 │
+└───────────┘
+```
+
+**See also**
+
+- [arrayReduce](#arrayReduce)
 
 ## arrayReverse(arr)
 
@@ -1772,6 +1846,396 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 ┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## arrayRotateLeft
+
+Rotates an [array](../../sql-reference/data-types/array.md) to the left by the specified number of elements.
+If the number of elements is negative, the array is rotated to the right.
+
+**Syntax**
+
+``` sql
+arrayRotateLeft(arr, n)
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — Number of elements to rotate.
+
+**Returned value**
+
+- An array rotated to the left by the specified number of elements.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayRotateLeft([1,2,3,4,5,6], 2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,1,2] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayRotateLeft([1,2,3,4,5,6], -2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [5,6,1,2,3,4] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayRotateLeft(['a','b','c','d','e'], 3) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────────────┐
+│ ['d','e','a','b','c'] │
+└───────────────────────┘
+```
+
+## arrayRotateRight
+
+Rotates an [array](../../sql-reference/data-types/array.md) to the right by the specified number of elements.
+If the number of elements is negative, the array is rotated to the left.
+
+**Syntax**
+
+``` sql
+arrayRotateRight(arr, n)
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — Number of elements to rotate.
+
+**Returned value**
+
+- An array rotated to the right by the specified number of elements.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayRotateRight([1,2,3,4,5,6], 2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [5,6,1,2,3,4] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayRotateRight([1,2,3,4,5,6], -2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,1,2] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayRotateRight(['a','b','c','d','e'], 3) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────────────┐
+│ ['c','d','e','a','b'] │
+└───────────────────────┘
+```
+
+## arrayShiftLeft
+
+Shifts an [array](../../sql-reference/data-types/array.md) to the left by the specified number of elements.
+New elements are filled with the provided argument or the default value of the array element type.
+If the number of elements is negative, the array is shifted to the right.
+
+**Syntax**
+
+``` sql
+arrayShiftLeft(arr, n[, default])
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — Number of elements to shift.
+- `default` — Optional. Default value for new elements.
+
+**Returned value**
+
+- An array shifted to the left by the specified number of elements.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], 2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,0,0] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], -2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [0,0,1,2,3,4] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], 2, 42) as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────┐
+│ [3,4,5,6,42,42] │
+└─────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft(['a','b','c','d','e','f'], 3, 'foo') as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────────────────┐
+│ ['d','e','f','foo','foo','foo'] │
+└─────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6] :: Array(UInt16), 2, 4242) as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────┐
+│ [3,4,5,6,4242,4242] │
+└─────────────────────┘
+```
+
+## arrayShiftRight
+
+Shifts an [array](../../sql-reference/data-types/array.md) to the right by the specified number of elements.
+New elements are filled with the provided argument or the default value of the array element type.
+If the number of elements is negative, the array is shifted to the left.
+
+**Syntax**
+
+``` sql
+arrayShiftRight(arr, n[, default])
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — Number of elements to shift.
+- `default` — Optional. Default value for new elements.
+
+**Returned value**
+
+- An array shifted to the right by the specified number of elements.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], 2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [0,0,1,2,3,4] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], -2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,0,0] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], 2, 42) as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────┐
+│ [42,42,1,2,3,4] │
+└─────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftRight(['a','b','c','d','e','f'], 3, 'foo') as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────────────────┐
+│ ['foo','foo','foo','a','b','c'] │
+└─────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6] :: Array(UInt16), 2, 4242) as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────┐
+│ [4242,4242,1,2,3,4] │
+└─────────────────────┘
+```
+
+
+## arrayRandomSample
+
+Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array, i.e. all array elements are returned but their order is not guaranteed. The function can handle both flat arrays and nested arrays.
+
+**Syntax**
+
+```sql
+arrayRandomSample(arr, samples)
+```
+
+**Arguments**
+
+- `arr` — The input array from which to sample elements. ([Array(T)](../data-types/array.md))
+- `samples` — The number of elements to include in the random sample ([UInt*](../data-types/int-uint.md))
+
+**Returned Value**
+
+- An array containing a random sample of elements from the input array.
+
+Type: [Array](../data-types/array.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;
+```
+
+Result:
+
+```
+┌─res────────────────┐
+│ ['cherry','apple'] │
+└────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
+```
+
+Result:
+
+```
+┌─res───────────┐
+│ [[3,4],[5,6]] │
+└───────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayRandomSample([1, 2, 3], 5) as res;
+```
+
+Result:
+
+```
+┌─res─────┐
+│ [3,1,2] │
+└─────────┘
 ```
 
 ## Distance functions

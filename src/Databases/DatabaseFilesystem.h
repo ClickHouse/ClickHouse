@@ -48,7 +48,7 @@ public:
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &) const override;
 
 protected:
-    StoragePtr getTableImpl(const String & name, ContextPtr context) const;
+    StoragePtr getTableImpl(const String & name, ContextPtr context, bool throw_on_error) const;
 
     StoragePtr tryGetTableFromCache(const std::string & name) const;
 

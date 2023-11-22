@@ -52,9 +52,10 @@ public:
         if (!hasDynamicSubcolumns(storage_columns))
             return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
+        auto data_parts = storage.getDataPartsVectorForInternalUsage();
+
         auto object_columns = getConcreteObjectColumns(
-            parts.begin(), parts.end(),
-            storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
+            data_parts.begin(), data_parts.end(), storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
     }
@@ -88,6 +89,8 @@ public:
     bool supportsIndexForIn() const override { return true; }
 
     bool supportsDynamicSubcolumns() const override { return true; }
+
+    bool supportsSubcolumns() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override

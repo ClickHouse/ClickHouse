@@ -62,7 +62,7 @@ Materialized views store data transformed by the corresponding [SELECT](../../..
 
 When creating a materialized view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
 
-When creating a materialized view with `TO [db].[table]`, you must not use `POPULATE`.
+When creating a materialized view with `TO [db].[table]`, you can't also use `POPULATE`.
 
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
@@ -97,7 +97,7 @@ This is an experimental feature that may change in backwards-incompatible ways i
 :::
 
 ```sql
-CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
+CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH REFRESH [value_in_sec]] AS SELECT ...
 ```
 
 Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query and are updated any time the result of the query changes. Query result as well as partial result needed to combine with new data are stored in memory providing increased performance for repeated queries. Live views can provide push notifications when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.

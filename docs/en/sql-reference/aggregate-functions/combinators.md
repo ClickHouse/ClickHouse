@@ -44,7 +44,7 @@ INSERT INTO map_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
     ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
     ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
-    
+
 SELECT
     timeslot,
     sumMap(status),
@@ -300,7 +300,7 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
 
 Consider the results.
 
-`Jonh` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
+`John` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
 
 Now let’s count the total number of people and their average wage in the specified age intervals.
 
@@ -317,6 +317,15 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
+## -ArgMin
+
+The suffix -ArgMin can be appended to the name of any aggregate function. In this case, the aggregate function accepts an additional argument, which should be any comparable expression. The aggregate function processes only the rows that have the minimum value for the specified extra expression.
+
+Examples: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` and so on.
+
+## -ArgMax
+
+Similar to suffix -ArgMin but processes only the rows that have the maximum value for the specified extra expression.
 
 ## Related Content
 

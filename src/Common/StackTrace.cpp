@@ -20,12 +20,9 @@
 #include <sstream>
 #include <unordered_map>
 #include <fmt/format.h>
+#include <libunwind.h>
 
 #include "config.h"
-
-#if USE_UNWIND
-#    include <libunwind.h>
-#endif
 
 namespace
 {
@@ -211,8 +208,7 @@ void StackTrace::symbolize(
     const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset, size_t size, StackTrace::Frames & frames)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     for (size_t i = 0; i < offset; ++i)
@@ -287,12 +283,8 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
-#if USE_UNWIND
     size = unw_backtrace(frame_pointers.data(), capacity);
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
-#else
-    size = 0;
-#endif
 }
 
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
@@ -348,8 +340,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
     using enum DB::Dwarf::LocationInfoMode;
     const auto mode = fatal ? FULL_WITH_INLINE : FAST;
 
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<String, DB::Dwarf> dwarfs;
 
     for (size_t i = stack_trace.offset; i < stack_trace.size; ++i)

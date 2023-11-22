@@ -34,9 +34,12 @@ public:
 
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
+
+    void appendColumnName(WriteBuffer & ostr) const override;
+    void appendColumnNameWithoutAlias(WriteBuffer & ostr) const override { return appendColumnName(ostr); }
 };
 
 }

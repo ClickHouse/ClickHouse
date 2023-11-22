@@ -361,7 +361,7 @@ class TestRunner:
                 continue
 
             if block.get_block_type() == test_parser.BlockType.control:
-                clogger.debug("Skip control block", name_pos)
+                clogger.debug("Skip control block %s", name_pos)
                 block.dump_to(out_stream)
                 continue
 
@@ -374,12 +374,13 @@ class TestRunner:
                 continue
 
             request = block.get_request()
-            exec_res = execute_request(request, self.connection)
 
             if block.get_block_type() in self.skip_request_types:
                 clogger.debug("Runtime skip block for %s", self.dbms_name)
                 block.dump_to(out_stream)
                 continue
+
+            exec_res = execute_request(request, self.connection)
 
             if block.get_block_type() == test_parser.BlockType.statement:
                 try:

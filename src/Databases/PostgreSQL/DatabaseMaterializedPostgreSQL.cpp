@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -51,10 +52,29 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
-    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ startSynchronization(); }))
+    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
 {
 }
 
+void DatabaseMaterializedPostgreSQL::tryStartSynchronization()
+{
+    if (shutdown_called)
+        return;
+
+    try
+    {
+        startSynchronization();
+        LOG_INFO(log, "Successfully loaded tables from PostgreSQL and started replication");
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to start replication from PostgreSQL, "
+                  "will retry. Error: {}", getCurrentExceptionMessage(true));
+
+        if (!shutdown_called)
+            startup_task->scheduleAfter(5000);
+    }
+}
 
 void DatabaseMaterializedPostgreSQL::startSynchronization()
 {
@@ -63,9 +83,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         return;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
-            /* replication_identifier */ TSA_SUPPRESS_WARNING_FOR_READ(database_name),    /// FIXME
             remote_database_name,
+            /* table_name */"",
             TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
+            toString(getUUID()),
             connection_info,
             getContext(),
             is_attach,
@@ -113,15 +134,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
 
-    try
-    {
-        replication_handler->startup(/* delayed */false);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        throw;
-    }
+    replication_handler->startup(/* delayed */false);
 }
 
 
@@ -221,10 +234,25 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 
     std::lock_guard lock(handler_mutex);
 
-    /// FIXME TSA
-    auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
-    auto ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
-    assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
+    ASTPtr ast_storage;
+    try
+    {
+        auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
+        ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
+        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
+    }
+    catch (...)
+    {
+        if (throw_on_error)
+        {
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
+                            "Received error while fetching table structure for table {} from PostgreSQL: {}",
+                            backQuote(table_name), getCurrentExceptionMessage(true));
+        }
+
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     return ast_storage;
 }
 
@@ -385,6 +413,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
 
 void DatabaseMaterializedPostgreSQL::shutdown()
 {
+    shutdown_called = true;
     startup_task->deactivate();
     stopReplication();
     DatabaseAtomic::shutdown();
@@ -397,7 +426,6 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
     if (replication_handler)
         replication_handler->shutdown();
 
-    shutdown_called = true;
     /// Clear wrappers over nested, all access is not done to nested tables directly.
     materialized_tables.clear();
 }

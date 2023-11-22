@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/defines.h>
+#include <base/unit.h>
 
 #define DBMS_DEFAULT_PORT 9000
 #define DBMS_DEFAULT_SECURE_PORT 9440
@@ -41,13 +42,13 @@
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 
-#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 180
+#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 30
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 /// Maximum number of http-connections between two endpoints
 /// the number is unmotivated
 #define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
-#define DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT 10
+#define DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT 30
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
@@ -63,6 +64,27 @@
 
 /// Max depth of hierarchical dictionary
 #define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000
+
+/// Default maximum (total and entry) sizes and policies of various caches
+static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE = 0_MiB;
+static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5l;
+static constexpr auto DEFAULT_MARK_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5368_MiB;
+static constexpr auto DEFAULT_MARK_CACHE_SIZE_RATIO = 0.5l;
+static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE = 0;
+static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5;
+static constexpr auto DEFAULT_INDEX_MARK_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_INDEX_MARK_CACHE_MAX_SIZE = 5368_MiB;
+static constexpr auto DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO = 0.3;
+static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
+static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
+static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
+static constexpr auto DEFAULT_QUERY_CACHE_MAX_SIZE = 1_GiB;
+static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRIES = 1024uz;
+static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;
+static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS = 30'000'000uz;
 
 /// Query profiler cannot work with sanitizers.
 /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)

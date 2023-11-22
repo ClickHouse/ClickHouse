@@ -1,11 +1,11 @@
 #pragma once
 
-#include <IO/ISchedulerQueue.h>
-#include <IO/SchedulerRoot.h>
+#include <IO/ISchedulerNode.h>
 
 #include <Common/Stopwatch.h>
 
 #include <algorithm>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -50,6 +50,8 @@ public:
 
     bool equals(ISchedulerNode * other) override
     {
+        if (!ISchedulerNode::equals(other))
+            return false;
         if (auto * o = dynamic_cast<FairPolicy *>(other))
             return true;
         return false;
@@ -176,8 +178,11 @@ public:
                 max_vruntime = 0;
             }
             system_vruntime = max_vruntime;
+            busy_periods++;
         }
 
+        dequeued_requests++;
+        dequeued_cost += request->cost;
         return {request, heap_size > 0};
     }
 
@@ -186,10 +191,31 @@ public:
         return heap_size > 0;
     }
 
+    size_t activeChildren() override
+    {
+        return heap_size;
+    }
+
     void activateChild(ISchedulerNode * child) override
     {
         // Find this child; this is O(1), thanks to inactive index we hold in `parent.idx`
         activateChildImpl(child->info.parent.idx);
+    }
+
+    // For introspection
+    double getSystemVRuntime() const
+    {
+        return system_vruntime;
+    }
+
+    std::optional<double> getChildVRuntime(ISchedulerNode * child) const
+    {
+        for (const auto & item : items)
+        {
+            if (child == item.child)
+                return item.vruntime;
+        }
+        return std::nullopt;
     }
 
 private:

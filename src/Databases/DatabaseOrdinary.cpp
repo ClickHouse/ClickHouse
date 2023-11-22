@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -33,6 +34,7 @@ namespace CurrentMetrics
 {
     extern const Metric DatabaseOrdinaryThreads;
     extern const Metric DatabaseOrdinaryThreadsActive;
+    extern const Metric DatabaseOrdinaryThreadsScheduled;
 }
 
 namespace DB
@@ -88,8 +90,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -106,7 +107,7 @@ void DatabaseOrdinary::loadStoredObjects(
     std::atomic<size_t> dictionaries_processed{0};
     std::atomic<size_t> tables_processed{0};
 
-    ThreadPool pool(CurrentMetrics::DatabaseOrdinaryThreads, CurrentMetrics::DatabaseOrdinaryThreadsActive);
+    ThreadPool pool(CurrentMetrics::DatabaseOrdinaryThreads, CurrentMetrics::DatabaseOrdinaryThreadsActive, CurrentMetrics::DatabaseOrdinaryThreadsScheduled);
 
     /// We must attach dictionaries before attaching tables
     /// because while we're attaching tables we may need to have some dictionaries attached
@@ -158,12 +159,6 @@ void DatabaseOrdinary::loadStoredObjects(
     }
 
     pool.wait();
-
-    if (!skip_startup_tables)
-    {
-        /// After all tables was basically initialized, startup them.
-        startupTables(pool, mode);
-    }
 }
 
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
@@ -182,6 +177,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
+                FunctionNameNormalizer().visit(ast.get());
                 auto * create_query = ast->as<ASTCreateQuery>();
                 /// NOTE No concurrent writes are possible during database loading
                 create_query->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));

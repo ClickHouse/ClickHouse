@@ -461,7 +461,7 @@ void StorageWindowView::alter(
         modifying_query = false;
     });
 
-    shutdown();
+    shutdown(false);
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
@@ -992,7 +992,7 @@ void StorageWindowView::cleanup()
     auto cleanup_context = Context::createCopy(getContext());
     cleanup_context->makeQueryContext();
     cleanup_context->setCurrentQueryId("");
-    cleanup_context->getClientInfo().is_replicated_database_internal = true;
+    cleanup_context->setQueryKindReplicatedDatabaseInternal();
     InterpreterAlterQuery interpreter_alter(alter_query, cleanup_context);
     interpreter_alter.execute();
 
@@ -1571,7 +1571,7 @@ void StorageWindowView::writeIntoWindowView(
     });
 
     auto executor = builder.execute();
-    executor->execute(builder.getNumThreads());
+    executor->execute(builder.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
 }
 
 void StorageWindowView::startup()
@@ -1586,7 +1586,7 @@ void StorageWindowView::startup()
         fire_task->schedule();
 }
 
-void StorageWindowView::shutdown()
+void StorageWindowView::shutdown(bool)
 {
     shutdown_called = true;
 
@@ -1599,7 +1599,7 @@ void StorageWindowView::shutdown()
     DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 }
 
-void StorageWindowView::checkTableCanBeDropped() const
+void StorageWindowView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     auto table_id = getStorageID();
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);

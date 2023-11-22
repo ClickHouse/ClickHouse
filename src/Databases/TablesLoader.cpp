@@ -15,6 +15,7 @@ namespace CurrentMetrics
 {
     extern const Metric TablesLoaderThreads;
     extern const Metric TablesLoaderThreadsActive;
+    extern const Metric TablesLoaderThreadsScheduled;
 }
 
 namespace DB
@@ -32,7 +33,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , referential_dependencies("ReferentialDeps")
     , loading_dependencies("LoadingDeps")
     , all_loading_dependencies("LoadingDeps")
-    , pool(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive)
+    , pool(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, CurrentMetrics::TablesLoaderThreadsScheduled)
 {
     metadata.default_database = global_context->getCurrentDatabase();
     log = &Poco::Logger::get("TablesLoader");
@@ -49,7 +50,7 @@ void TablesLoader::loadTables()
         if (need_resolve_dependencies && database.second->supportsLoadingInTopologicalOrder())
             databases_to_load.push_back(database.first);
         else
-            database.second->loadStoredObjects(global_context, strictness_mode, /* skip_startup_tables */ true);
+            database.second->loadStoredObjects(global_context, strictness_mode);
     }
 
     if (databases_to_load.empty())

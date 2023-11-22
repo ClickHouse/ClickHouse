@@ -9,6 +9,7 @@ profiles:
         # random - choose random replica from set of replicas with minimum number of errors
         # nearest_hostname - from set of replicas with minimum number of errors, choose replica
         # with minimum number of different symbols between replica's hostname and local hostname (Hamming distance).
+        # hostname_levenshtein_distance - just the same with nearest_hostname but calculate the difference by Levenshtein distance.
         # in_order - first live replica is chosen in specified order.
         # first_or_random - if first replica one has higher number of errors, pick a random one from replicas with minimum number of errors.
         load_balancing: random
@@ -89,6 +90,10 @@ users:
 
         # User can create other users and grant rights to them.
         # access_management: 1
+
+        # SQL expressions for grants available for that user - https://clickhouse.com/docs/en/sql-reference/statements/grant
+        # grants:
+        #   - query: GRANT ALL ON *.*
 
 # Quotas.
 quotas:

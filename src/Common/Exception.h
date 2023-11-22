@@ -7,6 +7,7 @@
 #include <Poco/Exception.h>
 
 #include <base/defines.h>
+#include <base/scope_guard.h>
 #include <Common/StackTrace.h>
 #include <Common/LoggingFormatStringHelpers.h>
 
@@ -18,7 +19,22 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-void abortOnFailedAssertion(const String & description);
+[[noreturn]] void abortOnFailedAssertion(const String & description);
+
+/// This flag can be set for testing purposes - to check that no exceptions are thrown.
+extern bool terminate_on_any_exception;
+
+/// This flag controls if error statistics should be updated when an exception is thrown. These
+/// statistics are shown for example in system.errors. Defaults to true. If the error is internal,
+/// non-critical, and handled otherwise it is useful to disable the statistics update and not
+/// alarm the user needlessly.
+extern thread_local bool update_error_statistics;
+
+/// Disable the update of error statistics
+#define DO_NOT_UPDATE_ERROR_STATISTICS() \
+    update_error_statistics = false; \
+    SCOPE_EXIT({ update_error_statistics = true; })
+
 
 class Exception : public Poco::Exception
 {
@@ -27,17 +43,23 @@ public:
 
     Exception()
     {
+        if (terminate_on_any_exception)
+            std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
     }
 
     Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
     {
+        if (terminate_on_any_exception)
+            std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
     }
 
     Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
     {
+        if (terminate_on_any_exception)
+            std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
     }
@@ -51,8 +73,8 @@ protected:
     struct MessageMasked
     {
         std::string msg;
-        MessageMasked(const std::string & msg_);
-        MessageMasked(std::string && msg_);
+        explicit MessageMasked(const std::string & msg_);
+        explicit MessageMasked(std::string && msg_);
     };
 
     Exception(const MessageMasked & msg_masked, int code, bool remote_);
@@ -71,9 +93,9 @@ public:
     }
 
     /// Message must be a compile-time constant
-    template<typename T, typename = std::enable_if_t<std::is_convertible_v<T, String>>>
-    Exception(int code, T && message)
-        : Exception(message, code)
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    Exception(int code, T && message) : Exception(message, code)
     {
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = tryGetStaticFormatString(message);
@@ -101,7 +123,7 @@ public:
     Exception(CreateFromSTDTag, const std::exception & exc);
 
     Exception * clone() const override { return new Exception(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } // NOLINT
     const char * name() const noexcept override { return "DB::Exception"; }
     const char * what() const noexcept override { return message().data(); }
 
@@ -159,7 +181,7 @@ public:
         : Exception(msg, code), saved_errno(saved_errno_), path(path_) {}
 
     ErrnoException * clone() const override { return new ErrnoException(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } // NOLINT
 
     int getErrno() const { return saved_errno; }
     std::optional<std::string> getPath() const { return path; }
@@ -197,7 +219,7 @@ public:
     void setFileName(const String & file_name_) { file_name = file_name_; }
 
     Exception * clone() const override { return new ParsingException(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } // NOLINT
 
 private:
     ssize_t line_number{-1};

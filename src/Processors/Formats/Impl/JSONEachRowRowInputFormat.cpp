@@ -39,9 +39,9 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     const FormatSettings & format_settings_,
     bool yield_strings_)
     : IRowInputFormat(header_, in_, std::move(params_))
-    , format_settings(format_settings_)
     , prev_positions(header_.columns())
     , yield_strings(yield_strings_)
+    , format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
@@ -236,10 +236,10 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
 bool JSONEachRowRowInputFormat::checkEndOfData(bool is_first_row)
 {
-    /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
+    /// We consume ',' or '\n' before scanning a new row, instead scanning to next row at the end.
     /// The reason is that if we want an exact number of rows read with LIMIT x
     /// from a streaming table engine with text data format, like File or Kafka
-    /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
+    /// then seeking to next ';,' or '\n' would trigger reading of an extra row at the end.
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
     if (!in->eof())
@@ -302,6 +302,26 @@ void JSONEachRowRowInputFormat::readSuffix()
     assertEOF(*in);
 }
 
+size_t JSONEachRowRowInputFormat::countRows(size_t max_block_size)
+{
+    if (unlikely(!allow_new_rows))
+        return 0;
+
+    size_t num_rows = 0;
+    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 0;
+    skipWhitespaceIfAny(*in);
+    while (num_rows < max_block_size && !checkEndOfData(is_first_row))
+    {
+        skipRowStart();
+        JSONUtils::skipRowForJSONEachRow(*in);
+        ++num_rows;
+        is_first_row = false;
+        skipWhitespaceIfAny(*in);
+    }
+
+    return num_rows;
+}
+
 JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowWithNamesSchemaReader(in_, format_settings_)
 {
@@ -347,7 +367,7 @@ void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTyp
 
 void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
+    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)

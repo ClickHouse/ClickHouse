@@ -90,7 +90,7 @@ function configure
     set +m
 
     wait_for_server $LEFT_SERVER_PORT $left_pid
-    echo Server for setup started
+    echo "Server for setup started"
 
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
     clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
@@ -156,9 +156,9 @@ function restart
     wait_for_server $RIGHT_SERVER_PORT $right_pid
     echo right ok
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.tables where database != 'system'"
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.build_options"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database != 'system'"
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.build_options"
 
     # Check again that both servers we started are running -- this is important
@@ -189,6 +189,8 @@ function run_tests
         test_prefix=right/performance
     fi
 
+    run_only_changed_tests=0
+
     # Determine which tests to run.
     if [ -v CHPC_TEST_GREP ]
     then
@@ -203,6 +205,7 @@ function run_tests
         # tests. The lists of changed files are prepared in entrypoint.sh because
         # it has the repository.
         test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
+        run_only_changed_tests=1
     else
         # The default -- run all tests found in the test dir.
         test_files=($(ls "$test_prefix"/*.xml))
@@ -224,6 +227,13 @@ function run_tests
         done
         # to have sequential indexes...
         test_files=("${test_files[@]}")
+    fi
+
+    if [ "$run_only_changed_tests" -ne 0 ]; then
+        if [ ${#test_files[@]} -eq 0 ]; then
+            time "$script_dir/report.py" --no-tests-run > report.html
+            exit 0
+        fi
     fi
 
     # For PRs w/o changes in test definitons, test only a subset of queries,
@@ -285,7 +295,7 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        if [ "$(rg -c $(basename $test) changed-test-definitions.txt)" -gt 0 ]
+        if rg --quiet "$(basename $test)" changed-test-definitions.txt
         then
           # Run all queries from changed test files to ensure that all new queries will be tested.
           max_queries=0
@@ -352,14 +362,12 @@ function get_profiles
     wait
 
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
@@ -396,7 +404,7 @@ do
 done
 
 # for each query run, prepare array of metrics from query log
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
@@ -553,7 +561,7 @@ numactl --cpunodebind=all --membind=all numactl --show
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
 numactl --cpunodebind=all --membind=all parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
 -- a denormalized table of them -- statistics for all metrics for all queries.
 -- The WITH, ARRAY JOIN and CROSS JOIN do not like each other:
@@ -646,12 +654,12 @@ function report
 rm -r report ||:
 mkdir report report/tmp ||:
 
-rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv run-errors.tsv ||:
+rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv all-queries.tsv run-errors.tsv ||:
 
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view query_display_names as select * from
     file('analyze/query-display-names.tsv', TSV,
         'test text, query_index int, query_display_name text')
@@ -665,9 +673,8 @@ create view partial_query_times as select * from
 -- Report for backward-incompatible ('partial') queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as select toDecimal64(time_median, 3) time,
-        toDecimal64(time_stddev / time_median, 3) relative_time_stddev,
+    as select round(time_median, 3) time,
+        round(time_stddev / time_median, 3) relative_time_stddev,
         test, query_index, query_display_name
     from partial_query_times
     join query_display_names using (test, query_index)
@@ -739,28 +746,26 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     ;
 
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
         -- of NaN to decimal.
         (left > right ? left / right : right / left) as times_change_float,
         isFinite(times_change_float) as times_change_finite,
-        toDecimal64(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
+        round(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
         times_change_finite
             ? (left > right ? '-' : '+') || toString(times_change_decimal) || 'x'
             : '--' as times_change_str
     select
-        toDecimal64(left, 3), toDecimal64(right, 3), times_change_str,
-        toDecimal64(diff, 3), toDecimal64(stat_threshold, 3),
+        round(left, 3), round(right, 3), times_change_str,
+        round(diff, 3), round(stat_threshold, 3),
         changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select
-        toDecimal64(left, 3), toDecimal64(right, 3), toDecimal64(diff, 3),
-        toDecimal64(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
+        round(left, 3), round(right, 3), round(diff, 3),
+        round(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
 
 
@@ -789,11 +794,10 @@ create view total_speedup as
     ;
 
 create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as with
         (times_speedup >= 1
-            ? '-' || toString(toDecimal64(times_speedup, 3)) || 'x'
-            : '+' || toString(toDecimal64(1 / times_speedup, 3)) || 'x')
+            ? '-' || toString(round(times_speedup, 3)) || 'x'
+            : '+' || toString(round(1 / times_speedup, 3)) || 'x')
         as times_speedup_str
     select test, times_speedup_str, queries, bad, changed, unstable
     -- Not sure what's the precedence of UNION ALL vs WHERE & ORDER BY, hence all
@@ -815,13 +819,6 @@ create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes
 create view total_client_time_per_query as select *
     from file('analyze/client-times.tsv', TSV,
         'test text, query_index int, client float, server float');
-
-create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as select client, server, toDecimal64(client/server, 3) p,
-        test, query_display_name
-    from total_client_time_per_query left join query_display_names using (test, query_index)
-    where p > toDecimal64(1.02, 3) order by p desc;
 
 create table wall_clock_time_per_test engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
@@ -899,15 +896,14 @@ create view test_times_view_total as
     ;
 
 create table test_times_report engine File(TSV, 'report/test-times.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select
         test,
-        toDecimal64(real, 3),
-        toDecimal64(total_client_time, 3),
+        round(real, 3),
+        round(total_client_time, 3),
         queries,
-        toDecimal64(query_max, 3),
-        toDecimal64(avg_real_per_query, 3),
-        toDecimal64(query_min, 3),
+        round(query_max, 3),
+        round(avg_real_per_query, 3),
+        round(query_min, 3),
         runs
     from (
         select * from test_times_view
@@ -919,21 +915,20 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv')
 
 -- report for all queries page, only main metric
 create table all_tests_report engine File(TSV, 'report/all-queries.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
         -- of NaN to decimal.
         (left > right ? left / right : right / left) as times_change_float,
         isFinite(times_change_float) as times_change_finite,
-        toDecimal64(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
+        round(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
         times_change_finite
             ? (left > right ? '-' : '+') || toString(times_change_decimal) || 'x'
             : '--' as times_change_str
     select changed_fail, unstable_fail,
-        toDecimal64(left, 3), toDecimal64(right, 3), times_change_str,
-        toDecimal64(isFinite(diff) ? diff : 0, 3),
-        toDecimal64(isFinite(stat_threshold) ? stat_threshold : 0, 3),
+        round(left, 3), round(right, 3), times_change_str,
+        round(isFinite(diff) ? diff : 0, 3),
+        round(isFinite(stat_threshold) ? stat_threshold : 0, 3),
         test, query_index, query_display_name
     from queries order by test, query_index;
 
@@ -965,7 +960,7 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
 for version in {right,left}
 do
     rm -rf data
-    clickhouse-local --query "
+    clickhouse-local --multiquery --query "
 create view query_profiles as
     with 0 as left, 1 as right
     select * from file('analyze/query-profiles.tsv', TSV,
@@ -1042,27 +1037,6 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
     join unstable_query_runs using query_id
     group by test, query_index, query_id, metric
     order by count() desc
-    ;
-
-create table metric_devation engine File(TSVWithNamesAndTypes,
-        'report/metric-deviation.$version.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    -- first goes the key used to split the file with grep
-    as select test, query_index, query_display_name,
-        toDecimal64(d, 3) d, q, metric
-    from (
-        select
-            test, query_index,
-            (q[3] - q[1])/q[2] d,
-            quantilesExact(0, 0.5, 1)(value) q, metric
-        from (select * from unstable_run_metrics
-            union all select * from unstable_run_traces
-            union all select * from unstable_run_metrics_2) mm
-        group by test, query_index, metric
-        having isFinite(d) and d > 0.5 and q[3] > 5
-    ) metrics
-    left join query_display_names using (test, query_index)
-    order by test, query_index, d desc
     ;
 
 create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
@@ -1156,7 +1130,7 @@ function report_metrics
 rm -rf metrics ||:
 mkdir metrics
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view right_async_metric_log as
     select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
@@ -1173,9 +1147,8 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
 
 -- Show metrics that have changed
 create table changes engine File(TSV, 'metrics/changes.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select metric, left, right,
-        toDecimal64(diff, 3), toDecimal64(times_diff, 3)
+        round(diff, 3), round(times_diff, 3)
     from (
         select metric, median(left) as left, median(right) as right,
             (right - left) / left diff,
@@ -1217,7 +1190,7 @@ function upload_results
     # Prepare info for the CI checks table.
     rm -f ci-checks.tsv
 
-    clickhouse-local --query "
+    clickhouse-local --multiquery --query "
 create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
 
 create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
@@ -1226,7 +1199,6 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         '$SHA_TO_TEST' :: LowCardinality(String) AS commit_sha,
         '${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME:-Performance}' :: LowCardinality(String) AS check_name,
         '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' :: LowCardinality(String) AS check_status,
-        -- TODO toDateTime() can't parse output of 'date', so no time for now.
         (($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000) :: UInt64 AS check_duration_ms,
         fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
         test_name :: LowCardinality(String) AS test_name ,

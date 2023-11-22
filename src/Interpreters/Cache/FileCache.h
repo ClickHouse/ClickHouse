@@ -1,18 +1,15 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
-#include <list>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
 #include <boost/functional/hash.hpp>
 
 #include <IO/ReadSettings.h>
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/ThreadPool.h>
+#include <Common/StatusFile.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -30,6 +27,22 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Track acquired space in cache during reservation
+/// to make error messages when no space left more informative.
+struct FileCacheReserveStat
+{
+    struct Stat
+    {
+        size_t releasable_size;
+        size_t releasable_count;
+
+        size_t non_releasable_size;
+        size_t non_releasable_count;
+    };
+
+    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
+};
+
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
 /// Different caching algorithms are implemented using IFileCachePriority.
 class FileCache : private boost::noncopyable
@@ -42,7 +55,7 @@ public:
     using PriorityIterator = IFileCachePriority::Iterator;
     using PriorityIterationResult = IFileCachePriority::IterationResult;
 
-    explicit FileCache(const FileCacheSettings & settings);
+    FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
     ~FileCache();
 
@@ -67,8 +80,13 @@ public:
      * As long as pointers to returned file segments are held
      * it is guaranteed that these file segments are not removed from cache.
      */
-    FileSegmentsHolderPtr
-    getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings);
+    FileSegmentsHolderPtr getOrSet(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        size_t file_size,
+        const CreateFileSegmentSettings & settings,
+        size_t file_segments_limit = 0);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -79,7 +97,7 @@ public:
      * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
      * it's state (and become DOWNLOADED).
      */
-    FileSegmentsHolderPtr get(const Key & key, size_t offset, size_t size);
+    FileSegmentsHolderPtr get(const Key & key, size_t offset, size_t size, size_t file_segments_limit);
 
     FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
@@ -106,15 +124,13 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(FileSegment & file_segment, size_t size);
+    bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
-    FileSegmentsHolderPtr getSnapshot();
+    FileSegments getSnapshot();
 
-    FileSegmentsHolderPtr getSnapshot(const Key & key);
+    FileSegments getSnapshot(const Key & key);
 
-    FileSegmentsHolderPtr dumpQueue();
-
-    void cleanup();
+    FileSegments dumpQueue();
 
     void deactivateBackgroundOperations();
 
@@ -136,20 +152,23 @@ public:
 
     CacheGuard::Lock lockCache() const;
 
+    FileSegments sync();
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     const size_t max_file_segment_size;
     const size_t bypass_cache_threshold = 0;
-    const size_t delayed_cleanup_interval_ms;
     const size_t boundary_alignment;
-    const size_t background_download_threads;
+    const size_t background_download_threads; /// 0 means background download is disabled.
+    const size_t metadata_download_threads;
 
     Poco::Logger * log;
 
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
+    std::unique_ptr<StatusFile> status_file;
 
     CacheMetadata metadata;
 
@@ -186,29 +205,45 @@ private:
      * A background cleanup task.
      * Clears removed cache entries from metadata.
      */
-    BackgroundSchedulePool::TaskHolder cleanup_task;
-
     std::vector<ThreadFromGlobalPool> download_threads;
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     void assertInitialized() const;
-
     void assertCacheCorrectness();
 
     void loadMetadata();
+    void loadMetadataImpl();
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir);
 
-    FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range) const;
+    /// Get all file segments from cache which intersect with `range`.
+    /// If `file_segments_limit` > 0, return no more than first file_segments_limit
+    /// file segments.
+    FileSegments getImpl(
+        const LockedKey & locked_key,
+        const FileSegment::Range & range,
+        size_t file_segments_limit) const;
 
+    /// Split range into subranges by max_file_segment_size,
+    /// each subrange size must be less or equal to max_file_segment_size.
+    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size);
+
+    /// Split range into subranges by max_file_segment_size (same as in splitRange())
+    /// and create a new file segment for each subrange.
+    /// If `file_segments_limit` > 0, create no more than first file_segments_limit
+    /// file segments.
     FileSegments splitRangeIntoFileSegments(
         LockedKey & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
+        size_t file_segments_limit,
         const CreateFileSegmentSettings & create_settings);
 
     void fillHolesWithEmptyFileSegments(
         LockedKey & locked_key,
         FileSegments & file_segments,
         const FileSegment::Range & range,
+        size_t file_segments_limit,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings);
 
@@ -219,8 +254,6 @@ private:
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         const CacheGuard::Lock *);
-
-    void cleanupThreadFunc();
 };
 
 }

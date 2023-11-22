@@ -74,7 +74,7 @@ public:
     virtual VolumeType getType() const = 0;
 
     /// Return biggest unreserved space across all disks
-    UInt64 getMaxUnreservedFreeSpace() const;
+    std::optional<UInt64> getMaxUnreservedFreeSpace() const;
 
     DiskPtr getDisk() const { return getDisk(0); }
     virtual DiskPtr getDisk(size_t i) const { return disks[i]; }

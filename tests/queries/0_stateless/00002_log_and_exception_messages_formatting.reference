@@ -1,5 +1,6 @@
 runtime messages	0.001
 runtime exceptions	0.05
+unknown runtime exceptions	0.01
 messages shorter than 10	1
 messages shorter than 16	3
 exceptions shorter than 30	3

@@ -7,7 +7,7 @@ keywords: [gcs, bucket]
 
 # gcs Table Function
 
-Provides a table-like interface to select/insert files in [Google Cloud Storage](https://cloud.google.com/storage/).
+Provides a table-like interface to `SELECT` and `INSERT` data from [Google Cloud Storage](https://cloud.google.com/storage/). Requires the [`Storage Object User` IAM role](https://cloud.google.com/storage/docs/access-control/iam-roles).
 
 **Syntax**
 
@@ -22,7 +22,7 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
 
 **Arguments**
 
--   `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
+-   `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 
   :::note GCS
   The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:

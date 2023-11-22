@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <Core/SortDescription.h>
+#include <Core/Range.h>
 
 #include <Parsers/ASTExpressionList.h>
 
@@ -12,6 +13,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+
 
 namespace DB
 {
@@ -24,187 +26,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
 
-/** A field, that can be stored in two representations:
-  * - A standalone field.
-  * - A field with reference to its position in a block.
-  *   It's needed for execution of functions on ranges during
-  *   index analysis. If function was executed once for field,
-  *   its result would be cached for whole block for which field's reference points to.
-  */
-struct FieldRef : public Field
-{
-    FieldRef() = default;
-
-    /// Create as explicit field without block.
-    template <typename T>
-    FieldRef(T && value) : Field(std::forward<T>(value)) {} /// NOLINT
-
-    /// Create as reference to field in block.
-    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
-        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
-          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
-
-    bool isExplicit() const { return columns == nullptr; }
-
-    ColumnsWithTypeAndName * columns = nullptr;
-    size_t row_idx = 0;
-    size_t column_idx = 0;
-};
-
-/** Range with open or closed ends; possibly unbounded.
-  */
-struct Range
-{
-private:
-    static bool equals(const Field & lhs, const Field & rhs);
-    static bool less(const Field & lhs, const Field & rhs);
-
-public:
-    FieldRef left;        /// the left border
-    FieldRef right;       /// the right border
-    bool left_included;   /// includes the left border
-    bool right_included;  /// includes the right border
-
-    /// One point.
-    Range(const FieldRef & point) /// NOLINT
-        : left(point), right(point), left_included(true), right_included(true) {}
-
-    /// A bounded two-sided range.
-    Range(const FieldRef & left_, bool left_included_, const FieldRef & right_, bool right_included_)
-        : left(left_)
-        , right(right_)
-        , left_included(left_included_)
-        , right_included(right_included_)
-    {
-        shrinkToIncludedIfPossible();
-    }
-
-    static Range createWholeUniverse()
-    {
-        return Range(NEGATIVE_INFINITY, true, POSITIVE_INFINITY, true);
-    }
-
-    static Range createWholeUniverseWithoutNull()
-    {
-        return Range(NEGATIVE_INFINITY, false, POSITIVE_INFINITY, false);
-    }
-
-    static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false)
-    {
-        Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
-        r.right = right_point;
-        r.right_included = right_included;
-        r.shrinkToIncludedIfPossible();
-        // Special case for [-Inf, -Inf]
-        if (r.right.isNegativeInfinity() && right_included)
-            r.left_included = true;
-        return r;
-    }
-
-    static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false)
-    {
-        Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
-        r.left = left_point;
-        r.left_included = left_included;
-        r.shrinkToIncludedIfPossible();
-        // Special case for [+Inf, +Inf]
-        if (r.left.isPositiveInfinity() && left_included)
-            r.right_included = true;
-        return r;
-    }
-
-    /** Optimize the range. If it has an open boundary and the Field type is "loose"
-      * - then convert it to closed, narrowing by one.
-      * That is, for example, turn (0,2) into [1].
-      */
-    void shrinkToIncludedIfPossible()
-    {
-        if (left.isExplicit() && !left_included)
-        {
-            if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
-            {
-                ++left.get<UInt64 &>();
-                left_included = true;
-            }
-            if (left.getType() == Field::Types::Int64 && left.get<Int64>() != std::numeric_limits<Int64>::max())
-            {
-                ++left.get<Int64 &>();
-                left_included = true;
-            }
-        }
-        if (right.isExplicit() && !right_included)
-        {
-            if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
-            {
-                --right.get<UInt64 &>();
-                right_included = true;
-            }
-            if (right.getType() == Field::Types::Int64 && right.get<Int64>() != std::numeric_limits<Int64>::min())
-            {
-                --right.get<Int64 &>();
-                right_included = true;
-            }
-        }
-    }
-
-    bool empty() const { return less(right, left) || ((!left_included || !right_included) && !less(left, right)); }
-
-    /// x contained in the range
-    bool contains(const FieldRef & x) const
-    {
-        return !leftThan(x) && !rightThan(x);
-    }
-
-    /// x is to the left
-    bool rightThan(const FieldRef & x) const
-    {
-        return less(left, x) || (left_included && equals(x, left));
-    }
-
-    /// x is to the right
-    bool leftThan(const FieldRef & x) const
-    {
-        return less(x, right) || (right_included && equals(x, right));
-    }
-
-    bool intersectsRange(const Range & r) const
-    {
-        /// r to the left of me.
-        if (less(r.right, left) || ((!left_included || !r.right_included) && equals(r.right, left)))
-            return false;
-
-        /// r to the right of me.
-        if (less(right, r.left) || ((!right_included || !r.left_included) && equals(r.left, right)))
-            return false;
-
-        return true;
-    }
-
-    bool containsRange(const Range & r) const
-    {
-        /// r starts to the left of me.
-        if (less(r.left, left) || (r.left_included && !left_included && equals(r.left, left)))
-            return false;
-
-        /// r ends right of me.
-        if (less(right, r.right) || (r.right_included && !right_included && equals(r.right, right)))
-            return false;
-
-        return true;
-    }
-
-    void invert()
-    {
-        std::swap(left, right);
-        if (left.isPositiveInfinity())
-            left = NEGATIVE_INFINITY;
-        if (right.isNegativeInfinity())
-            right = POSITIVE_INFINITY;
-        std::swap(left_included, right_included);
-    }
-
-    String toString() const;
-};
 
 /** Condition on the index.
   *
@@ -253,7 +74,7 @@ public:
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
-        const std::vector<Range> & hyperrectangle,
+        const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
@@ -337,9 +158,10 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+
     bool matchesExactContinuousRange() const;
 
-private:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
@@ -352,7 +174,15 @@ private:
             FUNCTION_NOT_IN_SET,
             FUNCTION_IS_NULL,
             FUNCTION_IS_NOT_NULL,
-            FUNCTION_UNKNOWN, /// Can take any value.
+            /// Special for space-filling curves.
+            /// For example, if key is mortonEncode(x, y),
+            /// and the condition contains its arguments, e.g.:
+            ///   x >= 10 AND x <= 20 AND y >= 20 AND y <= 30,
+            /// this expression will be analyzed and then represented by following:
+            ///   args in hyperrectangle [10, 20] × [20, 30].
+            FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// Can take any value.
+            FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
             FUNCTION_NOT,
             FUNCTION_AND,
@@ -376,9 +206,18 @@ private:
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
         size_t key_column = 0;
+
+        /// If the key_column is a space filling curve, e.g. mortonEncode(x, y),
+        /// we will analyze expressions of its arguments (x and y) similarly how we do for a normal key columns,
+        /// and this designates the argument number (0 for x, 1 for y):
+        std::optional<size_t> argument_num_of_space_filling_curve;
+
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
+
+        /// For FUNCTION_ARGS_IN_HYPERRECTANGLE
+        Hyperrectangle space_filling_curve_args_hyperrectangle;
 
         MonotonicFunctionsChain monotonic_functions_chain;
     };
@@ -386,10 +225,11 @@ private:
     using RPN = std::vector<RPNElement>;
     using ColumnIndices = std::map<String, size_t>;
 
-
-public:
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value)>;
     static const AtomMap atom_map;
+
+    const RPN & getRPN() const { return rpn; }
+    const ColumnIndices & getKeyColumns() const { return key_columns; }
 
 private:
     BoolMask checkInRange(
@@ -402,21 +242,25 @@ private:
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    /** Is node the key column
-      *  or expression in which column of key is wrapped by chain of functions,
+    /** Is node the key column, or an argument of a space-filling curve that is a key column,
+      *  or expression in which that column is wrapped by a chain of functions,
       *  that can be monotonic on certain ranges?
-      * If these conditions are true, then returns number of column in key, type of resulting expression
+      * If these conditions are true, then returns number of column in key,
+      *  optionally the argument position of a space-filling curve,
+      *  type of resulting expression
       *  and fills chain of possibly-monotonic functions.
       */
     bool isKeyPossiblyWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
+        std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_res_column_type,
         MonotonicFunctionsChain & out_functions_chain);
 
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
+        std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
@@ -475,6 +319,11 @@ private:
     ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
     bool unknownOrAlwaysTrue(bool unknown_any) const;
 
+    /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
+      * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.
+      */
+    void findHyperrectanglesForArgumentsOfSpaceFillingCurves();
+
     RPN rpn;
 
     ColumnIndices key_columns;
@@ -484,6 +333,17 @@ private:
     const ExpressionActionsPtr key_expr;
     /// All intermediate columns are used to calculate key_expr.
     const NameSet key_subexpr_names;
+
+    /// Space-filling curves in the key
+    struct SpaceFillingCurveDescription
+    {
+        size_t key_column_pos;
+        String function_name;
+        std::vector<String> arguments;
+    };
+    using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
+    SpaceFillingCurveDescriptions key_space_filling_curves;
+    void getAllSpaceFillingCurves();
 
     /// Array joined column names
     NameSet array_joined_column_names;

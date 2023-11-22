@@ -163,13 +163,15 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 ASTPtr res = parseQueryAndMovePosition(
                     parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth);
-                /// For insert query with data(INSERT INTO ... VALUES ...), will lead to format fail,
-                /// should throw exception early and make exception message more readable.
+
+                /// For insert query with data(INSERT INTO ... VALUES ...), that will lead to the formatting failure,
+                /// we should throw an exception early, and make exception message more readable.
                 if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
                     throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
                         "Can't format ASTInsertQuery with data, since data will be lost");
                 }
+
                 if (!quiet)
                 {
                     if (!backslash)

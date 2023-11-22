@@ -11,6 +11,9 @@ ClickHouse runs sampling profiler that allows analyzing query execution. Using p
 
 Query profiler is automatically enabled in ClickHouse Cloud and you can run a sample query as follows
 
+:::note If you are running the following query in ClickHouse Cloud, make sure to change `FROM system.trace_log` to `FROM clusterAllReplicas(default, system.trace_log)` to select from all nodes of the cluster
+:::
+
 ``` sql
 SELECT
     count(),

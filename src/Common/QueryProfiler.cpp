@@ -22,6 +22,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event QueryProfilerSignalOverruns;
+    extern const Event QueryProfilerConcurrencyOverruns;
     extern const Event QueryProfilerRuns;
 }
 
@@ -40,8 +41,19 @@ namespace
     /// to ignore delivered signals after timer_delete().
     thread_local bool signal_handler_disarmed = true;
 
+    /// Don't permit too many threads be busy inside profiler,
+    /// which could slow down the system in some environments.
+    std::atomic<Int64> concurrent_invocations = 0;
+
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
+        SCOPE_EXIT({ concurrent_invocations.fetch_sub(1, std::memory_order_relaxed); });
+        if (concurrent_invocations.fetch_add(1, std::memory_order_relaxed) > 100)
+        {
+            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerConcurrencyOverruns);
+            return;
+        }
+
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
 #if defined(OS_LINUX)
@@ -91,7 +103,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#if USE_UNWIND
+#ifndef __APPLE__
 Timer::Timer()
     : log(&Poco::Logger::get("Timer"))
 {}
@@ -119,6 +131,15 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
             if (errno == 0)
                 throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer. The function "
                                 "'timer_create' returned non-zero but didn't set errno. This is bug in your OS.");
+
+            /// For example, it cannot be created if the server is run under QEMU:
+            /// "Failed to create thread timer, errno: 11, strerror: Resource temporarily unavailable."
+
+            /// You could accidentally run the server under QEMU without being aware,
+            /// if you use Docker image for a different architecture,
+            /// and you have the "binfmt-misc" kernel module, and "qemu-user" tools.
+
+            /// Also, it cannot be created if the server has too many threads.
 
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }
@@ -200,13 +221,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     UNUSED(pause_signal);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif !USE_UNWIND
+#elif defined(__APPLE__)
     UNUSED(thread_id);
     UNUSED(clock_type);
     UNUSED(period);
     UNUSED(pause_signal);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work with stock libunwind");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
     /// Sanity check.
     if (!hasPHDRCache())
@@ -255,7 +276,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::cleanup()
 {
-#if USE_UNWIND
+#ifndef __APPLE__
     timer.stop();
     signal_handler_disarmed = true;
 #endif

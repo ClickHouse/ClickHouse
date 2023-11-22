@@ -1,26 +1,27 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/castTypeToEither.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/castTypeToEither.h>
 
 #include <Core/callOnTypeIndex.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 
-#include <Common/typeid_cast.h>
+#include <Common/transformEndianness.h>
 #include <Common/memcpySmall.h>
+#include <Common/typeid_cast.h>
 
 #include <base/unaligned.h>
 
@@ -261,8 +262,10 @@ public:
                             memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
                         else
                         {
-                            size_t offset_to = sizeof(To) > sizeof(From) ? sizeof(To) - sizeof(From) : 0;
-                            memcpy(reinterpret_cast<char*>(&to[i]) + offset_to, static_cast<const void*>(&from[i]), copy_size);
+                            // Handle the cases of both 128-bit representation to 256-bit and 128-bit to 64-bit or lower.
+                            const size_t offset_from = sizeof(From) > sizeof(To) ? sizeof(From) - sizeof(To) : 0;
+                            const size_t offset_to = sizeof(To) > sizeof(From) ? sizeof(To) - sizeof(From) : 0;
+                            memcpy(reinterpret_cast<char *>(&to[i]) + offset_to, reinterpret_cast<const char *>(&from[i]) + offset_from, copy_size);
                         }
 
                     }
@@ -315,7 +318,11 @@ private:
         {
             std::string_view data = src.getDataAt(i).toView();
 
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
+#else
+            reverseMemcpy(&data_to[offset], data.data(), std::min(n, data.size()));
+#endif
             offset += n;
         }
     }
@@ -326,7 +333,11 @@ private:
         ColumnFixedString::Chars & data_to = dst.getChars();
         data_to.resize(n * rows);
 
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         memcpy(data_to.data(), src.getRawData().data(), data_to.size());
+#else
+        reverseMemcpy(data_to.data(), src.getRawData().data(), data_to.size());
+#endif
     }
 
     static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)

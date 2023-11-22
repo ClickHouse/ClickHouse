@@ -102,6 +102,19 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     size_t bytes_read = 0;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
+
+    auto handle_exception = [&, this](const auto & e, size_t i)
+    {
+        LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}/{}: {}", path, i + 1, max_single_read_retries, e.Message);
+        if (i + 1 == max_single_read_retries)
+            throw;
+
+        sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+        sleep_time_with_backoff_milliseconds *= 2;
+        initialized = false;
+        initialize();
+    };
+
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
         try
@@ -111,16 +124,9 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
                 read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
             break;
         }
-        catch (const Azure::Storage::StorageException & e)
+        catch (const Azure::Core::RequestFailedException & e)
         {
-            LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}: {}", path, i, e.Message);
-            if (i + 1 == max_single_read_retries)
-                throw;
-
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-            sleep_time_with_backoff_milliseconds *= 2;
-            initialized = false;
-            initialize();
+            handle_exception(e, i);
         }
     }
 
@@ -211,6 +217,17 @@ void ReadBufferFromAzureBlobStorage::initialize()
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
     size_t sleep_time_with_backoff_milliseconds = 100;
+
+    auto handle_exception = [&, this](const auto & e, size_t i)
+    {
+        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+        if (i + 1 == max_single_download_retries)
+            throw;
+
+        sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+        sleep_time_with_backoff_milliseconds *= 2;
+    };
+
     for (size_t i = 0; i < max_single_download_retries; ++i)
     {
         try
@@ -221,12 +238,7 @@ void ReadBufferFromAzureBlobStorage::initialize()
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {} : {}", path, offset, i + 1, e.Message);
-            if (i + 1 == max_single_download_retries)
-                throw;
-
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-            sleep_time_with_backoff_milliseconds *= 2;
+            handle_exception(e,i);
         }
     }
 

@@ -68,6 +68,7 @@ RUN python3 -m pip install --no-cache-dir \
     asyncio \
     avro==1.10.2 \
     azure-storage-blob \
+    boto3 \
     cassandra-driver \
     confluent-kafka==1.9.2 \
     delta-spark==2.3.0 \
@@ -80,7 +81,6 @@ RUN python3 -m pip install --no-cache-dir \
     kafka-python \
     kazoo \
     lz4 \
-    meilisearch==0.18.3 \
     minio \
     nats-py \
     protobuf \
@@ -95,13 +95,18 @@ RUN python3 -m pip install --no-cache-dir \
     pytest-timeout \
     pytest-xdist \
     pytz \
+    pyyaml==5.3.1 \
     redis \
     requests-kerberos \
     tzlocal==2.1 \
+    retry \
+    bs4 \
+    lxml \
     urllib3
+# bs4, lxml are for cloud tests, do not delete
 
 # Hudi supports only spark 3.3.*, not 3.4
-RUN curl -fsSL -O https://dlcdn.apache.org/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \
+RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \
     && tar xzvf spark-3.3.2-bin-hadoop3.tgz -C / \
     && rm spark-3.3.2-bin-hadoop3.tgz
 
@@ -128,10 +133,11 @@ COPY misc/ /misc/
 
 # Same options as in test/base/Dockerfile
 # (in case you need to override them in tests)
-ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
+ENV TSAN_OPTIONS='halt_on_error=1 abort_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+# To pass additional arguments (i.e. list of tests) use PYTEST_ADDOPTS
+CMD ["sh", "-c", "pytest"]
