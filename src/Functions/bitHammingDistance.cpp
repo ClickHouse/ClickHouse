@@ -5,6 +5,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 template <typename A, typename B>
 struct BitHammingDistanceImpl
 {
