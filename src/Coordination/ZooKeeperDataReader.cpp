@@ -284,7 +284,7 @@ void deserializeLogMagic(ReadBuffer & in)
 ///     strange, that this 550 bytes obviously was a part of Create transaction,
 ///     but the operation code was -1. We have added debug prints to original
 ///     zookeeper (3.6.3) and found that it just reads 550 bytes of this "Error"
-///     transaction, tooks the first 4 bytes as an error code (it was 79, non
+///     transaction, took the first 4 bytes as an error code (it was 79, non
 ///     existing code) and skip all remaining 546 bytes. NOTE: it looks like a bug
 ///     in ZooKeeper.
 ///

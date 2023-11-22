@@ -539,8 +539,12 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
 {
+    std::unordered_set<DiskPtr> read_disks;
     const auto load_snapshot_from_disk = [&](const auto & disk)
     {
+        if (read_disks.contains(disk))
+            return;
+
         LOG_TRACE(log, "Reading from disk {}", disk->getName());
         std::unordered_map<std::string, std::string> incomplete_files;
 
@@ -590,6 +594,8 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
         for (const auto & [name, path] : incomplete_files)
             disk->removeFile(path);
+
+        read_disks.insert(disk);
     };
 
     for (const auto & disk : keeper_context->getOldSnapshotDisks())

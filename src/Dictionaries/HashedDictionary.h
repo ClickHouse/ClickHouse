@@ -28,6 +28,7 @@ struct HashedDictionaryConfiguration
     const float max_load_factor;
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
+    bool use_async_executor = false;
 };
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

@@ -121,7 +121,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
     String alias = ast->tryGetAlias();
     if (!alias.empty())
     {
-        if (aliases.contains(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
+        if (aliases.contains(alias) && ast->getTreeHash(/*ignore_aliases=*/ true) != aliases[alias]->getTreeHash(/*ignore_aliases=*/ true))
             throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
         aliases[alias] = ast;
@@ -140,7 +140,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
         information for our ast node with query string. And this alias will be dropped because prefer_alias_to_column_name for ASTWIthAlias
         by default is false.
 
-        It is imporant that subquery can be converted to literal during ExecuteScalarSubqueriesVisitor.
+        It is important that subquery can be converted to literal during ExecuteScalarSubqueriesVisitor.
         And code below check if we previously set for subquery alias as _subquery, and if it is true
         then set prefer_alias_to_column_name = true for node that was optimized during ExecuteScalarSubqueriesVisitor.
      */
