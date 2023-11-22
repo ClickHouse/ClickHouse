@@ -331,6 +331,7 @@ private:
         const String & getRelativePath() const { return relative_path_with_metadata.relative_path; }
         const RelativePathWithMetadata & getRelativePathWithMetadata() const { return relative_path_with_metadata; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        ReadBuffer & getReadBuffer() const { return *read_buf; }
 
     private:
         RelativePathWithMetadata relative_path_with_metadata;

@@ -231,6 +231,7 @@ private:
         String getPath() const { return fs::path(bucket) / key_with_info->key; }
         const String & getFile() const { return key_with_info->key; }
         const KeyWithInfo & getKeyWithInfo() const { return *key_with_info; }
+        std::optional<size_t> getFileSize() const { return key_with_info->info ? std::optional(key_with_info->info->size) : std::nullopt; }
 
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
