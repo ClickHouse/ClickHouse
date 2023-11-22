@@ -311,11 +311,11 @@ ProcessListEntry::~ProcessListEntry()
         }
     }
 
-    if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
-        parent.queries_to_user.erase(query_user);
-
     /// Wait for the query if it is in the cancellation right now.
     parent.cancelled_cv.wait(lock.lock, [&]() { return process_list_element_ptr->is_cancelling == false; });
+
+    if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
+        parent.queries_to_user.erase(query_user);
 
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
