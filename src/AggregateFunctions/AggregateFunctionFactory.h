@@ -79,7 +79,10 @@ public:
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(String name) const;
 
-    bool isAggregateFunctionName(String name) const;
+    bool isAggregateFunctionName(const String & name) const;
+
+    /// Returns the name without combinators and the original name too (if aliases)
+    std::optional<std::tuple<String, String>> tryGetNameAndOriginalNameWithoutCombinators(const String & name) const;
 
 private:
     AggregateFunctionPtr getImpl(

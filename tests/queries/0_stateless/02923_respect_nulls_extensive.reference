@@ -1,0 +1,18 @@
+FIRST VALUE RESPECT NULLS CASE SENSITIVE
+0	0
+0	0
+0	0
+0	0
+0	0
+0	0
+0	0
+FIRST VALUE IGNORE NULLS
+0	0
+2
+2
+6
+\N
+AggregateFunction(any_respect_nullsIf, Nullable(UInt64), UInt8)
+6
+\N
+AggregateFunction(any_respect_nullsIf, Nullable(UInt64), UInt8)

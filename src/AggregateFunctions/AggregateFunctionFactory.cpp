@@ -81,7 +81,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
     /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
     /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
-    /// they must handle the nullability themselves
+    /// they must handle the nullability themselves.
+    /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
     auto properties = tryGetProperties(name);
     bool is_window_function = properties.has_value() && properties->is_window_function;
     if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
@@ -262,26 +263,38 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 }
 
 
-bool AggregateFunctionFactory::isAggregateFunctionName(String name) const
+bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) const
 {
-    if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
+    return tryGetNameAndOriginalNameWithoutCombinators(name).has_value();
+}
+
+std::optional<std::tuple<String, String>> AggregateFunctionFactory::tryGetNameAndOriginalNameWithoutCombinators(const String & name_) const
+{
+    if (name_.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
+
+    String name = name_;
+    String name_lowercase = Poco::toLower(name_);
 
     while (true)
     {
-        if (aggregate_functions.contains(name) || isAlias(name))
-            return true;
+        if (aggregate_functions.contains(name))
+            return {{name, name}};
+        if (aliases.contains(name))
+            return {{name, aliases.at(name)}};
 
-        String name_lowercase = Poco::toLower(name);
-        if (case_insensitive_aggregate_functions.contains(name_lowercase) || isAlias(name_lowercase))
-            return true;
+        if (case_insensitive_aggregate_functions.contains(name_lowercase))
+            return {{name, name_lowercase}};
+        if (case_insensitive_aliases.contains(name_lowercase))
+            return {{name, case_insensitive_aliases.at(name_lowercase)}};
 
         if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
         {
             name = name.substr(0, name.size() - combinator->getName().size());
+            name_lowercase = name_lowercase.substr(0, name_lowercase.size() - combinator->getName().size());
         }
         else
-            return false;
+            return {};
     }
 }
 

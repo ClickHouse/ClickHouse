@@ -29,6 +29,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 using namespace std::literals;
 
 
@@ -38,6 +40,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
 
 
@@ -1138,7 +1141,8 @@ public:
             {
                 nulls_action = NullsAction::IGNORE_NULLS;
             }
-            if (nulls_action == NullsAction::RESPECT_NULLS)
+
+            if (nulls_action != NullsAction::EMPTY)
                 function_node->name = transformFunctionNameForRespectNulls(function_node->name, nulls_action);
 
             if (over.ignore(pos, expected))
@@ -1182,22 +1186,44 @@ private:
     };
     static String transformFunctionNameForRespectNulls(const String & original_function_name, NullsAction nulls_action)
     {
-        static std::unordered_map<String, String> renamed_functions_with_nulls = {
-            {"any", "any_respect_nulls"},
-            {"any_value", "any_respect_nulls"},
-            {"first_value", "any_respect_nulls"},
-            {"anyLast", "anyLast_respect_nulls"},
-            {"last_value", "anyLast_respect_nulls"},
-        };
-        auto it = renamed_functions_with_nulls.find(original_function_name);
-        if (it == renamed_functions_with_nulls.end())
+        const auto & factory = AggregateFunctionFactory::instance();
+        auto names = factory.tryGetNameAndOriginalNameWithoutCombinators(original_function_name);
+        if (!names)
         {
-            if (nulls_action == NullsAction::EMPTY)
-                return original_function_name;
+            auto hints = factory.getHints(original_function_name);
+            if (!hints.empty())
+                throw Exception(
+                    ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                    "Unknown aggregate function {}. Maybe you meant: {}",
+                    original_function_name,
+                    toString(hints));
             else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", original_function_name);
+                throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}", original_function_name);
         }
-        return it->second;
+
+        String name_without_combinators;
+        String unaliased_name;
+        std::tie(name_without_combinators, unaliased_name) = *names;
+
+        if (nulls_action == NullsAction::RESPECT_NULLS)
+        {
+            static const std::unordered_set<String> functions_that_support_respect_nulls = {"any", "anyLast"};
+            if (!functions_that_support_respect_nulls.contains(unaliased_name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name_without_combinators);
+
+            return unaliased_name + "_respect_nulls"
+                + original_function_name.substr(name_without_combinators.size(), original_function_name.size());
+        }
+        else if (nulls_action == NullsAction::IGNORE_NULLS)
+        {
+            if (name_without_combinators.ends_with("_respect_nulls"))
+            {
+                return name_without_combinators.substr(0, name_without_combinators.size() - String{"_respect_nulls"}.size())
+                    + original_function_name.substr(name_without_combinators.size(), original_function_name.size());
+            }
+        }
+
+        return original_function_name;
     }
 };
 
