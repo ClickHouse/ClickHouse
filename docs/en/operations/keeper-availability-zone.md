@@ -61,6 +61,6 @@ In case that keeper host is temporarily unavailable, the session has a fallback 
 Once that expiration time reaches, ClickHouse would go through the same process again.
 
 ## Caveats
-ClickHouse only fallback to other AZ keeper hosts when the it can not find any local AZ keeper available. As long as
-one local AZ keeper is available, ClickHouse only consider to connect to that. This potentially can cause overload
-on that keeper.
+ClickHouse only fallbacks to other AZ Keeper hosts when it can not find any local AZ Keeper available. As long as
+one local AZ Keeper is available, ClickHouse will only consider that Keeper for connection. This potentially can cause overload
+on that Keeper.

@@ -1,7 +1,7 @@
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/GetPriorityForLoadBalancing.h>
 #include <Common/Priority.h>
-#include "Core/SettingsEnums.h"
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -51,7 +51,7 @@ std::function<Priority(size_t index)> GetPriorityForLoadBalancing::getPriorityFu
             };
             break;
         case LoadBalancing::KEEPER_LOCAL_AVAILABILITY_ZONE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "KEEPER_LOCAL_AVAILABILITY_ZONE has its own logic for determine priority");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "KEEPER_LOCAL_AVAILABILITY_ZONE has its own logic for determining priority");
     }
     return get_priority;
 }

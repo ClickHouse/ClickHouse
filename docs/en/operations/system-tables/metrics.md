@@ -355,7 +355,7 @@ Number of outstanding requests
 
 ### KeeperConnectedHostInLocalAZ
 
-Whether connected to a  keeper host in the same local availability zone
+Whether connected to a Keeper host in the same local availability zone
 
 ### LocalThread
 

@@ -61,13 +61,11 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
-bool ZooKeeperAvailabilityZoneMap::needTryOtherHost(const std::string &local_az, const std::set<std::string> &attempted_host)
+bool ZooKeeperAvailabilityZoneMap::needTryOtherHost(const std::string & local_az, const std::set<std::string> & attempted_host)
 {
     std::lock_guard lock(mutex);
-    for (const auto &host_az : az_by_host)
+    for (const auto & [host, az] : az_by_host)
     {
-        const auto & host = host_az.first;
-        const auto & az = host_az.second;
         if ((az == AZ_UNKNWON || az == local_az) && !attempted_host.contains(host))
             return true;
     }
@@ -115,7 +113,7 @@ bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string& host, bool& 
 Coordination::ZooKeeper::Node makeZooKeeperNode(const ShuffleHost& shuffle_host)
 {
     Coordination::ZooKeeper::Node node;
-    auto host_result = parseForSocketAddress(shuffle_host.host);
+    auto [address, secure] = parseForSocketAddress(shuffle_host.host);
     node.address = Poco::Net::SocketAddress(host_result.first);
     node.secure = host_result.second;
     node.original_index = shuffle_host.original_index;
@@ -133,7 +131,7 @@ std::string ZooKeeperAvailabilityZoneMap::get(const std::string &host)
     std::lock_guard lock(mutex);
     auto it = az_by_host.find(host);
     if (it == az_by_host.end())
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,"No availability zone info for host {}", host);
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No availability zone info for host {}", host);
     return it->second;
 }
 
@@ -177,12 +175,13 @@ std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger
     }
     ::sort(shuffled_hosts.begin(), shuffled_hosts.end(), ShuffleHost::compare);
     // Additional check to warn users about situation that remaining keeper in single AZ can't handle the load.
-    std::map<std::string, int> az_count_map;
+    std::unordered_map<std::string_view, uint64_t> az_count_map;
     for (const auto & host : az_by_host)
     {
         const auto& az = host.second;
-        az_count_map[az]++;
-        if (az != AZ_UNKNWON && az_count_map[az] > 1)
+        auto & az_count = az_count_map[az];
+        ++az_count;
+        if (az != AZ_UNKNWON && az_count > 1)
         {
             LOG_WARNING(log, "More than one ZooKeeper node found in availability zone {}, such as {}. "
                 "If one of them fails, the remaining ones potentially can be overloaded", az, host.first);
@@ -192,7 +191,7 @@ std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger
     return shuffled_hosts;
 }
 
-[[noreturn]] void throwWhenNoHostAvailable(const bool& dns_error_occurred)
+[[noreturn]] void throwWhenNoHostAvailable(bool dns_error_occurred)
 {
     if (dns_error_occurred)
         throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
@@ -274,7 +273,7 @@ void ZooKeeper::tryConnectSameAZKeeper()
     auto & az_helper = ZooKeeperAvailabilityZoneMap::instance();
     const auto & shuffle_hosts = az_helper.shuffleHosts(log, local_az, args.hosts, dns_error);
 
-    std::set<std::string> attempted_hosts;
+    std::unordered_set<std::string_view> attempted_hosts;
     for (const auto & host : shuffle_hosts)
     {
         std::string connected_host_az = ZooKeeperAvailabilityZoneMap::AZ_UNKNWON;

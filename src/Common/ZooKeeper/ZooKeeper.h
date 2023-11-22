@@ -673,7 +673,7 @@ public:
 
     // maybeWorthTryingOtherHost returns true if we want to connect to `local_az` and we have tried `attempted_host` already.
     // If some hosts their availability zone are still unknown, or we still have some same az not tried yet.
-    bool needTryOtherHost(const std::string & local_az, const std::set<std::string> & attempted_host);
+    bool needTryOtherHost(const std::string & local_az, const std::unordered_set<std::string> & attempted_host);
 
     // Allow to skip DNS check in unit tests.
     bool skip_dns_check_for_test = false;
@@ -681,7 +681,7 @@ public:
 private:
     void updateWithLock(const std::string & host, const std::string & availability_zone);
 
-    std::map<std::string, std::string> az_by_host;
+    std::unordered_map<std::string, std::string> az_by_host;
     std::mutex mutex;
 };
 
