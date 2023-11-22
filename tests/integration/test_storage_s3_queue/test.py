@@ -717,6 +717,8 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
+    row_num = 50
+    total_rows = row_num * files_to_generate
 
     for instance in [node, node_2]:
         create_table(
@@ -734,7 +736,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         create_mv(instance, table_name, dst_table_name)
 
     total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=1
+        started_cluster, files_path, files_to_generate, row_num=row_num
     )
 
     def get_count(node, table_name):
@@ -743,13 +745,13 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     for _ in range(150):
         if (
             get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-        ) == files_to_generate:
+        ) == total_rows:
             break
         time.sleep(1)
 
     if (
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-    ) != files_to_generate:
+    ) != total_rows:
         info = node.query(
             f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
         )
@@ -762,7 +764,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
 
-    assert len(res1) + len(res2) == files_to_generate
+    assert len(res1) + len(res2) == total_rows
 
     # Checking that all engines have made progress
     assert len(res1) > 0
@@ -774,7 +776,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     time.sleep(10)
     assert (
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-    ) == files_to_generate
+    ) == total_rows
 
 
 def test_max_set_age(started_cluster):

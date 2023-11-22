@@ -63,8 +63,6 @@ option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
 
-option (ENABLE_CLICKHOUSE_REPORT "A tiny tool to collect a clickhouse-server state" ${ENABLE_CLICKHOUSE_ALL})
-
 if (NOT ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
     # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
@@ -389,9 +387,6 @@ if (ENABLE_CLICKHOUSE_SU)
     add_custom_target (clickhouse-su ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-su DEPENDS clickhouse)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-su" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE clickhouse-su)
-endif ()
-if (ENABLE_CLICKHOUSE_REPORT)
-    include(${ClickHouse_SOURCE_DIR}/utils/report/CMakeLists.txt)
 endif ()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
