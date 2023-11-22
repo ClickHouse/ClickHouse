@@ -229,6 +229,13 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         /// SharedMergeTree (i.e. s3withkeeper) but I believe this could break way more things that it should
         if (s3_enable_disk_vfs)
         {
+            // TODO myrrc this produces a build issue as some Contexts
+            // don't have a getZooKepeer method. However, there is a bug when we try to init
+            // Zookeeper in startup() method so here's an ugly patch to mitigate that
+            zkutil::ZooKeeperPtr zookeeper_ptr;
+            if constexpr (requires { context->getZooKeeper(); })
+                zookeeper_ptr = context->getZooKeeper();
+
             auto disk = std::make_shared<DiskObjectStorageVFS>(
                 name,
                 uri.key,
@@ -236,7 +243,8 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
                 std::move(metadata_storage),
                 std::move(s3_storage),
                 config,
-                config_prefix);
+                config_prefix,
+                std::move(zookeeper_ptr));
 
             disk->startup(context, skip_access_check);
             return disk;

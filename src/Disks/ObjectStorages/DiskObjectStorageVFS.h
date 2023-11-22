@@ -11,7 +11,18 @@ namespace DB
 class DiskObjectStorageVFS : public DiskObjectStorage
 {
 public:
-    using DiskObjectStorage::DiskObjectStorage;
+    // TODO myrrc should just "using DiskObjectStorage::DiskObjectStorage" and fill zookeeper
+    // in startupImpl but in checkAccessImpl (called before startupImpl) a file is written therefore
+    // we need to have zookeeper already
+    DiskObjectStorageVFS(
+        const String & name,
+        const String & object_storage_root_path_,
+        const String & log_name,
+        MetadataStoragePtr metadata_storage_,
+        ObjectStoragePtr object_storage_,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        zkutil::ZooKeeperPtr zookeeper_);
     ~DiskObjectStorageVFS() override = default;
 
     void startupImpl(ContextPtr context) override;
@@ -38,7 +49,5 @@ private:
 
     std::unique_ptr<ReadBufferFromFileBase> readObject(const StoredObject & object);
     void removeObjects(StoredObjects && objects);
-
-    void preAccessCheck(ContextPtr context) override;
 };
 }

@@ -5,34 +5,47 @@
 
 namespace DB
 {
+DiskObjectStorageVFS::DiskObjectStorageVFS(
+    const String & name_,
+    const String & object_storage_root_path_,
+    const String & log_name,
+    MetadataStoragePtr metadata_storage_,
+    ObjectStoragePtr object_storage_,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    zkutil::ZooKeeperPtr zookeeper_)
+    : DiskObjectStorage( //NOLINT
+        name_,
+        object_storage_root_path_,
+        log_name,
+        std::move(metadata_storage_),
+        std::move(object_storage_),
+        config,
+        config_prefix)
+    , zookeeper(std::move(zookeeper_))
+{
+    zookeeper->createAncestors(VFS_LOG_ITEM);
+    // TODO myrrc ugly hack to create locks root node, remove
+    zookeeper->createAncestors(fs::path(VFS_LOCKS_NODE) / "dummy");
+}
+
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
 {
     const auto config_prefix = "storage_configuration.disks." + name;
-    auto ptr = std::make_shared<DiskObjectStorageVFS>(
+    return std::make_shared<DiskObjectStorageVFS>(
         getName(),
         object_key_prefix,
         getName(),
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
-        config_prefix);
-    ptr->zookeeper = zookeeper;
-    return ptr;
-}
-
-void DiskObjectStorageVFS::preAccessCheck(ContextPtr context)
-{
-    zookeeper = context->getZooKeeper();
+        config_prefix,
+        zookeeper);
 }
 
 void DiskObjectStorageVFS::startupImpl(ContextPtr context)
 {
     DiskObjectStorage::startupImpl(context);
-
-    zookeeper->createAncestors(VFS_LOG_ITEM);
-    // TODO myrrc ugly hack to create locks root node, remove
-    zookeeper->createAncestors(fs::path(VFS_LOCKS_NODE) / "dummy");
-
     gc_thread = std::make_unique<ObjectStorageVFSGCThread>(*this, context);
     gc_thread->start();
 }
@@ -66,6 +79,7 @@ bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
 
     if (block)
     {
+        // TODO myrrc this isn't working
         zookeeper->create(lock_path_full, "", mode);
         return true;
     }
