@@ -1796,6 +1796,9 @@ try
                              "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
                              "to configuration file.)");
 
+#if USE_SSL
+        CertificateReloader::instance().tryLoad(config());
+#endif
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
 
