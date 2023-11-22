@@ -92,15 +92,12 @@ public:
         auto & dst_data = result_column.getData();
         dst_data.resize(rows_count);
 
-        using equivalent_integer = typename std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;
-
         for (size_t i = 0; i < rows_count; ++i)
         {
-            auto raw_value = src_data[i];
-            if (raw_value < 0)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected a non-negative integer, got: {}", std::to_string(raw_value));
-            auto value = static_cast<equivalent_integer>(raw_value); /// NOLINT(bugprone-signed-char-misuse,cert-str34-c)
-            dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
+            auto value = src_data[i];
+            if (value < 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected a non-negative integer, got: {}", std::to_string(value));
+            dst_data[i] = static_cast<RawReturnType>(value) - static_cast<RawReturnType>(ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
         }
     }
 };
