@@ -1,4 +1,3 @@
-#include <Storages/KeyDescriptionMonotonicityChecker.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
@@ -51,12 +50,7 @@ bool MergeTreePartitionCompatibilityVerifier::isDestinationPartitionExpressionMo
 
     MonotonicityCheckVisitor(data).visit(ast_func);
 
-    auto monotonicity_info = KeyDescriptionMonotonicityChecker::getMonotonicityInfo(destination_table_metadata->getPartitionKey(), range, context);
-
-    assert(monotonicity_info.is_monotonic == data.monotonicity.is_monotonic);
-    assert(monotonicity_info.is_positive == data.monotonicity.is_positive);
-
-    return monotonicity_info.is_monotonic && monotonicity_info.is_positive;
+    return data.monotonicity.is_monotonic && data.monotonicity.is_positive;
 }
 
 void MergeTreePartitionCompatibilityVerifier::validatePartitionIds(
