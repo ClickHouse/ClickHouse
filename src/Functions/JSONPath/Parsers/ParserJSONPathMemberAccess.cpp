@@ -61,7 +61,7 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
         }
-        else if ((!pos.isValid() && pos->type == TokenType::EndOfStream))
+        else if (!pos.isValid() && pos->type == TokenType::EndOfStream)
         {
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
         }
