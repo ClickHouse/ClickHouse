@@ -7763,7 +7763,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
                 LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", delete_requests[i]->getPath(), delete_responses[i]->error);
     }
 
-    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {}", delete_requests.size(), partition_id);
+    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
+              delete_requests.size(), partition_id, min_block_num, max_block_num);
 }
 
 void StorageReplicatedMergeTree::replacePartitionFrom(
@@ -7908,9 +7909,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (replace)
         {
             /// Cancel concurrent inserts in range
-            clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+            clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.min_block, drop_range.max_block);
             /// Remove deduplication block_ids of replacing parts
-            clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+            clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.min_block, drop_range.max_block);
         }
 
         Coordination::Responses op_results;
@@ -7966,7 +7967,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 if (replace)
                 {
                     parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.partition_id, &data_parts_lock);
-                    removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
+                    /// We ignore the list of parts returned from the function below. We will remove them from zk when executing REPLACE_RANGE
+                    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
                 }
             }
 
@@ -8164,9 +8166,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
 
         /// Cancel concurrent inserts in range
-        clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+        clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.min_block, drop_range.max_block);
 
-        clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+        clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.min_block, drop_range.max_block);
 
         Coordination::Responses op_results;
 
@@ -8207,7 +8209,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                     zkutil::KeeperMultiException::check(code, ops, op_results);
 
                 parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.partition_id, &src_data_parts_lock);
-                removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
+                /// We ignore the list of parts returned from the function below because we cannot remove them from zk
+                /// because we have not created the DROP_RANGE yet. Yes, MOVE PARTITION is trash.
+                removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
                 transaction.commit(&src_data_parts_lock);
             }
 
