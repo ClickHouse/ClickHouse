@@ -149,7 +149,7 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderBackgroundThreadsScheduled;
     extern const Metric TablesLoaderForegroundThreads;
     extern const Metric TablesLoaderForegroundThreadsActive;
-    extern const Metric TablesLoaderForegroundThreadsActiveScheduled;
+    extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
 }
 
