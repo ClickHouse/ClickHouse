@@ -28,6 +28,9 @@ extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
+
+extern const Event CachedReadBufferReadFromCacheHits;
+extern const Event CachedReadBufferReadFromCacheMisses;
 }
 
 namespace DB
@@ -949,11 +952,13 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         if (read_type == ReadType::CACHED)
         {
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheHits);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
         }
         else
         {
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMisses);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
         }
