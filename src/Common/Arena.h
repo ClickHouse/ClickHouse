@@ -123,7 +123,7 @@ private:
 
         if (head.empty())
         {
-            size_after_grow = initial_size;
+            size_after_grow = std::max(min_next_size, initial_size);
         }
         else if (head.size() < linear_growth_threshold)
         {
