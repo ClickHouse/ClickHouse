@@ -74,7 +74,8 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
         {
             const auto & selected_by_indices = index_column->getData();
             const auto * selected_by_filter = description->data->data();
-            // description->has_one = 0;
+            /// We will recompute new has_one
+            description->has_one = 0;
             /// At this point we know that the filter is not constant, just create a new filter
             auto mutable_holder = ColumnUInt8::create(num_rows, 0);
             auto & data = mutable_holder->getData();
