@@ -234,7 +234,16 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
                 /// Drop table from memory, don't touch data and metadata
                 database->detachTable(context_, table_id.table_name);
             }
+
             CurrentMetrics::sub(CurrentMetrics::AttachedTables, 1);
+            UInt64 max_table_size_to_warn = static_cast<DB::Int64>(getContext()->getMaxTableSizeToWarn());
+            UInt64 attached_table_num = CurrentMetrics::get(CurrentMetrics::AttachedTables);
+
+            if (getContext()->isExceedMaxTableSize() && attached_table_num <= max_table_size_to_warn)
+            {
+                getContext()->deleteWarningMessage(fmt::format("Attached database is more than {}", max_table_size_to_warn));
+                getContext()->setIsExceedMaxTableSize(false);
+            }
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
@@ -290,6 +299,15 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
                 context_->clearMMappedFileCache();
 
             CurrentMetrics::sub(CurrentMetrics::AttachedTables, 1);
+            UInt64 max_table_size_to_warn = static_cast<DB::Int64>(getContext()->getMaxTableSizeToWarn());
+            UInt64 attached_table_num = CurrentMetrics::get(CurrentMetrics::AttachedTables);
+
+            if (getContext()->isExceedMaxTableSize() && attached_table_num <= max_table_size_to_warn)
+            {
+                getContext()->deleteWarningMessage(fmt::format("Attached databases is more than {}", max_table_size_to_warn));
+                getContext()->setIsExceedMaxTableSize(false);
+            }
+
         }
 
         db = database;
@@ -322,11 +340,29 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             {
                 context_handle->removeExternalTable(table_name);
                 CurrentMetrics::sub(CurrentMetrics::AttachedTables, 1);
+
+                UInt64 max_table_size_to_warn = static_cast<DB::Int64>(getContext()->getMaxTableSizeToWarn());
+                UInt64 attached_table_num = CurrentMetrics::get(CurrentMetrics::AttachedTables);
+
+                if (getContext()->isExceedMaxTableSize() && attached_table_num <= max_table_size_to_warn)
+                {
+                    getContext()->deleteWarningMessage(fmt::format("Attached databases is more than {}", max_table_size_to_warn));
+                    getContext()->setIsExceedMaxTableSize(false);
+                }
             }
             else if (kind == ASTDropQuery::Kind::Detach)
             {
                 table->is_detached = true;
                 CurrentMetrics::sub(CurrentMetrics::AttachedTables, 1);
+
+                UInt64 max_table_size_to_warn = static_cast<DB::Int64>(getContext()->getMaxTableSizeToWarn());
+                UInt64 attached_table_num = CurrentMetrics::get(CurrentMetrics::AttachedTables);
+
+                if (getContext()->isExceedMaxTableSize() && attached_table_num <= max_table_size_to_warn)
+                {
+                    getContext()->deleteWarningMessage(fmt::format("Attached databases is more than {}", max_table_size_to_warn));
+                    getContext()->setIsExceedMaxTableSize(false);
+                }
             }
         }
     }
@@ -427,6 +463,16 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     executeToTableImpl(table_context, query_for_table, db, table_to_wait);
                     uuids_to_wait.push_back(table_to_wait);
                 }
+
+                CurrentMetrics::sub(CurrentMetrics::AttachedTables, uuids_to_wait.size());
+                UInt64 max_table_size_to_warn = static_cast<DB::Int64>(getContext()->getMaxTableSizeToWarn());
+                UInt64 attached_table_num = CurrentMetrics::get(CurrentMetrics::AttachedTables);
+
+                if (getContext()->isExceedMaxDatabaseSize() && attached_table_num <= max_table_size_to_warn)
+                {
+                    getContext()->deleteWarningMessage(fmt::format("Attached tables is more than {}", max_table_size_to_warn));
+                    getContext()->setIsExceedMaxTableSize(false);
+                }
             }
            // only if operation is DETACH
             if ((!drop || !truncate) && query.sync)
@@ -445,7 +491,16 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
             if (!truncate)
                 DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+
             CurrentMetrics::sub(CurrentMetrics::AttachedDatabases, 1);
+            UInt64 max_database_size_to_warn = static_cast<DB::Int64>(getContext()->getMaxDatabaseSizeToWarn());
+            UInt64 attached_database_num = CurrentMetrics::get(CurrentMetrics::AttachedDatabases);
+
+            if (getContext()->isExceedMaxDatabaseSize() && attached_database_num <= max_database_size_to_warn)
+            {
+                getContext()->deleteWarningMessage(fmt::format("Attached databases is more than {}", max_database_size_to_warn));
+                getContext()->setIsExceedMaxTableSize(false);
+            }
         }
     }
 

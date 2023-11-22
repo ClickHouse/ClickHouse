@@ -6325,7 +6325,6 @@ void MergeTreeData::Transaction::clear()
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock * acquired_parts_lock)
 {
-    std::cout<<"============== FLAG 2"<<std::endl;
     DataPartsVector total_covered_parts;
 
     if (!isEmpty())

@@ -350,8 +350,19 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         throw;
     }
+
     CurrentMetrics::add(CurrentMetrics::AttachedDatabases, 1);
-    std::cout<<"============="<<getContext()->getMaxTableSizeToWarn()<<std::endl;
+
+    UInt64 max_database_size_to_warn = static_cast<DB::Int64>(getContext()->getMaxDatabaseSizeToWarn());
+    UInt64 attached_database_num = CurrentMetrics::get(CurrentMetrics::AttachedDatabases);
+
+    if (!getContext()->isExceedMaxDatabaseSize() && attached_database_num > max_database_size_to_warn)
+    {
+        getContext()->setIsExceedMaxTableSize(true);
+        getContext()->addWarningMessage(fmt::format(
+                        "Attached databases is more than {}",
+                        max_database_size_to_warn));
+    }
 
     return {};
 }
@@ -1643,8 +1654,19 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
     }
+
     CurrentMetrics::add(CurrentMetrics::AttachedTables, 1);
-    getContext()->addWarningMessage("Too many attached tables. More than 5000");
+    UInt64 max_table_size_to_warn = static_cast<DB::Int64>(getContext()->getMaxTableSizeToWarn());
+    UInt64 attached_table_num = CurrentMetrics::get(CurrentMetrics::AttachedTables);
+
+    if (!getContext()->isExceedMaxTableSize() && attached_table_num > max_table_size_to_warn)
+    {
+        getContext()->setIsExceedMaxTableSize(true);
+        getContext()->addWarningMessage(fmt::format(
+                        "Attached tables is more than {}",
+                        max_table_size_to_warn));
+    }
+
     return {};
 }
 

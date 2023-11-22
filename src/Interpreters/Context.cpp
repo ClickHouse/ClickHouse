@@ -320,6 +320,9 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
+                                                                   ///
+    std::atomic_size_t max_table_size_to_warn = 10000lu;
+    std::atomic_size_t max_database_size_to_warn = 10000lu;
     /// No lock required for format_schema_path modified only during initialization
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     mutable OnceFlag action_locks_manager_initialized;
@@ -372,7 +375,8 @@ struct ContextSharedPart : boost::noncopyable
     Context::StartStopServersCallback stop_servers_callback;
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
-    size_t max_tables_size_to_warn;
+    std::atomic<bool> is_exceed_max_table_size = false;
+    std::atomic<bool> is_exceed_max_database_size = false;
 
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
@@ -660,6 +664,13 @@ struct ContextSharedPart : boost::noncopyable
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
         log->warning(message);
         warnings.push_back(message);
+    }
+
+    void deleteWarningMessage(const String & message) TSA_REQUIRES(mutex)
+    {
+        auto it = std::find(warnings.begin(), warnings.end(), message);
+        if (it != warnings.end())
+            warnings.erase(it);
     }
 
     void configureServerWideThrottling()
@@ -1080,6 +1091,12 @@ void Context::addWarningMessage(const String & msg) const
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
     if (!is_supressed)
         shared->addWarningMessage(msg);
+}
+
+void Context::deleteWarningMessage(const String & msg)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->deleteWarningMessage(msg);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -3295,13 +3312,50 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 void Context::setMaxTablesSizeToWarn(size_t max_table_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_tables_size_to_warn = max_table_to_warn;
+    shared->max_table_size_to_warn = max_table_to_warn;
 }
 
 size_t Context::getMaxTableSizeToWarn() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->max_tables_size_to_warn;
+    return shared->max_table_size_to_warn;
+}
+
+void Context::setIsExceedMaxTableSize(bool is_exceed_max_table_size)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->is_exceed_max_table_size.exchange(is_exceed_max_table_size);
+}
+
+bool Context::isExceedMaxTableSize() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->is_exceed_max_table_size;
+}
+
+
+void Context::setMaxDatabaseSizeToWarn(size_t max_database_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_database_size_to_warn= max_database_to_warn;
+}
+
+size_t Context::getMaxDatabaseSizeToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_database_size_to_warn;
+}
+
+void Context::setIsExceedMaxDatabaseSize(bool is_exceed_max_database_size)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->is_exceed_max_database_size.exchange(is_exceed_max_database_size) ;
+}
+
+bool Context::isExceedMaxDatabaseSize() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->is_exceed_max_database_size;
 }
 
 UInt16 Context::getTCPPort() const

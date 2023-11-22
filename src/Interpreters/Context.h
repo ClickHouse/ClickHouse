@@ -541,6 +541,7 @@ public:
     void setUserScriptsPath(const String & path);
 
     void addWarningMessage(const String & msg) const;
+    void deleteWarningMessage(const String & msg);
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -840,6 +841,13 @@ public:
     void setMaxTablesSizeToWarn(size_t max_table_to_warn);
     size_t getMaxTableSizeToWarn() const;
 
+    void setMaxDatabaseSizeToWarn(size_t max_database_to_warn);
+    size_t getMaxDatabaseSizeToWarn() const;
+
+    void setIsExceedMaxTableSize(bool is_exceed_max_table_size);
+    bool isExceedMaxTableSize() const;
+    void setIsExceedMaxDatabaseSize(bool is_exceed_max_database_size);
+    bool isExceedMaxDatabaseSize() const;
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
