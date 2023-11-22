@@ -48,7 +48,6 @@ public:
     explicit TokenIterator(Tokens & tokens_) : tokens(&tokens_) {}
 
     ALWAYS_INLINE const Token & get() { return (*tokens)[index]; }
-    ALWAYS_INLINE const Token * next() { return &(*tokens)[index + 1]; }
     ALWAYS_INLINE const Token & operator*() { return get(); }
     ALWAYS_INLINE const Token * operator->() { return &get(); }
 
