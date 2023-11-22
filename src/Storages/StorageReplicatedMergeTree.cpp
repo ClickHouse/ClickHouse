@@ -1432,6 +1432,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
     /// There are no PreActive parts at startup.
+    bool incomplete_list_of_outdated_parts = !outdated_data_parts_loading_finished;
     auto parts = getDataParts({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
     /** Local parts that are not in ZK.
@@ -1469,6 +1470,11 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         if (part->rows_count || part->getState() != MergeTreeDataPartState::Active || expected_parts.contains(part->name))
             continue;
 
+        if (incomplete_list_of_outdated_parts)
+        {
+            LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to handle dropped parts. Need retry.");
+            return false;
+        }
         set_of_empty_unexpected_parts.add(part->name);
     }
     if (auto empty_count = set_of_empty_unexpected_parts.size())
@@ -1520,14 +1526,11 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
         /// We have uncovered unexpected parts, and we are not sure if we can restore them or not.
         /// So we have to exit, load all Outdated parts, and check again.
+        if (incomplete_list_of_outdated_parts)
         {
-            std::lock_guard lock(outdated_data_parts_mutex);
-            if (!outdated_data_parts_loading_finished)
-            {
-                LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to check if unexpected parts can be recovered. "
-                              "Need retry.");
-                return false;
-            }
+            LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to check if unexpected parts can be recovered. "
+                          "Need retry.");
+            return false;
         }
 
         /// Part is unexpected and we don't have covering part: it's suspicious

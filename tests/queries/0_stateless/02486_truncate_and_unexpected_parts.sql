@@ -27,13 +27,6 @@ system sync replica rmt1;
 select *, _table from merge(currentDatabase(), '') order by  _table, (*,);
 select 0;
 
-drop table rmt sync;
-drop table rmt1 sync;
-create table rmt (n int) engine=ReplicatedMergeTree('/test/02468/{database}', '1') order by tuple() partition by n % 2 settings replicated_max_ratio_of_wrong_parts=0, max_suspicious_broken_parts=0, max_suspicious_broken_parts_bytes=0;
-create table rmt1 (n int) engine=ReplicatedMergeTree('/test/02468/{database}', '2') order by tuple() partition by n % 2 settings replicated_max_ratio_of_wrong_parts=0, max_suspicious_broken_parts=0, max_suspicious_broken_parts_bytes=0;
-insert into rmt values (1);
-insert into rmt1 values (2);
-
 create table rmt2 (n int) engine=ReplicatedMergeTree('/test/02468/{database}2', '1') order by tuple() partition by n % 2 settings replicated_max_ratio_of_wrong_parts=0, max_suspicious_broken_parts=0, max_suspicious_broken_parts_bytes=0;
 
 system stop cleanup rmt;
