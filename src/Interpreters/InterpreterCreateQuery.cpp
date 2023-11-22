@@ -358,7 +358,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     if (!getContext()->isExceedMaxDatabaseSize() && attached_database_num > max_database_size_to_warn)
     {
-        getContext()->setIsExceedMaxTableSize(true);
+        getContext()->setIsExceedMaxDatabaseSize(true);
         getContext()->addWarningMessage(fmt::format(
                         "Attached databases is more than {}",
                         max_database_size_to_warn));
