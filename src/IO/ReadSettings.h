@@ -100,6 +100,7 @@ struct ReadSettings
     bool enable_filesystem_cache_log = false;
     /// Don't populate cache when the read is not part of query execution (e.g. background thread).
     bool avoid_readthrough_cache_outside_query_context = true;
+    size_t filesystem_cache_segments_batch_size = 20;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_query_cache = true;

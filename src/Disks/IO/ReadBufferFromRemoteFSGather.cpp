@@ -209,7 +209,7 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 
 void ReadBufferFromRemoteFSGather::reset()
 {
-    current_object = {};
+    current_object = StoredObject();
     current_buf_idx = {};
     current_buf.reset();
 }
