@@ -6,6 +6,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <iostream>
 
 namespace DB
 {
@@ -25,17 +26,18 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     //   - ".abc" is parsed as two parts. a dot and a token "abc"
     // "$..123abc" is parsed into three parts, ".", ".123" and "abc"
     if (pos->type != TokenType::Dot && pos->type != TokenType::Number)
-    {
         return false;
-    }
+    
     if (pos->type != TokenType::Number)
     {
         ++pos;
         // Check the case "$..123abc"
-        if (pos->type == TokenType::Number)
+        if (*(pos->begin) == '.' && pos->type == TokenType::Number)
+        {
             return false;
+        }
     }
-
+    
     ASTPtr member_name;
 
     if (pos->type == TokenType::Number)[[unlikely]]
@@ -57,16 +59,10 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, pos->end));
             ++pos;
-            if (pos->type == TokenType::Dot && pos.next() && pos.next()->type == TokenType::Number)
-            {
-                ++pos;
-            }
         }
-        else if (pos.isValid() && pos->type == TokenType::Dot)
+        else if (pos.isValid() && (pos->type == TokenType::Dot || pos->type == TokenType::OpeningSquareBracket))
         {
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
-            if (pos.next() && pos.next()->type == TokenType::Number)
-                ++pos;
         }
         else if ((!pos.isValid() && pos->type == TokenType::EndOfStream))
         {
@@ -82,13 +78,8 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         ParserIdentifier name_p;
         if (!name_p.parse(pos, member_name, expected))
-        {
             return false;
-        }
-        if (pos.next() && pos.next()->type == TokenType::Number)
-            ++pos;
     }
-
     auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
     node = member_access;
     return tryGetIdentifierNameInto(member_name, member_access->member_name);
