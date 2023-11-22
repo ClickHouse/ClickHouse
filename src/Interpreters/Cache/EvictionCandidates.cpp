@@ -23,8 +23,9 @@ EvictionCandidates::~EvictionCandidates()
 
 void EvictionCandidates::add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate)
 {
-    auto it = candidates.emplace(locked_key.getKey(), KeyCandidates{}).first;
-    it->second.key_metadata = locked_key.getKeyMetadata();
+    auto [it, inserted] = candidates.emplace(locked_key.getKey(), KeyCandidates{});
+    if (inserted)
+        it->second.key_metadata = locked_key.getKeyMetadata();
     it->second.candidates.push_back(candidate);
 
     candidate->removal_candidate = true;

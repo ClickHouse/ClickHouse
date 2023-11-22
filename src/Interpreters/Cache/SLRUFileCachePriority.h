@@ -20,9 +20,9 @@ namespace DB
 class SLRUFileCachePriority : public IFileCachePriority
 {
 private:
-    class SLRUFileCacheIterator;
+    class SLRUIterator;
+    using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
-    using SLRUQueueIterator = typename LRUQueue::iterator;
 
 public:
     SLRUFileCachePriority(size_t max_size_, size_t max_elements_, double size_ratio);
@@ -46,28 +46,23 @@ public:
     FileSegments dump(const CacheGuard::Lock &) override;
 
 private:
-    void updateElementsCount(int64_t num, bool is_protected);
-    void updateSize(int64_t size, bool is_protected);
-
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
-
     Poco::Logger * log = &Poco::Logger::get("SLRUFileCachePriority");
 
-    SLRUQueueIterator remove(SLRUQueueIterator it, bool is_protected, const CacheGuard::Lock & lock);
-    SLRUQueueIterator increasePriority(SLRUQueueIterator & it, bool is_protected, const CacheGuard::Lock & lock);
+    void increasePriority(SLRUIterator & iterator, const CacheGuard::Lock & lock);
 };
 
-class SLRUFileCachePriority::SLRUFileCacheIterator : public IFileCachePriority::IIterator
+class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::IIterator
 {
     friend class SLRUFileCachePriority;
 public:
-    SLRUFileCacheIterator(
+    SLRUIterator(
         SLRUFileCachePriority * cache_priority_,
-        SLRUFileCachePriority::SLRUQueueIterator queue_iter_,
+        std::unique_ptr<LRUIterator> lru_iterator_,
         bool is_protected_);
 
-    const Entry & getEntry() const override { return *queue_iter; }
+    const Entry & getEntry() const override;
 
     size_t increasePriority(const CacheGuard::Lock &) override;
 
@@ -81,8 +76,8 @@ private:
     void checkUsable() const;
 
     SLRUFileCachePriority * cache_priority;
-    mutable SLRUFileCachePriority::SLRUQueueIterator queue_iter;
-    const bool is_protected;
+    mutable std::unique_ptr<LRUIterator> lru_iterator;
+    bool is_protected;
 };
 
 }

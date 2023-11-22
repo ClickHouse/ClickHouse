@@ -14,9 +14,8 @@ namespace DB
 class LRUFileCachePriority : public IFileCachePriority
 {
 private:
-    class LRUFileCacheIterator;
+    class LRUIterator;
     using LRUQueue = std::list<Entry>;
-    using LRUQueueIterator = typename LRUQueue::iterator;
     friend class SLRUFileCachePriority;
 
 public:
@@ -54,7 +53,10 @@ private:
     /// because of invalidated entries.
     std::atomic<size_t> current_elements_num = 0;
 
-    LRUQueueIterator remove(LRUQueueIterator it, const CacheGuard::Lock &);
+    bool canFit(size_t size, const CacheGuard::Lock &) const;
+    bool canFit(size_t size, size_t released_size_assumption, size_t released_elements_assumption, const CacheGuard::Lock &) const;
+
+    LRUQueue::iterator remove(LRUQueue::iterator it, const CacheGuard::Lock &);
 
     enum class IterationResult
     {
@@ -65,19 +67,16 @@ private:
     using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
     void iterate(IterateFunc && func, const CacheGuard::Lock &);
 
-    size_t increasePriority(LRUQueueIterator it, const CacheGuard::Lock &);
-    LRUQueueIterator move(LRUQueueIterator it, LRUFileCachePriority & other, const CacheGuard::Lock &);
-    LRUQueueIterator add(Entry && entry, const CacheGuard::Lock &);
-    bool canFit(size_t size, const CacheGuard::Lock &) const;
-    bool canFit(size_t size, size_t released_size_assumption, size_t released_elements_assumption, const CacheGuard::Lock &) const;
+    std::unique_ptr<LRUIterator> move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &);
+    std::unique_ptr<LRUIterator> add(Entry && entry, const CacheGuard::Lock &);
 };
 
-class LRUFileCachePriority::LRUFileCacheIterator : public IFileCachePriority::IIterator
+class LRUFileCachePriority::LRUIterator : public IFileCachePriority::IIterator
 {
+    friend class LRUFileCachePriority;
+    friend class SLRUFileCachePriority;
 public:
-    LRUFileCacheIterator(
-        LRUFileCachePriority * cache_priority_,
-        LRUFileCachePriority::LRUQueueIterator queue_iter_);
+    LRUIterator(LRUFileCachePriority * cache_priority_, LRUQueue::iterator queue_iter_);
 
     const Entry & getEntry() const override { return *queue_iter; }
 
@@ -93,7 +92,7 @@ private:
     void checkUsable() const;
 
     LRUFileCachePriority * cache_priority;
-    mutable LRUFileCachePriority::LRUQueueIterator queue_iter;
+    mutable LRUQueue::iterator queue_iter;
 };
 
 }
