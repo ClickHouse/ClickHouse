@@ -10,6 +10,7 @@
 namespace DB
 {
 struct FileCacheReserveStat;
+class EvictionCandidates;
 
 /// IFileCachePriority is used to maintain the priority of cached data.
 class IFileCachePriority : private boost::noncopyable
@@ -66,35 +67,12 @@ public:
 
     virtual FileSegments dump(const CacheGuard::Lock &) = 0;
 
-    class EvictionCandidates
-    {
-    public:
-        ~EvictionCandidates();
-
-        void add(const KeyMetadataPtr & key, const FileSegmentMetadataPtr & candidate);
-
-        void evict(const CacheGuard::Lock &);
-
-        auto begin() const { return candidates.begin(); }
-        auto end() const { return candidates.end(); }
-
-    private:
-        struct KeyCandidates
-        {
-            KeyMetadataPtr key_metadata;
-            std::vector<FileSegmentMetadataPtr> candidates;
-        };
-
-        std::unordered_map<Key, KeyCandidates> candidates;
-    };
-
-    using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;
-    using FinalizeEvictionFunc = std::function<void()>;
+    using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
 
     virtual bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
-        IFileCachePriority::EvictionCandidates & res,
+        EvictionCandidates & res,
         IFileCachePriority::Iterator it,
         FinalizeEvictionFunc & finalize_eviction_func,
         const CacheGuard::Lock &) = 0;

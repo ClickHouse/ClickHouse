@@ -41,7 +41,8 @@ private:
     using FuncHas = std::function<bool(std::string_view)>;
     using FuncGetUInt = std::function<size_t(std::string_view)>;
     using FuncGetString = std::function<std::string(std::string_view)>;
-    void loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetString get_string);
+    using FuncGetDouble = std::function<double(std::string_view)>;
+    void loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetString get_string, FuncGetDouble get_double);
 };
 
 }

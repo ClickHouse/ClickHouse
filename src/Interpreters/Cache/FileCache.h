@@ -33,11 +33,11 @@ struct FileCacheReserveStat
 {
     struct Stat
     {
-        size_t releasable_size;
-        size_t releasable_count;
+        size_t releasable_size = 0;
+        size_t releasable_count = 0;
 
-        size_t non_releasable_size;
-        size_t non_releasable_count;
+        size_t non_releasable_size = 0;
+        size_t non_releasable_count = 0;
     };
 
     Stat stat;

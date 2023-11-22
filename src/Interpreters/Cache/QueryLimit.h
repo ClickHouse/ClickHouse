@@ -36,7 +36,7 @@ public:
 
         bool recacheOnFileCacheQueryLimitExceeded() const { return recache_on_query_limit_exceeded; }
 
-        IFileCachePriority::Iterator tryGet(
+        Priority::Iterator tryGet(
             const Key & key,
             size_t offset,
             const CacheGuard::Lock &);
@@ -53,7 +53,7 @@ public:
             const CacheGuard::Lock &);
 
     private:
-        using Records = std::unordered_map<FileCacheKeyAndOffset, IFileCachePriority::Iterator, FileCacheKeyAndOffsetHash>;
+        using Records = std::unordered_map<FileCacheKeyAndOffset, Priority::Iterator, FileCacheKeyAndOffsetHash>;
         Records records;
         LRUFileCachePriority priority;
         const bool recache_on_query_limit_exceeded;

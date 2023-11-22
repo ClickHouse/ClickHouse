@@ -8,6 +8,7 @@
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
+#include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <Common/ThreadPool.h>
@@ -578,7 +579,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
             file_segment.key(), file_segment.offset());
     }
 
-    IFileCachePriority::EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates;
     IFileCachePriority::FinalizeEvictionFunc finalize_eviction_func;
 
     if (query_priority)
@@ -603,10 +604,10 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
 
-    eviction_candidates.evict(cache_lock);
+    eviction_candidates.evict(query_context.get(), cache_lock);
 
     if (finalize_eviction_func)
-        finalize_eviction_func();
+        finalize_eviction_func(cache_lock);
 
     if (queue_iterator)
     {

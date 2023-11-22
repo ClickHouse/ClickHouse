@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/EvictionCandidates.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
@@ -29,22 +30,27 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const CacheGuard::Lock &)
+    const CacheGuard::Lock & lock)
 {
-    const auto & key = key_metadata->key;
-    if (size == 0)
+    auto it = add(Entry(key_metadata->key, offset, size, key_metadata), lock);
+    return std::make_shared<LRUFileCacheIterator>(this, it);
+}
+
+LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::add(Entry && entry, const CacheGuard::Lock &)
+{
+    if (entry.size == 0)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Adding zero size entries to LRU queue is not allowed "
-            "(key: {}, offset: {})", key, offset);
+            "(key: {}, offset: {})", entry.key, entry.offset);
     }
 
 #ifndef NDEBUG
-    for (const auto & entry : queue)
+    for (const auto & queue_entry : queue)
     {
         /// entry.size == 0 means entry was invalidated.
-        if (entry.size != 0 && entry.key == key && entry.offset == offset)
+        if (queue_entry.size != 0 && queue_entry.key == entry.key && queue_entry.offset == entry.offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. "
@@ -54,24 +60,24 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
 #endif
 
     const auto & size_limit = getSizeLimit();
-    if (size_limit && current_size + size > size_limit)
+    if (size_limit && current_size + entry.size > size_limit)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Not enough space to add {}:{} with size {}: current size: {}/{}",
-            key, offset, size, current_size, size_limit);
+            entry.key, entry.offset, entry.size, current_size, size_limit);
     }
 
-    auto iter = queue.insert(queue.end(), Entry(key, offset, size, key_metadata));
+    auto it = queue.insert(queue.end(), entry);
 
-    updateSize(size);
+    updateSize(entry.size);
     updateElementsCount(1);
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
-        key, offset, size);
+        entry.key, entry.offset, entry.size);
 
-    return std::make_shared<LRUFileCacheIterator>(this, iter);
+    return it;
 }
 
 LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIterator it, const CacheGuard::Lock &)
@@ -159,22 +165,27 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
     }
 }
 
+bool LRUFileCachePriority::canFit(size_t size, const CacheGuard::Lock & lock) const
+{
+    return canFit(size, 0, 0, lock);
+}
+
+bool LRUFileCachePriority::canFit(size_t size, size_t released_size_assumption, size_t released_elements_assumption, const CacheGuard::Lock &) const
+{
+    return (max_size == 0 || (current_size + size - released_size_assumption <= max_size))
+        && (max_elements == 0 || current_elements_num + 1 - released_elements_assumption <= max_elements);
+}
+
 bool LRUFileCachePriority::collectCandidatesForEviction(
     size_t size,
     FileCacheReserveStat & stat,
-    IFileCachePriority::EvictionCandidates & res,
+    EvictionCandidates & res,
     IFileCachePriority::Iterator,
     FinalizeEvictionFunc &,
     const CacheGuard::Lock & lock)
 {
-    auto is_overflow = [&]
-    {
-        return (max_size != 0 && (current_size + size - stat.stat.releasable_size > max_size))
-            || (max_elements != 0 && stat.stat.releasable_count == 0 && current_elements_num == max_elements);
-    };
-
-    if (!is_overflow())
-        return false;
+    if (canFit(size, lock))
+        return true;
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
@@ -185,7 +196,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
         if (segment_metadata->releasable())
         {
-            res.add(locked_key.getKeyMetadata(), segment_metadata);
+            res.add(locked_key, segment_metadata);
             stat.update(segment_metadata->size(), file_segment->getKind(), true);
         }
         else
@@ -197,12 +208,17 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         return IterationResult::CONTINUE;
     };
 
-    iterate(
-        [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
-        { return is_overflow() ? iterate_func(locked_key, segment_metadata) : IterationResult::BREAK; },
-        lock);
+    auto can_fit = [&]
+    {
+        return canFit(size, stat.stat.releasable_size, stat.stat.releasable_count, lock);
+    };
 
-    return is_overflow();
+    iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    {
+        return can_fit() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata);
+    }, lock);
+
+    return can_fit();
 }
 
 size_t LRUFileCachePriority::increasePriority(LRUQueueIterator it, const CacheGuard::Lock &)

@@ -36,7 +36,7 @@ public:
     bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
-        IFileCachePriority::EvictionCandidates & res,
+        EvictionCandidates & res,
         IFileCachePriority::Iterator,
         FinalizeEvictionFunc & finalize_eviction_func,
         const CacheGuard::Lock &) override;

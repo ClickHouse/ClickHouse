@@ -31,7 +31,7 @@ public:
     bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
-        IFileCachePriority::EvictionCandidates & res,
+        EvictionCandidates & res,
         IFileCachePriority::Iterator it,
         FinalizeEvictionFunc & finalize_eviction_func,
         const CacheGuard::Lock &) override;
@@ -67,6 +67,9 @@ private:
 
     size_t increasePriority(LRUQueueIterator it, const CacheGuard::Lock &);
     LRUQueueIterator move(LRUQueueIterator it, LRUFileCachePriority & other, const CacheGuard::Lock &);
+    LRUQueueIterator add(Entry && entry, const CacheGuard::Lock &);
+    bool canFit(size_t size, const CacheGuard::Lock &) const;
+    bool canFit(size_t size, size_t released_size_assumption, size_t released_elements_assumption, const CacheGuard::Lock &) const;
 };
 
 class LRUFileCachePriority::LRUFileCacheIterator : public IFileCachePriority::IIterator
