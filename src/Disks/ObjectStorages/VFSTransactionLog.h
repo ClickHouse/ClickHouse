@@ -5,7 +5,6 @@
 
 namespace DB
 {
-// TODO myrrc not sure this one belongs here, used for locking only
 static constexpr auto VFS_BASE_NODE = "/vfs_log";
 static constexpr auto VFS_LOCKS_NODE = "/vfs_log/locks";
 static const String VFS_LOG_BASE_NODE = "/vfs_log/ops";
@@ -56,10 +55,7 @@ template <>
 struct fmt::formatter<DB::VFSTransactionLogItem>
 {
     constexpr auto parse(auto & ctx) { return ctx.begin(); }
-    constexpr auto format(const DB::VFSTransactionLogItem & item, auto & ctx)
-    {
-        return fmt::format_to(ctx.out(), "LogItem({})", item.serialize());
-    }
+    constexpr auto format(const DB::VFSTransactionLogItem & item, auto & ctx) { return fmt::format_to(ctx.out(), "{}", item.serialize()); }
 };
 
 template <>

@@ -39,15 +39,14 @@ public:
 private:
     // TODO myrrc not sure we should couple object storage and garbage collector this way
     // This has a downside that e.g. clickhouse-disks usage spins up a GC each time we issue
-    // a command which we surely don't want to do
+    // a command which we surely don't want to do.
+    // Also having a GC per disk currently means we have multiple threads competing for log entry cleanup
+    // as log is global (thus all of threads per replica except for one just waste resources).
     friend class ObjectStorageVFSGCThread;
     std::unique_ptr<ObjectStorageVFSGCThread> gc_thread;
 
     zkutil::ZooKeeperPtr zookeeper;
 
     DiskTransactionPtr createObjectStorageTransaction() final;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObject(const StoredObject & object);
-    void removeObjects(StoredObjects && objects);
 };
 }

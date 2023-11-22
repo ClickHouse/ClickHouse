@@ -16,11 +16,12 @@ struct IDiskObjectStorageOperation
     IObjectStorage & object_storage;
     /// useful for some read operations
     IMetadataStorage & metadata_storage;
+
 public:
     IDiskObjectStorageOperation(IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_)
-        : object_storage(object_storage_)
-        , metadata_storage(metadata_storage_)
-    {}
+        : object_storage(object_storage_), metadata_storage(metadata_storage_)
+    {
+    }
 
     /// Execute operation and something to metadata transaction
     virtual void execute(MetadataTransactionPtr transaction) = 0;
@@ -81,18 +82,10 @@ protected:
     DiskObjectStorageOperations operations_to_execute;
 
     void writeFileUsingBlobWritingFunctionOps(
-        const String & path,
-        WriteMode mode,
-        WriteBlobFunction && write_blob_function,
-        StoredObject& object);
+        const String & path, WriteMode mode, WriteBlobFunction && write_blob_function, StoredObject & object);
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFileOps( /// NOLINT
-        const String & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings,
-        bool autocommit,
-        StoredObject& object);
+    std::unique_ptr<WriteBufferFromFileBase> writeFileOps(
+        const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, bool autocommit, StoredObject & object);
 
 public:
     DiskObjectStorageTransaction(
@@ -118,7 +111,11 @@ public:
 
     void createFile(const String & path) override;
 
-    void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
+    void copyFile(
+        const std::string & from_file_path,
+        const std::string & to_file_path,
+        const ReadSettings & read_settings,
+        const WriteSettings &) override;
 
     /// writeFile is a difficult function for transactions.
     /// Now it's almost noop because metadata added to transaction in finalize method
@@ -140,9 +137,11 @@ public:
     void removeRecursive(const std::string & path) override;
 
     void removeSharedFile(const std::string & path, bool keep_shared_data) override;
-    void removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only) override;
+    void
+    removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only) override;
     void removeSharedFileIfExists(const std::string & path, bool keep_shared_data) override;
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+    void
+    removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
     void chmod(const String & path, mode_t mode) override;

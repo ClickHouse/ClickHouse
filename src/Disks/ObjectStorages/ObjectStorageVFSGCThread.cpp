@@ -72,7 +72,7 @@ void ObjectStorageVFSGCThread::run()
         writeSnapshot(std::move(snapshot), snapshot_name);
 
         LOG_DEBUG(log, "Removing objects from storage: {}", fmt::join(obsolete_objects, "\n"));
-        storage.removeObjects(std::move(obsolete_objects));
+        storage.object_storage->removeObjects(obsolete_objects);
 
         removeLogEntries(start_logpointer, end_logpointer);
     }
@@ -139,7 +139,7 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
     // Issue previous snapshot remote file for removal (no local metadata file as we use direct readObject)
     log_batch.emplace_back(previous_snapshot_log_item);
 
-    auto snapshot_buf = storage.readObject(previous_snapshot_log_item);
+    auto snapshot_buf = storage.object_storage->readObject(previous_snapshot_log_item);
     String snapshot_str;
     readStringUntilEOF(snapshot_str, *snapshot_buf);
 
