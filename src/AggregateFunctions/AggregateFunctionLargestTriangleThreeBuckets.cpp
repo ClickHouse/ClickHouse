@@ -23,9 +23,9 @@
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int NOT_IMPLEMENTED;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace DB
@@ -78,9 +78,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         if (this->x.size() <= total_buckets)
         {
             for (size_t i = 0; i < this->x.size(); ++i)
-            {
                 result.emplace_back(std::make_pair(this->x[i], this->y[i]));
-            }
             return result;
         }
 
@@ -101,7 +99,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
 
         // Find the size of each bucket
         // size_t single_bucket_size = this->x.size() / total_buckets;
-        Float64 single_bucket_size  = static_cast<Float64>(this->x.size() - 2) / static_cast<Float64>(total_buckets - 2);
+        Float64 single_bucket_size = static_cast<Float64>(this->x.size() - 2) / static_cast<Float64>(total_buckets - 2);
 
         // Include the first data point
         result.emplace_back(std::make_pair(this->x[0], this->y[0]));
@@ -111,7 +109,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
 
         for (size_t i = 0; i < total_buckets - 2; ++i) // Skip the first and last bucket
         {
-            size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i+2)));
+            size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
             if (end_index > this->x.size())
                 end_index = this->x.size();
 
@@ -123,8 +121,8 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
                 avg_x += this->x[j];
                 avg_y += this->y[j];
             }
-            avg_x /= static_cast<Float64>(end_index-center_index);
-            avg_y /= static_cast<Float64>(end_index-center_index);
+            avg_x /= static_cast<Float64>(end_index - center_index);
+            avg_y /= static_cast<Float64>(end_index - center_index);
 
             // Find the point in the current bucket that forms the largest triangle
             size_t max_index = start_index;
@@ -144,7 +142,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
 
             // Include the selected point
             result.emplace_back(std::make_pair(this->x[max_index], this->y[max_index]));
-            
+
             start_index = center_index;
             center_index = end_index;
         }
@@ -156,7 +154,8 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
     }
 };
 
-class AggregateFunctionLargestTriangleThreeBuckets final : public IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>
+class AggregateFunctionLargestTriangleThreeBuckets final
+    : public IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>
 {
 private:
     UInt64 total_buckets{0};
@@ -165,7 +164,8 @@ private:
 
 public:
     explicit AggregateFunctionLargestTriangleThreeBuckets(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>({arguments}, {}, createResultType(arguments))
+        : IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>(
+            {arguments}, {}, createResultType(arguments))
     {
         if (params.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter", getName());
@@ -195,14 +195,10 @@ public:
         UInt32 y_scale = 0;
 
         if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(arguments[0].get()))
-        {
             x_scale = datetime64_type->getScale();
-        }
 
         if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(arguments[1].get()))
-        {
             y_scale = datetime64_type->getScale();
-        }
 
         DataTypes types = {getDataTypeFromTypeIndex(x_type, x_scale), getDataTypeFromTypeIndex(y_type, y_scale)};
 
@@ -335,8 +331,8 @@ public:
 };
 
 
-AggregateFunctionPtr
-createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionLargestTriangleThreeBuckets(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertBinary(name, argument_types);
 
