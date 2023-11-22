@@ -54,8 +54,8 @@ function break_projection()
     parent_name=$2
     break_type=$3
 
-    read -r disk_name part_path <<< $($CLICKHOUSE_CLIENT -nm -q "
-    SELECT disk_name, path
+    read -r part_path <<< $($CLICKHOUSE_CLIENT -nm -q "
+    SELECT path
     FROM system.projection_parts
     WHERE table='test'
     AND database=currentDatabase()
