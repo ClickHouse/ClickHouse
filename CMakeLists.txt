@@ -21,8 +21,11 @@ include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
 include (cmake/utils.cmake)
 
+# This is needed to set up the CMAKE_INSTALL_BINDIR variable.
+include (GNUInstallDirs)
+
 # Ignore export() since we don't use it,
-# but it gets broken with a global targets via link_libraries()
+# but it gets broken with global targets via link_libraries()
 macro (export)
 endmacro ()
 
@@ -459,14 +462,6 @@ else ()
 endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
-
-include (GNUInstallDirs)
-
-# When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
-
-if (TARGET global-group)
-    install (EXPORT global DESTINATION cmake)
-endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
