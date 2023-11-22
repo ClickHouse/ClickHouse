@@ -2050,7 +2050,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         }
 
         auto source_table_info = MergeTreePartitionCompatibilityVerifier::SourceTableInfo {src_data, src_min_idx, src_max_idx};
-        MergeTreePartitionCompatibilityVerifier::verify(source_table_info, my_metadata_snapshot, getContext());
+        MergeTreePartitionCompatibilityVerifier::verify(source_table_info, getStorageID(), my_metadata_snapshot, getContext());
     }
 
     for (DataPartPtr & src_part : src_parts)

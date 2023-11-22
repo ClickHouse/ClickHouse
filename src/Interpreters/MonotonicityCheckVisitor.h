@@ -12,6 +12,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/FieldToDataType.h>
 
 namespace DB
 {
@@ -97,11 +98,28 @@ public:
         if (data.isRejected())
             return;
 
-        /// TODO: monotonicity for functions of several arguments
-        if (!ast_function.arguments || ast_function.arguments->children.size() != 1)
+        if (!ast_function.arguments)
         {
             data.reject();
             return;
+        }
+
+        auto arguments_size =  ast_function.arguments->children.size();
+
+        if (arguments_size == 0 || arguments_size > 2)
+        {
+            data.reject();
+            return;
+        }
+        else if (arguments_size == 2)
+        {
+            /// If the function has two arguments, then one of them must be a constant.
+            if (!ast_function.arguments->children[0]->as<ASTLiteral>()
+                && !ast_function.arguments->children[1]->as<ASTLiteral>())
+            {
+                data.reject();
+                return;
+            }
         }
 
         if (!data.canOptimize(ast_function))
@@ -125,7 +143,30 @@ public:
         }
 
         ColumnsWithTypeAndName args;
-        args.emplace_back(data.arg_data_type, "tmp");
+        ColumnWithTypeAndName const_arg;
+
+        if (arguments_size == 2)
+        {
+            if (ast_function.arguments->children[0]->as<ASTLiteral>())
+            {
+                const auto * literal = ast_function.arguments->children[0]->as<ASTLiteral>();
+                const_arg = extractLiteralColumnAndTypeFromAstLiteral(literal);
+                args.push_back(const_arg);
+                args.emplace_back(data.arg_data_type, "tmp");
+            }
+            else
+            {
+                const auto * literal = ast_function.arguments->children[1]->as<ASTLiteral>();
+                args.emplace_back(data.arg_data_type, "tmp");
+                const_arg = extractLiteralColumnAndTypeFromAstLiteral(literal);
+                args.push_back(const_arg);
+            }
+        }
+        else
+        {
+            args.emplace_back(data.arg_data_type, "tmp");
+        }
+
         auto function_base = function->build(args);
 
         if (function_base && function_base->hasInformationAboutMonotonicity())
@@ -143,12 +184,21 @@ public:
 
     static bool needChildVisit(const ASTPtr & parent, const ASTPtr &)
     {
-        /// Currently we check monotonicity only for single-argument functions.
-        /// Although, multi-argument functions with all but one constant arguments can also be monotonic.
+        /// Multi-argument functions with all but one constant arguments can be monotonic.
         if (const auto * func = typeid_cast<const ASTFunction *>(parent.get()))
-            return func->arguments->children.size() < 2;
+            return func->arguments->children.size() <= 2;
 
         return true;
+    }
+
+    static ColumnWithTypeAndName extractLiteralColumnAndTypeFromAstLiteral(const ASTLiteral * literal)
+    {
+        ColumnWithTypeAndName result;
+
+        result.type = applyVisitor(FieldToDataType(), literal->value);
+        result.column = result.type->createColumnConst(0, literal->value);
+
+        return result;
     }
 };
 

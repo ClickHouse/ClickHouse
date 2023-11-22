@@ -67,7 +67,7 @@ SELECT partition_id FROM system.parts where table='destination' AND database = c
 
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
-CREATE TABLE source (timestamp Int64) engine=MergeTree ORDER BY (timestamp) PARTITION BY (intDiv(timestamp, 86400000));
+CREATE TABLE source (timestamp Int64) engine=MergeTree ORDER BY (timestamp) PARTITION BY intDiv(timestamp, 86400000);
 CREATE TABLE destination (timestamp Int64) engine=MergeTree ORDER BY (timestamp) PARTITION BY toYear(toDateTime(intDiv(timestamp, 1000)));
 INSERT INTO TABLE source VALUES (1267495261123);
 ALTER TABLE destination ATTACH PARTITION ID '14670' FROM source;
