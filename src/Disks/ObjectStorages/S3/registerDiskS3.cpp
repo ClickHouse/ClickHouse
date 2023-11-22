@@ -148,12 +148,6 @@ std::pair<String, ObjectStorageKeysGeneratorPtr> getPrefixAndKeyGenerator(
 
 }
 
-// TODO myrrc this produces a build issue as some Contexts
-// don't have a getZooKepeer method. However, there is a bug when we try to init
-// Zookeeper in startup() method so here's an ugly patch to mitigate that
-template<class, class = void> struct Dummy : std::false_type {};
-template<class T> struct Dummy<T, std::void_t<decltype(T{}->getZooKeeper())>> : std::true_type {};
-
 void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](
@@ -235,9 +229,8 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         /// SharedMergeTree (i.e. s3withkeeper) but I believe this could break way more things that it should
         if (s3_enable_disk_vfs)
         {
-            zkutil::ZooKeeperPtr zookeeper_ptr;
-            if constexpr (Dummy<ContextPtr>::value)
-                zookeeper_ptr = context->getZooKeeper();
+            // TODO myrrc build issue with CLICKHOUSE_KEEPER_STANDALONE_BUILD
+            zkutil::ZooKeeperPtr zookeeper_ptr = context->getZooKeeper();
 
             auto disk = std::make_shared<DiskObjectStorageVFS>(
                 name,

@@ -12,8 +12,8 @@ from helpers.cluster import ClickHouseCluster
 REPLICA_COUNT = 2
 
 
-@pytest.fixture(scope="module")
-def cluster():
+@pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
+def cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
         for i in range(1, REPLICA_COUNT + 1):
@@ -22,7 +22,7 @@ def cluster():
                 main_configs=[
                     "configs/config.d/storage_conf.xml",
                     "configs/config.d/remote_servers.xml",
-                ],
+                ] + request.param,
                 with_minio=True,
                 with_zookeeper=True,
             )
@@ -69,6 +69,7 @@ def create_table(node, table_name, replicated, additional_settings):
         node.query(create_table_statement)
 
 
+# TODO myrrc shouldn't allow vfs test to run with 0copy
 @pytest.mark.parametrize(
     "allow_remote_fs_zero_copy_replication,replicated_engine",
     [(False, False), (False, True), (True, True)],
