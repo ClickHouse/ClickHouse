@@ -176,6 +176,14 @@ Additional parameters that control the behavior of the `MergeTree` (optional):
 
 `max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](/docs/en/operations/settings/merge-tree-settings.md/#max-partitions-to-read) in the global setting.
 
+#### max_table_size_to_drop
+
+`max_table_size_to_drop` - Restriction on deleting tables. Also see server setting [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop).
+
+#### max_partition_size_to_drop
+
+`max_partition_size_to_drop` - Restriction on dropping partitions. Also see server setting [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop).
+
 **Example of Sections Setting**
 
 ``` sql
