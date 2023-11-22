@@ -10,7 +10,6 @@ TU_EXCLUDES=(
     FunctionsConversion
 
     RangeHashedDictionary
-    HashedDictionary
 
     Aggregator
 )
