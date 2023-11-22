@@ -39,7 +39,7 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
             {
                 keeper_az = DB::S3::getRunningAvailabilityZone();
             }
-            catch (std::exception& ex)
+            catch (std::exception & ex)
             {
                 LOG_ERROR(&Poco::Logger::get("Application"), "Unable to initialize current availability zone '{}'", ex.what());
             }

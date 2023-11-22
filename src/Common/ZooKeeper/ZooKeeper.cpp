@@ -73,7 +73,7 @@ bool ZooKeeperAvailabilityZoneMap::needTryOtherHost(const std::string & local_az
     return false;
 }
 
-std::pair<std::string, bool> parseForSocketAddress(const std::string& raw_host)
+std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
 {
     std::pair<std::string, bool> result;
     bool secure = startsWith(raw_host, "secure://");
@@ -85,7 +85,7 @@ std::pair<std::string, bool> parseForSocketAddress(const std::string& raw_host)
     return result;
 }
 
-bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string& host, bool& dns_error_occurred)
+bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string& host, bool & dns_error_occurred)
 {
     auto address = parseForSocketAddress(host).first;
     /// We want to resolve all hosts without DNS cache for keeper connection.
@@ -148,7 +148,7 @@ void ZooKeeperAvailabilityZoneMap::updateWithLock(const std::string &host, const
     az_by_host[address] = availability_zone;
 }
 
-std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool& dns_error_occurred)
+std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool & dns_error_occurred)
 {
     std::vector<ShuffleHost> shuffled_hosts;
     std::lock_guard lock(mutex);
@@ -179,7 +179,7 @@ std::vector<ShuffleHost> ZooKeeperAvailabilityZoneMap::shuffleHosts(Poco::Logger
     std::unordered_map<std::string_view, uint64_t> az_count_map;
     for (const auto & host : az_by_host)
     {
-        const auto& az = host.second;
+        const auto & az = host.second;
         auto & az_count = az_count_map[az];
         ++az_count;
         if (az != AZ_UNKNWON && az_count > 1)
@@ -321,7 +321,7 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
     init(ZooKeeperArgs(config, config_name));
 }
 
-std::vector<ShuffleHost> ZooKeeper::shuffleHosts(bool& dns_error_occurred) const
+std::vector<ShuffleHost> ZooKeeper::shuffleHosts(bool & dns_error_occurred) const
 {
     std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
