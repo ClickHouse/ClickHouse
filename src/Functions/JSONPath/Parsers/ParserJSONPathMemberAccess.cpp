@@ -25,15 +25,15 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     //   - ".abc" is parsed as two parts. a dot and a token "abc"
     // "$..123abc" is parsed into three parts, ".", ".123" and "abc"
     if (pos->type != TokenType::Dot && pos->type != TokenType::Number)
+    {
         return false;
+    }
     if (pos->type != TokenType::Number)
     {
         ++pos;
         // Check the case "$..123abc"
         if (pos->type == TokenType::Number)
-        {
             return false;
-        }
     }
 
     ASTPtr member_name;
@@ -57,15 +57,23 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, pos->end));
             ++pos;
+            if (pos->type == TokenType::Dot && pos.next() && pos.next()->type == TokenType::Number)
+            {
+                ++pos;
+            }
         }
-        else if (!pos.isValid() && pos->type == TokenType::EndOfStream)
+        else if (pos.isValid() && pos->type == TokenType::Dot)
+        {
+            member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
+            if (pos.next() && pos.next()->type == TokenType::Number)
+                ++pos;
+        }
+        else if ((!pos.isValid() && pos->type == TokenType::EndOfStream))
         {
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
         }
         else
-        {
             return false;
-        }
     }
     else
     {
@@ -74,7 +82,11 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         ParserIdentifier name_p;
         if (!name_p.parse(pos, member_name, expected))
+        {
             return false;
+        }
+        if (pos.next() && pos.next()->type == TokenType::Number)
+            ++pos;
     }
 
     auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
