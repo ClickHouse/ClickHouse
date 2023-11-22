@@ -396,7 +396,10 @@ ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList 
 
     Block block;
     for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
+    {
+        if (column.name == "_file" || column.name == "_path")
+            block.insert({column.type->createColumn(), column.type, column.name});
+    }
     /// Create a block with one row to construct filter
     /// Append "idx" column as the filter result
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
@@ -410,7 +413,10 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 {
     Block block;
     for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
+    {
+        if (column.name == "_file" || column.name == "_path")
+            block.insert({column.type->createColumn(), column.type, column.name});
+    }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
