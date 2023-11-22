@@ -229,9 +229,6 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         /// SharedMergeTree (i.e. s3withkeeper) but I believe this could break way more things that it should
         if (s3_enable_disk_vfs)
         {
-            // TODO myrrc build issue with CLICKHOUSE_KEEPER_STANDALONE_BUILD
-            zkutil::ZooKeeperPtr zookeeper_ptr = context->getZooKeeper();
-
             auto disk = std::make_shared<DiskObjectStorageVFS>(
                 name,
                 uri.key,
@@ -240,7 +237,13 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
                 std::move(s3_storage),
                 config,
                 config_prefix,
-                std::move(zookeeper_ptr));
+// TODO myrrc check whether standalone build really uses the disk
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+                context->getZooKeeper()
+#else
+                nullptr
+#endif
+                );
 
             disk->startup(context, skip_access_check);
             return disk;
