@@ -22,7 +22,8 @@ def cluster(request):
                 main_configs=[
                     "configs/config.d/storage_conf.xml",
                     "configs/config.d/remote_servers.xml",
-                ] + request.param,
+                ]
+                + request.param,
                 with_minio=True,
                 with_zookeeper=True,
             )
