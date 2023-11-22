@@ -168,9 +168,8 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 
 ConnectionPoolWithFailover::Base::GetPriorityFunc ConnectionPoolWithFailover::makeGetPriorityFunc(const Settings & settings)
 {
-    LoadBalancing load_balancing = get_priority_load_balancing.load_balancing;
     const size_t offset = settings.load_balancing_first_offset % nested_pools.size();
-    load_balancing = LoadBalancing(settings.load_balancing);
+    const LoadBalancing load_balancing = LoadBalancing(settings.load_balancing);
 
     return get_priority_load_balancing.getPriorityFunc(load_balancing, offset, nested_pools.size());
 }
