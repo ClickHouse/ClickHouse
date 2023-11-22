@@ -50,22 +50,19 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
 
     factory.registerFunction("any", { createAggregateFunctionAny, properties });
     factory.registerAlias("any_value", "any", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("anyLast", { createAggregateFunctionAnyLast, properties });
-    factory.registerFunction("anyHeavy", { createAggregateFunctionAnyHeavy, properties });
+    factory.registerAlias("first_value", "any", AggregateFunctionFactory::CaseInsensitive);
 
-    // Synonyms for use as window functions.
-    factory.registerFunction("first_value",
-        { createAggregateFunctionAny, properties },
-        AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("first_value_respect_nulls",
-        { createAggregateFunctionNullableAny<true>, properties },
-        AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("last_value",
-        { createAggregateFunctionAnyLast, properties },
-        AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("last_value_respect_nulls",
-        { createAggregateFunctionNullableAnyLast<true>, properties },
-        AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("any_respect_nulls", {createAggregateFunctionNullableAny<true>, properties});
+    factory.registerAlias("any_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("first_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
+
+    factory.registerFunction("anyLast", { createAggregateFunctionAnyLast, properties });
+    factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::CaseInsensitive);
+
+    factory.registerFunction("anyLast_respect_nulls", {createAggregateFunctionNullableAnyLast<true>, properties});
+    factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
+
+    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, properties});
 }
 
 }

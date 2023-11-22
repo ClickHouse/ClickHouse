@@ -1084,7 +1084,7 @@ struct AggregateFunctionMaxData : Data
 #endif
 };
 
-template <typename Data>
+template <typename Data, bool RespectNulls = false>
 struct AggregateFunctionAnyData : Data
 {
     using Self = AggregateFunctionAnyData;
@@ -1094,7 +1094,13 @@ struct AggregateFunctionAnyData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeFirstTime(to, arena); }
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeFirstTime(column, 0, arena); }
 
-    static const char * name() { return "any"; }
+    static const char * name()
+    {
+        if constexpr (RespectNulls)
+            return "any_respect_nulls";
+        else
+            return "any";
+    }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -1113,7 +1119,7 @@ struct AggregateFunctionAnyData : Data
 #endif
 };
 
-template <typename Data>
+template <typename Data, bool RespectNulls = false>
 struct AggregateFunctionAnyLastData : Data
 {
     using Self = AggregateFunctionAnyLastData;
@@ -1122,7 +1128,13 @@ struct AggregateFunctionAnyLastData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeEveryTime(to, arena); }
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeEveryTime(column, 0, arena); }
 
-    static const char * name() { return "anyLast"; }
+    static const char * name()
+    {
+        if constexpr (RespectNulls)
+            return "anyLast_respect_nulls";
+        else
+            return "anyLast";
+    }
 
 #if USE_EMBEDDED_COMPILER
 

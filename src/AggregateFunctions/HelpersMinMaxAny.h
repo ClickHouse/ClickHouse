@@ -14,8 +14,9 @@ namespace DB
 struct Settings;
 
 /// min, max, any, anyLast, anyHeavy, etc...
-template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
-static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+template <template <typename> class AggregateFunctionTemplate, template <typename, bool...> class Data>
+static IAggregateFunction *
+createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
@@ -47,8 +48,9 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
     return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<>>>(argument_type);
 }
 
-template <template <typename> class AggregateFunctionTemplate, template <typename> class Data, bool RespectNulls = false>
-static IAggregateFunction * createAggregateFunctionSingleNullableValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+template <template <typename> class AggregateFunctionTemplate, template <typename, bool> class Data, bool RespectNulls = false>
+static IAggregateFunction * createAggregateFunctionSingleNullableValue(
+    const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
@@ -63,7 +65,7 @@ static IAggregateFunction * createAggregateFunctionSingleNullableValue(const Str
     }
     else
     {
-        return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true>>>(argument_type);
+        return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true>, RespectNulls>>(argument_type);
     }
     UNREACHABLE();
 }

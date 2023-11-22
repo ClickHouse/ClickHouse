@@ -1138,7 +1138,8 @@ public:
             {
                 nulls_action = NullsAction::IGNORE_NULLS;
             }
-            function_node->name = transformFunctionNameForRepectNulls(function_node->name, nulls_action);
+            if (nulls_action == NullsAction::RESPECT_NULLS)
+                function_node->name = transformFunctionNameForRespectNulls(function_node->name, nulls_action);
 
             if (over.ignore(pos, expected))
             {
@@ -1179,11 +1180,14 @@ private:
         RESPECT_NULLS = 1,
         IGNORE_NULLS = 2,
     };
-    static String transformFunctionNameForRepectNulls(const String & original_function_name, NullsAction nulls_action)
+    static String transformFunctionNameForRespectNulls(const String & original_function_name, NullsAction nulls_action)
     {
-        static std::unordered_map<String, std::vector<String>> renamed_functions_with_nulls = {
-            {"first_value", {"first_value", "first_value_respect_nulls", "first_value"}},
-            {"last_value", {"last_value", "last_value_respect_nulls", "last_value"}},
+        static std::unordered_map<String, String> renamed_functions_with_nulls = {
+            {"any", "any_respect_nulls"},
+            {"any_value", "any_respect_nulls"},
+            {"first_value", "any_respect_nulls"},
+            {"anyLast", "anyLast_respect_nulls"},
+            {"last_value", "anyLast_respect_nulls"},
         };
         auto it = renamed_functions_with_nulls.find(original_function_name);
         if (it == renamed_functions_with_nulls.end())
@@ -1191,10 +1195,9 @@ private:
             if (nulls_action == NullsAction::EMPTY)
                 return original_function_name;
             else
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "Function {} does not support RESPECT NULLS or IGNORE NULLS", original_function_name);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", original_function_name);
         }
-        return it->second[nulls_action];
+        return it->second;
     }
 };
 
