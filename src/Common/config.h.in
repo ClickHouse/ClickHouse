@@ -61,6 +61,7 @@
 #cmakedefine01 FIU_ENABLE
 #cmakedefine01 USE_BCRYPT
 #cmakedefine01 USE_LIBARCHIVE
+#cmakedefine01 USE_POCKETFFT
 
 /// This is needed for .incbin in assembly. For some reason, include paths don't work there in presence of LTO.
 /// That's why we use absolute paths.
