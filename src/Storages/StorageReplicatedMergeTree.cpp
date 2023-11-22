@@ -2240,7 +2240,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     /// Wait for loading of outdated parts because DROP_RANGE
     /// command must be applied to all parts on disk.
-    waitForOutdatedPartsToBeLoadedIfNotDisjoint(drop_range_info);
+    waitForOutdatedPartsToBeLoaded();
 
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
     {
@@ -2318,7 +2318,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     /// Wait for loading of outdated parts because REPLACE_RANGE
     /// command must be applied to all parts on disk.
-    waitForOutdatedPartsToBeLoadedIfNotDisjoint(drop_range);
+    waitForOutdatedPartsToBeLoaded();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage_settings_ptr = getSettings();
