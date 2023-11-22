@@ -1349,7 +1349,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 if (auto part_in_memory = asInMemoryPart(part))
                     sum_parts_size_in_bytes += part_in_memory->block.bytes();
                 else
-                    sum_parts_size_in_bytes += part->getBytesOnDisk();
+                    sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
             }
         }
 
