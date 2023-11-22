@@ -1790,6 +1790,7 @@ llvm
 loadDefaultCAFile
 localhost
 localread
+loess
 logTrace
 logagent
 loghouse

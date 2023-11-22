@@ -1,29 +1,28 @@
 #include "config.h"
 
-#ifdef __clang__
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wold-style-cast"
-#    pragma clang diagnostic ignored "-Wshadow"
-#    pragma clang diagnostic ignored "-Wimplicit-float-conversion"
-#endif
-
-#include <stl.hpp>
-
-#ifdef __clang__
-#    pragma clang diagnostic pop
-#endif
-
-
 #if USE_SEASONAL
-#include <cmath>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#    ifdef __clang__
+#        pragma clang diagnostic push
+#        pragma clang diagnostic ignored "-Wold-style-cast"
+#        pragma clang diagnostic ignored "-Wshadow"
+#        pragma clang diagnostic ignored "-Wimplicit-float-conversion"
+#    endif
+
+#    include <stl.hpp>
+
+#    ifdef __clang__
+#        pragma clang diagnostic pop
+#    endif
+
+#    include <cmath>
+#    include <Columns/ColumnArray.h>
+#    include <Columns/ColumnConst.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/FunctionHelpers.h>
+#    include <Functions/IFunction.h>
 
 namespace DB
 {
