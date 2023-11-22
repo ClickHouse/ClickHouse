@@ -76,5 +76,5 @@ CREATE TABLE t4_r
     `Version` UInt32,
     `col` UInt64
 )
-ENGINE = ReplicatedGraphiteMergeTree('/tables/{database}/t4/', 'r2', 'graphite_rollup_2')
+ENGINE = ReplicatedGraphiteMergeTree('/tables/{database}/t4/', 'r2', 'graphite_rollup_alternative')
 ORDER BY key; -- { serverError METADATA_MISMATCH }
