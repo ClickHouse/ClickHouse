@@ -1171,6 +1171,22 @@ public:
     bool need_filter = false;
     IColumn::Filter filter;
 
+    void reserve(bool need_replicate)
+    {
+        if (!max_joined_block_rows)
+            return;
+
+        /// Do not allow big allocations when user set max_joined_block_rows to huge value
+        size_t reserve_size = std::min<size_t>(max_joined_block_rows, DEFAULT_BLOCK_SIZE * 2);
+
+        if (need_replicate)
+            /// Reserve 10% more space for columns, because some rows can be repeated
+            reserve_size = static_cast<size_t>(1.1 * reserve_size);
+
+        for (auto & column : columns)
+            column->reserve(reserve_size);
+    }
+
 private:
     std::vector<TypeAndName> type_name;
     MutableColumns columns;
@@ -1615,12 +1631,12 @@ Block sliceBlock(Block & block, size_t num_rows)
     size_t total_rows = block.rows();
     if (num_rows >= total_rows)
         return {};
-
+    size_t remaining_rows = total_rows - num_rows;
     Block remaining_block = block.cloneEmpty();
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & col = block.getByPosition(i);
-        remaining_block.getByPosition(i).column = col.column->cut(num_rows, total_rows - num_rows);
+        remaining_block.getByPosition(i).column = col.column->cut(num_rows, remaining_rows);
         col.column = col.column->cut(0, num_rows);
     }
     return remaining_block;
@@ -1674,8 +1690,12 @@ Block HashJoin::joinBlockImpl(
     added_columns.max_joined_block_rows = table_join->maxJoinedBlockRows();
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
+    else
+        added_columns.reserve(join_features.need_replication);
 
     size_t num_joined = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
+    /// Do not hold memory for join_on_keys anymore
+    added_columns.join_on_keys.clear();
     Block remaining_block = sliceBlock(block, num_joined);
 
     for (size_t i = 0; i < added_columns.size(); ++i)
