@@ -6,7 +6,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <iostream>
 
 namespace DB
 {
@@ -27,7 +26,6 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     // "$..123abc" is parsed into three parts, ".", ".123" and "abc"
     if (pos->type != TokenType::Dot && pos->type != TokenType::Number)
         return false;
-    
     if (pos->type != TokenType::Number)
     {
         ++pos;
@@ -37,7 +35,6 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             return false;
         }
     }
-    
     ASTPtr member_name;
 
     if (pos->type == TokenType::Number)[[unlikely]]
