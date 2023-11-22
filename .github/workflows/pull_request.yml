@@ -392,17 +392,6 @@ jobs:
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-  FunctionalStatelessTestReleaseAnalyzer:
-    needs: [BuilderDebRelease]
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, analyzer)
-      runner_type: func-tester
-      additional_envs: |
-        KILL_TIMEOUT=10800
-      run_command: |
-        cd "$REPO_COPY/tests/ci"
-        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
   FunctionalStatelessTestReleaseS3:
     needs: [BuilderDebRelease]
     uses: ./.github/workflows/reusable_test.yml
@@ -412,6 +401,18 @@ jobs:
       additional_envs: |
         KILL_TIMEOUT=10800
       batches: 2
+      run_command: |
+        cd "$REPO_COPY/tests/ci"
+        python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+  FunctionalStatelessTestDebugAnalyzer:
+    needs: [BuilderDebDebug]
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateless tests (debug, analyzer)
+      runner_type: func-tester
+      additional_envs: |
+        KILL_TIMEOUT=10800
+      batches: 4
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
