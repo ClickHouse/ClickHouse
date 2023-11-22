@@ -267,7 +267,6 @@ template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 dest_size)
 {
     const char * const source_end = source + source_size;
-    const char * const dest_end = dest + dest_size;
 
     if (source + sizeof(UInt32) > source_end)
         return;
@@ -281,7 +280,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source + sizeof(T) > source_end || items_count < 1)
         return;
 
-    if (dest + items_count * sizeof(T) > dest_end)
+    if (static_cast<UInt64>(items_count) * sizeof(T) > dest_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Gorilla-encoded data: corrupted input data.");
 
     prev_value = unalignedLoadLittleEndian<T>(source);
