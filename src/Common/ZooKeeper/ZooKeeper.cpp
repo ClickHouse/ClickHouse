@@ -1,19 +1,20 @@
 #include "ZooKeeper.h"
 #include "Coordination/KeeperConstants.h"
 #include "Coordination/KeeperFeatureFlags.h"
-#include "Core/SettingsEnums.h"
+#include <Core/SettingsEnums.h>
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
-#include "base/types.h"
+#include <base/types.h>
 
 #include <filesystem>
 #include <functional>
 #include <ranges>
+#include <string_view>
 #include <vector>
 
-#include "Common/Priority.h"
-#include "Common/ZooKeeper/ZooKeeperArgs.h"
+#include <Common/Priority.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
@@ -61,7 +62,7 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
-bool ZooKeeperAvailabilityZoneMap::needTryOtherHost(const std::string & local_az, const std::set<std::string> & attempted_host)
+bool ZooKeeperAvailabilityZoneMap::needTryOtherHost(const std::string & local_az, const std::unordered_set<std::string_view> & attempted_host)
 {
     std::lock_guard lock(mutex);
     for (const auto & [host, az] : az_by_host)
@@ -114,8 +115,8 @@ Coordination::ZooKeeper::Node makeZooKeeperNode(const ShuffleHost& shuffle_host)
 {
     Coordination::ZooKeeper::Node node;
     auto [address, secure] = parseForSocketAddress(shuffle_host.host);
-    node.address = Poco::Net::SocketAddress(host_result.first);
-    node.secure = host_result.second;
+    node.address = Poco::Net::SocketAddress(address);
+    node.secure = secure;
     node.original_index = shuffle_host.original_index;
     return node;
 }
@@ -282,9 +283,6 @@ void ZooKeeper::tryConnectSameAZKeeper()
         attempted_hosts.insert(host.host);
         try
         {
-            String host_string = host.host;
-            auto host_result = parseForSocketAddress(host_string);
-
             Coordination::ZooKeeper::Nodes nodes{makeZooKeeperNode(host)};
             impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
             connected_host_az = impl->getAvailabilityZone();

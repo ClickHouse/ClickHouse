@@ -32,7 +32,7 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     if (config.hasProperty("availability_zone"))
     {
         auto keeper_az = config.getString("availability_zone.value", "");
-        const auto auto_detect_for_cloud = config.getBool("keeper_server.availability_zone.enable_auto_detection_on_cloud", false);
+        const auto auto_detect_for_cloud = config.getBool("availability_zone.enable_auto_detection_on_cloud", false);
         if (keeper_az.empty() && auto_detect_for_cloud)
         {
             try
