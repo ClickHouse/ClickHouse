@@ -13,6 +13,7 @@
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/FieldToDataType.h>
+#include <Core/Range.h>
 
 namespace DB
 {
@@ -33,6 +34,8 @@ public:
 
         ASTIdentifier * identifier = nullptr;
         DataTypePtr arg_data_type = {};
+
+        Range range = Range::createWholeUniverse();
 
         void reject() { monotonicity.is_monotonic = false; }
         bool isRejected() const { return !monotonicity.is_monotonic; }
@@ -172,7 +175,26 @@ public:
         if (function_base && function_base->hasInformationAboutMonotonicity())
         {
             bool is_positive = data.monotonicity.is_positive;
-            data.monotonicity = function_base->getMonotonicityForRange(*data.arg_data_type, Field(), Field());
+            data.monotonicity = function_base->getMonotonicityForRange(*data.arg_data_type, data.range.left, data.range.right);
+
+            auto & key_range = data.range;
+
+            /// If we apply function to open interval, we can get empty intervals in result.
+            /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
+            /// To avoid this we make range left and right included.
+            /// Any function that treats NULL specially is not monotonic.
+            /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
+            if (!key_range.left.isNull())
+            {
+                key_range.left = applyFunction(function_base, data.arg_data_type, key_range.left);
+                key_range.left_included = true;
+            }
+
+            if (!key_range.right.isNull())
+            {
+                key_range.right = applyFunction(function_base, data.arg_data_type, key_range.right);
+                key_range.right_included = true;
+            }
 
             if (!is_positive)
                 data.monotonicity.is_positive = !data.monotonicity.is_positive;
@@ -199,6 +221,46 @@ public:
         result.column = result.type->createColumnConst(0, literal->value);
 
         return result;
+    }
+
+    static Field applyFunctionForField(
+        const FunctionBasePtr & func,
+        const DataTypePtr & arg_type,
+        const Field & arg_value)
+    {
+        ColumnsWithTypeAndName columns
+            {
+                { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
+            };
+
+        auto col = func->execute(columns, func->getResultType(), 1);
+        return (*col)[0];
+    }
+
+    static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+    {
+        /// Fallback for fields without block reference.
+        if (field.isExplicit())
+            return applyFunctionForField(func, current_type, field);
+
+        String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
+        const auto & columns = field.columns;
+        size_t result_idx = columns->size();
+
+        for (size_t i = 0; i < result_idx; ++i)
+        {
+            if ((*columns)[i].name == result_name)
+                result_idx = i;
+        }
+
+        if (result_idx == columns->size())
+        {
+            ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
+            field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
+            (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
+        }
+
+        return {field.columns, field.row_idx, result_idx};
     }
 };
 

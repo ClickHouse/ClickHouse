@@ -46,6 +46,9 @@ bool MergeTreePartitionCompatibilityVerifier::isDestinationPartitionExpressionMo
     };
 
     MonotonicityCheckVisitor::Data data {{table_with_columns}, context, {}};
+
+    data.range = range;
+
     MonotonicityCheckVisitor(data).visit(ast_func);
 
     auto monotonicity_info = KeyDescriptionMonotonicityChecker::getMonotonicityInfo(destination_table_metadata->getPartitionKey(), range, context);
