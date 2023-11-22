@@ -445,13 +445,17 @@ def test_inaccessible_postgresql_database_engine_filterable_on_system_tables():
 
     # Should quickly return result instead of wasting time in connection since it gets filtered.
     assert (
-        node1.query("SELECT DISTINCT(name) FROM system.tables WHERE engine!='PostgreSQL' AND name='COLUMNS'") 
+        node1.query(
+            "SELECT DISTINCT(name) FROM system.tables WHERE engine!='PostgreSQL' AND name='COLUMNS'"
+        )
         == "COLUMNS\n"
     )
 
     # Enigne of system.tables in fact means storage name, so View should not get filtered.
     assert (
-        node1.query("SELECT DISTINCT(name) FROM system.tables WHERE engine='View' and name='COLUMNS'")
+        node1.query(
+            "SELECT DISTINCT(name) FROM system.tables WHERE engine='View' and name='COLUMNS'"
+        )
         == "COLUMNS\n"
     )
 
