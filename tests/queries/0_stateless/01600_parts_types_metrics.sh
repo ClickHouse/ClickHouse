@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage, no-asan, long
+# Tags: no-s3-storage, no-asan, long, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +21,7 @@ verify_sql="SELECT
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    while true; do
+    for ((i = 0; i < 100; ++i)); do
         result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
         if [ "$result" = "1" ]; then
             echo 1
