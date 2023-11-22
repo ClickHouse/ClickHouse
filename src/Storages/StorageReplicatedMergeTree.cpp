@@ -1230,9 +1230,9 @@ bool StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     const auto & old_columns = metadata_snapshot->getColumns();
 
     /// Replicated tables on different replicas must have exactly same column definitions
-    /// We cannot just compare column descriptions here because data types like SimpleAggregateFunction
+    /// We cannot compare column descriptions with `==` here because data types like SimpleAggregateFunction
     /// may have different aggregate function in 1st argument but still compatible if 2nd argument is same.
-    if (columns_from_zk.toString() == old_columns.toString())
+    if (columns_from_zk.identical(old_columns))
         return true;
 
     if (!strict_check && metadata_stat.version != 0)
