@@ -302,7 +302,10 @@ Default value: 10800
 ### allow_object_storage_vfs
 
 An alternate reference counting mechanism for object storages. Mutually exclusive with
-`allow_remote_fs_zero_copy_replication`.
+`allow_remote_fs_zero_copy_replication`. Unlike the 0copy setting, can't be set in runtime,
+a server restart is needed.
+
+When turned on, reuses `prefer_fetch_merged_part_size_threshold` setting.
 
 Possible values: 0, 1
 Default value: 0
