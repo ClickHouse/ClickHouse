@@ -60,9 +60,9 @@ public:
 
     void createDirectories(const String & path) override
     {
-        auto tx = createEncryptedTransaction();
-        tx->createDirectories(path);
-        tx->commit();
+        auto wrapped_path = wrappedPath(path);
+        /// Delegate disk can have retry logic for recursive directory creation. Let it handle it.
+        delegate->createDirectories(wrapped_path);
     }
 
     void clearDirectory(const String & path) override

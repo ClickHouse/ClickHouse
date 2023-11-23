@@ -35,7 +35,6 @@
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -76,59 +75,6 @@ namespace ErrorCodes
 }
 namespace
 {
-    /// Forward-declare to use in expandSelector()
-    std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(const String & path_for_ls,
-                                                                const HDFSFSPtr & fs,
-                                                                const String & for_match);
-
-    /// Process {a,b,c...} globs separately: don't match it against regex, but generate a,b,c strings instead.
-    std::vector<StorageHDFS::PathWithInfo> expandSelector(const String & path_for_ls,
-                                                          const HDFSFSPtr & fs,
-                                                          const String & for_match)
-    {
-        std::vector<size_t> anchor_positions = {};
-        bool opened = false, closed = false;
-
-        for (std::string::const_iterator it = for_match.begin(); it != for_match.end(); it++)
-        {
-            if (*it == '{')
-            {
-                anchor_positions.push_back(std::distance(for_match.begin(), it));
-                opened = true;
-            }
-            else if (*it == '}')
-            {
-                anchor_positions.push_back(std::distance(for_match.begin(), it));
-                closed = true;
-                break;
-            }
-            else if (*it == ',')
-            {
-                if (!opened)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Unexpected ''' found in path '{}' at position {}.", for_match, std::distance(for_match.begin(), it));
-                anchor_positions.push_back(std::distance(for_match.begin(), it));
-            }
-        }
-        if (!opened || !closed)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid {{}} glob in path {}.", for_match);
-
-        std::vector<StorageHDFS::PathWithInfo> ret = {};
-
-        std::string common_prefix = for_match.substr(0, anchor_positions[0]);
-        std::string common_suffix = for_match.substr(anchor_positions[anchor_positions.size()-1] + 1);
-        for (size_t i = 1; i < anchor_positions.size(); ++i)
-        {
-            std::string expanded_matcher = common_prefix
-                + for_match.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
-                + common_suffix;
-            std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(path_for_ls, fs, expanded_matcher);
-            ret.insert(ret.end(), result_part.begin(), result_part.end());
-        }
-        return ret;
-    }
-
     /* Recursive directory listing with matched paths as a result.
      * Have the same method in StorageFile.
      */
@@ -137,19 +83,23 @@ namespace
         const HDFSFSPtr & fs,
         const String & for_match)
     {
-        /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
-        static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");
-
-        std::string_view for_match_view(for_match);
-        std::string_view matched;
-        if (RE2::FindAndConsume(&for_match_view, enum_or_range, &matched))
-        {
-            std::string buffer(matched);
-            if (buffer.find(',') != std::string::npos)
-                return expandSelector(path_for_ls, fs, for_match);
-        }
+        std::vector<StorageHDFS::PathWithInfo> result;
 
         const size_t first_glob_pos = for_match.find_first_of("*?{");
+
+        if (first_glob_pos == std::string::npos)
+        {
+            const String path = fs::path(path_for_ls + for_match.substr(1)).lexically_normal();
+            HDFSFileInfo ls;
+            ls.file_info = hdfsGetPathInfo(fs.get(), path.c_str());
+            if (ls.file_info != nullptr) // NOLINT
+            {
+                result.push_back(StorageHDFS::PathWithInfo{
+                        String(path),
+                        StorageHDFS::PathInfo{ls.file_info->mLastMod, static_cast<size_t>(ls.file_info->mSize)}});
+            }
+            return result;
+        }
 
         const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
         const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
@@ -172,7 +122,7 @@ namespace
             throw Exception(
                 ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
         }
-        std::vector<StorageHDFS::PathWithInfo> result;
+
         if (!ls.file_info && ls.length > 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
         for (int i = 0; i < ls.length; ++i)
@@ -223,7 +173,15 @@ namespace
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
 
-        auto res = LSWithRegexpMatching("/", fs, path_from_uri);
+        Strings paths = expandSelectionGlob(path_from_uri);
+
+        std::vector<StorageHDFS::PathWithInfo> res;
+
+        for (const auto & path : paths)
+        {
+            auto part_of_res = LSWithRegexpMatching("/", fs, path);
+            res.insert(res.end(), part_of_res.begin(), part_of_res.end());
+        }
         return res;
     }
 

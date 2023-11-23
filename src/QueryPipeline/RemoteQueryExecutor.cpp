@@ -771,10 +771,16 @@ bool RemoteQueryExecutor::hasThrownException() const
 
 void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
 {
+    std::lock_guard guard(was_cancelled_mutex);
     progress_callback = std::move(callback);
 
     if (extension && extension->parallel_reading_coordinator)
         extension->parallel_reading_coordinator->setProgressCallback(progress_callback);
 }
 
+void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
+{
+    std::lock_guard guard(was_cancelled_mutex);
+    profile_info_callback = std::move(callback);
+}
 }

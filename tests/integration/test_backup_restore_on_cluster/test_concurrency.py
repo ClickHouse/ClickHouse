@@ -214,7 +214,13 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
         while time.time() < end_time:
             table_name = f"mydb.tbl{randint(1, num_nodes)}"
             node = nodes[randint(0, num_nodes - 1)]
-            node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+            # "DROP TABLE IF EXISTS" still can throw some errors (e.g. "WRITE locking attempt on node0 has timed out!")
+            # So we use query_and_get_answer_with_error() to ignore any errors.
+            # `lock_acquire_timeout` is also reduced because we don't wait our test to wait too long.
+            node.query_and_get_answer_with_error(
+                f"DROP TABLE IF EXISTS {table_name} SYNC",
+                settings={"lock_acquire_timeout": 10},
+            )
 
     def rename_tables():
         while time.time() < end_time:

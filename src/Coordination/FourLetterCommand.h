@@ -7,7 +7,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <IO/WriteBufferFromString.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 
 namespace DB

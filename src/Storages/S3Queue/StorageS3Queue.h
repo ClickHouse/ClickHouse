@@ -10,6 +10,8 @@
 #include <Storages/S3Queue/S3QueueSource.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/Context.h>
+#include <IO/S3/BlobStorageLogWriter.h>
+
 
 namespace Aws::S3
 {
@@ -73,10 +75,12 @@ private:
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
+    std::atomic<bool> table_is_being_dropped = false;
+
     Poco::Logger * log;
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
     void drop() override;
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
