@@ -264,7 +264,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 }
 
 template <typename T>
-void decompressDataForType(const char * source, UInt32 source_size, char * dest)
+void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 dest_size)
 {
     const char * const source_end = source + source_size;
 
@@ -279,6 +279,9 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     // decoding first item
     if (source + sizeof(T) > source_end || items_count < 1)
         return;
+
+    if (static_cast<UInt64>(items_count) * sizeof(T) > dest_size)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Gorilla-encoded data: corrupted input data.");
 
     prev_value = unalignedLoadLittleEndian<T>(source);
     unalignedStoreLittleEndian<T>(dest, prev_value);
@@ -422,22 +425,28 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Gorilla-encoded data. File has wrong header");
 
+    if (bytes_to_skip >= uncompressed_size)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Gorilla-encoded data. File has wrong header");
+
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
+    UInt32 uncompressed_size_left = uncompressed_size - bytes_to_skip;
     switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
-        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
         break;
     case 2:
-        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
         break;
     case 4:
-        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
         break;
     case 8:
-        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
         break;
+    default:
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Gorilla-encoded data. File has wrong header");
     }
 }
 
