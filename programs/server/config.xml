@@ -830,13 +830,13 @@
                  And also (and which is more important), the initial_user will
                  be used as current user for the query.
 
-                 Right now the protocol is pretty simple and it only takes into account:
+                 Right now the protocol is pretty simple, and it only takes into account:
                  - cluster name
                  - query
 
-                 Also it will be nice if the following will be implemented:
-                 - source hostname (see interserver_http_host), but then it will depends from DNS,
-                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 Also, it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depend on DNS,
+                   it can use IP address instead, but then you need to get correct on the initiator node.
                  - target hostname / ip address (same notes as for source hostname)
                  - time-based security tokens
             -->
