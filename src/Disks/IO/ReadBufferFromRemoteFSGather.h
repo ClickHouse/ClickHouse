@@ -1,10 +1,11 @@
 #pragma once
 
-#include "config.h"
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <IO/AsynchronousReader.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include "IO/FileEncryptionCommon.h"
+#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -21,7 +22,8 @@ class ReadBufferFromRemoteFSGather final : public ReadBufferFromFileBase
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(
+        const std::string & path, size_t read_until_position, bool use_external_buffer)>;
 
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,

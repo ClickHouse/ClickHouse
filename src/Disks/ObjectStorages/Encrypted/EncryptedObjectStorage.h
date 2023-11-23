@@ -1,8 +1,13 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
+#include "config.h"
+
+#if USE_SSL
+
+#    include <Disks/IDisk.h>
+#    include <Disks/ObjectStorages/IObjectStorage.h>
+#    include <IO/FileEncryptionCommon.h>
+#    include <Interpreters/Cache/FileCache.h>
 
 namespace Poco
 {
@@ -12,17 +17,33 @@ class Logger;
 namespace DB
 {
 
+struct EncryptedObjectStorageSettings
+{
+    DiskPtr wrapped_disk;
+    String current_key;
+    UInt128 current_key_fingerprint;
+    FileEncryption::Algorithm current_algorithm;
+    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
+    String findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
+    FileCachePtr header_cache;
+    bool cache_header_on_write = false;
+};
+
 /**
  * Wraps another object storage and add a caching layer for it.
  */
-class CachedObjectStorage final : public IObjectStorage
+class EncryptedObjectStorage final : public IObjectStorage
 {
 public:
-    CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const FileCacheSettings & cache_settings_, const String & cache_config_name_);
+    EncryptedObjectStorage(
+        ObjectStoragePtr object_storage_, EncryptedObjectStorageSettingsPtr enc_settings_, const String & enc_config_name_);
 
     DataSourceDescription getDataSourceDescription() const override;
 
-    std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
+    std::string getName() const override
+    {
+        return fmt::format("EncryptedObjectStorage-{}({})", enc_config_name, object_storage->getName());
+    }
 
     bool exists(const StoredObject & object) const override;
 
@@ -61,14 +82,6 @@ public:
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    void copyObjectToAnotherObjectStorage( /// NOLINT
-        const StoredObject & object_from,
-        const StoredObject & object_to,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        IObjectStorage & object_storage_to,
-        std::optional<ObjectAttributes> object_to_attributes = {}) override;
-
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
         const Poco::Util::AbstractConfiguration & config,
@@ -83,22 +96,13 @@ public:
 
     void startup() override;
 
-    void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 
     String getObjectsNamespace() const override;
-
-    const std::string & getCacheName() const override { return cache_config_name; }
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return object_storage->isRemote(); }
-
-    void removeCacheIfExists(const std::string & path_key_for_cache) override;
-
-    bool supportsCache() const override { return true; }
 
     std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
@@ -106,26 +110,25 @@ public:
 
     bool isWriteOnce() const override { return object_storage->isWriteOnce(); }
 
-    const std::string & getCacheConfigName() const { return cache_config_name; }
-
     ObjectStoragePtr getWrappedObjectStorage() override { return object_storage; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    const FileCacheSettings & getCacheSettings() const { return cache_settings; }
+    const EncryptedObjectStorageSettingsPtr & getEncryptionSettings() const { return enc_settings; }
 
-    static bool canUseReadThroughCache(const ReadSettings & settings);
+    const std::string & getLayerName() const override { return enc_config_name; }
+    bool supportsOverlays() const override { return true; }
 
 private:
-    FileCache::Key getCacheKey(const std::string & path) const;
-
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
+    void removeCacheIfExists(const std::string & path) override;
 
     ObjectStoragePtr object_storage;
-    FileCachePtr cache;
-    FileCacheSettings cache_settings;
-    std::string cache_config_name;
+    EncryptedObjectStorageSettingsPtr enc_settings;
+    const std::string enc_config_name;
     Poco::Logger * log;
 };
 
 }
+
+#endif

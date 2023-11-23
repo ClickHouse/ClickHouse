@@ -28,6 +28,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
@@ -164,6 +169,7 @@ public:
     virtual ~IObjectStorage() = default;
 
     virtual const std::string & getCacheName() const;
+    virtual const std::string & getLayerName() const { return getCacheName(); }
 
     static ThreadPool & getThreadPoolWriter();
 
@@ -200,6 +206,7 @@ public:
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
     virtual bool supportsCache() const { return false; }
+    virtual bool supportsOverlays() const { return false || supportsCache(); }
 
     virtual bool isReadOnly() const { return false; }
     virtual bool isWriteOnce() const { return false; }
@@ -209,6 +216,14 @@ public:
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
+    virtual ObjectStoragePtr getWrappedObjectStorage()
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method `getWrappedObjectStorage()` is not implemented for disk: {}",
+            toString(getDataSourceDescription().type));
+    }
 
 private:
     mutable std::mutex throttlers_mutex;

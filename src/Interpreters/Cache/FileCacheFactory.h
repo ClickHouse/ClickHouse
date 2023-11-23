@@ -6,7 +6,6 @@
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <mutex>
-#include <list>
 
 namespace DB
 {
@@ -35,6 +34,8 @@ public:
     CacheByName getAll();
 
     FileCacheData getByName(const std::string & cache_name);
+
+    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config);
 
 private:
     std::mutex mutex;

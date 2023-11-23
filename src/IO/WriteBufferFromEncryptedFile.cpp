@@ -56,6 +56,12 @@ void WriteBufferFromEncryptedFile::nextImpl()
     encryptor.encrypt(working_buffer.begin(), offset(), *out);
 }
 
+std::string WriteBufferFromEncryptedFile::getFileName() const
+{
+    if (WriteBufferFromFileBase * buffer = dynamic_cast<WriteBufferFromFileBase *>(out.get()))
+        return buffer->getFileName();
+    return std::string();
+}
 }
 
 #endif
