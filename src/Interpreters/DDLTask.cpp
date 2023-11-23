@@ -113,6 +113,9 @@ String DDLLogEntry::toString() const
         writeChar('\n', wb);
     }
 
+    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
+        wb << "is_backup_restore: " << is_backup_restore << "\n";
+
     return wb.str();
 }
 
@@ -165,6 +168,12 @@ void DDLLogEntry::parse(const String & data)
         checkChar('\n', rb);
     }
 
+    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
+    {
+        checkString("is_backup_restore: ", rb);
+        readBoolText(is_backup_restore, rb);
+        checkChar('\n', rb);
+    }
 
     assertEOF(rb);
 
@@ -199,7 +208,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
     return query_context;
@@ -439,8 +448,8 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    query_context->getClientInfo().is_replicated_database_internal = true;
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);

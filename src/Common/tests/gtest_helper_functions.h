@@ -73,3 +73,25 @@ inline std::string xmlNodeAsString(Poco::XML::Node *pNode)
     result += ("</"+ node_name + ">\n");
     return Poco::XML::fromXMLString(result);
 }
+
+struct EnvironmentProxySetter
+{
+    EnvironmentProxySetter(const Poco::URI & http_proxy, const Poco::URI & https_proxy)
+    {
+        if (!http_proxy.empty())
+        {
+            setenv("http_proxy", http_proxy.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
+
+        if (!https_proxy.empty())
+        {
+            setenv("https_proxy", https_proxy.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
+    }
+
+    ~EnvironmentProxySetter()
+    {
+        unsetenv("http_proxy"); // NOLINT(concurrency-mt-unsafe)
+        unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
+    }
+};

@@ -346,9 +346,7 @@ UserID.bin，URL.bin，和EventTime.bin是<font face = "monospace">UserID</font>
 
 - 我们将主键列(<font face = "monospace">UserID</font>, <font face = "monospace">URL</font>)中的一些列值标记为橙色。
 
-  这些橙色标记的列值是每个颗粒中每个主键列的最小值。这里的例外是最后一个颗粒(上图中的颗粒1082)，最后一个颗粒我们标记的是最大的值。
-
-  正如我们将在下面看到的，这些橙色标记的列值将是表主索引中的条目。
+  这些橙色标记的列值是每个颗粒中第一行的主键列值。正如我们将在下面看到的，这些橙色标记的列值将是表主索引中的条目。
 
 - 我们从0开始对行进行编号，以便与ClickHouse内部行编号方案对齐，该方案也用于记录消息。
 :::
@@ -1071,13 +1069,6 @@ ClickHouse服务器日志文件中相应的跟踪日志确认了ClickHouse正在
 ## 通过projections使用联合主键索引
 
 
-<a href="https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#projections" target="_blank">Projections</a>目前是一个实验性的功能，因此我们需要告诉ClickHouse：
-
-```sql
-SET optimize_use_projections = 1;
-```
-
-
 在原表上创建projection：
 ```sql
 ALTER TABLE hits_UserID_URL
@@ -1096,10 +1087,12 @@ ALTER TABLE hits_UserID_URL
 
 :::note
 - 该projection正在创建一个隐藏表，该表的行顺序和主索引基于该projection的给定order BY子句
-- 我们使用MATERIALIZE关键字，以便立即用源表hits_UserID_URL的所有887万行导入隐藏表
+- `SHOW TABLES` 语句查询是不会列出这个隐藏表的
+- 我们使用`MATERIALIZE`关键字，以便立即用源表<a href="https://clickhouse.com/docs/zh/guides/best-practices#%E5%8C%85%E5%90%AB%E4%B8%BB%E9%94%AE%E7%9A%84%E8%A1%A8" target="_blank">hits_UserID_URL</a>的所有887万行导入隐藏表
 - 如果在源表hits_UserID_URL中插入了新行，那么这些行也会自动插入到隐藏表中
 - 查询总是(从语法上)针对源表hits_UserID_URL，但是如果隐藏表的行顺序和主索引允许更有效地执行查询，那么将使用该隐藏表
-- 实际上，隐式创建的隐藏表的行顺序和主索引与我们显式创建的辅助表相同：
+- 请注意，投影(projections)不会使 `ORDER BY` 查询语句的效率更高，即使 `ORDER BY` 匹配上了 projection 的 `ORDER BY` 语句(请参阅：https://github.com/ClickHouse/ClickHouse/issues/47333)
+- 实际上，隐式创建的隐藏表的行顺序和主索引与我们显式创建的<a href="https://clickhouse.com/docs/zh/guides/best-practices#%E9%80%9A%E8%BF%87%E8%BE%85%E5%8A%A9%E8%A1%A8%E4%BD%BF%E7%94%A8%E8%81%94%E5%90%88%E4%B8%BB%E9%94%AE%E7%B4%A2%E5%BC%95" target="_blank">辅助表</a>相同：
 
 <img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-12c-1.png').default} class="image"/>
 
@@ -1163,7 +1156,7 @@ ClickHouse服务器日志文件中跟踪日志确认了ClickHouse正在对索引
 ```
 
 
-## 移除无效的主键列
+## 小结
 
 
 带有联合主键(UserID, URL)的表的主索引对于加快UserID的查询过滤非常有用。但是，尽管URL列是联合主键的一部分，但该索引在加速URL查询过滤方面并没有提供显著的帮助。
@@ -1176,4 +1169,269 @@ ClickHouse服务器日志文件中跟踪日志确认了ClickHouse正在对索引
 
 但是，如果复合主键中的键列在基数上有很大的差异，那么查询按基数升序对主键列进行排序是有益的。
 
-主键键列之间的基数差越大，主键键列的顺序越重要。我们将在以后的文章中对此进行演示。请继续关注。
+主键键列之间的基数差得越大，主键中的列的顺序越重要。我们将在下一章节对此进行演示。
+
+## 高效地为键列排序
+
+<a name="test"></a>
+
+
+在复合主键中，键列的顺序会对以下两方面产生重大影响：
+- 查询中过滤次关键字列的效率，以及
+- 表数据文件的压缩率。
+
+为了演示这一点，我们将使用我们的[网络流量样本数据集(web traffic sample data set)](#数据集)这个版本，
+其中每一行包含三列，分别表示互联网用户(`UserID` 列）对 URL（`URL`列）的访问是否被标记为僵尸流量（`IsRobot` 列）。
+
+我们将使用一个包含上述所有三列的复合主键，该主键可用于加快计算以下内容的典型网络分析查询速度
+- 特定 URL 有多少（百分比）流量来自机器人，或
+- 我们对特定用户是否为僵尸用户有多大把握（来自该用户的流量中有多大比例被认为是（或不是）僵尸流量）
+
+我们使用该查询来计算我们要用作复合主键中三个列的基数（注意，我们使用 [URL 表函数](/docs/en/sql-reference/table-functions/url.md) 来即席查询 TSV 数据，而无需创建本地表）。在 `clickhouse client`中运行此查询：
+```sql
+SELECT
+    formatReadableQuantity(uniq(URL)) AS cardinality_URL,
+    formatReadableQuantity(uniq(UserID)) AS cardinality_UserID,
+    formatReadableQuantity(uniq(IsRobot)) AS cardinality_IsRobot
+FROM
+(
+    SELECT
+        c11::UInt64 AS UserID,
+        c15::String AS URL,
+        c20::UInt8 AS IsRobot
+    FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+    WHERE URL != ''
+)
+```
+响应如下:
+```response
+┌─cardinality_URL─┬─cardinality_UserID─┬─cardinality_IsRobot─┐
+│ 2.39 million    │ 119.08 thousand    │ 4.00                │
+└─────────────────┴────────────────────┴─────────────────────┘
+
+1 row in set. Elapsed: 118.334 sec. Processed 8.87 million rows, 15.88 GB (74.99 thousand rows/s., 134.21 MB/s.)
+```
+
+我们可以看到，各列之间的基数，尤其是 `URL` 列和 `IsRobot` 列之间，存在着很大的差异，因此，在复合主键中，这些列的顺序对于有效加快对这些列的查询过滤速度，以及实现表中列数据文件的最佳压缩比都非常重要。
+
+为了证明这一点，我们为僵尸流量分析数据创建了两个版本的表：
+- 带有复合主键`(URL、UserID、IsRobot)`的表 `hits_URL_UserID_IsRobot`,其中的键列按基数降序排列
+- 使用复合主键`(IsRobot, UserID, URL)` 创建表 `hits_IsRobot_UserID_URL`，其中的键列按基数升序排列
+
+
+创建具有复合主键`(URL、UserID、IsRobot)`的表 `hits_URL_UserID_IsRobot`：
+```sql
+CREATE TABLE hits_URL_UserID_IsRobot
+(
+    `UserID` UInt32,
+    `URL` String,
+    `IsRobot` UInt8
+)
+ENGINE = MergeTree
+// highlight-next-line
+PRIMARY KEY (URL, UserID, IsRobot);
+```
+
+然后，填充887万行数据：
+```sql
+INSERT INTO hits_URL_UserID_IsRobot SELECT
+    intHash32(c11::UInt64) AS UserID,
+    c15 AS URL,
+    c20 AS IsRobot
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+WHERE URL != '';
+```
+响应如下:
+```response
+0 rows in set. Elapsed: 104.729 sec. Processed 8.87 million rows, 15.88 GB (84.73 thousand rows/s., 151.64 MB/s.)
+```
+
+
+接下来，创建带有复合主键 `(IsRobot,UserID,URL)`的表 `hits_IsRobot_UserID_URL`：
+```sql
+CREATE TABLE hits_IsRobot_UserID_URL
+(
+    `UserID` UInt32,
+    `URL` String,
+    `IsRobot` UInt8
+)
+ENGINE = MergeTree
+// highlight-next-line
+PRIMARY KEY (IsRobot, UserID, URL);
+```
+并在其中填入与上一个表相同的 887 万行数据：
+
+```sql
+INSERT INTO hits_IsRobot_UserID_URL SELECT
+    intHash32(c11::UInt64) AS UserID,
+    c15 AS URL,
+    c20 AS IsRobot
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+WHERE URL != '';
+```
+响应如下:
+```response
+0 rows in set. Elapsed: 95.959 sec. Processed 8.87 million rows, 15.88 GB (92.48 thousand rows/s., 165.50 MB/s.)
+```
+
+
+
+### 在次关键字列上高效过滤
+
+当查询对至少一列进行过滤时，该列是复合关键字的一部分，并且是第一关键字列，[那么 ClickHouse 将在关键字列的索引标记上运行二分查找算法](#主索引被用来选择颗粒)。
+
+当查询（仅）过滤属于复合关键字的某一列，但不是第一关键字列时，[ClickHouse 将在关键字列的索引标记上使用通用排除搜索算法](#查询使用第二位主键的性能问题)。
+
+
+对于第二种情况，复合主键中关键列的排序对[通用排除搜索算法](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)的有效性很重要。
+
+这是一个对表中的 `UserID` 列进行过滤的查询，我们对该表的关键字列`(URL、UserID、IsRobot)`按基数进行了降序排序：
+```sql
+SELECT count(*)
+FROM hits_URL_UserID_IsRobot
+WHERE UserID = 112304
+```
+响应如下:
+```response
+┌─count()─┐
+│      73 │
+└─────────┘
+
+1 row in set. Elapsed: 0.026 sec.
+// highlight-next-line
+Processed 7.92 million rows,
+31.67 MB (306.90 million rows/s., 1.23 GB/s.)
+```
+
+对关键字列`(IsRobot, UserID, URL)`按基数升序排列的表，进行相同的查询：
+```sql
+SELECT count(*)
+FROM hits_IsRobot_UserID_URL
+WHERE UserID = 112304
+```
+响应如下:
+```response
+┌─count()─┐
+│      73 │
+└─────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+// highlight-next-line
+Processed 20.32 thousand rows,
+81.28 KB (6.61 million rows/s., 26.44 MB/s.)
+```
+
+我们可以看到，在对关键列按基数进行升序排列的表中，查询执行的效率和速度明显更高。
+
+其原因是，当通过具有较低基数前键列的次关键字列选择[颗粒](#主索引被用来选择颗粒)时， [通用排除搜索算法](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)最有效。 我们在本指南的[上一节](#generic-exclusion-search-algorithm)中对此进行了详细说明。
+
+
+### 数据文件的最佳压缩率
+
+此查询将比较上面创建的两个表中 `UserID` 列的压缩率：
+
+```sql
+SELECT
+    table AS Table,
+    name AS Column,
+    formatReadableSize(data_uncompressed_bytes) AS Uncompressed,
+    formatReadableSize(data_compressed_bytes) AS Compressed,
+    round(data_uncompressed_bytes / data_compressed_bytes, 0) AS Ratio
+FROM system.columns
+WHERE (table = 'hits_URL_UserID_IsRobot' OR table = 'hits_IsRobot_UserID_URL') AND (name = 'UserID')
+ORDER BY Ratio ASC
+```
+这是响应：
+```response
+┌─Table───────────────────┬─Column─┬─Uncompressed─┬─Compressed─┬─Ratio─┐
+│ hits_URL_UserID_IsRobot │ UserID │ 33.83 MiB    │ 11.24 MiB  │     3 │
+│ hits_IsRobot_UserID_URL │ UserID │ 33.83 MiB    │ 877.47 KiB │    39 │
+└─────────────────────────┴────────┴──────────────┴────────────┴───────┘
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+我们可以看到，在按关键字列`(IsRobot、UserID、URL)` 按基数升序排列的表中，`UserID`  列的压缩率明显更高。
+
+虽然两个表中存储的数据完全相同（我们在两个表中插入了相同的 887 万行），但复合主键中关键字列的顺序对表的 [列数据文件](#数据按照主键排序存储在磁盘上)中的 <a href="https://clickhouse.com/docs/en/introduction/distinctive-features/#data-compression" target="_blank">压缩</a>数据所需的磁盘空间有很大影响：
+- 在具有复合主键`(URL, UserID, IsRobot)` 的表 `hits_URL_UserID_IsRobot` 中，我们按照键列的基数降序排列，此时 `UserID.bin` 数据文件占用**11.24MB**的磁盘空间。
+- 在具有复合主键`(IsRobot, UserID, URL)` 的表 `hits_IsRobot_UserID_URL` 中，我们按照键列的基数升序排列，`UserID.bin` 数据文件仅占用**877.47 KiB**的磁盘空间。
+
+对磁盘上表的列数据进行良好的压缩比不仅能节省磁盘空间，还能使需要从该列读取数据的查询（尤其是分析查询）更快，因为将列数据从磁盘移动到主内存（操作系统的文件缓存）所需的 i/o 更少。
+
+下面我们将说明，为什么主键列按基数升序排列有利于提高表列的压缩率。
+
+下图阐述了主键的磁盘上行顺序，其中键列是按基数升序排列的：
+<img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-14a.png').default} class="image"/>
+
+我们讨论过 [表的行数据按主键列有序存储在磁盘上](#数据按照主键排序存储在磁盘上)。
+
+在上图中，表格的行（它们在磁盘上的列值）首先按其 `cl` 值排序，具有相同 `cl` 值的行按其 `ch` 值排序。由于第一键列 `cl` 的基数较低，因此很可能存在具有相同 `cl` 值的行。因此，`ch`值也很可能是有序的（局部地--对于具有相同`cl`值的行而言）。
+
+如果在一列中，相似的数据被放在彼此相近的位置，例如通过排序，那么这些数据将得到更好的压缩。
+一般来说，压缩算法会受益于数据的运行长度（可见的数据越多，压缩效果越好）和局部性（数据越相似，压缩率越高）。
+
+与上图不同的是，下图阐述了主键的磁盘上行顺序，其中主键列是按基数降序排列的：
+<img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-14b.png').default} class="image"/>
+
+现在，表格的行首先按其 `ch` 值排序，具有相同 `ch` 值的行按其 `cl` 值排序。
+但是，由于第一键列 `ch` 的基数很高，因此不太可能存在具有相同 `ch` 值的行。因此，`cl`值也不太可能是有序的（局部地--对于具有相同`ch`值的行而言）。
+
+因此，`cl`值很可能是随机排序的，因此局部性和压缩比都很差。
+
+
+### 小结
+
+为了在查询中有效地过滤次关键字列和提高表列数据文件的压缩率，按基数升序排列主键中的列是有益的。
+
+
+### 相关内容
+- 博客： [Super charging your ClickHouse queries](https://clickhouse.com/blog/clickhouse-faster-queries-with-projections-and-primary-indexes)
+
+
+## 有效识别单行
+
+尽管在一般情况下，它[不](/knowledgebase/key-value)是ClickHouse 的最佳用例，
+但是有时建立在ClickHouse之上的应用程序,需要识别ClickHouse表中的单行。
+
+
+一个直观的解决方案可能是使用[UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier) 列，每一行的值都是唯一的，并且为了快速检索行，将该列用作主键列。
+
+为了实现最快的检索，UUID 列[需要成为主键列](#主索引被用来选择颗粒)。
+
+我们讨论过，由于[ClickHouse 表的行数据是按主键列顺序存储在磁盘上的](#数据按照主键排序存储在磁盘上)，因此在主键或复合主键中，在基数较小的列之前设置基数非常大的列（如 UUID 列）[不利于其他表列的压缩率](#数据文件的最佳压缩率)。
+
+在最快检索速度和最佳数据压缩之间的折中方法是使用某种复合主键，其中 UUID 是最后一列关键字，位于（更）小基数关键字列之后，这些关键字列用于确保表中某些列的良好压缩比。
+
+### 一个具体例子
+
+一个具体的例子是 Alexey Milovidov 开发的文本粘贴服务 https://pastila.nl， 相关[博客](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/)。
+
+每次更改文本区域时，数据都会自动保存到 ClickHouse 表格行中（每次更改保存一行）。
+
+识别和检索（特定版本）粘贴内容的一种方法是使用内容的哈希值作为包含内容的表行的 UUID。
+
+下图显示了
+- 当内容发生变化时（例如由于按键将文本键入文本框），行的插入顺序，以及
+- 当使用 `PRIMARY KEY (hash)` 时，插入行数据的磁盘顺序：
+<img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-15a.png').default} class="image"/>
+
+由于 `hash` 列被用作主键列
+- 可以[非常快速](#主索引被用来选择颗粒) 检索特定行，但
+- 表格的行（列数据）是按照（唯一和随机的）哈希值升序存储在磁盘上的。因此，内容列的值也是按随机顺序存储的，不具有数据局部性，导致**内容列数据文件的压缩率不理想**。
+
+
+为了大幅提高内容列的压缩率，同时仍能快速检索特定行，pastila.nl 使用两个哈希值（和一个复合主键）来识别特定行：
+- 内容哈希值，如上所述，对于不同的数据是不同的，以及
+- 对[局部性敏感的哈希值（fingerprint）](https://en.wikipedia.org/wiki/Locality-sensitive_hashing)， 它**不会**因数据的微小变化而变化。
+
+下图显示了
+- 当内容发生变化时（例如，由于按键将文本输入文本区），行的插入顺序以及
+- 当使用复合主键`(fingerprint,hash)` 时，插入行数据的磁盘顺序：
+
+<img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-15b.png').default} class="image"/>
+
+现在，磁盘上的行首先按指纹 (`fingerprint`) 排序，对于`fingerprint` 值相同的行，其哈希(`hash`)值决定最终的排序。
+
+由于仅有细微差别的数据会获得相同的指纹值，因此类似的数据现在会被存储在磁盘的内容列中，并且彼此靠近。这对内容列的压缩率非常有利，因为压缩算法一般会从数据局部性中获益（数据越相似，压缩率越高）。
+
+由此带来的妥协是，检索特定行时需要两个字段（"指纹"和 "散列"），以便最佳地利用由复合主键 `(fingerprint, hash)` 产生的主索引。

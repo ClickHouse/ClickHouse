@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Poco/Timestamp.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 namespace DB
 {
@@ -25,7 +27,7 @@ struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
 
 using ThreadSafeResponseQueue = ConcurrentBoundedQueue<Coordination::ZooKeeperResponsePtr>;
-using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
+using ThreadSafeResponseQueuePtr = std::shared_ptr<ThreadSafeResponseQueue>;
 
 struct LastOp;
 using LastOpMultiVersion = MultiVersion<LastOp>;
@@ -78,15 +80,21 @@ private:
     Coordination::XID close_xid = Coordination::CLOSE_XID;
 
     /// Streams for reading/writing from/to client connection socket.
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
-    std::shared_ptr<WriteBufferFromPocoSocket> out;
+    std::optional<ReadBufferFromPocoSocket> in;
+    std::optional<WriteBufferFromPocoSocket> out;
+    std::optional<CompressedReadBuffer> compressed_in;
+    std::optional<CompressedWriteBuffer> compressed_out;
 
     std::atomic<bool> connected{false};
 
     void runImpl();
 
-    void sendHandshake(bool has_leader);
-    Poco::Timespan receiveHandshake(int32_t handshake_length);
+    WriteBuffer & getWriteBuffer();
+    void flushWriteBuffer();
+    ReadBuffer & getReadBuffer();
+
+    void sendHandshake(bool has_leader, bool & use_compression);
+    Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);
     bool tryExecuteFourLetterWordCmd(int32_t command);

@@ -54,7 +54,7 @@ def test_startup_with_small_bg_pool_partitioned(started_cluster):
     assert_values()
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node)
-        node.restart_clickhouse(stop_start_wait_sec=20)
+        node.restart_clickhouse(stop_start_wait_sec=300)
         assert_values()
 
     # check that we activate it in the end

@@ -186,10 +186,10 @@ def mode_check_statements(parser):
 
         out_stages_dir = os.path.join(out_dir, f"{args.mode}-stages")
 
-        complete_sqlite_dir = os.path.join(out_stages_dir, "complete-sqlite")
+        complete_sqlite_dir = os.path.join(out_stages_dir, "statements-sqlite")
         os.makedirs(complete_sqlite_dir, exist_ok=True)
 
-        reports["complete-sqlite"] = run_all_tests_in_parallel(
+        reports["statements-sqlite"] = run_all_tests_in_parallel(
             setup_kwargs=as_kwargs(
                 engine=Engines.SQLITE,
             ),
@@ -213,6 +213,64 @@ def mode_check_statements(parser):
             runner_kwargs=as_kwargs(
                 verify_mode=True,
                 skip_request_types=[RequestType.query],
+                stop_at_statement_error=True,
+            ),
+            input_dir=complete_sqlite_dir,
+            output_dir=verify_clickhouse_dir,
+        )
+
+        statements_report(reports, out_dir, args.mode)
+
+    parser.set_defaults(func=calle)
+
+
+def mode_check_complete(parser):
+    parser.add_argument("--input-dir", metavar="DIR", required=True)
+    parser.add_argument("--out-dir", metavar="DIR", required=True)
+
+    def calle(args):
+        input_dir = os.path.realpath(args.input_dir)
+        out_dir = os.path.realpath(args.out_dir)
+
+        if not os.path.exists(input_dir):
+            raise FileNotFoundError(
+                input_dir, f"check statements: no such file or directory {input_dir}"
+            )
+
+        if not os.path.isdir(input_dir):
+            raise NotADirectoryError(
+                input_dir, f"check statements:: not a dir {input_dir}"
+            )
+
+        reports = dict()
+
+        out_stages_dir = os.path.join(out_dir, f"{args.mode}-stages")
+
+        complete_sqlite_dir = os.path.join(out_stages_dir, "complete-sqlite")
+        os.makedirs(complete_sqlite_dir, exist_ok=True)
+
+        reports["complete-sqlite"] = run_all_tests_in_parallel(
+            setup_kwargs=as_kwargs(
+                engine=Engines.SQLITE,
+            ),
+            runner_kwargs=as_kwargs(
+                verify_mode=False,
+                stop_at_statement_error=True,
+            ),
+            input_dir=input_dir,
+            output_dir=complete_sqlite_dir,
+        )
+
+        verify_clickhouse_dir = os.path.join(out_stages_dir, "complete-clickhouse")
+        os.makedirs(verify_clickhouse_dir, exist_ok=True)
+
+        reports["complete-clickhouse"] = run_all_tests_in_parallel(
+            setup_kwargs=as_kwargs(
+                engine=Engines.ODBC,
+                conn_str=default_clickhouse_odbc_conn_str(),
+            ),
+            runner_kwargs=as_kwargs(
+                verify_mode=True,
                 stop_at_statement_error=True,
             ),
             input_dir=complete_sqlite_dir,
@@ -399,16 +457,22 @@ def parse_args():
     )
 
     subparsers = parser.add_subparsers(dest="mode")
+    mode_check_complete(
+        subparsers.add_parser(
+            "complete-test",
+            help="Run all tests. Check that all statements and queries are passed",
+        )
+    )
     mode_check_statements(
         subparsers.add_parser(
             "statements-test",
-            help="Run all test. Check that all statements are passed",
+            help="Run all tests. Check that all statements are passed",
         )
     )
     mode_self_test(
         subparsers.add_parser(
             "self-test",
-            help="Run all test. Check that all statements are passed",
+            help="Run all tests. Check that all statements are passed",
         )
     )
     args = parser.parse_args()

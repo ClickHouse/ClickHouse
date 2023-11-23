@@ -16,11 +16,6 @@
 
 #include <aws/s3/model/GetObjectResult.h>
 
-namespace Aws::S3
-{
-class Client;
-}
-
 namespace DB
 {
 /**
@@ -41,7 +36,7 @@ private:
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
 
-    Aws::S3::Model::GetObjectResult read_result;
+    std::optional<Aws::S3::Model::GetObjectResult> read_result;
     std::unique_ptr<ReadBuffer> impl;
 
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
@@ -59,6 +54,8 @@ public:
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
         std::optional<size_t> file_size = std::nullopt);
+
+    ~ReadBufferFromS3() override;
 
     bool nextImpl() override;
 
@@ -82,7 +79,7 @@ public:
     bool supportsReadAt() override { return true; }
 
 private:
-    std::unique_ptr<ReadBuffer> initialize();
+    std::unique_ptr<ReadBuffer> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
@@ -91,7 +88,9 @@ private:
     /// Returns true if the error looks retriable.
     bool processException(Poco::Exception & e, size_t read_offset, size_t attempt) const;
 
-    Aws::S3::Model::GetObjectResult sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const;
+    Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
+
+    bool readAllRangeSuccessfully() const;
 
     ReadSettings read_settings;
 
@@ -100,6 +99,8 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
+
+    bool read_all_range_successfully = false;
 };
 
 }

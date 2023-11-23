@@ -14,11 +14,12 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
+
 namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
-
+    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace DB
@@ -45,6 +46,7 @@ public:
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
+            CurrentMetrics::ObjectStorageAzureThreadsScheduled,
             "ListObjectAzure")
         , client(client_)
     {
@@ -69,7 +71,7 @@ private:
                     static_cast<uint64_t>(blob.BlobSize),
                     Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
-                            blob.Details.LastModified.time_since_epoch()).count()),
+                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     {}});
         }
 
@@ -102,9 +104,9 @@ AzureObjectStorage::AzureObjectStorage(
     data_source_description.is_encrypted = false;
 }
 
-std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+ObjectStorageKey AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
-    return getRandomASCIIString(32);
+    return ObjectStorageKey::createAsRelative(getRandomASCIIString(32));
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
@@ -162,7 +164,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     static_cast<uint64_t>(blob.BlobSize),
                     Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
-                            blob.Details.LastModified.time_since_epoch()).count()),
+                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     {}});
         }
 
@@ -320,18 +322,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     auto client_ptr = client.get();
     for (const auto & object : objects)
     {
-        try
-        {
-            auto delete_info = client_ptr->DeleteBlob(object.remote_path);
-        }
-        catch (const Azure::Storage::StorageException & e)
-        {
-            /// If object doesn't exist...
-            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-                return;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw;
-        }
+        removeObjectIfExists(object);
     }
 
 }
@@ -350,13 +341,15 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
         for (const auto & [key, value] : properties.Metadata)
             (*result.attributes)[key] = value;
     }
-    result.last_modified.emplace(properties.LastModified.time_since_epoch().count());
+    result.last_modified.emplace(static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count());
     return result;
 }
 
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
+    const ReadSettings &,
+    const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto client_ptr = client.get();

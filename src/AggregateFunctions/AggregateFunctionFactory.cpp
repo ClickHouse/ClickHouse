@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -221,7 +221,6 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(
         ? get(name, argument_types, parameters, out_properties)
         : nullptr;
 }
-
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name) const
 {

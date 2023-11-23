@@ -29,13 +29,9 @@
 4	1	Commit	1	1	1	0	
 5	1	Begin	1	1	1	1	
 5	1	AddPart	1	1	1	1	all_5_5_0
-5	1	AddPart	1	1	1	1	all_1_1_1
 5	1	LockPart	1	1	1	1	all_1_1_0
-5	1	AddPart	1	1	1	1	all_3_3_1
 5	1	LockPart	1	1	1	1	all_3_3_0
-5	1	AddPart	1	1	1	1	all_4_4_1
 5	1	LockPart	1	1	1	1	all_4_4_0
-5	1	AddPart	1	1	1	1	all_5_5_1
 5	1	LockPart	1	1	1	1	all_5_5_0
 5	1	UnlockPart	1	1	1	1	all_1_1_0
 5	1	UnlockPart	1	1	1	1	all_3_3_0

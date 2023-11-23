@@ -2,7 +2,7 @@ version: "2.3"
 
 services:
   coredns:
-    image: coredns/coredns:latest
+    image: coredns/coredns:1.9.3 # :latest broke this test
     restart: always
     volumes:
       - ${COREDNS_CONFIG_DIR}/example.com:/example.com

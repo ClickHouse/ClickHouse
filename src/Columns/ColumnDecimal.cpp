@@ -4,10 +4,9 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/RadixSort.h>
 
-#include <base/unaligned.h>
 #include <base/sort.h>
-#include <base/scope_guard.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -15,10 +14,9 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
-
-template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
 namespace DB
 {
@@ -59,11 +57,28 @@ bool ColumnDecimal<T>::hasEqualValues() const
 }
 
 template <is_decimal T>
-StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
 {
-    auto * pos = arena.allocContinue(sizeof(T), begin);
+    constexpr size_t null_bit_size = sizeof(UInt8);
+    StringRef res;
+    char * pos;
+    if (null_bit)
+    {
+        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+        memcpy(pos, null_bit, null_bit_size);
+        if (*null_bit) return res;
+        pos += null_bit_size;
+    }
+    else
+    {
+        res.size = sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+    }
     memcpy(pos, &data[n], sizeof(T));
-    return StringRef(pos, sizeof(T));
+    return res;
 }
 
 template <is_decimal T>
@@ -142,6 +157,59 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
         return data[lhs] > data[rhs];
     };
 
+    size_t data_size = data.size();
+    res.resize(data_size);
+
+    if (limit >= data_size)
+        limit = 0;
+
+    for (size_t i = 0; i < data_size; ++i)
+        res[i] = i;
+
+    if constexpr (is_arithmetic_v<NativeT> && !is_big_int_v<NativeT>)
+    {
+        if (!limit)
+        {
+            /// A case for radix sort
+            /// LSD RadixSort is stable
+
+            bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+            bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+            bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
+            /// TODO: LSD RadixSort is currently not stable if direction is descending
+            bool use_radix_sort = (sort_is_stable && ascending) || !sort_is_stable;
+
+            /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
+            if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            {
+                for (size_t i = 0; i < data_size; ++i)
+                    res[i] = i;
+
+                bool try_sort = false;
+
+                if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+                    try_sort = trySort(res.begin(), res.end(), comparator_ascending);
+                else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+                    try_sort = trySort(res.begin(), res.end(), comparator_ascending_stable);
+                else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+                    try_sort = trySort(res.begin(), res.end(), comparator_descending);
+                else
+                    try_sort = trySort(res.begin(), res.end(), comparator_descending_stable);
+
+                if (try_sort)
+                    return;
+
+                PaddedPODArray<ValueWithIndex<NativeT>> pairs(data_size);
+                for (UInt32 i = 0; i < static_cast<UInt32>(data_size); ++i)
+                    pairs[i] = {data[i].value, i};
+
+                RadixSort<RadixSortTraits<NativeT>>::executeLSD(pairs.data(), data_size, reverse, res.data());
+                return;
+            }
+        }
+    }
+
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         this->getPermutationImpl(limit, res, comparator_ascending, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
@@ -174,7 +242,37 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
         return data[lhs] < data[rhs];
     };
     auto equals_comparator = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
-    auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
+    auto sort = [&](auto begin, auto end, auto pred)
+    {
+        bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+        bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+        bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
+        /// TODO: LSD RadixSort is currently not stable if direction is descending
+        bool use_radix_sort = (sort_is_stable && ascending) || !sort_is_stable;
+        size_t size = end - begin;
+
+        if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+        {
+            bool try_sort = trySort(begin, end, pred);
+            if (try_sort)
+                return;
+
+            PaddedPODArray<ValueWithIndex<NativeT>> pairs(size);
+            size_t index = 0;
+
+            for (auto * it = begin; it != end; ++it)
+            {
+                pairs[index] = {data[*it].value, static_cast<UInt32>(*it)};
+                ++index;
+            }
+
+            RadixSort<RadixSortTraits<NativeT>>::executeLSD(pairs.data(), size, reverse, begin);
+            return;
+        }
+
+        ::sort(begin, end, pred);
+    };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)

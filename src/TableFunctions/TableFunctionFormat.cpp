@@ -10,6 +10,7 @@
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -17,7 +18,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
-#include <TableFunctions/TableFunctionFormat.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -29,6 +29,32 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+namespace
+{
+
+/* format(format_name, data) - ...
+ */
+class TableFunctionFormat : public ITableFunction
+{
+public:
+    static constexpr auto name = "format";
+    std::string getName() const override { return name; }
+    bool hasStaticStructure() const override { return false; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    const char * getStorageTypeName() const override { return "Values"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    Block parseData(ColumnsDescription columns, ContextPtr context) const;
+
+    String format;
+    String data;
+    String structure = "auto";
+};
 
 void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
@@ -51,14 +77,11 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
         structure = checkAndGetLiteralArgument<String>(args[1], "structure");
 }
 
-ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            return std::make_unique<ReadBufferFromString>(data);
-        };
+        SingleReadBufferIterator read_buffer_iterator(std::make_unique<ReadBufferFromString>(data));
         return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
     }
     return parseColumnsListFromString(structure, context);
@@ -72,7 +95,17 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
     auto input_format = context->getInputFormat(format, *read_buf, block, context->getSettingsRef().max_block_size);
-    auto pipeline = std::make_unique<QueryPipeline>(input_format);
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(input_format));
+    if (columns.hasDefaults())
+    {
+        builder.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<AddingDefaultsTransform>(header, columns, *input_format, context);
+        });
+    }
+
+    auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     std::vector<Block> blocks;
@@ -87,16 +120,16 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
     return concatenateBlocks(blocks);
 }
 
-StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context);
+    auto columns = getActualTableStructure(context, is_insert_query);
     Block res_block = parseData(columns, context);
     auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }
 
-static const FunctionDocumentation format_table_function_documentation =
+const FunctionDocumentation format_table_function_documentation =
 {
     .description=R"(
 Extracts table structure from data and parses it according to specified input format.
@@ -160,8 +193,12 @@ Result:
     .categories{"format", "table-functions"}
 };
 
+}
+
+
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::CaseInsensitive);
 }
+
 }

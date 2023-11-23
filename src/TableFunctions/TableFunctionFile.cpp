@@ -1,5 +1,5 @@
-#include <TableFunctions/TableFunctionFile.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <TableFunctions/ITableFunctionFileLike.h>
 
 #include "Parsers/IAST_fwd.h"
 #include "registerTableFunctions.h"
@@ -12,6 +12,7 @@
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 
+
 namespace DB
 {
 
@@ -20,11 +21,48 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+/* file(path, format[, structure, compression]) - creates a temporary storage from file
+ *
+ * The file must be in the clickhouse data directory.
+ * The relative path begins with the clickhouse data directory.
+ */
+class TableFunctionFile : public ITableFunctionFileLike
+{
+public:
+    static constexpr auto name = "file";
+    std::string getName() const override
+    {
+        return name;
+    }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
+    {
+        return {"_path", "_file"};
+    }
+
+protected:
+    int fd = -1;
+    void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;
+    String getFormatFromFirstArgument() override;
+
+private:
+    StoragePtr getStorage(
+        const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
+        const std::string & table_name, const std::string & compression_method_) const override;
+    const char * getStorageTypeName() const override { return "File"; }
+};
+
 void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr & context)
 {
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
+        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
         return;
     }
 
@@ -39,6 +77,8 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             fd = STDOUT_FILENO;
         else if (filename == "stderr")
             fd = STDERR_FILENO;
+        else
+            StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
@@ -76,26 +116,38 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         ConstraintsDescription{},
         String{},
         global_context->getSettingsRef().rename_files_after_processing,
+        path_to_archive,
     };
+
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
     return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
 }
 
-ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
         if (fd >= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
         size_t total_bytes_to_read = 0;
-        Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
-        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context);
+
+        Strings paths;
+        std::optional<StorageFile::ArchiveInfo> archive_info;
+        if (path_to_archive.empty())
+            paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        else
+            archive_info
+                = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
+
+        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
     }
 
 
     return parseColumnsListFromString(structure, context);
+}
+
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

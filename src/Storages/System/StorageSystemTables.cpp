@@ -3,10 +3,10 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -69,7 +69,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 }
 
 
-static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
+namespace
+{
+
+ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -87,7 +90,7 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, Contex
     return block.getByPosition(0).column;
 }
 
-static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
+ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -105,6 +108,22 @@ static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filte
     Block block {ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "name")};
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
     return block.getByPosition(0).column;
+}
+
+/// Avoid heavy operation on tables if we only queried columns that we can get without table object.
+/// Otherwise it will require table initialization for Lazy database.
+bool needTable(const DatabasePtr & database, const Block & header)
+{
+    if (database->getEngineName() != "Lazy")
+        return true;
+
+    static const std::set<std::string> columns_without_table = { "database", "name", "uuid", "metadata_modification_time" };
+    for (const auto & column : header.getColumnsWithTypeAndName())
+    {
+        if (columns_without_table.find(column.name) == columns_without_table.end())
+            return true;
+    }
+    return false;
 }
 
 
@@ -265,6 +284,8 @@ protected:
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context);
 
+            const bool need_table = needTable(database, getPort().getHeader());
+
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
@@ -274,23 +295,27 @@ protected:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = tables_it->table();
-                if (!table)
-                    // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
-                    continue;
-
+                StoragePtr table = nullptr;
                 TableLockHolder lock;
-                /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
-                /// and it's not protected internally by other mutexes
-                static const size_t DATA_PATHS_INDEX = 5;
-                if (columns_mask[DATA_PATHS_INDEX])
+                if (need_table)
                 {
-                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
-                    if (!lock)
-                        // Table was dropped while acquiring the lock, skipping table
+                    table = tables_it->table();
+                    if (!table)
+                        // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
                         continue;
-                }
 
+                    /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
+                    /// and it's not protected internally by other mutexes
+                    static const size_t DATA_PATHS_INDEX = 5;
+                    if (columns_mask[DATA_PATHS_INDEX])
+                    {
+                        lock = table->tryLockForShare(context->getCurrentQueryId(),
+                                                      context->getSettingsRef().lock_acquire_timeout);
+                        if (!lock)
+                            // Table was dropped while acquiring the lock, skipping table
+                            continue;
+                    }
+                }
                 ++rows_count;
 
                 size_t src_index = 0;
@@ -307,6 +332,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    chassert(table != nullptr);
                     res_columns[res_index++]->insert(table->getName());
                 }
 
@@ -396,7 +422,9 @@ protected:
                 else
                     src_index += 3;
 
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+                StorageMetadataPtr metadata_snapshot;
+                if (table)
+                    metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
@@ -433,7 +461,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table->getStoragePolicy();
+                    auto policy = table ? table->getStoragePolicy() : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
@@ -444,7 +472,7 @@ protected:
                 settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
-                    auto total_rows = table->totalRows(settings);
+                    auto total_rows = table ? table->totalRows(settings) : std::nullopt;
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -489,7 +517,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table->lifetimeRows();
+                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -498,7 +526,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table->lifetimeBytes();
+                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
@@ -576,6 +604,8 @@ private:
     std::string database_name;
 };
 
+}
+
 
 Pipe StorageSystemTables::read(
     const Names & column_names,
@@ -587,23 +617,9 @@ Pipe StorageSystemTables::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-
-    /// Create a mask of what columns are needed in the result.
-
-    NameSet names_set(column_names.begin(), column_names.end());
-
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
-    Block res_block;
 
-    std::vector<UInt8> columns_mask(sample_block.columns());
-    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
-    {
-        if (names_set.contains(sample_block.getByPosition(i).name))
-        {
-            columns_mask[i] = 1;
-            res_block.insert(sample_block.getByPosition(i));
-        }
-    }
+    auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
     ColumnPtr filtered_tables_column = getFilteredTables(query_info.query, filtered_databases_column, context);

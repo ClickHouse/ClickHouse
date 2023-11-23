@@ -38,7 +38,6 @@
 #include <base/coverage.h>
 #include <base/sleep.h>
 
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
@@ -61,7 +60,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma clang diagnostic ignored "-Wunused-macros"
@@ -104,6 +103,7 @@ static const size_t signal_pipe_buf_size =
     + sizeof(siginfo_t)
     + sizeof(ucontext_t*)
     + sizeof(StackTrace)
+    + sizeof(UInt64)
     + sizeof(UInt32)
     + sizeof(void*);
 
@@ -154,7 +154,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::thread_frame_pointers, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::thread_frame_pointers : std::vector<StackTrace::FramePointers>{}, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
 
@@ -173,10 +173,22 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             /// This coarse method of synchronization is perfectly ok for fatal signals.
             sleepForSeconds(1);
         }
+
+        /// Wait for all logs flush operations
+        sleepForSeconds(3);
         call_default_signal_handler(sig);
     }
 
     errno = saved_errno;
+}
+
+static bool getenvBool(const char * name)
+{
+    bool res = false;
+    const char * env_var = getenv(name); // NOLINT(concurrency-mt-unsafe)
+    if (env_var && 0 == strcmp(env_var, "1"))
+        res = true;
+    return res;
 }
 
 
@@ -310,6 +322,57 @@ private:
     {
         ThreadStatus thread_status;
 
+        /// First log those fields that are safe to access and that should not cause new fault.
+        /// That way we will have some duplicated info in the log but we don't loose important info
+        /// in case of double fault.
+
+        LOG_FATAL(log, "########## Short fault info ############");
+        LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) Received signal {}",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, daemon.git_hash,
+                thread_num, sig);
+
+        std::string signal_description = "Unknown signal";
+
+        /// Some of these are not really signals, but our own indications on failure reason.
+        if (sig == StdTerminate)
+            signal_description = "std::terminate";
+        else if (sig == SanitizerTrap)
+            signal_description = "sanitizer trap";
+        else if (sig >= 0)
+            signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+
+        LOG_FATAL(log, "Signal description: {}", signal_description);
+
+        String error_message;
+
+        if (sig != SanitizerTrap)
+            error_message = signalToErrorMessage(sig, info, *context);
+        else
+            error_message = "Sanitizer trap.";
+
+        LOG_FATAL(log, fmt::runtime(error_message));
+
+        String bare_stacktrace_str;
+        if (stack_trace.getSize())
+        {
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE: This still require memory allocations and mutex lock inside logger.
+            ///       BTW we can also print it to stderr using write syscalls.
+
+            WriteBufferFromOwnString bare_stacktrace;
+            writeString("Stack trace:", bare_stacktrace);
+            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+            {
+                writeChar(' ', bare_stacktrace);
+                writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            }
+
+            LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
+            bare_stacktrace_str = bare_stacktrace.str();
+        }
+
+        /// Now try to access potentially unsafe data in thread_ptr.
+
         String query_id;
         String query;
 
@@ -326,16 +389,6 @@ private:
             }
         }
 
-        std::string signal_description = "Unknown signal";
-
-        /// Some of these are not really signals, but our own indications on failure reason.
-        if (sig == StdTerminate)
-            signal_description = "std::terminate";
-        else if (sig == SanitizerTrap)
-            signal_description = "sanitizer trap";
-        else if (sig >= 0)
-            signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
         LOG_FATAL(log, "########################################");
 
         if (query_id.empty())
@@ -351,30 +404,11 @@ private:
                 thread_num, query_id, query, signal_description, sig);
         }
 
-        String error_message;
-
-        if (sig != SanitizerTrap)
-            error_message = signalToErrorMessage(sig, info, *context);
-        else
-            error_message = "Sanitizer trap.";
-
         LOG_FATAL(log, fmt::runtime(error_message));
 
-        if (stack_trace.getSize())
+        if (!bare_stacktrace_str.empty())
         {
-            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-            /// NOTE: This still require memory allocations and mutex lock inside logger.
-            ///       BTW we can also print it to stderr using write syscalls.
-
-            WriteBufferFromOwnString bare_stacktrace;
-            writeString("Stack trace:", bare_stacktrace);
-            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-            {
-                writeChar(' ', bare_stacktrace);
-                writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
-            }
-
-            LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
+            LOG_FATAL(log, fmt::runtime(bare_stacktrace_str));
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
@@ -442,15 +476,17 @@ private:
         if (collectCrashLog)
             collectCrashLog(sig, thread_num, query_id, stack_trace);
 
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+        Context::getGlobalContextInstance()->handleCrash();
+#endif
+
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
         {
             SentryWriter::onFault(sig, error_message, stack_trace);
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
             /// Advice the user to send it manually.
-            if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
+            if (std::string_view(VERSION_OFFICIAL).contains("official build"))
             {
                 const auto & date_lut = DateLUT::instance();
 
@@ -468,12 +504,10 @@ private:
             {
                 LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
             }
-#pragma clang diagnostic pop
-
         }
 
         /// ClickHouse Keeper does not link to some part of Settings.
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
         /// List changed settings.
         if (!query_id.empty())
         {
@@ -815,7 +849,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
-        setbuf(stderr, nullptr);
+        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
@@ -933,7 +967,7 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern String getGitHash();
+extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
@@ -964,7 +998,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    String build_id_hex = SymbolIndex::instance()->getBuildIDHex();
+    String build_id_hex = SymbolIndex::instance().getBuildIDHex();
     if (build_id_hex.empty())
         build_id = "";
     else
@@ -973,7 +1007,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = "";
 #endif
 
-    git_hash = getGitHash();
+    git_hash = GIT_HASH;
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1082,10 +1116,8 @@ void BaseDaemon::setupWatchdog()
     if (argv0)
         original_process_name = argv0;
 
-    bool restart = false;
-    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
-    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
-        restart = true;
+    bool restart = getenvBool("CLICKHOUSE_WATCHDOG_RESTART");
+    bool forward_signals = !getenvBool("CLICKHOUSE_WATCHDOG_NO_FORWARD");
 
     while (true)
     {
@@ -1101,6 +1133,7 @@ void BaseDaemon::setupWatchdog()
 
         if (0 == pid)
         {
+            updateCurrentThreadIdAfterFork();
             logger().information("Forked a child process to watch");
 #if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
@@ -1165,23 +1198,37 @@ void BaseDaemon::setupWatchdog()
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
         /// Forward signals to the child process.
-        addSignalHandler(
-            {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
-            [](int sig, siginfo_t *, void *)
-            {
-                /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
-                /// and we process double delivery of this signal as immediate termination.
-                if (sig == SIGINT)
-                    return;
-
-                const char * error_message = "Cannot forward signal to the child process.\n";
-                if (0 != ::kill(pid, sig))
+        if (forward_signals)
+        {
+            addSignalHandler(
+                {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
+                [](int sig, siginfo_t *, void *)
                 {
-                    auto res = write(STDERR_FILENO, error_message, strlen(error_message));
-                    (void)res;
+                    /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
+                    /// and we process double delivery of this signal as immediate termination.
+                    if (sig == SIGINT)
+                        return;
+
+                    const char * error_message = "Cannot forward signal to the child process.\n";
+                    if (0 != ::kill(pid, sig))
+                    {
+                        auto res = write(STDERR_FILENO, error_message, strlen(error_message));
+                        (void)res;
+                    }
+                },
+                nullptr);
+        }
+        else
+        {
+            for (const auto & sig : {SIGHUP, SIGINT, SIGQUIT, SIGTERM})
+            {
+                if (SIG_ERR == signal(sig, SIG_IGN))
+                {
+                    char * signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe)
+                    throwFromErrno(fmt::format("Cannot ignore {}", signal_description), ErrorCodes::SYSTEM_ERROR);
                 }
-            },
-            nullptr);
+            }
+        }
 
         int status = 0;
         do

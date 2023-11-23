@@ -20,21 +20,9 @@ SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 
 ``` text
 ┌─library_name───────┬─license_type─┬─license_path────────────────────────┐
-│ FastMemcpy         │ MIT          │ /contrib/FastMemcpy/LICENSE         │
-│ arrow              │ Apache       │ /contrib/arrow/LICENSE.txt          │
-│ avro               │ Apache       │ /contrib/avro/LICENSE.txt           │
 │ aws-c-common       │ Apache       │ /contrib/aws-c-common/LICENSE       │
-│ aws-c-event-stream │ Apache       │ /contrib/aws-c-event-stream/LICENSE │
-│ aws-checksums      │ Apache       │ /contrib/aws-checksums/LICENSE      │
-│ aws                │ Apache       │ /contrib/aws/LICENSE.txt            │
-│ base64             │ BSD 2-clause │ /contrib/base64/LICENSE             │
-│ boost              │ Boost        │ /contrib/boost/LICENSE_1_0.txt      │
+│ base64             │ BSD 2-clause │ /contrib/aklomp-base64/LICENSE      │
 │ brotli             │ MIT          │ /contrib/brotli/LICENSE             │
-│ capnproto          │ MIT          │ /contrib/capnproto/LICENSE          │
-│ cassandra          │ Apache       │ /contrib/cassandra/LICENSE.txt      │
-│ cctz               │ Apache       │ /contrib/cctz/LICENSE.txt           │
-│ cityhash102        │ MIT          │ /contrib/cityhash102/COPYING        │
-│ cppkafka           │ BSD 2-clause │ /contrib/cppkafka/LICENSE           │
+│ [...]              │ [...]        │ [...]                               │
 └────────────────────┴──────────────┴─────────────────────────────────────┘
-
 ```

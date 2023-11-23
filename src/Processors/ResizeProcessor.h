@@ -43,6 +43,7 @@ private:
     std::queue<UInt64> waiting_outputs;
     std::queue<UInt64> inputs_with_data;
     bool initialized = false;
+    bool is_reading_started = false;
 
     enum class OutputStatus
     {

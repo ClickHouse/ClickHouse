@@ -192,7 +192,7 @@ SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 **返回值**
 
 -   如果`x`不为`NULL`，返回非`Nullable`类型的原始值。
--   如果`x`为`NULL`，返回对应非`Nullable`类型的默认值。
+-   如果`x`为`NULL`，则返回任意值。
 
 **示例**
 

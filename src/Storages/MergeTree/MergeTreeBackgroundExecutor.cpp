@@ -14,6 +14,7 @@ namespace CurrentMetrics
 {
     extern const Metric MergeTreeBackgroundExecutorThreads;
     extern const Metric MergeTreeBackgroundExecutorThreadsActive;
+    extern const Metric MergeTreeBackgroundExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -40,7 +41,7 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     , metric(metric_)
     , max_tasks_metric(max_tasks_metric_, 2 * max_tasks_count) // active + pending
     , pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive))
+          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive, CurrentMetrics::MergeTreeBackgroundExecutorThreadsScheduled))
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
@@ -113,6 +114,13 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
 }
 
 template <class Queue>
+size_t MergeTreeBackgroundExecutor<Queue>::getMaxThreads() const
+{
+    std::lock_guard lock(mutex);
+    return threads_count;
+}
+
+template <class Queue>
 size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 {
     return max_tasks_count.load(std::memory_order_relaxed);
@@ -136,7 +144,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-void printExceptionWithRespectToAbort(Poco::Logger * log)
+void printExceptionWithRespectToAbort(Poco::Logger * log, const String & query_id)
 {
     std::exception_ptr ex = std::current_exception();
 
@@ -155,14 +163,14 @@ void printExceptionWithRespectToAbort(Poco::Logger * log)
             if (e.code() == ErrorCodes::ABORTED)
                 LOG_DEBUG(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
             else
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log, "Exception while executing background task {" + query_id + "}");
         });
     }
     catch (...)
     {
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, "Exception while executing background task {" + query_id + "}");
         });
     }
 }
@@ -239,7 +247,9 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         has_tasks.notify_one();
     };
 
-    auto release_task = [this, &erase_from_active, &on_task_done](TaskRuntimeDataPtr && item_)
+    String query_id;
+
+    auto release_task = [this, &erase_from_active, &on_task_done, &query_id](TaskRuntimeDataPtr && item_)
     {
         std::lock_guard guard(mutex);
 
@@ -256,7 +266,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         }
         catch (...)
         {
-            printExceptionWithRespectToAbort(log);
+            printExceptionWithRespectToAbort(log, query_id);
         }
 
         on_task_done(std::move(item_));
@@ -267,11 +277,13 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     try
     {
         ALLOW_ALLOCATIONS_IN_SCOPE;
+        query_id = item->task->getQueryId();
         need_execute_again = item->task->executeStep();
     }
     catch (...)
     {
-        printExceptionWithRespectToAbort(log);
+        if (item->task->printExecutionException())
+            printExceptionWithRespectToAbort(log, query_id);
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
         release_task(std::move(item));
@@ -298,7 +310,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             }
             catch (...)
             {
-                printExceptionWithRespectToAbort(log);
+                printExceptionWithRespectToAbort(log, query_id);
                 on_task_done(std::move(item));
                 return;
             }

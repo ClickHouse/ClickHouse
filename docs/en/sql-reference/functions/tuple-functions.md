@@ -37,6 +37,8 @@ tupleElement(tuple, name, [, default_value])
 
 Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
 
+The names of the result columns are implementation-specific and subject to change. Do not assume specific column names after `untuple`.
+
 **Syntax**
 
 ``` sql
@@ -86,8 +88,6 @@ Result:
 │    77 │ kl    │
 └───────┴───────┘
 ```
-
-Note: the names are implementation specific and are subject to change. You should not assume specific names of the columns after application of the `untuple`.
 
 Example of using an `EXCEPT` expression:
 
@@ -171,7 +171,8 @@ Result:
 Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
 
 ``` sql
-SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) as HammingDistance FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string);
+SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) AS HammingDistance
+FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string);
 ```
 
 Result:
@@ -559,6 +560,29 @@ Result:
 └────────────────────────────┘
 ```
 
+## tupleConcat
+
+Combines tuples passed as arguments.
+
+``` sql
+tupleConcat(tuples)
+```
+
+**Arguments**
+
+- `tuples` – Arbitrary number of arguments of [Tuple](../../sql-reference/data-types/tuple.md) type.
+
+**Example**
+
+``` sql
+SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
+```
+
+``` text
+┌─res──────────────────┐
+│ (1,2,3,4,true,false) │
+└──────────────────────┘
+```
 
 ## Distance functions
 

@@ -6,9 +6,9 @@ sidebar_label: Random Numbers
 
 # Functions for Generating Random Numbers
 
-All functions in this section accept zero or one arguments. The only use of the argument (if provided) is to prevent prevent [common subexpression
-elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) such that two different execution of the same random
-function in a query return different random values.
+All functions in this section accept zero or one arguments. The only use of the argument (if provided) is to prevent [common subexpression
+elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) such that two different executions within a row of the same random
+function return different random values.
 
 Related content
 - Blog: [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
@@ -478,7 +478,7 @@ Result:
 └─────────────────────┘
 ```
 
-## randomString
+## randomString {#randomString}
 
 Generates a string of the specified length filled with random bytes (including zero bytes). Not all characters may be printable.
 
@@ -627,7 +627,7 @@ Result:
 └──────────────────────┘
 ```
 
-## fuzzBits
+## fuzzBits {#fuzzBits}
 
 **Syntax**
 

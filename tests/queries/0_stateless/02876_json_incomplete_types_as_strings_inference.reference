@@ -1,0 +1,7 @@
+a	Nullable(String)					
+b	Nullable(String)					
+c	Array(Nullable(String))					
+\N	{}	[]
+a	Tuple(b Nullable(String), c Array(Array(Nullable(String))))					
+d	Tuple(e Array(Nullable(String)), f Nullable(String))					
+(NULL,[[],[]])	(['{}','{}'],NULL)

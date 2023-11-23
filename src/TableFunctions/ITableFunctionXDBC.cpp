@@ -9,11 +9,15 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
 #include <TableFunctions/ITableFunction.h>
-#include <TableFunctions/ITableFunctionXDBC.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
 #include "registerTableFunctions.h"
+
+#include <Poco/Util/AbstractConfiguration.h>
+#include <BridgeHelper/XDBCBridgeHelper.h>
+
+#include "config.h"
 
 
 namespace DB
@@ -23,6 +27,79 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
+
+/**
+ * Base class for table functions, that works over external bridge
+ * Xdbc (Xdbc connect string, table) - creates a temporary StorageXDBC.
+ */
+class ITableFunctionXDBC : public ITableFunction
+{
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    /* A factory method to create bridge helper, that will assist in remote interaction */
+    virtual BridgeHelperPtr createBridgeHelper(ContextPtr context,
+        Poco::Timespan http_timeout_,
+        const std::string & connection_string_,
+        bool use_connection_pooling_) const = 0;
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    void startBridgeIfNot(ContextPtr context) const;
+
+    String connection_string;
+    String schema_name;
+    String remote_table_name;
+    mutable BridgeHelperPtr helper;
+};
+
+class TableFunctionJDBC : public ITableFunctionXDBC
+{
+public:
+    static constexpr auto name = "jdbc";
+    std::string getName() const override
+    {
+        return name;
+    }
+
+private:
+    BridgeHelperPtr createBridgeHelper(ContextPtr context,
+        Poco::Timespan http_timeout_,
+        const std::string & connection_string_,
+        bool use_connection_pooling_) const override
+    {
+        return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
+    }
+
+    const char * getStorageTypeName() const override { return "JDBC"; }
+};
+
+class TableFunctionODBC : public ITableFunctionXDBC
+{
+public:
+    static constexpr auto name = "odbc";
+    std::string getName() const override
+    {
+        return name;
+    }
+
+private:
+    BridgeHelperPtr createBridgeHelper(ContextPtr context,
+        Poco::Timespan http_timeout_,
+        const std::string & connection_string_,
+        bool use_connection_pooling_) const override
+    {
+        return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
+    }
+
+    const char * getStorageTypeName() const override { return "ODBC"; }
+};
+
 
 void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
@@ -61,7 +138,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
     }
 }
 
-ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr context) const
+ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     startBridgeIfNot(context);
 
@@ -92,14 +169,16 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     return ColumnsDescription{columns};
 }
 
-StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     startBridgeIfNot(context);
-    auto columns = getActualTableStructure(context);
+    auto columns = getActualTableStructure(context, is_insert_query);
     auto result = std::make_shared<StorageXDBC>(
         StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, columns, ConstraintsDescription{}, String{}, context, helper);
     result->startup();
     return result;
+}
+
 }
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory)

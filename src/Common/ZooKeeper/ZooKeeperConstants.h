@@ -31,20 +31,22 @@ enum class OpNum : int32_t
     List = 12,
     Check = 13,
     Multi = 14,
+    Reconfig = 16,
     MultiRead = 22,
     Auth = 100,
 
     // CH Keeper specific operations
     FilteredList = 500,
     CheckNotExists = 501,
+    CreateIfNotExists = 502,
 
     SessionID = 997, /// Special internal request
 };
 
-std::string toString(OpNum op_num);
 OpNum getOpNum(int32_t raw_op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
+static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;
 static constexpr int32_t KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT = 42;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH = 44;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH_WITH_READONLY = 45;

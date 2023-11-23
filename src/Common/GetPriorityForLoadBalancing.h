@@ -13,7 +13,9 @@ public:
 
     bool operator == (const GetPriorityForLoadBalancing & other) const
     {
-        return load_balancing == other.load_balancing && hostname_differences == other.hostname_differences;
+        return load_balancing == other.load_balancing
+            && hostname_prefix_distance == other.hostname_prefix_distance
+            && hostname_levenshtein_distance == other.hostname_levenshtein_distance;
     }
 
     bool operator != (const GetPriorityForLoadBalancing & other) const
@@ -23,7 +25,8 @@ public:
 
     std::function<Priority(size_t index)> getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
 
-    std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.
+    std::vector<size_t> hostname_prefix_distance; /// Prefix distances from name of this host to the names of hosts of pools.
+    std::vector<size_t> hostname_levenshtein_distance; /// Levenshtein Distances from name of this host to the names of hosts of pools.
 
     LoadBalancing load_balancing = LoadBalancing::RANDOM;
 

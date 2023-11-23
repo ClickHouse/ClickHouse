@@ -90,34 +90,117 @@ Process 1 stopped
 
 ## Visual Studio Code integration
 
-- [CodeLLDB extension](https://github.com/vadimcn/vscode-lldb) is required for visual debugging, the [Command Variable](https://github.com/rioj7/command-variable) extension can help dynamic launches if using [cmake variants](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md).
-- Make sure to set the backend to your llvm installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
-- Launcher:
+- [CodeLLDB](https://github.com/vadimcn/vscode-lldb) extension is required for visual debugging.
+- [Command Variable](https://github.com/rioj7/command-variable) extension can help dynamic launches if using [CMake Variants](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md).
+- Make sure to set the backend to your LLVM installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
+- Make sure to run the clickhouse executable in debug mode prior to launch. (It is also possible to create a `preLaunchTask` that automates this)
+
+### Example configurations
+#### cmake-variants.yaml
+```yaml
+buildType:
+  default: relwithdebinfo
+  choices:
+    debug:
+      short: Debug
+      long: Emit debug information
+      buildType: Debug
+    release:
+      short: Release
+      long: Optimize generated code
+      buildType: Release
+    relwithdebinfo:
+      short: RelWithDebInfo
+      long: Release with Debug Info
+      buildType: RelWithDebInfo
+    tsan:
+      short: MinSizeRel
+      long: Minimum Size Release
+      buildType: MinSizeRel
+
+toolchain:
+  default: default
+  description: Select toolchain
+  choices:
+    default:
+      short: x86_64
+      long: x86_64
+    s390x:
+      short: s390x
+      long: s390x
+      settings:
+        CMAKE_TOOLCHAIN_FILE: cmake/linux/toolchain-s390x.cmake
+```
+
+#### launch.json
 ```json
 {
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug",
             "type": "lldb",
             "request": "custom",
-            "targetCreateCommands": ["target create ${command:cmake.launchTargetDirectory}/clickhouse"],
-            "processCreateCommands": ["settings set target.source-map ${input:targetdir} ${workspaceFolder}", "gdb-remote 31338"],
-            "sourceMap": { "${input:targetdir}": "${workspaceFolder}" },
-        }
-    ],
-	"inputs": [
-        {
-            "id": "targetdir",
-            "type": "command",
-            "command": "extension.commandvariable.transform",
-            "args": {
-                "text": "${command:cmake.launchTargetDirectory}",
-                "find": ".*/([^/]+)/[^/]+$",
-                "replace": "$1"
-            }
+            "name": "(lldb) Launch s390x with qemu",
+            "targetCreateCommands": ["target create ${command:cmake.launchTargetPath}"],
+            "processCreateCommands": ["gdb-remote 2159"],
+            "preLaunchTask": "Run ClickHouse"
         }
     ]
 }
 ```
-- Make sure to run the clickhouse executable in debug mode prior to launch. (It is also possible to create a `preLaunchTask` that automates this)
+
+#### settings.json
+This would also put different builds under different subfolders of the `build` folder.
+```json
+{
+    "cmake.buildDirectory": "${workspaceFolder}/build/${buildKitVendor}-${buildKitVersion}-${variant:toolchain}-${variant:buildType}",
+    "lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"
+}
+```
+
+#### run-debug.sh
+```sh
+#! /bin/sh
+echo 'Starting debugger session'
+cd $1
+qemu-s390x-static -g 2159 -L /usr/s390x-linux-gnu $2 $3 $4
+```
+
+#### tasks.json
+Defines a task to run the compiled executable in `server` mode under a `tmp` folder next to the binaries, with configuration from under `programs/server/config.xml`.
+```json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run ClickHouse",
+            "type": "shell",
+            "isBackground": true,
+            "command": "${workspaceFolder}/.vscode/run-debug.sh",
+            "args": [
+                "${command:cmake.launchTargetDirectory}/tmp",
+                "${command:cmake.launchTargetPath}",
+                "server",
+                "--config-file=${workspaceFolder}/programs/server/config.xml"
+            ],
+            "problemMatcher": [
+                {
+                    "pattern": [
+                        {
+                            "regexp": ".",
+                            "file": 1,
+                            "location": 2,
+                            "message": 3
+                        }
+                    ],
+                    "background": {
+                        "activeOnStart": true,
+                        "beginsPattern": "^Starting debugger session",
+                        "endsPattern": ".*"
+                    }
+                }
+            ]
+        }
+    ]
+}
+```

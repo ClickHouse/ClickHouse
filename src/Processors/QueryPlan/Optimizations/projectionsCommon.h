@@ -19,6 +19,7 @@ using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelect
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using DataPartsVector = std::vector<DataPartPtr>;
+struct RangesInDataParts;
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
@@ -38,7 +39,6 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
 
 /// This is a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, for all the Filter steps, we collect filter conditions into filter_nodes.
-/// Flag remove_last_filter_node is set in case if the last step is a Filter step and it should remove filter column.
 struct QueryDAG
 {
     ActionsDAGPtr dag;
@@ -72,7 +72,7 @@ bool analyzeProjectionCandidate(
     const ReadFromMergeTree & reading,
     const MergeTreeDataSelectExecutor & reader,
     const Names & required_column_names,
-    const DataPartsVector & parts,
+    const RangesInDataParts & parts_with_ranges,
     const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,

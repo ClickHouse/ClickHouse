@@ -75,14 +75,35 @@ public:
     RawHandle getRawHandle() const { return raw_handle; }
     std::shared_ptr<ZipArchiveReader> getReader() const { return reader; }
 
-    void locateFile(const String & file_name_)
+    bool locateFile(const String & file_name_)
     {
         resetFileInfo();
         bool case_sensitive = true;
         int err = unzLocateFile(raw_handle, file_name_.c_str(), reinterpret_cast<unzFileNameComparer>(static_cast<size_t>(case_sensitive)));
         if (err == UNZ_END_OF_LIST_OF_FILE)
-            showError("File " + quoteString(file_name_) + " not found");
+            return false;
         file_name = file_name_;
+        return true;
+    }
+
+    bool locateFile(NameFilter filter)
+    {
+        int err = unzGoToFirstFile(raw_handle);
+        if (err == UNZ_END_OF_LIST_OF_FILE)
+            return false;
+
+        do
+        {
+            checkResult(err);
+            resetFileInfo();
+            retrieveFileInfo();
+            if (filter(getFileName()))
+                return true;
+
+            err = unzGoToNextFile(raw_handle);
+        } while (err != UNZ_END_OF_LIST_OF_FILE);
+
+        return false;
     }
 
     bool tryLocateFile(const String & file_name_)
@@ -129,6 +150,27 @@ public:
         if (!file_info)
             retrieveFileInfo();
         return *file_info;
+    }
+
+    std::vector<std::string> getAllFiles(NameFilter filter)
+    {
+        std::vector<std::string> files;
+        resetFileInfo();
+        int err = unzGoToFirstFile(raw_handle);
+        if (err == UNZ_END_OF_LIST_OF_FILE)
+            return files;
+
+        do
+        {
+            checkResult(err);
+            resetFileInfo();
+            retrieveFileInfo();
+            if (!filter || filter(getFileName()))
+                files.push_back(*file_name);
+            err = unzGoToNextFile(raw_handle);
+        } while (err != UNZ_END_OF_LIST_OF_FILE);
+
+        return files;
     }
 
     void closeFile()
@@ -269,6 +311,8 @@ public:
     }
 
     String getFileName() const override { return handle.getFileName(); }
+
+    size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
 
     /// Releases owned handle to pass it to an enumerator.
     HandleHolder releaseHandle() &&
@@ -459,6 +503,11 @@ ZipArchiveReader::~ZipArchiveReader()
     }
 }
 
+const std::string & ZipArchiveReader::getPath() const
+{
+    return path_to_archive;
+}
+
 bool ZipArchiveReader::fileExists(const String & filename)
 {
     return acquireHandle().tryLocateFile(filename);
@@ -467,7 +516,9 @@ bool ZipArchiveReader::fileExists(const String & filename)
 ZipArchiveReader::FileInfo ZipArchiveReader::getFileInfo(const String & filename)
 {
     auto handle = acquireHandle();
-    handle.locateFile(filename);
+    if (!handle.locateFile(filename))
+        showError(fmt::format("File {} was not found in archive", quoteString(filename)));
+
     return handle.getFileInfo();
 }
 
@@ -479,10 +530,31 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::firstFile()
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(const String & filename)
+std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(const String & filename, bool throw_on_not_found)
 {
     auto handle = acquireHandle();
-    handle.locateFile(filename);
+    if (!handle.locateFile(filename))
+    {
+        if (throw_on_not_found)
+            showError(fmt::format("File {} was not found in archive", quoteString(filename)));
+
+        return nullptr;
+    }
+
+    return std::make_unique<ReadBufferFromZipArchive>(std::move(handle));
+}
+
+std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(NameFilter filter, bool throw_on_not_found)
+{
+    auto handle = acquireHandle();
+    if (!handle.locateFile(filter))
+    {
+        if (throw_on_not_found)
+            showError(fmt::format("No file satisfying filter in archive"));
+
+        return nullptr;
+    }
+
     return std::make_unique<ReadBufferFromZipArchive>(std::move(handle));
 }
 
@@ -504,6 +576,17 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::nextFile(std
     if (!handle.nextFile())
         return nullptr;
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
+}
+
+std::vector<std::string> ZipArchiveReader::getAllFiles()
+{
+    return getAllFiles({});
+}
+
+std::vector<std::string> ZipArchiveReader::getAllFiles(NameFilter filter)
+{
+    auto handle = acquireHandle();
+    return handle.getAllFiles(filter);
 }
 
 void ZipArchiveReader::setPassword(const String & password_)

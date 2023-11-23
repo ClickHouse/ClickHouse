@@ -1,11 +1,11 @@
 ---
 slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
-sidebar_label: Server Settings
+sidebar_label: Global Server Settings
 description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 ---
 
-# Server Settings
+# Global Server Settings
 
 This section contains descriptions of server settings that cannot be changed at the session or query level.
 
@@ -88,7 +88,7 @@ Default: 2
 
 ## background_merges_mutations_scheduling_policy
 
-The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`. 
+The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
 ## background_merges_mutations_scheduling_policy
 
@@ -214,26 +214,64 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 1024
+Default: 10
 
+
+## index_mark_cache_policy
+
+Index mark cache policy name.
+
+Type: String
+
+Default: SLRU
 
 ## index_mark_cache_size
 
 Size of cache for index marks. Zero means disabled.
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 0
 
+## index_mark_cache_size_ratio
+
+The size of the protected queue in the index mark cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
+
+## index_uncompressed_cache_policy
+
+Index uncompressed cache policy name.
+
+Type: String
+
+Default: SLRU
 
 ## index_uncompressed_cache_size
 
 Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 0
 
+## index_uncompressed_cache_size_ratio
+
+The size of the protected queue in the index uncompressed cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## io_thread_pool_queue_size
 
@@ -255,9 +293,21 @@ Default: SLRU
 
 Size of cache for marks (index of MergeTree family of tables).
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 5368709120
+
+## mark_cache_size_ratio
+
+The size of the protected queue in the mark cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## max_backup_bandwidth_for_server
 
@@ -288,7 +338,7 @@ Default: 1000
 Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
 
 :::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
 Type: UInt64
@@ -300,7 +350,7 @@ Default: 0
 Limit on total number of concurrent insert queries. Zero means Unlimited.
 
 :::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
 Type: UInt64
@@ -312,7 +362,7 @@ Default: 0
 Limit on total number of concurrently select queries. Zero means Unlimited.
 
 :::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
 Type: UInt64
@@ -456,6 +506,10 @@ Sets the cache size (in bytes) for mapped files. This setting allows avoiding fr
 
 Note that the amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 1000
@@ -512,10 +566,9 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
                 <type>cache</type>
                 <disk>local_disk</disk>
                 <path>/tiny_local_cache/</path>
-                <max_size>10M</max_size>
+                <max_size_rows>10M</max_size_rows>
                 <max_file_segment_size>1M</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
-                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
             </tiny_local_cache>
             <!-- highlight-end -->
         </disks>
@@ -529,7 +582,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 
 Type: String
 
-Default: 
+Default:
 
 ## thread_pool_queue_size
 
@@ -586,7 +639,7 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
 ```
 Type: String
 
-Default: 
+Default:
 
 ## uncompressed_cache_policy
 
@@ -605,9 +658,21 @@ There is one shared cache for the server. Memory is allocated on demand. The cac
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 0
+
+## uncompressed_cache_size_ratio
+
+The size of the protected queue in the uncompressed cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
@@ -769,7 +834,7 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 
 - [Custom settings](../../operations/settings/index.md#custom_settings)
 
-## core_dump {#server_configuration_parameters-core_dump}
+## core_dump {#core_dump}
 
 Configures soft limit for core dump file size.
 
@@ -858,7 +923,7 @@ The path to the table in ZooKeeper.
 <default_replica_name>{replica}</default_replica_name>
 ```
 
-## dictionaries_config {#server_configuration_parameters-dictionaries_config}
+## dictionaries_config {#dictionaries_config}
 
 The path to the config file for dictionaries.
 
@@ -875,7 +940,7 @@ See also “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## user_defined_executable_functions_config {#server_configuration_parameters-user_defined_executable_functions_config}
+## user_defined_executable_functions_config {#user_defined_executable_functions_config}
 
 The path to the config file for executable user defined functions.
 
@@ -892,13 +957,17 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
+## dictionaries_lazy_load {#dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
-If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
+If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 
-If `false`, all dictionaries are created when the server starts, if the dictionary or dictionaries are created too long or are created with errors, then the server boots without of these dictionaries and continues to try to create these dictionaries.
+If `false`, then the server starts loading all dictionaries at startup.
+Dictionaries are loaded in background.
+The server doesn't wait at startup until all the dictionaries finish their loading
+(exception: if `wait_dictionaries_load_at_startup` is set to `true` - see below).
+When a dictionary is used in a query for the first time then the query waits until the dictionary is loaded if it's not loaded yet.
 
 The default is `true`.
 
@@ -908,7 +977,7 @@ The default is `true`.
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format_schema_path {#server_configuration_parameters-format_schema_path}
+## format_schema_path {#format_schema_path}
 
 The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
@@ -919,7 +988,7 @@ The path to the directory with the schemes for the input data, such as schemas f
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## graphite {#server_configuration_parameters-graphite}
+## graphite {#graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -953,7 +1022,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 </graphite>
 ```
 
-## graphite_rollup {#server_configuration_parameters-graphite-rollup}
+## graphite_rollup {#graphite-rollup}
 
 Settings for thinning data for Graphite.
 
@@ -985,7 +1054,7 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL](#server_configuration_parameters-openssl) must be configured.
+If `https_port` is specified, [openSSL](#openssl) must be configured.
 
 If `http_port` is specified, the OpenSSL configuration is ignored even if it is set.
 
@@ -995,7 +1064,7 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 <https_port>9999</https_port>
 ```
 
-## http_server_default_response {#server_configuration_parameters-http_server_default_response}
+## http_server_default_response {#http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
 The default value is “Ok.” (with a line feed at the end)
@@ -1020,7 +1089,7 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## include_from {#server_configuration_parameters-include_from}
+## include_from {#include_from}
 
 The path to the file with substitutions.
 
@@ -1156,7 +1225,7 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
-## listen_host {#server_configuration_parameters-listen_host}
+## listen_host {#listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -1167,7 +1236,7 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## listen_backlog {#server_configuration_parameters-listen_backlog}
+## listen_backlog {#listen_backlog}
 
 Backlog (queue size of pending connections) of the listen socket.
 
@@ -1187,7 +1256,7 @@ Examples:
 <listen_backlog>4096</listen_backlog>
 ```
 
-## logger {#server_configuration_parameters-logger}
+## logger {#logger}
 
 Logging settings.
 
@@ -1201,13 +1270,58 @@ Keys:
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
 
+Both log and error log file names (only file names, not directories) support date and time format specifiers.
+
+**Format specifiers**
+Using the following format specifiers, you can define a pattern for the resulting file name. “Example” column shows possible results for `2023-07-06 18:32:07`.
+
+| Specifier   | Description                                                                                                         | Example                  |
+|-------------|---------------------------------------------------------------------------------------------------------------------|--------------------------|
+| %%          | Literal %                                                                                                           | %                        |
+| %n          | New-line character                                                                                                  |                          |
+| %t          | Horizontal tab character                                                                                            |                          |
+| %Y          | Year as a decimal number, e.g. 2017                                                                                 | 2023                     |
+| %y          | Last 2 digits of year as a decimal number (range [00,99])                                                           | 23                       |
+| %C          | First 2 digits of year as a decimal number (range [00,99])                                                          | 20                       |
+| %G          | Four-digit [ISO 8601 week-based year](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), i.e. the year that contains the specified week. Normally useful only with %V  | 2023       |
+| %g          | Last 2 digits of [ISO 8601 week-based year](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), i.e. the year that contains the specified week.                         | 23         |
+| %b          | Abbreviated month name, e.g. Oct (locale dependent)                                                                 | Jul                      |
+| %h          | Synonym of %b                                                                                                       | Jul                      |
+| %B          | Full month name, e.g. October (locale dependent)                                                                    | July                     |
+| %m          | Month as a decimal number (range [01,12])                                                                           | 07                       |
+| %U          | Week of the year as a decimal number (Sunday is the first day of the week) (range [00,53])                          | 27                       |
+| %W          | Week of the year as a decimal number (Monday is the first day of the week) (range [00,53])                          | 27                       |
+| %V          | ISO 8601 week number (range [01,53])                                                                                | 27                       |
+| %j          | Day of the year as a decimal number (range [001,366])                                                               | 187                      |
+| %d          | Day of the month as a zero-padded decimal number (range [01,31]). Single digit is preceded by zero.                 | 06                       |
+| %e          | Day of the month as a space-padded decimal number (range [1,31]). Single digit is preceded by a space.              | &nbsp; 6                 |
+| %a          | Abbreviated weekday name, e.g. Fri (locale dependent)                                                               | Thu                      |
+| %A          | Full weekday name, e.g. Friday (locale dependent)                                                                   | Thursday                 |
+| %w          | Weekday as a integer number with Sunday as 0 (range [0-6])                                                          | 4                        |
+| %u          | Weekday as a decimal number, where Monday is 1 (ISO 8601 format) (range [1-7])                                      | 4                        |
+| %H          | Hour as a decimal number, 24 hour clock (range [00-23])                                                             | 18                       |
+| %I          | Hour as a decimal number, 12 hour clock (range [01,12])                                                             | 06                       |
+| %M          | Minute as a decimal number (range [00,59])                                                                          | 32                       |
+| %S          | Second as a decimal number (range [00,60])                                                                          | 07                       |
+| %c          | Standard date and time string, e.g. Sun Oct 17 04:41:13 2010 (locale dependent)                                     | Thu Jul  6 18:32:07 2023 |
+| %x          | Localized date representation (locale dependent)                                                                    | 07/06/23                 |
+| %X          | Localized time representation, e.g. 18:40:20 or 6:40:20 PM (locale dependent)                                       | 18:32:07                 |
+| %D          | Short MM/DD/YY date, equivalent to %m/%d/%y                                                                         | 07/06/23                 |
+| %F          | Short YYYY-MM-DD date, equivalent to %Y-%m-%d                                                                       | 2023-07-06               |
+| %r          | Localized 12-hour clock time (locale dependent)                                                                     | 06:32:07 PM              |
+| %R          | Equivalent to "%H:%M"                                                                                               | 18:32                    |
+| %T          | Equivalent to "%H:%M:%S" (the ISO 8601 time format)                                                                 | 18:32:07                 |
+| %p          | Localized a.m. or p.m. designation (locale dependent)                                                               | PM                       |
+| %z          | Offset from UTC in the ISO 8601 format (e.g. -0430), or no characters if the time zone information is not available | +0800                    |
+| %Z          | Locale-dependent time zone name or abbreviation, or no characters if the time zone information is not available     | Z AWST                   |
+
 **Example**
 
 ``` xml
 <logger>
     <level>trace</level>
-    <log>/var/log/clickhouse-server/clickhouse-server.log</log>
-    <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+    <log>/var/log/clickhouse-server/clickhouse-server-%F-%T.log</log>
+    <errorlog>/var/log/clickhouse-server/clickhouse-server-%F-%T.err.log</errorlog>
     <size>1000M</size>
     <count>10</count>
     <stream_compress>true</stream_compress>
@@ -1246,7 +1360,7 @@ Keys for syslog:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 - format – Message format. Possible values: `bsd` and `syslog.`
 
-## send_crash_reports {#server_configuration_parameters-send_crash_reports}
+## send_crash_reports {#send_crash_reports}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
 Enabling it, especially in pre-production environments, is highly appreciated.
@@ -1284,6 +1398,23 @@ For more information, see the section [Creating replicated tables](../../engines
 ``` xml
 <macros incl="macros" optional="true" />
 ```
+
+## replica_group_name {#replica_group_name}
+
+Replica group name for database Replicated.
+
+The cluster created by Replicated database will consist of replicas in the same group.
+DDL queries will only wait for the replicas in the same group.
+
+Empty by default.
+
+**Example**
+
+``` xml
+<replica_group_name>backups</replica_group_name>
+```
+
+Default value: ``.
 
 ## max_open_files {#max-open-files}
 
@@ -1518,7 +1649,7 @@ Default value: `0.5`.
 
 
 
-## merge_tree {#server_configuration_parameters-merge_tree}
+## merge_tree {#merge_tree}
 
 Fine tuning for tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -1547,6 +1678,10 @@ To manually turn on metrics history collection [`system.metric_log`](../../opera
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </metric_log>
 </clickhouse>
 ```
@@ -1561,7 +1696,7 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 </clickhouse>
 ```
 
-## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
+## replicated_merge_tree {#replicated_merge_tree}
 
 Fine tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -1577,7 +1712,7 @@ For more information, see the MergeTreeSettings.h header file.
 </replicated_merge_tree>
 ```
 
-## openSSL {#server_configuration_parameters-openssl}
+## openSSL {#openssl}
 
 SSL client/server configuration.
 
@@ -1591,7 +1726,7 @@ Keys for server/client settings:
 - verificationMode (default: relaxed) – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
 - verificationDepth (default: 9) – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 - loadDefaultCAFile (default: true) – Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).
-- cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`) - Supported OpenSSL encryptions.
+- cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`) - Supported OpenSSL encryptions.
 - cacheSessions (default: false) – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
 - sessionIdContext (default: `${application.name}`) – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
 - sessionCacheSize (default: [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)) – The maximum number of sessions that the server caches. A value of 0 means unlimited sessions.
@@ -1636,7 +1771,7 @@ Keys for server/client settings:
 </openSSL>
 ```
 
-## part_log {#server_configuration_parameters-part-log}
+## part_log {#part-log}
 
 Logging events that are associated with [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
@@ -1650,6 +1785,14 @@ Use the following parameters to configure logging:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1661,10 +1804,14 @@ Use the following parameters to configure logging:
     <table>part_log</table>
     <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </part_log>
 ```
 
-## path {#server_configuration_parameters-path}
+## path {#path}
 
 The path to the directory containing data.
 
@@ -1678,7 +1825,11 @@ The trailing slash is mandatory.
 <path>/var/lib/clickhouse/</path>
 ```
 
-## Prometheus {#server_configuration_parameters-prometheus}
+## Prometheus {#prometheus}
+
+:::note
+ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+:::
 
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
@@ -1714,7 +1865,7 @@ Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse serve
 curl 127.0.0.1:9363/metrics
 ```
 
-## query_log {#server_configuration_parameters-query-log}
+## query_log {#query-log}
 
 Setting for logging queries received with the [log_queries=1](../../operations/settings/settings.md) setting.
 
@@ -1728,6 +1879,14 @@ Use the following parameters to configure logging:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1741,6 +1900,10 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <table>query_log</table>
     <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </query_log>
 ```
 
@@ -1772,7 +1935,7 @@ Data for the query cache is allocated in DRAM. If memory is scarce, make sure to
 </query_cache>
 ```
 
-## query_thread_log {#server_configuration_parameters-query_thread_log}
+## query_thread_log {#query_thread_log}
 
 Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.
 
@@ -1786,6 +1949,14 @@ Use the following parameters to configure logging:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size_rows, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1799,10 +1970,14 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <table>query_thread_log</table>
     <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </query_thread_log>
 ```
 
-## query_views_log {#server_configuration_parameters-query_views_log}
+## query_views_log {#query_views_log}
 
 Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
 
@@ -1816,6 +1991,14 @@ Use the following parameters to configure logging:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1829,10 +2012,14 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <table>query_views_log</table>
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </query_views_log>
 ```
 
-## text_log {#server_configuration_parameters-text_log}
+## text_log {#text_log}
 
 Settings for the [text_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
 
@@ -1845,6 +2032,14 @@ Parameters:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1856,14 +2051,17 @@ Parameters:
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <!-- <partition_by>event_date</partition_by> -->
         <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     </text_log>
 </clickhouse>
 ```
 
-
-## trace_log {#server_configuration_parameters-trace_log}
+## trace_log {#trace_log}
 
 Settings for the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
 
@@ -1875,6 +2073,12 @@ Parameters:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1886,10 +2090,14 @@ The default server configuration file `config.xml` contains the following settin
     <table>trace_log</table>
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </trace_log>
 ```
 
-## asynchronous_insert_log {#server_configuration_parameters-asynchronous_insert_log}
+## asynchronous_insert_log {#asynchronous_insert_log}
 
 Settings for the [asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) system table for logging async inserts.
 
@@ -1900,9 +2108,18 @@ Parameters:
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 
 **Example**
+
 ```xml
 <clickhouse>
     <asynchronous_insert_log>
@@ -1910,8 +2127,91 @@ Parameters:
         <table>asynchronous_insert_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
     </asynchronous_insert_log>
+</clickhouse>
+```
+
+## crash_log {#crash_log}
+
+Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
+
+Parameters:
+
+- `database` — Database for storing a table.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
+- `storage_policy` – Name of storage policy to use for the table (optional)
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
+
+The default server configuration file `config.xml` contains the following settings section:
+
+``` xml
+<crash_log>
+    <database>system</database>
+    <table>crash_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1024</max_size_rows>
+    <reserved_size_rows>1024</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</crash_log>
+```
+
+## backup_log {#backup_log}
+
+Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
+
+Parameters:
+
+- `database` — Database name.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` is defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` is defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` is defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
+- `storage_policy` – Name of storage policy to use for the table (optional).
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md#settings) that control the behavior of the MergeTree (optional).
+
+**Example**
+
+```xml
+<clickhouse>
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </backup_log>
 </clickhouse>
 ```
 
@@ -1960,8 +2260,10 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 **See Also**
 
 - [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+- [Cluster Discovery](../../operations/cluster-discovery.md)
+- [Replicated database engine](../../engines/database-engines/replicated.md)
 
-## timezone {#server_configuration_parameters-timezone}
+## timezone {#timezone}
 
 The server’s time zone.
 
@@ -1979,7 +2281,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 - [session_timezone](../settings/settings.md#session_timezone)
 
-## tcp_port {#server_configuration_parameters-tcp_port}
+## tcp_port {#tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 
@@ -1989,9 +2291,9 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
+## tcp_port_secure {#tcp_port_secure}
 
-TCP port for secure communication with clients. Use it with [OpenSSL](#server_configuration_parameters-openssl) settings.
+TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) settings.
 
 **Possible values**
 
@@ -2003,7 +2305,7 @@ Positive integer.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port {#server_configuration_parameters-mysql_port}
+## mysql_port {#mysql_port}
 
 Port for communicating with clients over MySQL protocol.
 
@@ -2017,7 +2319,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## postgresql_port {#server_configuration_parameters-postgresql_port}
+## postgresql_port {#postgresql_port}
 
 Port for communicating with clients over PostgreSQL protocol.
 
@@ -2048,7 +2350,7 @@ Path on the local filesystem to store temporary data for processing large querie
 ```
 
 
-## user_files_path {#server_configuration_parameters-user_files_path}
+## user_files_path {#user_files_path}
 
 The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md).
 
@@ -2058,7 +2360,7 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-## user_scripts_path {#server_configuration_parameters-user_scripts_path}
+## user_scripts_path {#user_scripts_path}
 
 The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
 
@@ -2068,7 +2370,7 @@ The directory with user scripts files. Used for Executable user defined function
 <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
-## user_defined_path {#server_configuration_parameters-user_defined_path}
+## user_defined_path {#user_defined_path}
 
 The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
 
@@ -2091,6 +2393,24 @@ Path to the file that contains:
 
 ``` xml
 <users_config>users.xml</users_config>
+```
+
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
+
+If `false`, then the server will not wait at startup until all the dictionaries finish their loading.
+This allows to start ClickHouse faster.
+
+If `true`, then the server will wait at startup until all the dictionaries finish their loading (successfully or not)
+before listening to any connections.
+This can make ClickHouse start slowly, however after that some queries can be executed faster
+(because they won't have to wait for the used dictionaries to be load).
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<wait_dictionaries_load_at_startup>false</wait_dictionaries_load_at_startup>
 ```
 
 ## zookeeper {#server-settings_zookeeper}
@@ -2119,14 +2439,19 @@ This section contains the following parameters:
 - `session_timeout_ms` — Maximum timeout for the client session in milliseconds.
 - `operation_timeout_ms` — Maximum timeout for one operation in milliseconds.
 - `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `fallback_session_lifetime.min` - If the first zookeeper host resolved by zookeeper_load_balancing strategy is unavailable, limit the lifetime of a zookeeper session to the fallback node. This is done for load-balancing purposes to avoid excessive load on one of zookeeper hosts. This setting sets the minimal duration of the fallback session. Set in seconds. Optional. Default is 3 hours.
+- `fallback_session_lifetime.max` - If the first zookeeper host resolved by zookeeper_load_balancing strategy is unavailable, limit the lifetime of a zookeeper session to the fallback node. This is done for load-balancing purposes to avoid excessive load on one of zookeeper hosts. This setting sets the maximum duration of the fallback session. Set in seconds. Optional. Default is 6 hours.
 - `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 - zookeeper_load_balancing - Specifies the algorithm of ZooKeeper node selection.
   * random - randomly selects one of ZooKeeper nodes.
   * in_order - selects the first ZooKeeper node, if it's not available then the second, and so on.
-  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
+  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname, hostname is compared with name prefix.
+  * hostname_levenshtein_distance - just like nearest_hostname, but it compares hostname in a levenshtein distance manner.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
-    
+- `use_compression` — If set to true, enables compression in Keeper protocol.
+
+
 **Example configuration**
 
 ``` xml
@@ -2145,7 +2470,7 @@ This section contains the following parameters:
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
 </zookeeper>
 ```
@@ -2162,7 +2487,7 @@ Storage method for data part headers in ZooKeeper.
 
 This setting only applies to the `MergeTree` family. It can be specified:
 
-- Globally in the [merge_tree](#server_configuration_parameters-merge_tree) section of the `config.xml` file.
+- Globally in the [merge_tree](#merge_tree) section of the `config.xml` file.
 
     ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
 
@@ -2350,3 +2675,118 @@ Possible values:
 -   1 — Enabled.
 
 Default value: 0.
+
+## proxy {#proxy}
+
+Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
+
+There are three ways to define proxy servers: environment variables, proxy lists, and remote proxy resolvers.
+
+### Environment variables
+
+The `http_proxy` and `https_proxy` environment variables allow you to specify a
+proxy server for a given protocol. If you have it set on your system, it should work seamlessly.
+
+This is the simplest approach if a given protocol has
+only one proxy server and that proxy server doesn't change.
+
+### Proxy lists
+
+This approach allows you to specify one or more
+proxy servers for a protocol. If more than one proxy server is defined,
+ClickHouse uses the different proxies on a round-robin basis, balancing the
+load across the servers. This is the simplest approach if there is more than
+one proxy server for a protocol and the list of proxy servers doesn't change.
+
+### Configuration template
+
+``` xml
+<proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
+`<proxy>` fields
+
+* `<http>` - A list of one or more HTTP proxies
+* `<https>` - A list of one or more HTTPS proxies
+
+`<http>` and `<https>` fields
+
+* `<uri>` - The URI of the proxy
+
+### Remote proxy resolvers
+
+It's possible that the proxy servers change dynamically. In that
+case, you can define the endpoint of a resolver. ClickHouse sends
+an empty GET request to that endpoint, the remote resolver should return the proxy host.
+ClickHouse will use it to form the proxy URI using the following template: `{proxy_scheme}://{proxy_host}:{proxy_port}`
+
+### Configuration template
+
+``` xml
+<proxy>
+    <http>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>80</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </http>
+
+    <https>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>3128</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </https>
+
+</proxy>
+```
+
+`<proxy>` fields
+
+* `<http>` - A list of one or more resolvers*
+* `<https>` - A list of one or more resolvers*
+
+`<http>` and `<https>` fields
+
+* `<resolver>` - The endpoint and other details for a resolver.
+  You can have multiple `<resolver>` elements, but only the first
+  `<resolver>` for a given protocol is used. Any other `<resolver>`
+  elements for that protocol are ignored. That means load balancing
+  (if needed) should be implemented by the remote resolver.
+
+`<resolver>` fields
+
+* `<endpoint>` - The URI of the proxy resolver
+* `<proxy_scheme>` - The protocol of the final proxy URI. This can be either `http` or `https`.
+* `<proxy_port>` - The port number of the proxy resolver
+* `<proxy_cache_time>` - The time in seconds that values from the resolver
+  should be cached by ClickHouse. Setting this value to `0` causes ClickHouse
+  to contact the resolver for every HTTP or HTTPS request.
+
+### Precedence
+
+Proxy settings are determined in the following order:
+
+1. Remote proxy resolvers
+2. Proxy lists
+3. Environment variables
+
+ClickHouse will check the highest priority resolver type for the request protocol. If it is not defined,
+it will check the next highest priority resolver type, until it reaches the environment resolver.
+This also allows a mix of resolver types can be used.
+
+### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
