@@ -438,14 +438,14 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
             }
 
             InterpreterSelectQueryAnalyzer interpreter(select_description.inner_query_node,
-                getInMemoryMetadataPtr()->getDefinerContext(local_context),
+                getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context),
                 SelectQueryOptions(QueryProcessingStage::WithMergeableState));
             builder = interpreter.buildQueryPipeline();
         }
         else
         {
             InterpreterSelectQuery interpreter(select_query_description.inner_query,
-                getInMemoryMetadataPtr()->getDefinerContext(local_context),
+                getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context),
                 blocks_storage.getTable(),
                 blocks_storage.getTable()->getInMemoryMetadataPtr(),
                 QueryProcessingStage::WithMergeableState);
@@ -506,7 +506,7 @@ Block StorageLiveView::getHeader() const
         if (live_view_context->getSettingsRef().allow_experimental_analyzer)
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query_description.select_query,
-                getInMemoryMetadataPtr()->getDefinerContext(live_view_context),
+                getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(live_view_context),
                 SelectQueryOptions(QueryProcessingStage::Complete));
         }
         else
@@ -514,7 +514,7 @@ Block StorageLiveView::getHeader() const
             auto & select_with_union_query = select_query_description.select_query->as<ASTSelectWithUnionQuery &>();
             auto select_query = select_with_union_query.list_of_selects->children.at(0)->clone();
             sample_block = InterpreterSelectQuery(select_query,
-                getInMemoryMetadataPtr()->getDefinerContext(live_view_context),
+                getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(live_view_context),
                 SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
         }
 
@@ -574,14 +574,14 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_description.inner_query,
-            getInMemoryMetadataPtr()->getDefinerContext(local_context),
+            getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context),
             SelectQueryOptions(QueryProcessingStage::WithMergeableState));
         builder = interpreter.buildQueryPipeline();
     }
     else
     {
         InterpreterSelectQuery interpreter(select_query_description.inner_query->clone(),
-            getInMemoryMetadataPtr()->getDefinerContext(local_context),
+            getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context),
             SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
         builder = interpreter.buildQueryPipeline();
     }
@@ -645,7 +645,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
         }
 
         InterpreterSelectQueryAnalyzer interpreter(select_description.select_query_node,
-            getInMemoryMetadataPtr()->getDefinerContext(block_context),
+            getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(block_context),
             SelectQueryOptions(QueryProcessingStage::Complete));
         builder = interpreter.buildQueryPipeline();
     }
@@ -654,7 +654,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
         auto inner_blocks_query_ = getInnerBlocksQuery();
         block_context->addExternalTable(getBlocksTableName(), std::move(blocks_storage_table_holder));
         InterpreterSelectQuery interpreter(inner_blocks_query_,
-            getInMemoryMetadataPtr()->getDefinerContext(block_context),
+            getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(block_context),
             StoragePtr(),
             nullptr,
             SelectQueryOptions(QueryProcessingStage::Complete));

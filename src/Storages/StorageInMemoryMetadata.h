@@ -112,10 +112,11 @@ struct StorageInMemoryMetadata
     /// Sets a definer for the storage.
     void setDefiner(const ASTSQLSecurity & sql_security);
     UUID getDefinerID(ContextPtr context) const;
-    bool shouldIgnoreSQLSecurity() const { return sql_security_type == ASTSQLSecurity::Type::NONE; }
 
-    /// Returns a copy of the context with co
-    ContextMutablePtr getDefinerContext(ContextPtr context) const;
+    /// Returns a copy of the context with the correct user from SQL security options.
+    /// If the SQL security wasn't set, this is equivalent to `Context::createCopy(context)`.
+    /// The context from this function must be used every time whenever views execute any read/write operations or subqueries.
+    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;

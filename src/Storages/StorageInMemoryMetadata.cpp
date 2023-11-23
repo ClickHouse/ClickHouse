@@ -110,18 +110,34 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
-ContextMutablePtr StorageInMemoryMetadata::getDefinerContext(ContextPtr context) const
+ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
 {
-    auto new_context = Context::createCopy(context);
-
     if (!sql_security_type.has_value())
-        return new_context;
+        return Context::createCopy(context);
 
-    if (sql_security_type == ASTSQLSecurity::Type::NONE)
-        new_context->resetUser();
-    else if (sql_security_type == ASTSQLSecurity::Type::DEFINER)
-        new_context->setUser(getDefinerID(context));
-    return new_context;
+    switch (*sql_security_type)
+    {
+        case ASTSQLSecurity::Type::NONE:
+        {
+            auto new_context = Context::createCopy(context->getGlobalContext());
+            new_context->setClientInfo(context->getClientInfo());
+            return new_context;
+        }
+        case ASTSQLSecurity::Type::DEFINER:
+        {
+            auto new_context = Context::createCopy(context->getGlobalContext());
+            new_context->setClientInfo(context->getClientInfo());
+            new_context->setUser(getDefinerID(context));
+
+            auto user = new_context->getUser();
+            new_context->applySettingsChanges(user->settings.toSettingsChanges());
+            return new_context;
+        }
+        case ASTSQLSecurity::Type::INVOKER:
+        {
+            return Context::createCopy(context);
+        }
+    }
 }
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)

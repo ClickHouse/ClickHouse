@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -14,29 +14,6 @@ namespace DB
 class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
-
-/// DEFINER = <user_name | CURRENT_USER> SQL SECURITY <DEFINER | INVOKER | NONE>
-/// If type was not set during parsing, the default type from settings will be used.
-/// Currently supports only views.
-class ASTSQLSecurity : public IAST
-{
-public:
-    enum class Type: UInt8
-    {
-        INVOKER = 0,
-        DEFINER = 1,
-        NONE = 2,
-    };
-
-    bool is_definer_current_user{false};
-    std::shared_ptr<ASTUserNameWithHost> definer = nullptr;
-    std::optional<Type> type = std::nullopt;
-
-    String getID(char) const override { return "View SQL Security"; }
-    ASTPtr clone() const override { return std::make_shared<ASTSQLSecurity>(*this); }
-
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-};
 
 
 class ASTStorage : public IAST

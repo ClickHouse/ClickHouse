@@ -194,20 +194,19 @@ Block getHeader(ContextPtr context, ASTPtr query)
         return InterpreterSelectQuery(query, context, SelectQueryOptions().analyze()).getSampleBlock();
 }
 
-
+/// Generates one chain part for every view in buildPushingToViewsChain
 std::optional<Chain> generateViewChain(
-    const StorageID & view_id,
     ContextPtr context,
-    ContextPtr select_context,
-    ContextPtr insert_context,
+    const StorageID & view_id,
     ThreadGroupPtr running_group,
     Chain & result_chain,
     ViewsDataPtr views_data,
     ThreadStatusesHolderPtr thread_status_holder,
     bool async_insert,
-    const Block & storage_header)
+    const Block & storage_header,
+    bool disable_deduplication_for_children)
 {
-    auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+    auto view = DatabaseCatalog::instance().tryGetTable(view_id, views_data->context);
     if (view == nullptr)
     {
         LOG_WARNING(
@@ -216,9 +215,24 @@ std::optional<Chain> generateViewChain(
     }
 
     auto view_metadata_snapshot = view->getInMemoryMetadataPtr();
+    auto select_context = view_metadata_snapshot->getSQLSecurityOverriddenContext(context);
+    auto insert_context = Context::createCopy(select_context);
 
-    auto local_select_context = view_metadata_snapshot->getDefinerContext(select_context);
-    auto local_insert_context = view_metadata_snapshot->getDefinerContext(insert_context);
+    const auto & insert_settings = insert_context->getSettingsRef();
+
+    // Do not deduplicate insertions into MV if the main insertion is Ok
+    if (disable_deduplication_for_children)
+        insert_context->setSetting("insert_deduplicate", Field{false});
+
+    // Processing of blocks for MVs is done block by block, and there will
+    // be no parallel reading after (plus it is not a costless operation)
+    select_context->setSetting("parallelize_output_from_storages", Field{false});
+
+    // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
+    if (insert_settings.min_insert_block_size_rows_for_materialized_views)
+        insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);
+    if (insert_settings.min_insert_block_size_bytes_for_materialized_views)
+        insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
 
     ASTPtr query;
     Chain out;
@@ -250,7 +264,7 @@ std::optional<Chain> generateViewChain(
 
     if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
     {
-        auto lock = materialized_view->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        auto lock = materialized_view->tryLockForShare(views_data->context->getInitialQueryId(), views_data->context->getSettingsRef().lock_acquire_timeout);
 
         if (lock == nullptr)
         {
@@ -283,7 +297,7 @@ std::optional<Chain> generateViewChain(
 
         target_name = inner_table_id.getFullTableName();
 
-        auto header = getHeader(local_select_context, query);
+        auto header = getHeader(select_context, query);
 
         /// Insert only columns returned by select.
         Names insert_columns;
@@ -295,7 +309,7 @@ std::optional<Chain> generateViewChain(
                 insert_columns.emplace_back(column.name);
         }
 
-        InterpreterInsertQuery interpreter(nullptr, local_insert_context, false, false, false);
+        InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
         out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, !materialized_view->hasInnerTable());
         out.addStorageHolder(view);
         out.addStorageHolder(inner_table);
@@ -304,9 +318,9 @@ std::optional<Chain> generateViewChain(
     {
         runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
         query = live_view->getInnerQuery();
-        getHeader(local_select_context, query);  /// check implicitly that definer has enough rights
+        getHeader(select_context, query);  /// check implicitly that definer has enough rights
         out = buildPushingToViewsChain(
-            view, view_metadata_snapshot, local_insert_context, ASTPtr(),
+            view, view_metadata_snapshot, insert_context, ASTPtr(),
             /* no_destination= */ true,
             thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
     }
@@ -315,13 +329,13 @@ std::optional<Chain> generateViewChain(
         runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
         query = window_view->getMergeableQuery();
         out = buildPushingToViewsChain(
-            view, view_metadata_snapshot, local_insert_context, ASTPtr(),
+            view, view_metadata_snapshot, insert_context, ASTPtr(),
             /* no_destination= */ true,
             thread_status_holder, running_group, view_counter_ms, async_insert);
     }
     else
         out = buildPushingToViewsChain(
-            view, view_metadata_snapshot, local_insert_context, ASTPtr(),
+            view, view_metadata_snapshot, insert_context, ASTPtr(),
             /* no_destination= */ false,
             thread_status_holder, running_group, view_counter_ms, async_insert);
 
@@ -394,26 +408,9 @@ Chain buildPushingToViewsChain(
     ViewsDataPtr views_data;
     if (!views.empty())
     {
-        select_context = Context::createCopy(context);
-        insert_context = Context::createCopy(context);
-
-        const auto & insert_settings = insert_context->getSettingsRef();
-
-        // Do not deduplicate insertions into MV if the main insertion is Ok
-        if (disable_deduplication_for_children)
-            insert_context->setSetting("insert_deduplicate", Field{false});
-
-        // Processing of blocks for MVs is done block by block, and there will
-        // be no parallel reading after (plus it is not a costless operation)
+        auto process_context = Context::createCopy(context);  /// This context will be used in `process` function
         select_context->setSetting("parallelize_output_from_storages", Field{false});
-
-        // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
-        if (insert_settings.min_insert_block_size_rows_for_materialized_views)
-            insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);
-        if (insert_settings.min_insert_block_size_bytes_for_materialized_views)
-            insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
-
-        views_data = std::make_shared<ViewsData>(thread_status_holder, select_context, table_id, metadata_snapshot, storage);
+        views_data = std::make_shared<ViewsData>(thread_status_holder, process_context, table_id, metadata_snapshot, storage);
     }
 
     std::vector<Chain> chains;
@@ -423,9 +420,8 @@ Chain buildPushingToViewsChain(
         try
         {
             auto out = generateViewChain(
-                view_id, context, select_context, insert_context,
-                running_group, result_chain, views_data, thread_status_holder,
-                async_insert, storage_header);
+                context, view_id, running_group, result_chain,
+                views_data, thread_status_holder, async_insert, storage_header, disable_deduplication_for_children);
 
             if (!out.has_value())
                 continue;

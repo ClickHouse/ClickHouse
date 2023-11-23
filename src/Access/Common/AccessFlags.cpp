@@ -103,7 +103,7 @@ namespace
         const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
         const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
         const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
-        const Flags & getUserFlags() const { return all_flags_for_target[ACCESS_USER]; }
+        const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
         const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
         const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
         const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
@@ -122,7 +122,7 @@ namespace
             COLUMN,
             DICTIONARY,
             NAMED_COLLECTION,
-            ACCESS_USER,
+            USER_NAME,
         };
 
         struct Node;
@@ -302,7 +302,7 @@ namespace
                 collectAllFlags(child.get());
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[ACCESS_USER];
+            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME];
             all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
         }
 
@@ -353,7 +353,7 @@ namespace
         std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
         std::vector<Flags> access_type_to_flags_mapping;
         Flags all_flags;
-        Flags all_flags_for_target[static_cast<size_t>(ACCESS_USER) + 1];
+        Flags all_flags_for_target[static_cast<size_t>(USER_NAME) + 1];
         Flags all_flags_grantable_on_database_level;
         Flags all_flags_grantable_on_table_level;
         Flags all_flags_grantable_on_global_with_parameter_level;
@@ -373,9 +373,9 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
     if (named_collection_flags)
         result.emplace(ParameterType::NAMED_COLLECTION, named_collection_flags);
 
-    auto user_flags = AccessFlags::allUserFlags() & *this;
+    auto user_flags = AccessFlags::allUserNameFlags() & *this;
     if (user_flags)
-        result.emplace(ParameterType::ACCESS_USER, user_flags);
+        result.emplace(ParameterType::USER_NAME, user_flags);
 
     auto other_flags = (~named_collection_flags & ~user_flags) & *this;
     if (other_flags)
@@ -393,8 +393,8 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
     if (AccessFlags::allNamedCollectionFlags().contains(*this))
         return AccessFlags::NAMED_COLLECTION;
 
-    if (AccessFlags::allUserFlags().contains(*this))
-        return AccessFlags::ACCESS_USER;
+    if (AccessFlags::allUserNameFlags().contains(*this))
+        return AccessFlags::USER_NAME;
 
     throw Exception(ErrorCodes::MIXED_ACCESS_PARAMETER_TYPES, "Having mixed parameter types: {}", toString());
 }
@@ -414,7 +414,7 @@ AccessFlags AccessFlags::allTableFlags() { return Helper::instance().getTableFla
 AccessFlags AccessFlags::allColumnFlags() { return Helper::instance().getColumnFlags(); }
 AccessFlags AccessFlags::allDictionaryFlags() { return Helper::instance().getDictionaryFlags(); }
 AccessFlags AccessFlags::allNamedCollectionFlags() { return Helper::instance().getNamedCollectionFlags(); }
-AccessFlags AccessFlags::allUserFlags() { return Helper::instance().getUserFlags(); }
+AccessFlags AccessFlags::allUserNameFlags() { return Helper::instance().getUserNameFlags(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalWithParameterLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnDatabaseLevel() { return Helper::instance().getAllFlagsGrantableOnDatabaseLevel(); }
