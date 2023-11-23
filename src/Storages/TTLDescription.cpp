@@ -389,7 +389,7 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     FunctionNameNormalizer().visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
 }
 
 }
