@@ -60,12 +60,6 @@ def get_options(i: int, upgrade_check: bool) -> str:
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
     if random.random() < 0.1:
-        client_options.append("allow_experimental_partial_result=1")
-        client_options.append(
-            f"partial_result_update_duration_ms={random.randint(10, 1000)}"
-        )
-
-    if random.random() < 0.1:
         client_options.append("optimize_trivial_approximate_count_query=1")
 
     if client_options:
