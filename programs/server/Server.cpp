@@ -1970,7 +1970,8 @@ catch (...)
 {
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
-    return getCurrentExceptionCode();
+    auto code = getCurrentExceptionCode();
+    return code ? code : -1;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
