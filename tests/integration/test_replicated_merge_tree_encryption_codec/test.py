@@ -91,7 +91,9 @@ def test_different_keys():
     copy_keys(node2, "key_b")
     create_table()
 
-    insert_data()
+    # Insert two blocks without duplicated blocks to force each replica to actually fetch parts from another replica.
+    node1.query("INSERT INTO tbl VALUES (1, 'str1')")
+    node2.query("INSERT INTO tbl VALUES (2, 'str2')")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     assert "BAD_DECRYPT" in node1.query_and_get_error("SELECT * FROM tbl")
