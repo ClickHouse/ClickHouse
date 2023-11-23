@@ -844,7 +844,8 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
         file_segment->offset(),
         file_segment->range().size(),
         State::DETACHED,
-        CreateFileSegmentSettings(file_segment->getKind(), file_segment->is_unbound));
+        CreateFileSegmentSettings(file_segment->getKind(), file_segment->is_unbound),
+        false, file_segment->cache, file_segment->key_metadata, file_segment->queue_iterator);
 
     snapshot->hits_count = file_segment->getHitsCount();
     snapshot->downloaded_size = file_segment->getDownloadedSize();

@@ -19,6 +19,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/SLRUFileCachePriority.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -124,6 +125,42 @@ void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & exp
     assertEqual(file_segments->begin(), file_segments->end(), file_segments->size(), expected_ranges, expected_states);
 }
 
+void assertProtectedOrProbationary(const FileSegments & file_segments, const Ranges & expected, bool assert_protected)
+{
+    std::cerr << "File segments: ";
+    std::vector<Range> res;
+    for (const auto & f : file_segments)
+    {
+        std::cerr << f->range().toString() << ", ";
+        if (auto it = f->getQueueIterator())
+        {
+            if (auto * slru_it = dynamic_cast<SLRUFileCachePriority::SLRUIterator *>(it.get()))
+            {
+                if ((slru_it->isProtected() && assert_protected) || (!slru_it->isProtected() && !assert_protected))
+                {
+                    res.push_back(f->range());
+                }
+            }
+        }
+    }
+
+    ASSERT_EQ(res.size(), expected.size());
+    for (size_t i = 0; i < res.size(); ++i)
+    {
+        ASSERT_EQ(res[i], expected[i]);
+    }
+}
+
+void assertProtected(const FileSegments & file_segments, const Ranges & expected)
+{
+    assertProtectedOrProbationary(file_segments, expected, true);
+}
+
+void assertProbationary(const FileSegments & file_segments, const Ranges & expected)
+{
+    assertProtectedOrProbationary(file_segments, expected, false);
+}
+
 FileSegment & get(const HolderPtr & holder, int i)
 {
     auto it = std::next(holder->begin(), i);
@@ -134,7 +171,7 @@ FileSegment & get(const HolderPtr & holder, int i)
 
 void download(FileSegment & file_segment)
 {
-    std::cerr << "Downloading range " << file_segment.range().toString() << "\n";
+    std::cerr << "\nDownloading range " << file_segment.range().toString() << "\n";
 
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
@@ -167,7 +204,7 @@ void download(const HolderPtr & holder)
 void increasePriority(const HolderPtr & holder)
 {
     for (auto & it : *holder)
-        it->use();
+        it->increasePriority();
 }
 
 class FileCacheTest : public ::testing::Test
@@ -216,7 +253,7 @@ public:
     pcg64 rng;
 };
 
-TEST_F(FileCacheTest, get)
+TEST_F(FileCacheTest, LRUPolicy)
 {
     DB::ThreadStatus thread_status;
 
@@ -1038,5 +1075,117 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         stream.finishWriting();
 
         ASSERT_EQ(stream.getSize(), 62);
+    }
+}
+
+TEST_F(FileCacheTest, SLRUPolicy)
+{
+    DB::ThreadStatus thread_status;
+    std::string query_id = "query_id"; /// To work with cache need query_id and query context.
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    DB::CurrentThread::QueryScope query_scope_holder(query_context);
+
+    DB::FileCacheSettings settings;
+    settings.base_path = cache_base_path;
+    settings.max_size = 40;
+    settings.max_elements = 6;
+    settings.boundary_alignment = 1;
+
+    settings.cache_policy = "SLRU";
+    settings.slru_size_ratio = 0.5;
+
+    const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
+    size_t file_cache_name = 0;
+
+    {
+        auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);
+        cache.initialize();
+        auto key = cache.createKeyForPath("key1");
+
+        auto add_range = [&](size_t offset, size_t size)
+        {
+            std::cerr << "Add [" << offset << ", " << offset + size - 1 << "]" << std::endl;
+
+            auto holder = cache.getOrSet(key, offset, size, file_size, {});
+            assertEqual(holder, { Range(offset, offset + size - 1) }, { State::EMPTY });
+            download(holder->front());
+            assertEqual(holder, { Range(offset, offset + size - 1) }, { State::DOWNLOADED });
+        };
+
+        auto check_covering_range = [&](size_t offset, size_t size, Ranges covering_ranges)
+        {
+            auto holder = cache.getOrSet(key, offset, size, file_size, {});
+            std::vector<State> states(covering_ranges.size(), State::DOWNLOADED);
+            assertEqual(holder, covering_ranges, states);
+            increasePriority(holder);
+        };
+
+        add_range(0, 10);
+        add_range(10, 5);
+
+        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14) });
+        assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
+
+        ASSERT_EQ(cache.getFileSegmentsNum(), 2);
+        ASSERT_EQ(cache.getUsedCacheSize(), 15);
+
+        assertProbationary(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
+        assertProtected(cache.dumpQueue(), Ranges{});
+
+        check_covering_range(9, 1, { Range(0, 9) });
+        assertEqual(cache.dumpQueue(), { Range(10, 14), Range(0, 9) });
+
+        check_covering_range(10, 1, { Range(10, 14) });
+        assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
+
+        assertProbationary(cache.dumpQueue(), Ranges{});
+        assertProtected(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
+
+        add_range(17, 4);
+        assertEqual(cache.dumpQueue(), { Range(17, 20), Range(0, 9), Range(10, 14) });
+
+        add_range(24, 3);
+        assertEqual(cache.dumpQueue(), { Range(17, 20), Range(24, 26), Range(0, 9), Range(10, 14) });
+
+        add_range(27, 1);
+        assertEqual(cache.dumpQueue(), { Range(17, 20), Range(24, 26), Range(27, 27), Range(0, 9), Range(10, 14) });
+
+        assertProbationary(cache.dumpQueue(), { Range(17, 20), Range(24, 26), Range(27, 27) });
+        assertProtected(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
+
+        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
+        ASSERT_EQ(cache.getFileSegmentsNum(), 5);
+        ASSERT_EQ(cache.getUsedCacheSize(), 23);
+
+        add_range(28, 3);
+        assertEqual(cache.dumpQueue(), { Range(24, 26), Range(27, 27), Range(28, 30), Range(0, 9), Range(10, 14) });
+
+        assertProbationary(cache.dumpQueue(), { Range(24, 26), Range(27, 27), Range(28, 30) });
+        assertProtected(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
+
+        check_covering_range(4, 1, { Range(0, 9) });
+
+        assertProbationary(cache.dumpQueue(), { Range(24, 26), Range(27, 27), Range(28, 30) });
+        assertProtected(cache.dumpQueue(), { Range(10, 14), Range(0, 9) });
+
+        check_covering_range(27, 3, { Range(27, 27), Range(28, 30) });
+
+        assertProbationary(cache.dumpQueue(), { Range(24, 26), Range(10, 14) });
+        assertProtected(cache.dumpQueue(), { Range(0, 9), Range(27, 27), Range(28, 30) });
+
+        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14), Range(24, 26), Range(27, 27), Range(28, 30) });
+        ASSERT_EQ(cache.getFileSegmentsNum(), 5);
+        ASSERT_EQ(cache.getUsedCacheSize(), 22);
     }
 }

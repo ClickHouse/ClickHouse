@@ -20,11 +20,12 @@ namespace DB
 class SLRUFileCachePriority : public IFileCachePriority
 {
 private:
-    class SLRUIterator;
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
 
 public:
+    class SLRUIterator;
+
     SLRUFileCachePriority(size_t max_size_, size_t max_elements_, double size_ratio);
 
     size_t getSize(const CacheGuard::Lock & lock) const override;
@@ -71,6 +72,8 @@ public:
     void invalidate() override;
 
     void updateSize(int64_t size) override;
+
+    bool isProtected() const { return is_protected; }
 
 private:
     void checkUsable() const;
