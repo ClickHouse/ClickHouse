@@ -49,5 +49,5 @@ Check total_bytes/total_rows for Set
 2048	50
 2048	100
 Check total_bytes/total_rows for Join
-10240	50
-10240	100
+1	50
+1	100
