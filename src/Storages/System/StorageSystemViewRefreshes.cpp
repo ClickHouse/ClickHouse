@@ -17,7 +17,7 @@ NamesAndTypesList StorageSystemViewRefreshes::getNamesAndTypes()
         {"database", std::make_shared<DataTypeString>()},
         {"view", std::make_shared<DataTypeString>()},
         {"refresh_status", std::make_shared<DataTypeString>()},
-        {"last_refresh_status", std::make_shared<DataTypeString>()},
+        {"last_refresh_result", std::make_shared<DataTypeString>()},
         {"last_refresh_time", std::make_shared<DataTypeDateTime>()},
         {"next_refresh_time", std::make_shared<DataTypeDateTime>()},
         {"progress", std::make_shared<DataTypeFloat64>()},
@@ -51,7 +51,7 @@ void StorageSystemViewRefreshes::fillData(
         res_columns[i++]->insert(refresh.database);
         res_columns[i++]->insert(refresh.view_name);
         res_columns[i++]->insert(refresh.refresh_status);
-        res_columns[i++]->insert(refresh.last_refresh_status);
+        res_columns[i++]->insert(refresh.last_refresh_result);
         res_columns[i++]->insert(refresh.last_refresh_time);
         res_columns[i++]->insert(refresh.next_refresh_time);
         res_columns[i++]->insert(refresh.progress);

@@ -609,16 +609,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_CLEANUP:
             startStopAction(ActionLocks::Cleanup, true);
             break;
+        case Type::START_VIEW:
         case Type::START_VIEWS:
             startStopAction(ActionLocks::ViewRefresh, true);
             break;
-        case Type::STOP_VIEWS:
-            startStopAction(ActionLocks::ViewRefresh, false);
-            break;
-        case Type::START_VIEW:
-            startStopAction(ActionLocks::ViewRefresh, true);
-            break;
         case Type::STOP_VIEW:
+        case Type::STOP_VIEWS:
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
         case Type::REFRESH_VIEW:
