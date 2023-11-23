@@ -67,7 +67,7 @@ void tryRemoveRedundantSorting(QueryPlan::Node * root);
 /// Remove redundant distinct steps
 size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
-/// Put some steps under union, so that plan optimisation could be applied to union parts separately.
+/// Put some steps under union, so that plan optimization could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
 ///                      - Something -                    - Expression - Something -
 /// - Expression - Union - Something -     =>     - Union - Expression - Something -

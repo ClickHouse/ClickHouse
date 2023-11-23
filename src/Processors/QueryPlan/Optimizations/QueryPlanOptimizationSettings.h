@@ -27,10 +27,10 @@ struct QueryPlanOptimizationSettings
     /// if distinct in order optimization is enabled
     bool distinct_in_order = false;
 
-    /// If read-in-order optimisation is enabled
+    /// If read-in-order optimization is enabled
     bool read_in_order = true;
 
-    /// If aggregation-in-order optimisation is enabled
+    /// If aggregation-in-order optimization is enabled
     bool aggregation_in_order = false;
 
     /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
