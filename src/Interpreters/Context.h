@@ -844,10 +844,15 @@ public:
     void setMaxDatabaseSizeToWarn(size_t max_database_to_warn);
     size_t getMaxDatabaseSizeToWarn() const;
 
+    void setMaxPartsNumToWarn(size_t max_parts_to_warn);
+    size_t getMaxPartsNumToWarn() const;
+
     void setIsExceedMaxTableSize(bool is_exceed_max_table_size);
     bool isExceedMaxTableSize() const;
     void setIsExceedMaxDatabaseSize(bool is_exceed_max_database_size);
     bool isExceedMaxDatabaseSize() const;
+    void setIsExceedMaxPartNum(bool is_exceed_max_part_num);
+    bool isExceedMaxPartNum() const;
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 

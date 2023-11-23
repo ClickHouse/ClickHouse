@@ -78,10 +78,10 @@ namespace DB
     M(UInt32, dns_max_consecutive_failures, 10, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
     \
     M(UInt64, max_table_size_to_drop, 50000000000lu, "If size of a table is greater than this value (in bytes) than table could not be dropped with any DROP query.", 0) \
-    M(UInt64, max_tables_size_to_warn, 5000lu, "If size of tables is greater than this value, server will create a warning that will displayed to user.", 0) \
-    M(UInt64, max_databases_size_to_warn, 1000lu, "If size of databases is greater than this value, server will create a warning that will displayed to user.", 0) \
-    M(UInt64, max_partitions_size_to_warn, 1000lu, "If size of partitions is greater than this value, server will create a warning that will displayed to user.", 0) \
-    M(UInt64, max_parts_size_to_warn, 100000lu, "If size of parts is greater than this value, server will create a warning that will displayed to user.", 0) \
+    M(UInt64, max_table_size_to_warn, 5000lu, "If size of tables is greater than this value, server will create a warning that will displayed to user.", 0) \
+    M(UInt64, max_database_size_to_warn, 1000lu, "If size of databases is greater than this value, server will create a warning that will displayed to user.", 0) \
+    M(UInt64, max_partition_num_to_warn, 1000lu, "If size of partitions is greater than this value, server will create a warning that will displayed to user.", 0) \
+    M(UInt64, max_part_num_to_warn, 100000lu, "If size of parts is greater than this value, server will create a warning that will displayed to user.", 0) \
     M(UInt64, max_partition_size_to_drop, 50000000000lu, "Same as max_table_size_to_drop, but for the partitions.", 0) \
     M(UInt64, concurrent_threads_soft_limit_num, 0, "Sets how many concurrent thread can be allocated before applying CPU pressure. Zero means unlimited.", 0) \
     M(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as concurrent_threads_soft_limit_num, but with ratio to cores.", 0) \

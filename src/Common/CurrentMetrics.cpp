@@ -211,7 +211,6 @@
     M(AttachedTables, "Number of attached tables") \
     M(AttachedDatabases, "Number of created databases") \
     M(ActivePartitions, "Number of active partitions") \
-    M(ActiveParts, "Number of active parts") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

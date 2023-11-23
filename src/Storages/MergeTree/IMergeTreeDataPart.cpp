@@ -222,10 +222,18 @@ void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) con
             CurrentMetrics::add(CurrentMetrics::PartsPreActive);
             CurrentMetrics::add(CurrentMetrics::PartsPreCommitted);
             return;
-        case MergeTreeDataPartState::Active:
+        case MergeTreeDataPartState::Active: {
             CurrentMetrics::add(CurrentMetrics::PartsActive);
             CurrentMetrics::add(CurrentMetrics::PartsCommitted);
+            if (!storage.getContext()->isExceedMaxPartNum()
+                && CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<DB::Int64>(storage.getContext()->getMaxPartsNumToWarn()))
+            {
+                storage.getContext()->setIsExceedMaxPartNum(true);
+                storage.getContext()->addWarningMessage(
+                    fmt::format("Active parts is more than {}", storage.getContext()->getMaxPartsNumToWarn()));
+            }
             return;
+        }
         case MergeTreeDataPartState::Outdated:
             storage.total_outdated_parts_count.fetch_add(1, std::memory_order_relaxed);
             CurrentMetrics::add(CurrentMetrics::PartsOutdated);
@@ -251,9 +259,18 @@ void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) con
             CurrentMetrics::sub(CurrentMetrics::PartsPreCommitted);
             return;
         case MergeTreeDataPartState::Active:
+        {
             CurrentMetrics::sub(CurrentMetrics::PartsActive);
             CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
+            const auto & context = storage.getContext();
+            const auto max_part_num_to_warn = static_cast<DB::Int64>(context->getMaxPartsNumToWarn());
+            if (max_part_num_to_warn <= CurrentMetrics::get(CurrentMetrics::PartsActive) && context->isExceedMaxPartNum())
+            {
+                context->setIsExceedMaxPartNum(false);
+                context->deleteWarningMessage(fmt::format("Active parts is more than {}", context->getMaxPartsNumToWarn()));
+            }
             return;
+        }
         case MergeTreeDataPartState::Outdated:
             storage.total_outdated_parts_count.fetch_sub(1, std::memory_order_relaxed);
             CurrentMetrics::sub(CurrentMetrics::PartsOutdated);

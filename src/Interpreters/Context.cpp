@@ -321,8 +321,10 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
                                                                    ///
-    std::atomic_size_t max_table_size_to_warn = 10000lu;
-    std::atomic_size_t max_database_size_to_warn = 10000lu;
+    std::atomic_size_t max_table_size_to_warn;
+    std::atomic_size_t max_database_size_to_warn;
+    std::atomic_size_t max_parts_num_to_warn;
+    std::atomic_size_t max_partition_num_to_warn;
     /// No lock required for format_schema_path modified only during initialization
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     mutable OnceFlag action_locks_manager_initialized;
@@ -377,6 +379,8 @@ struct ContextSharedPart : boost::noncopyable
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
     std::atomic<bool> is_exceed_max_table_size = false;
     std::atomic<bool> is_exceed_max_database_size = false;
+    std::atomic<bool> is_exceed_max_part_num = false;
+    std::atomic<bool> is_exceed_max_partition_num = false;
 
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
@@ -3356,6 +3360,28 @@ bool Context::isExceedMaxDatabaseSize() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->is_exceed_max_database_size;
+}
+
+void Context::setMaxPartsNumToWarn(size_t max_parts_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_parts_num_to_warn = max_parts_to_warn;
+}
+size_t Context::getMaxPartsNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_parts_num_to_warn;
+
+}
+void Context::setIsExceedMaxPartNum(bool is_exceed_max_part_num)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->is_exceed_max_part_num.exchange(is_exceed_max_part_num) ;
+}
+bool Context::isExceedMaxPartNum() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->is_exceed_max_part_num;
 }
 
 UInt16 Context::getTCPPort() const
