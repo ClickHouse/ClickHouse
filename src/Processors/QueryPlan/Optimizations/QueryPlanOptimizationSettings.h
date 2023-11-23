@@ -18,11 +18,29 @@ struct QueryPlanOptimizationSettings
     /// It helps to avoid infinite optimization loop.
     size_t max_optimizations_to_apply = 0;
 
+    /// If moving-up-of-array-join optimization is enabled.
+    bool lift_up_array_join = true;
+
+    /// If moving-limit-down optimization is enabled.
+    bool push_down_limit = true;
+
+    /// If split-filter optimization is enabled.
+    bool split_filter = true;
+
+    /// If merge-expressions optimization is enabled.
+    bool merge_expressions = true;
+
     /// If filter push down optimization is enabled.
     bool filter_push_down = true;
 
     /// If reorder-functions-after-sorting optimization is enabled.
-    bool execute_functions_after_sorting;
+    bool execute_functions_after_sorting = true;
+
+    /// If window-functions-can-use-storage-sorting optimization is enabled.
+    bool reuse_storage_ordering_for_window_functions = true;
+
+    /// If lifting-unions-up optimization is enabled.
+    bool lift_up_union = true;
 
     /// if distinct in order optimization is enabled
     bool distinct_in_order = false;
@@ -36,9 +54,10 @@ struct QueryPlanOptimizationSettings
     /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
     bool remove_redundant_sorting = true;
 
+    /// If aggregate-partitions-independently optimization is enabled.
     bool aggregate_partitions_independently = false;
 
-    /// If removing redundant distinct steps is enabled
+    /// If remove-redundant-distinct-steps optimization is enabled.
     bool remove_redundant_distinct = true;
 
     /// If reading from projection can be applied

@@ -12,9 +12,21 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.optimize_plan = from.query_plan_enable_optimizations;
     settings.max_optimizations_to_apply = from.query_plan_max_optimizations_to_apply;
 
+    settings.lift_up_array_join = from.query_plan_lift_up_array_join;
+
+    settings.push_down_limit = from.query_plan_push_down_limit;
+
+    settings.split_filter = from.query_plan_split_filter;
+
+    settings.merge_expressions = from.query_plan_merge_expressions;
+
     settings.filter_push_down = from.query_plan_filter_push_down;
 
     settings.execute_functions_after_sorting = from.query_plan_execute_functions_after_sorting;
+
+    settings.reuse_storage_ordering_for_window_functions = from.query_plan_reuse_storage_ordering_for_window_functions;
+
+    settings.lift_up_union = from.query_plan_lift_up_union;
 
     settings.distinct_in_order = from.optimize_distinct_in_order;
 

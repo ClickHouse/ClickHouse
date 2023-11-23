@@ -684,8 +684,14 @@ class IColumn;
     \
     M(Bool, query_plan_enable_optimizations, true, "Apply optimizations to query plan", 0) \
     M(UInt64, query_plan_max_optimizations_to_apply, 10000, "Limit the total number of optimizations applied to query plan. If zero, ignored. If limit reached, throw exception", 0) \
+    M(Bool, query_plan_lift_up_array_join, true, "Allow to move array joins up in the query plan", 0) \
+    M(Bool, query_plan_push_down_limit, true, "Allow to move LIMITs down in the query plan", 0) \
+    M(Bool, query_plan_split_filter, true, "Allow to split filters in the query plan", 0) \
+    M(Bool, query_plan_merge_expressions, true, "Allow to merge expressions in the query plan", 0) \
     M(Bool, query_plan_filter_push_down, true, "Allow to push down filter by predicate query plan step", 0) \
     M(Bool, query_plan_execute_functions_after_sorting, true, "Allow to re-order functions after sorting", 0) \
+    M(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, "Allow to use the storage sorting for window functions", 0) \
+    M(Bool, query_plan_lift_up_union, true, "Allow to move UNIONs up so that more parts of the query plan can be optimized", 0) \
     M(Bool, query_plan_optimize_primary_key, true, "Analyze primary key using query plan (instead of AST)", 0) \
     M(Bool, query_plan_read_in_order, true, "Use query plan for read-in-order optimization", 0) \
     M(Bool, query_plan_aggregation_in_order, true, "Use query plan for aggregation-in-order optimization", 0) \
