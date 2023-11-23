@@ -85,13 +85,9 @@ inline const auto & getOptimizations()
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
-        {tryReuseStorageOrderingForWindowFunctions,
-         "reuseStorageOrderingForWindowFunctions",
-         &QueryPlanOptimizationSettings::optimize_plan},
+        {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryAggregatePartitionsIndependently,
-         "aggregatePartitionsIndependently",
-         &QueryPlanOptimizationSettings::aggregate_partitions_independently},
+        {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
     }};
 
