@@ -33,5 +33,9 @@ SELECT toUInt64(719529) AS u, toInt64(719529) AS s, fromDaysSinceYearZero(u), fr
 SELECT '-- NULL handling';
 SELECT fromDaysSinceYearZero(NULL), fromDaysSinceYearZero32(NULL);
 
+SELECT '-- ubsan bugs';
+SELECT fromDaysSinceYearZero32(2147483648);
+SELECT fromDaysSinceYearZero32(3);
+
 SELECT '-- Alias';
 SELECT FROM_DAYS(1);

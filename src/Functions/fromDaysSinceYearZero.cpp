@@ -97,7 +97,9 @@ public:
             auto value = src_data[i];
             if (value < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected a non-negative integer, got: {}", std::to_string(value));
-            dst_data[i] = static_cast<RawReturnType>(value) - static_cast<RawReturnType>(ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
+            /// prevent potential signed integer overflows (aka. undefined behavior) with Date32 results
+            auto value_uint64 = static_cast<UInt64>(value); /// NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+            dst_data[i] = static_cast<RawReturnType>(value_uint64 - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
         }
     }
 };
