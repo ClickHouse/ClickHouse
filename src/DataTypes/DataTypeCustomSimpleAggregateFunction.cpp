@@ -144,7 +144,9 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
+    /// NullsAction is not part of the AST definition. We just output a different aggregation name (e.g any vs any_respect_nulls)
+    auto action = NullsAction::EMPTY;
+    function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
 
     DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 

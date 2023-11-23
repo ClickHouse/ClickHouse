@@ -69,7 +69,8 @@ public:
                 break;
 
             AggregateFunctionProperties properties;
-            auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, {inside_argument->getResultType()}, {}, properties);
+            auto aggregate_function = AggregateFunctionFactory::instance().get(
+                function_name, NullsAction::EMPTY, {inside_argument->getResultType()}, {}, properties);
 
             auto any_function = std::make_shared<FunctionNode>(function_name);
             any_function->resolveAsAggregateFunction(std::move(aggregate_function));

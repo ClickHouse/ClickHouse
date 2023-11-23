@@ -1,0 +1,4 @@
+SELECT first_value(n) RESPECT NULLS \nFROM numbers(1)
+SELECT first_value(n) IGNORE NULLS \nFROM numbers(1)
+SELECT any(n) RESPECT NULLS \nFROM numbers(1)
+SELECT sum(n) RESPECT NULLS \nFROM numbers(1)

@@ -127,7 +127,7 @@ public:
 
     ~IFactoryWithAliases() override = default;
 
-protected:
+private:
     using InnerMap = std::unordered_map<String, Value>; // name -> creator
     using AliasMap = std::unordered_map<String, String>; // alias -> original name
 

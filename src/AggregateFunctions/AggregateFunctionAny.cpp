@@ -70,6 +70,9 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
     factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties});
+
+    factory.registerNullsActionTransformation("any", "any_respect_nulls");
+    factory.registerNullsActionTransformation("anyLast", "anyLast_respect_nulls");
 }
 
 }

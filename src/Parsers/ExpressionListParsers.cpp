@@ -1132,18 +1132,10 @@ public:
                     return false;
             }
 
-            NullsAction nulls_action = NullsAction::EMPTY;
             if (respect_nulls.ignore(pos, expected))
-            {
-                nulls_action = NullsAction::RESPECT_NULLS;
-            }
-            if (ignore_nulls.ignore(pos, expected))
-            {
-                nulls_action = NullsAction::IGNORE_NULLS;
-            }
-
-            if (nulls_action != NullsAction::EMPTY)
-                function_node->name = transformFunctionNameForRespectNulls(function_node->name, nulls_action);
+                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+            else if (ignore_nulls.ignore(pos, expected))
+                function_node->nulls_action = NullsAction::IGNORE_NULLS;
 
             if (over.ignore(pos, expected))
             {
@@ -1177,54 +1169,6 @@ private:
 
     bool allow_function_parameters;
     bool is_compound_name;
-
-    enum NullsAction
-    {
-        EMPTY = 0,
-        RESPECT_NULLS = 1,
-        IGNORE_NULLS = 2,
-    };
-    static String transformFunctionNameForRespectNulls(const String & original_function_name, NullsAction nulls_action)
-    {
-        const auto & factory = AggregateFunctionFactory::instance();
-        auto names = factory.tryGetNameAndOriginalNameWithoutCombinators(original_function_name);
-        if (!names)
-        {
-            auto hints = factory.getHints(original_function_name);
-            if (!hints.empty())
-                throw Exception(
-                    ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                    "Unknown aggregate function {}. Maybe you meant: {}",
-                    original_function_name,
-                    toString(hints));
-            else
-                throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}", original_function_name);
-        }
-
-        String name_without_combinators;
-        String unaliased_name;
-        std::tie(name_without_combinators, unaliased_name) = *names;
-
-        if (nulls_action == NullsAction::RESPECT_NULLS)
-        {
-            static const std::unordered_set<String> functions_that_support_respect_nulls = {"any", "anyLast"};
-            if (!functions_that_support_respect_nulls.contains(unaliased_name))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name_without_combinators);
-
-            return unaliased_name + "_respect_nulls"
-                + original_function_name.substr(name_without_combinators.size(), original_function_name.size());
-        }
-        else if (nulls_action == NullsAction::IGNORE_NULLS)
-        {
-            if (name_without_combinators.ends_with("_respect_nulls"))
-            {
-                return name_without_combinators.substr(0, name_without_combinators.size() - String{"_respect_nulls"}.size())
-                    + original_function_name.substr(name_without_combinators.size(), original_function_name.size());
-            }
-        }
-
-        return original_function_name;
-    }
 };
 
 /// Layer for priority brackets and tuple function
