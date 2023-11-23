@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <memory>
 #include <Core/NamesAndTypes.h>
-#include <Core/TypeId.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
@@ -233,74 +232,6 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     return unmodified;
 }
 
-static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & context)
-{
-    for (const auto & node : actions->getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::COLUMN)
-        {
-            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
-            if (!column_set)
-                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
-
-            if (column_set)
-            {
-                auto future_set = column_set->getData();
-                if (!future_set->get())
-                {
-                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
-                    {
-                        auto plan = set_from_subquery->build(context);
-
-                        if (!plan)
-                            continue;
-
-                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                        pipeline.complete(std::make_shared<EmptySink>(Block()));
-
-                        CompletedPipelineExecutor executor(pipeline);
-                        executor.execute();
-                    }
-                }
-            }
-        }
-    }
-}
-
-void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context)
-{
-    auto actions = std::make_shared<ExpressionActions>(dag);
-    makeSets(actions, context);
-    Block block_with_filter = block;
-    actions->execute(block_with_filter);
-
-    /// Filter the block.
-    String filter_column_name = dag->getOutputs().at(0)->result_name;
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
-
-    ConstantFilterDescription constant_filter(*filter_column);
-
-    if (constant_filter.always_true)
-    {
-        return;
-    }
-
-    if (constant_filter.always_false)
-    {
-        block = block.cloneEmpty();
-        return;
-    }
-
-    FilterDescription filter(*filter_column);
-
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnPtr & column = block.safeGetByPosition(i).column;
-        column = column->filter(*filter.data, -1);
-    }
-}
-
 void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
 {
     if (block.rows() == 0)
@@ -317,16 +248,40 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
 
-    makeSets(actions, context);
+    for (const auto & node : actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN)
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        auto plan = set_from_subquery->build(context);
+                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+                        pipeline.complete(std::make_shared<EmptySink>(Block()));
+
+                        CompletedPipelineExecutor executor(pipeline);
+                        executor.execute();
+                    }
+                }
+            }
+        }
+    }
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullIfNeeded();
-    if (filter_column->getDataType() != TypeIndex::UInt8)
-        return;
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
 
     ConstantFilterDescription constant_filter(*filter_column);
 
@@ -443,24 +398,6 @@ void addRequestedPathAndFileVirtualsToChunk(
             }
         }
     }
-}
-
-ActionsDAGPtr splitFilterDagForAllowedInputs(const Block & header, const ActionsDAGPtr & filter_dag, ContextPtr context)
-{
-    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
-    for (const auto * input : filter_dag->getInputs())
-        if (header.has(input->result_name))
-            allowed_inputs.insert(input);
-
-    if (allowed_inputs.empty())
-        return {};
-
-    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
-    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
-    if (atoms.empty())
-        return {};
-
-    return ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
 }
 
 }

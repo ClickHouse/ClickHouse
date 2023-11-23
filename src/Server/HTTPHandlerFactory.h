@@ -25,16 +25,17 @@ class HandlingRuleHTTPHandlerFactory : public HTTPRequestHandlerFactory
 public:
     using Filter = std::function<bool(const HTTPServerRequest &)>;
 
-    using Creator = std::function<std::unique_ptr<TEndpoint>()>;
-    explicit HandlingRuleHTTPHandlerFactory(Creator && creator_)
-        : creator(std::move(creator_))
-    {}
-
-    explicit HandlingRuleHTTPHandlerFactory(IServer & server)
+    template <typename... TArgs>
+    explicit HandlingRuleHTTPHandlerFactory(TArgs &&... args)
     {
-        creator = [&server]() -> std::unique_ptr<TEndpoint> { return std::make_unique<TEndpoint>(server); };
+        creator = [my_args = std::tuple<TArgs...>(std::forward<TArgs>(args) ...)]()
+        {
+            return std::apply([&](auto && ... endpoint_args)
+            {
+                return std::make_unique<TEndpoint>(std::forward<decltype(endpoint_args)>(endpoint_args)...);
+            }, std::move(my_args));
+        };
     }
-
 
     void addFilter(Filter cur_filter)
     {

@@ -33,7 +33,6 @@ public:
 #endif
         DROP_FILESYSTEM_CACHE,
         DROP_SCHEMA_CACHE,
-        DROP_FORMAT_SCHEMA_CACHE,
 #if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
 #endif
@@ -84,9 +83,6 @@ public:
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
-        STOP_CLEANUP,
-        START_CLEANUP,
-        RESET_COVERAGE,
         END
     };
 
@@ -121,8 +117,6 @@ public:
     String backup_name;
 
     String schema_cache_storage;
-
-    String schema_cache_format;
 
     String fail_point_name;
 

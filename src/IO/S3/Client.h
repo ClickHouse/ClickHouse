@@ -118,7 +118,15 @@ public:
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
             bool use_virtual_addressing);
 
-    std::unique_ptr<Client> clone() const;
+    /// Create a client with adjusted settings:
+    ///  * override_retry_strategy can be used to disable retries to avoid nested retries when we have
+    ///    a retry loop outside of S3 client. Specifically, for read and write buffers. Currently not
+    ///    actually used.
+    ///  * override_request_timeout_ms is used to increase timeout for CompleteMultipartUploadRequest
+    ///    because it often sits idle for 10 seconds: https://github.com/ClickHouse/ClickHouse/pull/42321
+    std::unique_ptr<Client> clone(
+        std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy = std::nullopt,
+        std::optional<Int64> override_request_timeout_ms = std::nullopt) const;
 
     Client & operator=(const Client &) = delete;
 
@@ -144,16 +152,16 @@ public:
 
     Aws::Auth::AWSCredentials getCredentials() const;
 
+    /// Decorator for RetryStrategy needed for this client to work correctly.
     /// We want to manually handle permanent moves (status code 301) because:
     /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
     ///   requests so we need to manually find the correct location
     /// - we want to cache the new location to decrease number of roundtrips for future requests
-    /// Other retries are processed with exponential backoff timeout
-    /// which is limited and rundomly spread
+    /// This decorator doesn't retry if 301 is detected and fallbacks to the inner retry strategy otherwise.
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
+        explicit RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -164,10 +172,14 @@ public:
         /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
 
+        void GetSendToken() override;
+
+        bool HasSendToken() override;
+
+        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome) override;
+        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError) override;
     private:
-        uint32_t maxRetries;
-        uint32_t scaleFactor;
-        uint32_t maxDelayMs;
+        std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy;
     };
 
     /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
@@ -299,7 +311,6 @@ public:
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
-        unsigned int s3_retry_attempts,
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,

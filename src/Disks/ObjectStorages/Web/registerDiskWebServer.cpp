@@ -54,7 +54,6 @@ void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check)
             object_storage,
             config,
             config_prefix);
-
         disk->startup(context, skip_access_check);
         return disk;
     };

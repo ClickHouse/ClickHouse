@@ -401,7 +401,12 @@ class Backport:
 
     def receive_release_prs(self):
         logging.info("Getting release PRs")
-        self.release_prs = self.gh.get_release_pulls(self._repo_name)
+        self.release_prs = self.gh.get_pulls_from_search(
+            query=f"type:pr repo:{self._repo_name} is:open",
+            sort="created",
+            order="asc",
+            label="release",
+        )
         self.release_branches = [pr.head.ref for pr in self.release_prs]
         self.labels_to_backport = [
             f"v{branch}-must-backport" for branch in self.release_branches

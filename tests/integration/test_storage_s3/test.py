@@ -1,5 +1,5 @@
 import gzip
-import uuid
+import json
 import logging
 import os
 import io
@@ -54,13 +54,8 @@ def started_cluster():
                 "configs/defaultS3.xml",
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
-                "configs/blob_log.xml",
             ],
-            user_configs=[
-                "configs/access.xml",
-                "configs/users.xml",
-                "configs/s3_retry.xml",
-            ],
+            user_configs=["configs/access.xml", "configs/users.xml"],
         )
         cluster.add_instance(
             "dummy_without_named_collections",
@@ -76,7 +71,7 @@ def started_cluster():
             "s3_max_redirects",
             with_minio=True,
             main_configs=["configs/defaultS3.xml"],
-            user_configs=["configs/s3_max_redirects.xml", "configs/s3_retry.xml"],
+            user_configs=["configs/s3_max_redirects.xml"],
         )
         cluster.add_instance(
             "s3_non_default",
@@ -105,9 +100,11 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_query(instance, query, *args, **kwargs):
+def run_query(instance, query, stdin=None, settings=None):
+    # type: (ClickHouseInstance, str, object, dict) -> str
+
     logging.info("Running query '{}'...".format(query))
-    result = instance.query(query, *args, **kwargs)
+    result = instance.query(query, stdin=stdin, settings=settings)
     logging.info("Query finished")
 
     return result
@@ -128,7 +125,7 @@ def run_query(instance, query, *args, **kwargs):
     ],
 )
 def test_put(started_cluster, maybe_auth, positive, compression):
-    # type: (ClickHouseCluster, str, bool, str) -> None
+    # type: (ClickHouseCluster) -> None
 
     bucket = (
         started_cluster.minio_bucket
@@ -495,7 +492,7 @@ def test_put_get_with_globs(started_cluster):
     ],
 )
 def test_multipart(started_cluster, maybe_auth, positive):
-    # type: (ClickHouseCluster, str, bool) -> None
+    # type: (ClickHouseCluster) -> None
 
     bucket = (
         started_cluster.minio_bucket
@@ -528,7 +525,7 @@ def test_multipart(started_cluster, maybe_auth, positive):
         maybe_auth,
         table_format,
     )
-    put_query_id = uuid.uuid4().hex
+
     try:
         run_query(
             instance,
@@ -538,7 +535,6 @@ def test_multipart(started_cluster, maybe_auth, positive):
                 "s3_min_upload_part_size": min_part_size_bytes,
                 "s3_max_single_part_upload_size": 0,
             },
-            query_id=put_query_id,
         )
     except helpers.client.QueryRuntimeException:
         if positive:
@@ -582,24 +578,6 @@ def test_multipart(started_cluster, maybe_auth, positive):
             select_result
             == "\t".join(map(str, [total_rows, total_rows * 2, total_rows * 3])) + "\n"
         )
-
-    if positive:
-        instance.query("SYSTEM FLUSH LOGS")
-        blob_storage_log = instance.query(f"SELECT * FROM system.blob_storage_log")
-
-        result = instance.query(
-            f"""SELECT
-                countIf(event_type == 'MultiPartUploadCreate'),
-                countIf(event_type == 'MultiPartUploadWrite'),
-                countIf(event_type == 'MultiPartUploadComplete'),
-                count()
-            FROM system.blob_storage_log WHERE query_id = '{put_query_id}'"""
-        )
-        r = result.strip().split("\t")
-        assert int(r[0]) == 1, blob_storage_log
-        assert int(r[1]) >= 1, blob_storage_log
-        assert int(r[2]) == 1, blob_storage_log
-        assert int(r[0]) + int(r[1]) + int(r[2]) == int(r[3]), blob_storage_log
 
 
 def test_remote_host_filter(started_cluster):
@@ -836,15 +814,6 @@ def test_storage_s3_get_unstable(started_cluster):
     assert result.splitlines() == ["500001,500000,0"]
 
 
-def test_storage_s3_get_slow(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-    table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
-    get_query = f"SELECT count(), sum(column3), sum(column4) FROM s3('http://resolver:8081/{started_cluster.minio_bucket}/slow_send_test.csv', 'CSV', '{table_format}') FORMAT CSV"
-    result = run_query(instance, get_query)
-    assert result.splitlines() == ["500001,500000,0"]
-
-
 def test_storage_s3_put_uncompressed(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
@@ -873,33 +842,13 @@ def test_storage_s3_put_uncompressed(started_cluster):
             name, started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename
         ),
     )
-    insert_query_id = uuid.uuid4().hex
-    data_sep = "),("
-    run_query(
-        instance,
-        "INSERT INTO {} VALUES ({})".format(name, data_sep.join(data)),
-        query_id=insert_query_id,
-    )
+
+    run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
 
     run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["753"]
 
     uncompressed_content = get_s3_file_content(started_cluster, bucket, filename)
     assert sum([int(i.split(",")[1]) for i in uncompressed_content.splitlines()]) == 753
-
-    instance.query("SYSTEM FLUSH LOGS")
-    blob_storage_log = instance.query(f"SELECT * FROM system.blob_storage_log")
-
-    result = instance.query(
-        f"""SELECT
-            countIf(event_type == 'Upload'),
-            countIf(remote_path == '{filename}'),
-            countIf(bucket == '{bucket}'),
-            count()
-        FROM system.blob_storage_log WHERE query_id = '{insert_query_id}'"""
-    )
-    r = result.strip().split("\t")
-    assert int(r[0]) >= 1, blob_storage_log
-    assert all(col == r[0] for col in r), blob_storage_log
 
 
 @pytest.mark.parametrize(
@@ -992,6 +941,13 @@ def test_predefined_connection_configuration(started_cluster):
 
     instance.query(f"drop table if exists {name}", user="user")
     error = instance.query_and_get_error(
+        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')"
+    )
+    assert (
+        "To execute this query, it's necessary to have the grant NAMED COLLECTION ON s3_conf1"
+        in error
+    )
+    error = instance.query_and_get_error(
         f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
         user="user",
     )
@@ -1015,6 +971,11 @@ def test_predefined_connection_configuration(started_cluster):
     )
     assert result == instance.query("SELECT number FROM numbers(10)")
 
+    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
+    assert (
+        "To execute this query, it's necessary to have the grant NAMED COLLECTION ON no_collection"
+        in error
+    )
     error = instance.query_and_get_error("SELECT * FROM s3(no_collection)", user="user")
     assert (
         "To execute this query, it's necessary to have the grant NAMED COLLECTION ON no_collection"
@@ -1057,11 +1018,11 @@ def test_url_reconnect_in_the_middle(started_cluster):
         def select():
             global result
             result = instance.query(
-                f"""select count(), sum(cityHash64(x)) from (select toUInt64(id) + sleep(0.1) as x from
+                f"""select sum(cityHash64(x)) from (select toUInt64(id) + sleep(0.1) as x from
                 url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'TSV', '{table_format}')
                 settings http_max_tries = 10, http_retry_max_backoff_ms=2000, http_send_timeout=1, http_receive_timeout=1)"""
             )
-            assert result == "1000000\t3914219105369203805\n"
+            assert int(result) == 3914219105369203805
 
         thread = threading.Thread(target=select)
         thread.start()
@@ -1074,7 +1035,7 @@ def test_url_reconnect_in_the_middle(started_cluster):
 
         thread.join()
 
-        assert result == "1000000\t3914219105369203805\n"
+        assert int(result) == 3914219105369203805
 
 
 def test_seekable_formats(started_cluster):
@@ -1334,22 +1295,22 @@ def test_schema_inference_from_globs(started_cluster):
 
     url_filename = "test{1,2}.jsoncompacteachrow"
     result = instance.query(
-        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
     )
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
-        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
     result = instance.query(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
     )
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
@@ -1360,13 +1321,13 @@ def test_schema_inference_from_globs(started_cluster):
     url_filename = "test{1,3}.jsoncompacteachrow"
 
     result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_s3=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_s3=0"
     )
 
     assert "All attempts to extract table structure from files failed" in result
 
     result = instance.query_and_get_error(
-        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0"
     )
 
     assert "All attempts to extract table structure from files failed" in result
@@ -1376,7 +1337,7 @@ def test_schema_inference_from_globs(started_cluster):
     )
 
     result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings schema_inference_use_cache_for_s3=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings schema_inference_use_cache_for_s3=0"
     )
 
     assert (
@@ -1386,7 +1347,7 @@ def test_schema_inference_from_globs(started_cluster):
     url_filename = "test{0,1,2,3}.jsoncompacteachrow"
 
     result = instance.query_and_get_error(
-        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0"
     )
 
     assert (

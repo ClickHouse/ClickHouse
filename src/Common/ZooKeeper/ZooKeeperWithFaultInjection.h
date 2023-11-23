@@ -7,7 +7,6 @@
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 #include "Coordination/KeeperConstants.h"
-#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -43,7 +42,7 @@ public:
     }
 
 private:
-    pcg64_fast rndgen;
+    std::mt19937_64 rndgen;
     std::bernoulli_distribution distribution;
 };
 
@@ -241,11 +240,6 @@ public:
     zkutil::ZooKeeper::MultiGetResponse get(const std::vector<std::string> & paths)
     {
         return access("get", !paths.empty() ? paths.front() : "", [&]() { return keeper->get(paths); });
-    }
-
-    zkutil::ZooKeeper::MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
-    {
-        return access("tryGet", !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGet(paths); });
     }
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
