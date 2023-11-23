@@ -267,7 +267,20 @@ std::optional<Chain> generateViewChain(
         StoragePtr inner_table = materialized_view->getTargetTable();
         auto inner_table_id = inner_table->getStorageID();
         auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-        query = view_metadata_snapshot->getSelectQuery().inner_query;
+
+        const auto & select_query = view_metadata_snapshot->getSelectQuery();
+        if (select_query.select_table_id != views_data->source_storage_id)
+        {
+            /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
+            /// See setting `allow_experimental_alter_materialized_view_structure`
+            LOG_DEBUG(
+                &Poco::Logger::get("PushingToViews"), "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
+                select_query.select_table_id.getFullTableName(), view_id.getFullTableName(), views_data->source_storage_id);
+            return std::nullopt;
+        }
+
+        query = select_query.inner_query;
+
         target_name = inner_table_id.getFullTableName();
 
         auto header = getHeader(local_select_context, query);
@@ -534,7 +547,8 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         pipeline = interpreter.buildQueryPipeline();
     }
     else
-    {   InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions().ignoreAccessCheck());
+    {
+        InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions().ignoreAccessCheck());
         pipeline = interpreter.buildQueryPipeline();
     }
 

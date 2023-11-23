@@ -92,11 +92,11 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
     request_settings.max_unexpected_write_error_retries = max_unexpected_write_error_retries;
     DB::WriteBufferFromS3 write_buffer(
         client,
-        client,
         uri.bucket,
         uri.key,
         DBMS_DEFAULT_BUFFER_SIZE,
-        request_settings
+        request_settings,
+        {}
     );
 
     write_buffer.write('\0'); // doesn't matter what we write here, just needs to be something
@@ -171,6 +171,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)
         "authorization: ... SignedHeaders="
         "amz-sdk-invocation-id;"
         "amz-sdk-request;"
+        "clickhouse-request;"
         "content-type;"
         "host;"
         "x-amz-api-version;"
@@ -216,6 +217,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersRead)
         "authorization: ... SignedHeaders="
         "amz-sdk-invocation-id;"
         "amz-sdk-request;"
+        "clickhouse-request;"
         "content-type;"
         "host;"
         "x-amz-api-version;"
