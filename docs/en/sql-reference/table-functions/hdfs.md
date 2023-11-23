@@ -45,10 +45,10 @@ Multiple path components can have globs. For being processed file should exists 
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. In case at least one of strings contains `/`, `'permission denied'` errors may be ignored using [ignore_access_denied_multidirectory_globs](/docs/en/operations/settings/settings.md#ignore_access_denied_multidirectory_globs) setting.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 
-Constructions with `{}` are similar to the [remote table function](../../sql-reference/table-functions/remote.md)).
+Constructions with `{}` are similar to the [remote](../../sql-reference/table-functions/remote.md)) table function.
 
 **Example**
 

@@ -144,6 +144,17 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
+ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
+{
+    for (const auto & elem : ordinary)
+        add(ColumnDescription(elem.name, elem.type));
+}
+
+ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
+{
+    for (auto & elem : ordinary)
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+}
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {
@@ -678,6 +689,14 @@ bool ColumnsDescription::hasDefaults() const
         if (column.default_desc.expression)
             return true;
     return false;
+}
+
+bool ColumnsDescription::hasOnlyOrdinary() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.kind != ColumnDefaultKind::Default)
+            return false;
+    return true;
 }
 
 ColumnDefaults ColumnsDescription::getDefaults() const

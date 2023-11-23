@@ -104,4 +104,5 @@ ClickHouse-specific aggregate functions:
 - [quantileInterpolatedWeighted](./quantileinterpolatedweighted.md)
 - [sparkBar](./sparkbar.md)
 - [sumCount](./sumcount.md)
+- [largestTriangleThreeBuckets](./largestTriangleThreeBuckets.md)
 

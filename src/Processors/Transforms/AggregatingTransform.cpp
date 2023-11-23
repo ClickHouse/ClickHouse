@@ -1,4 +1,3 @@
-#include <Processors/Transforms/AggregatingPartialResultTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Formats/NativeReader.h>
@@ -9,6 +8,7 @@
 #include <Common/logger_useful.h>
 
 #include <Processors/Transforms/SquashingChunksTransform.h>
+
 
 namespace ProfileEvents
 {
@@ -623,7 +623,9 @@ IProcessor::Status AggregatingTransform::prepare()
 void AggregatingTransform::work()
 {
     if (is_consume_finished)
+    {
         initGenerate();
+    }
     else
     {
         consume(std::move(current_chunk));
@@ -658,8 +660,6 @@ void AggregatingTransform::consume(Chunk chunk)
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
-    std::lock_guard lock(snapshot_mutex);
-
     if (params->params.only_merge)
     {
         auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
@@ -676,11 +676,10 @@ void AggregatingTransform::consume(Chunk chunk)
 
 void AggregatingTransform::initGenerate()
 {
-    if (is_generate_initialized)
+    if (is_generate_initialized.load(std::memory_order_acquire))
         return;
 
-    std::lock_guard lock(snapshot_mutex);
-    is_generate_initialized = true;
+    is_generate_initialized.store(true, std::memory_order_release);
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
@@ -808,14 +807,6 @@ void AggregatingTransform::initGenerate()
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
-}
-
-ProcessorPtr AggregatingTransform::getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
-{
-    const auto & input_header = inputs.front().getHeader();
-    const auto & output_header = outputs.front().getHeader();
-    auto aggregating_processor = std::dynamic_pointer_cast<AggregatingTransform>(current_processor);
-    return std::make_shared<AggregatingPartialResultTransform>(input_header, output_header, std::move(aggregating_processor), partial_result_limit, partial_result_duration_ms);
 }
 
 }

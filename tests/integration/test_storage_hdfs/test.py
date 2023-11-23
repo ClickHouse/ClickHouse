@@ -569,11 +569,13 @@ def test_schema_inference_with_globs(started_cluster):
         f"insert into table function hdfs('hdfs://hdfs1:9000/data2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
     )
 
-    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')")
+    result = node1.query(
+        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+    )
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
+        f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
@@ -584,7 +586,7 @@ def test_schema_inference_with_globs(started_cluster):
     filename = "data{1,3}.jsoncompacteachrow"
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings schema_inference_use_cache_for_hdfs=0"
+        f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
     assert "All attempts to extract table structure from files failed" in result
@@ -594,7 +596,7 @@ def test_schema_inference_with_globs(started_cluster):
     )
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0"
+        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
     assert (

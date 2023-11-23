@@ -162,7 +162,22 @@ bool WebObjectStorage::exists(const std::string & path) const
 
     if (startsWith(it->first, path)
         || (it != files.begin() && startsWith(std::prev(it)->first, path)))
+    {
+        shared_lock.unlock();
+        std::unique_lock unique_lock(metadata_mutex);
+
+        /// The code relies on invariant that if this function returned true
+        /// the file exists in files.
+        /// In this case we have a directory which doesn't explicitly exists (like store/xxx/yyy)
+        ///                                                        ^^^^^
+        /// Adding it to the files
+        files.emplace(std::make_pair(path, FileData({.type = FileType::Directory})));
+
+        unique_lock.unlock();
+        shared_lock.lock();
+
         return true;
+    }
 
     return false;
 }
@@ -264,7 +279,7 @@ void WebObjectStorage::removeObjectsIfExist(const StoredObjects &)
     throwNotAllowed();
 }
 
-void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, std::optional<ObjectAttributes>) // NOLINT
+void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, const ReadSettings &, const WriteSettings &, std::optional<ObjectAttributes>) // NOLINT
 {
     throwNotAllowed();
 }

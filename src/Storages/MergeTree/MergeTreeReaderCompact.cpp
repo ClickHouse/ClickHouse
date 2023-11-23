@@ -152,7 +152,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
             auto [name_in_storage, subcolumn_name] = Nested::splitName(column_to_read.name);
 
             /// If it is a part of Nested, we need to get the column from
-            /// storage metatadata which is converted to Nested type with subcolumns.
+            /// storage metadata which is converted to Nested type with subcolumns.
             /// It is required for proper counting of shared streams.
             if (!subcolumn_name.empty())
             {

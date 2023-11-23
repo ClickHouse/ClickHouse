@@ -21,7 +21,8 @@ void localBackupImpl(
     IDiskTransaction * transaction,
     const String & source_path,
     const String & destination_path,
-    const WriteSettings & settings,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     bool make_source_readonly,
     size_t level,
     std::optional<size_t> max_level,
@@ -56,13 +57,9 @@ void localBackupImpl(
             if (copy_instead_of_hardlinks || files_to_copy_instead_of_hardlinks.contains(it->name()))
             {
                 if (transaction)
-                {
-                    transaction->copyFile(source, destination, settings);
-                }
+                    transaction->copyFile(source, destination, read_settings, write_settings);
                 else
-                {
-                    disk->copyFile(source, *disk, destination, settings);
-                }
+                    disk->copyFile(source, *disk, destination, read_settings, write_settings);
             }
             else
             {
@@ -79,7 +76,8 @@ void localBackupImpl(
                 transaction,
                 source,
                 destination,
-                settings,
+                read_settings,
+                write_settings,
                 make_source_readonly,
                 level + 1,
                 max_level,
@@ -129,7 +127,8 @@ void localBackup(
     const DiskPtr & disk,
     const String & source_path,
     const String & destination_path,
-    const WriteSettings & settings,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     bool make_source_readonly,
     std::optional<size_t> max_level,
     bool copy_instead_of_hardlinks,
@@ -160,7 +159,8 @@ void localBackup(
                     disk_transaction.get(),
                     source_path,
                     destination_path,
-                    settings,
+                    read_settings,
+                    write_settings,
                     make_source_readonly,
                     /* level= */ 0,
                     max_level,
@@ -170,7 +170,7 @@ void localBackup(
             else if (copy_instead_of_hardlinks)
             {
                 CleanupOnFail cleanup([disk, destination_path]() { disk->removeRecursive(destination_path); });
-                disk->copyDirectoryContent(source_path, disk, destination_path, settings);
+                disk->copyDirectoryContent(source_path, disk, destination_path, read_settings, write_settings);
                 cleanup.success();
             }
             else
@@ -189,7 +189,8 @@ void localBackup(
                     disk_transaction.get(),
                     source_path,
                     destination_path,
-                    settings,
+                    read_settings,
+                    write_settings,
                     make_source_readonly,
                     /* level= */ 0,
                     max_level,

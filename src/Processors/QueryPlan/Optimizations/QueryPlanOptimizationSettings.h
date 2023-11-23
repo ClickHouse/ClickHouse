@@ -21,6 +21,9 @@ struct QueryPlanOptimizationSettings
     /// If filter push down optimization is enabled.
     bool filter_push_down = true;
 
+    /// If reorder-functions-after-sorting optimization is enabled.
+    bool execute_functions_after_sorting;
+
     /// if distinct in order optimization is enabled
     bool distinct_in_order = false;
 
@@ -41,6 +44,7 @@ struct QueryPlanOptimizationSettings
     /// If reading from projection can be applied
     bool optimize_projection = false;
     bool force_use_projection = false;
+    String force_projection_name;
     bool optimize_use_implicit_projections = false;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);

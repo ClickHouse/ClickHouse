@@ -104,7 +104,7 @@ void addDefaultRequiredExpressionsRecursively(
         /// and this identifier will be in required columns. If such column is not in ColumnsDescription we ignore it.
 
         /// This column is required, but doesn't have default expression, so lets use "default default"
-        auto column = columns.get(required_column_name);
+        const auto & column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
         ASTPtr expr = std::make_shared<ASTLiteral>(default_value);
         if (is_column_in_query && convert_null_to_default)

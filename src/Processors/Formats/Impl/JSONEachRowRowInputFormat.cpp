@@ -367,7 +367,7 @@ void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTyp
 
 void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
+    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)

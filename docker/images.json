@@ -1,9 +1,7 @@
 {
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
-        "dependent": [
-            "docker/test/codebrowser"
-        ]
+        "dependent": []
     },
     "docker/test/compatibility/centos": {
         "name": "clickhouse/test-old-centos",
@@ -61,10 +59,6 @@
     },
     "docker/test/upgrade": {
         "name": "clickhouse/upgrade-check",
-        "dependent": []
-    },
-    "docker/test/codebrowser": {
-        "name": "clickhouse/codebrowser",
         "dependent": []
     },
     "docker/test/integration/runner": {

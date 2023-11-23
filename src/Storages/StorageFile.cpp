@@ -34,7 +34,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <Processors/ISource.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -106,72 +106,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Forward-declare to use in listFilesWithFoldedRegexpMatchingImpl()
-void listFilesWithRegexpMatchingImpl(
-    const std::string & path_for_ls,
-    const std::string & for_match,
-    size_t & total_bytes_to_read,
-    bool ignore_access_denied_multidirectory_globs,
-    std::vector<std::string> & result,
-    bool recursive = false);
-
-/*
- * When `{...}` has any `/`s, it must be processed in a different way:
- * Basically, a path with globs is processed by listFilesWithRegexpMatchingImpl. In case it detects multi-dir glob {.../..., .../...},
- * listFilesWithFoldedRegexpMatchingImpl is in charge from now on.
- * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
- * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
- * StorageHDFS.cpp has the same logic.
-*/
-void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
-                                           const std::string & processed_suffix,
-                                           const std::string & suffix_with_globs,
-                                           re2::RE2 & matcher,
-                                           size_t & total_bytes_to_read,
-                                           const size_t max_depth,
-                                           const size_t next_slash_after_glob_pos,
-                                           bool ignore_access_denied_multidirectory_globs,
-                                           std::vector<std::string> & result)
-{
-    if (!max_depth)
-        return;
-
-    const fs::directory_iterator end;
-    fs::directory_iterator it = ignore_access_denied_multidirectory_globs
-        ? fs::directory_iterator(path_for_ls, fs::directory_options::skip_permission_denied)
-        : fs::directory_iterator(path_for_ls);
-    for (; it != end; ++it)
-    {
-        const std::string full_path = it->path().string();
-        const size_t last_slash = full_path.rfind('/');
-        const String dir_or_file_name = full_path.substr(last_slash);
-
-        if (re2::RE2::FullMatch(processed_suffix + dir_or_file_name, matcher))
-        {
-            if (next_slash_after_glob_pos == std::string::npos)
-            {
-                total_bytes_to_read += it->file_size();
-                result.push_back(it->path().string());
-            }
-            else
-            {
-                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "" ,
-                                                suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, ignore_access_denied_multidirectory_globs, result);
-            }
-        }
-        else if (it->is_directory())
-        {
-            listFilesWithFoldedRegexpMatchingImpl(fs::path(full_path), processed_suffix + dir_or_file_name,
-                                                  suffix_with_globs, matcher, total_bytes_to_read,
-                                                  max_depth - 1, next_slash_after_glob_pos,
-                                                  ignore_access_denied_multidirectory_globs, result);
-        }
-
-    }
-}
-
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -179,41 +113,30 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    bool ignore_access_denied_multidirectory_globs,
     std::vector<std::string> & result,
     bool recursive)
 {
     const size_t first_glob_pos = for_match.find_first_of("*?{");
-    const bool has_glob = first_glob_pos != std::string::npos;
+
+    if (first_glob_pos == std::string::npos)
+    {
+        try
+        {
+            fs::path path = fs::canonical(path_for_ls + for_match);
+            result.push_back(path.string());
+        }
+        catch (const std::exception &) // NOLINT
+        {
+            /// There is no such file, but we just ignore this.
+            /// throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", for_match);
+        }
+        return;
+    }
 
     const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
-    /// slashes_in_glob counter is a upper-bound estimate of recursion depth
-    /// needed to process complex cases when `/` is included into glob, e.g. /pa{th1/a,th2/b}.csv
-    size_t slashes_in_glob = 0;
-    const size_t next_slash_after_glob_pos = [&]()
-    {
-        if (!has_glob)
-            return suffix_with_globs.find('/', 1);
-
-        size_t in_curly = 0;
-        for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
-        {
-            if (*it == '{')
-                ++in_curly;
-            else if (*it == '/')
-            {
-                if (in_curly)
-                    ++slashes_in_glob;
-                else
-                    return size_t(std::distance(suffix_with_globs.begin(), it));
-            }
-            else if (*it == '}')
-                --in_curly;
-        }
-        return std::string::npos;
-    }();
+    const size_t next_slash_after_glob_pos = suffix_with_globs.find('/', 1);
 
     const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
@@ -224,7 +147,7 @@ void listFilesWithRegexpMatchingImpl(
         throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
             "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
-    bool skip_regex = current_glob == "/*" ? true : false;
+    bool skip_regex = current_glob == "/*";
     if (!recursive)
         recursive = current_glob == "/**" ;
 
@@ -234,14 +157,6 @@ void listFilesWithRegexpMatchingImpl(
         return;
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
-
-    if (slashes_in_glob)
-    {
-        listFilesWithFoldedRegexpMatchingImpl(fs::path(prefix_without_globs), "", suffix_with_globs, matcher,
-                                              total_bytes_to_read, slashes_in_glob, next_slash_after_glob_pos,
-                                              ignore_access_denied_multidirectory_globs, result);
-        return;
-    }
 
     const fs::directory_iterator end;
     for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
@@ -265,24 +180,27 @@ void listFilesWithRegexpMatchingImpl(
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, ignore_access_denied_multidirectory_globs, result, recursive);
+                                                total_bytes_to_read, result, recursive);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, ignore_access_denied_multidirectory_globs, result);
+                                                total_bytes_to_read, result, false);
         }
     }
 }
 
 std::vector<std::string> listFilesWithRegexpMatching(
-    const std::string & path_for_ls,
     const std::string & for_match,
-    size_t & total_bytes_to_read,
-    bool ignore_access_denied_multidirectory_globs)
+    size_t & total_bytes_to_read)
 {
     std::vector<std::string> result;
-    listFilesWithRegexpMatchingImpl(path_for_ls, for_match, total_bytes_to_read, ignore_access_denied_multidirectory_globs, result);
+
+    Strings for_match_paths_expanded = expandSelectionGlob(for_match);
+
+    for (const auto & for_match_expanded : for_match_paths_expanded)
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
+
     return result;
 }
 
@@ -447,7 +365,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read, context->getSettingsRef().ignore_access_denied_multidirectory_globs);
+        paths = listFilesWithRegexpMatching(path, total_bytes_to_read);
         can_be_directory = false;
     }
 
@@ -930,7 +848,12 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in File storage.
+        if (!args.columns.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine File doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(args.columns);
+    }
 
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
@@ -952,7 +875,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
 
-class StorageFileSource : public ISource
+class StorageFileSource : public SourceWithKeyCondition
 {
 public:
     class FilesIterator
@@ -1027,7 +950,7 @@ public:
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
         bool need_only_count_)
-        : ISource(info.source_header, false)
+        : SourceWithKeyCondition(info.source_header, false)
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
         , files_iterator(std::move(files_iterator_))
@@ -1113,6 +1036,17 @@ public:
     {
         return storage->getName();
     }
+
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
+    {
+        setKeyConditionImpl(query_info_, context_, block_for_format);
+    }
+
+    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    {
+        setKeyConditionImpl(nodes, context_, block_for_format);
+    }
+
 
     bool tryGetCountFromCache(const struct stat & file_stat)
     {
@@ -1264,8 +1198,13 @@ public:
                 chassert(file_num > 0);
 
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads / file_num, 1UL);
-                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, need_only_count ? 1 : max_parsing_threads);
-                input_format->setQueryInfo(query_info, context);
+                input_format = FormatFactory::instance().getInput(
+                    storage->format_name, *read_buf, block_for_format, context, max_block_size, storage->format_settings,
+                    max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
+
+                if (key_condition)
+                    input_format->setKeyCondition(key_condition);
+
                 if (need_only_count)
                     input_format->needOnlyCount();
 

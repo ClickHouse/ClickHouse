@@ -52,6 +52,12 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
+bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
+{
+    std::lock_guard lock{mutex};
+    return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
+}
+
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
 {
     String query_str = serializeAST(create_query);

@@ -60,16 +60,25 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
+function remove_keeper_config()
+{
+  sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+    | sed "/<$1>$2<\/$1>/d" \
+    > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+  sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+}
+
 # async_replication setting doesn't exist on some older versions
-sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
-  | sed "/<async_replication>1<\/async_replication>/d" \
-  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+remove_keeper_config "async_replication" "1"
+
+# create_if_not_exists feature flag doesn't exist on some older versions
+remove_keeper_config "create_if_not_exists" "[01]"
 
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
+rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 
 start
 stop
@@ -89,10 +98,10 @@ sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
 sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
 # async_replication setting doesn't exist on some older versions
-sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
-  | sed "/<async_replication>1<\/async_replication>/d" \
-  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+remove_keeper_config "async_replication" "1"
+
+# create_if_not_exists feature flag doesn't exist on some older versions
+remove_keeper_config "create_if_not_exists" "[01]"
 
 # But we still need default disk because some tables loaded only into it
 sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
@@ -106,6 +115,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
+rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 
 start
 
@@ -181,6 +191,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "ZooKeeperClient" \
            -e "KEEPER_EXCEPTION" \
            -e "DirectoryMonitor" \
+           -e "DistributedInsertQueue" \
            -e "TABLE_IS_READ_ONLY" \
            -e "Code: 1000, e.code() = 111, Connection refused" \
            -e "UNFINISHED" \

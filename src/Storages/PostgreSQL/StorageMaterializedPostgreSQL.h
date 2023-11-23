@@ -81,7 +81,7 @@ public:
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;

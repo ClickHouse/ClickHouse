@@ -9,6 +9,7 @@
 #include <IO/Resource/FairPolicy.h>
 #include <IO/Resource/PriorityPolicy.h>
 #include <IO/Resource/SemaphoreConstraint.h>
+#include <IO/Resource/ThrottlerConstraint.h>
 #include <IO/Resource/FifoQueue.h>
 #include <Interpreters/Context.h>
 #include "IO/ResourceRequest.h"
@@ -40,6 +41,10 @@ NamesAndTypesList StorageSystemScheduler::getNamesAndTypes()
         {"inflight_cost", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
         {"max_requests", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
         {"max_cost", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+        {"max_speed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>())},
+        {"max_burst", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>())},
+        {"throttling_us", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+        {"tokens", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>())},
     };
     return names_and_types;
 }
@@ -71,6 +76,10 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field inflight_cost;
         Field max_requests;
         Field max_cost;
+        Field max_speed;
+        Field max_burst;
+        Field throttling_us;
+        Field tokens;
 
         if (auto * parent = dynamic_cast<FairPolicy *>(node->parent))
         {
@@ -90,6 +99,12 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             std::tie(inflight_requests, inflight_cost) = ptr->getInflights();
             std::tie(max_requests, max_cost) = ptr->getLimits();
         }
+        if (auto * ptr = dynamic_cast<ThrottlerConstraint *>(node.get()))
+        {
+            std::tie(max_speed, max_burst) = ptr->getParams();
+            throttling_us = ptr->getThrottlingDuration().count() / 1000;
+            tokens = ptr->getTokens();
+        }
 
         res_columns[i++]->insert(vruntime);
         res_columns[i++]->insert(system_vruntime);
@@ -101,6 +116,10 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(inflight_cost);
         res_columns[i++]->insert(max_requests);
         res_columns[i++]->insert(max_cost);
+        res_columns[i++]->insert(max_speed);
+        res_columns[i++]->insert(max_burst);
+        res_columns[i++]->insert(throttling_us);
+        res_columns[i++]->insert(tokens);
     });
 }
 
