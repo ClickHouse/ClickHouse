@@ -1,18 +1,21 @@
 #pragma once
 
-#include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
-#include <Common/FileRenamer.h>
-#include <IO/Archives/IArchiveReader.h>
+#include <Storages/Cache/SchemaCache.h>
+
+#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
+
 
 namespace DB
 {
 
 class StorageFile final : public IStorage
 {
+friend class partitionedstoragefilesink;
+
 public:
     struct CommonArguments : public WithContext
     {
@@ -23,8 +26,6 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const String & comment;
-        const std::string rename_after_processing;
-        std::string path_to_archive;
     };
 
     /// From file descriptor
@@ -52,8 +53,7 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool async_insert) override;
+        ContextPtr context) override;
 
     void truncate(
         const ASTPtr & /*query*/,
@@ -66,7 +66,7 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
+    NamesAndTypesList getVirtuals() const override;
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
@@ -76,25 +76,7 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool supportsSubcolumns() const override { return true; }
-
-    bool prefersLargeBlocks() const override;
-
-    bool parallelizeOutputAfterReading(ContextPtr context) const override;
-
     bool supportsPartitionBy() const override { return true; }
-
-    struct ArchiveInfo
-    {
-        std::vector<std::string> paths_to_archives;
-        std::string path_in_archive; // used when reading a single file from archive
-        IArchiveReader::NameFilter filter = {}; // used when files inside archive are defined with a glob
-
-        bool isSingleFileRead() const
-        {
-            return !filter;
-        }
-    };
 
     ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
 
@@ -103,21 +85,9 @@ public:
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        ContextPtr context);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
-
-    static void parseFileSource(String source, String & filename, String & path_to_archive);
-
-    static ArchiveInfo getArchiveInfo(
-        const std::string & path_to_archive,
-        const std::string & file_in_archive,
-        const std::string & user_files_path,
-        ContextPtr context,
-        size_t & total_bytes_to_read);
-
-    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     friend class StorageFileSource;
@@ -149,8 +119,6 @@ private:
     std::string base_path;
     std::vector<std::string> paths;
 
-    std::optional<ArchiveInfo> archive_info;
-
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path
 
@@ -170,13 +138,6 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
     std::atomic<bool> has_peekable_read_buffer_from_fd = false;
-
-    // Counts the number of readers
-    std::atomic<int32_t> readers_counter = 0;
-    FileRenamer file_renamer;
-    bool was_renamed = false;
-
-    NamesAndTypesList virtual_columns;
 };
 
 }

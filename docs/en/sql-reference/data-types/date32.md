@@ -13,7 +13,7 @@ A date. Supports the date range same with [DateTime64](../../sql-reference/data-
 Creating a table with a `Date32`-type column and inserting data into it:
 
 ``` sql
-CREATE TABLE dt32
+CREATE TABLE new
 (
     `timestamp` Date32,
     `event_id` UInt8
@@ -22,13 +22,8 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
--- Parse Date
--- - from string,
--- - from 'small' integer interpreted as number of days since 1970-01-01, and
--- - from 'big' integer interpreted as number of seconds since 1970-01-01.
-INSERT INTO dt32 VALUES ('2100-01-01', 1), (47482, 2), (4102444800, 3);
-
-SELECT * FROM dt32;
+INSERT INTO new VALUES (4102444800, 1), ('2100-01-01', 2);
+SELECT * FROM new;
 ```
 
 ``` text
@@ -40,6 +35,6 @@ SELECT * FROM dt32;
 
 **See Also**
 
-- [toDate32](../../sql-reference/functions/type-conversion-functions.md#todate32)
-- [toDate32OrZero](../../sql-reference/functions/type-conversion-functions.md#todate32-or-zero)
-- [toDate32OrNull](../../sql-reference/functions/type-conversion-functions.md#todate32-or-null)
+-   [toDate32](../../sql-reference/functions/type-conversion-functions.md#todate32)
+-   [toDate32OrZero](../../sql-reference/functions/type-conversion-functions.md#todate32-or-zero)
+-   [toDate32OrNull](../../sql-reference/functions/type-conversion-functions.md#todate32-or-null)

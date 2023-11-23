@@ -6,17 +6,14 @@
 #include <vector>
 
 #include <Core/Field.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 using namespace DB;
 
@@ -41,11 +38,7 @@ public:
         const auto & index = parts[part_idx].data_part->index;
         Values values(index.size());
         for (size_t i = 0; i < values.size(); ++i)
-        {
             index[i]->get(mark, values[i]);
-            if (values[i].isNull())
-                values[i] = POSITIVE_INFINITY;
-        }
         return values;
     }
 
@@ -68,10 +61,9 @@ private:
 /// Will try to produce exactly max_layer layers but may return less if data is distributed in not a very parallelizable way.
 std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDataParts parts, size_t max_layers)
 {
-    // We will advance the iterator pointing to the mark with the smallest PK value until
-    // there will be not less than rows_per_layer rows in the current layer (roughly speaking).
-    // Then we choose the last observed value as the new border, so the current layer will consists
-    // of granules with values greater than the previous mark and less or equal than the new border.
+    // We will advance the iterator pointing to the mark with the smallest PK value until there will be not less than rows_per_layer rows in the current layer (roughly speaking).
+    // Then we choose the last observed value as the new border, so the current layer will consists of granules with values greater than the previous mark and less or equal
+    // than the new border.
 
     struct PartsRangesIterator
     {
@@ -86,25 +78,7 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             RangeEnd,
         };
 
-        [[maybe_unused]] bool operator<(const PartsRangesIterator & other) const
-        {
-            // Accurate comparison of `value > other.value`
-            for (size_t i = 0; i < value.size(); ++i)
-            {
-                if (applyVisitor(FieldVisitorAccurateLess(), value[i], other.value[i]))
-                    return false;
-
-                if (!applyVisitor(FieldVisitorAccurateEquals(), value[i], other.value[i]))
-                    return true;
-            }
-
-            /// Within the same part we should process events in order of mark numbers,
-            /// because they already ordered by value and range ends have greater mark numbers than the beginnings.
-            /// Otherwise we could get invalid ranges with the right bound that is less than the left bound.
-            const auto ev_mark = event == EventType::RangeStart ? range.begin : range.end;
-            const auto other_ev_mark = other.event == EventType::RangeStart ? other.range.begin : other.range.end;
-            return ev_mark > other_ev_mark;
-        }
+        [[ maybe_unused ]] bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
 
         Values value;
         MarkRangeWithPartIdx range;
@@ -152,9 +126,7 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             return marks_in_current_layer < intersected_parts * 2;
         };
 
-        auto & current_layer = result_layers.emplace_back();
-        /// Map part_idx into index inside layer, used to merge marks from the same part into one reader
-        std::unordered_map<size_t, size_t> part_idx_in_layer;
+        result_layers.emplace_back();
 
         while (rows_in_current_layer < rows_per_layer || layers_intersection_is_too_big() || result_layers.size() == max_layers)
         {
@@ -168,17 +140,10 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
 
                 if (current.event == PartsRangesIterator::EventType::RangeEnd)
                 {
-                    const auto & mark = MarkRange{current_part_range_begin[part_idx], current.range.end};
-                    auto it = part_idx_in_layer.emplace(std::make_pair(part_idx, current_layer.size()));
-                    if (it.second)
-                        current_layer.emplace_back(
-                            parts[part_idx].data_part,
-                            parts[part_idx].alter_conversions,
-                            parts[part_idx].part_index_in_query,
-                            MarkRanges{mark});
-                    else
-                        current_layer[it.first->second].ranges.push_back(mark);
-
+                    result_layers.back().emplace_back(
+                        parts[part_idx].data_part,
+                        parts[part_idx].part_index_in_query,
+                        MarkRanges{{current_part_range_begin[part_idx], current.range.end}});
                     current_part_range_begin.erase(part_idx);
                     current_part_range_end.erase(part_idx);
                     continue;
@@ -203,15 +168,10 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
         }
         for (const auto & [part_idx, last_mark] : current_part_range_end)
         {
-            const auto & mark = MarkRange{current_part_range_begin[part_idx], last_mark + 1};
-            auto it = part_idx_in_layer.emplace(std::make_pair(part_idx, current_layer.size()));
-
-            if (it.second)
-                result_layers.back().emplace_back(
-                    parts[part_idx].data_part, parts[part_idx].alter_conversions, parts[part_idx].part_index_in_query, MarkRanges{mark});
-            else
-                current_layer[it.first->second].ranges.push_back(mark);
-
+            result_layers.back().emplace_back(
+                parts[part_idx].data_part,
+                parts[part_idx].part_index_in_query,
+                MarkRanges{{current_part_range_begin[part_idx], last_mark + 1}});
             current_part_range_begin[part_idx] = current_part_range_end[part_idx];
         }
     }
@@ -227,7 +187,7 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
 }
 
 
-/// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range (borders[i-1], borders[i]].
+/// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range [borders[i-1], borders[i]).
 ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders)
 {
     auto add_and_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = (!result) ? foo : makeASTFunction("and", result, foo); };
@@ -235,49 +195,23 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
     /// Produces ASTPtr to predicate (pk_col0, pk_col1, ... , pk_colN) > (value[0], value[1], ... , value[N]), possibly with conversions.
     /// For example, if table PK is (a, toDate(d)), where `a` is UInt32 and `d` is DateTime, and PK columns values are (8192, 19160),
     /// it will build the following predicate: greater(tuple(a, toDate(d)), tuple(8192, cast(19160, 'Date'))).
-    auto lexicographically_greater = [&](const Values & values) -> ASTPtr
+    auto lexicographically_greater = [&](const Values & value)
     {
-        ASTs pks_ast;
-        ASTs values_ast;
-        for (size_t i = 0; i < values.size(); ++i)
+        // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
+        ASTPtr pk_columns_as_tuple = makeASTFunction("tuple", primary_key.expression_list_ast->children);
+
+        ASTPtr value_ast = std::make_shared<ASTExpressionList>();
+        for (size_t i = 0; i < value.size(); ++i)
         {
-            const auto & type = primary_key.data_types.at(i);
-
-            // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
-            auto pk_ast = primary_key.expression_list_ast->children.at(i);
-
-            // If PK is nullable, prepend a null mask column for > comparison.
-            // Also transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
-            if (type->isNullable())
-            {
-                pks_ast.push_back(makeASTFunction("isNull", pk_ast));
-                values_ast.push_back(std::make_shared<ASTLiteral>(values[i].isNull() ? 1 : 0));
-                pk_ast = makeASTFunction("assumeNotNull", pk_ast);
-            }
-
-            pks_ast.push_back(pk_ast);
-
-            // If value is null, the comparison is already complete by looking at the null mask column.
-            // Here we put the pk_ast as a placeholder: (pk_null_mask, pk_ast_not_null) > (value_is_null?, pk_ast_not_null).
-            if (values[i].isNull())
-            {
-                values_ast.push_back(pk_ast);
-            }
-            else
-            {
-                ASTPtr component_ast = std::make_shared<ASTLiteral>(values[i]);
-                auto decayed_type = removeNullable(removeLowCardinality(primary_key.data_types.at(i)));
-                // Values of some types (e.g. Date, DateTime) are stored in columns as numbers and we get them as just numbers from the index.
-                // So we need an explicit Cast for them.
-                if (isColumnedAsNumber(decayed_type->getTypeId()) && !isNumber(decayed_type->getTypeId()))
-                    component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(decayed_type->getName()));
-
-                values_ast.push_back(std::move(component_ast));
-            }
+            const auto & types = primary_key.data_types;
+            ASTPtr component_ast = std::make_shared<ASTLiteral>(value[i]);
+            // Values of some types (e.g. Date, DateTime) are stored in columns as numbers and we get them as just numbers from the index.
+            // So we need an explicit Cast for them.
+            if (isColumnedAsNumber(types.at(i)->getTypeId()) && !isNumber(types.at(i)->getTypeId()))
+                component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(types.at(i)->getName()));
+            value_ast->children.push_back(std::move(component_ast));
         }
-
-        ASTPtr pk_columns_as_tuple = makeASTFunction("tuple", pks_ast);
-        ASTPtr values_as_tuple = makeASTFunction("tuple", values_ast);
+        ASTPtr values_as_tuple = makeASTFunction("tuple", value_ast->children);
 
         return makeASTFunction("greater", pk_columns_as_tuple, values_as_tuple);
     };
@@ -338,7 +272,7 @@ Pipes buildPipesForReadingByPKRanges(
     ReadingInOrderStepGetter && reading_step_getter)
 {
     if (max_layers <= 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1.");
 
     auto && [borders, result_layers] = split(std::move(parts), max_layers);
     auto filters = buildFilters(primary_key, borders);
@@ -357,7 +291,7 @@ Pipes buildPipesForReadingByPKRanges(
         reorderColumns(*actions, pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
-            "filter values in ({}, {}]", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
+            "filter values in [{}, {})", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
         pipes[i].addSimpleTransform(
             [&](const Block & header)
             {

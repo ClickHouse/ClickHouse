@@ -3,7 +3,6 @@
 #include <Core/Field.h>
 
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/ConstantValue.h>
 
 namespace DB
 {

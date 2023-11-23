@@ -28,14 +28,8 @@ void NormalizeSelectWithUnionQueryMatcher::getSelectsFromUnionListNode(ASTPtr as
 
 void NormalizeSelectWithUnionQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>(); select_union && !select_union->is_normalized)
-    {
-        /// The rewrite of ASTSelectWithUnionQuery may strip the format info, so
-        /// we need to keep and restore it.
-        auto format = select_union->format;
+    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>())
         visit(*select_union, data);
-        select_union->format = format;
-    }
 }
 
 void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Data & data)

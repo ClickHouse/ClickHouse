@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -24,16 +25,18 @@ struct RepeatImpl
     /// Safety threshold against DoS.
     static inline void checkRepeatTime(UInt64 repeat_time)
     {
-        static constexpr UInt64 max_repeat_times = 1'000'000;
+        static constexpr UInt64 max_repeat_times = 1000000;
         if (repeat_time > max_repeat_times)
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}", repeat_time, max_repeat_times);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}",
+                std::to_string(repeat_time), std::to_string(max_repeat_times));
     }
 
     static inline void checkStringSize(UInt64 size)
     {
         static constexpr UInt64 max_string_size = 1 << 30;
         if (size > max_string_size)
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size ({}) in function repeat, maximum is: {}", size, max_string_size);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size ({}) in function repeat, maximum is: {}",
+                size, max_string_size);
     }
 
     template <typename T>
@@ -183,37 +186,36 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"s", &isString<IDataType>, nullptr, "String"},
-            {"n", &isInteger<IDataType>, nullptr, "Integer"},
-        };
-
-        validateFunctionArgumentTypes(*this, arguments, args);
-
-        return std::make_shared<DataTypeString>();
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+        if (!isInteger(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
+        return arguments[0];
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const auto & col_str = arguments[0].column;
-        const auto & col_num = arguments[1].column;
+        const auto & strcolumn = arguments[0].column;
+        const auto & numcolumn = arguments[1].column;
         ColumnPtr res;
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(col_str.get()))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(strcolumn.get()))
         {
-            if (const ColumnConst * col_num_const = checkAndGetColumn<ColumnConst>(col_num.get()))
+            if (const ColumnConst * scale_column_num = checkAndGetColumn<ColumnConst>(numcolumn.get()))
             {
                 auto col_res = ColumnString::create();
                 castType(arguments[1].type.get(), [&](const auto & type)
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
-                    T times = col_num_const->getValue<T>();
-                    RepeatImpl::vectorStrConstRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), times);
+                    T repeat_time = scale_column_num->getValue<T>();
+                    RepeatImpl::vectorStrConstRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), repeat_time);
                     return true;
                 });
                 return col_res;
@@ -222,9 +224,9 @@ public:
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
-                    const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(col_num.get());
+                    const ColumnVector<T> * colnum = checkAndGetColumn<ColumnVector<T>>(numcolumn.get());
                     auto col_res = ColumnString::create();
-                    RepeatImpl::vectorStrVectorRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), column->getData());
+                    RepeatImpl::vectorStrVectorRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), colnum->getData());
                     res = std::move(col_res);
                     return true;
                 }))
@@ -232,7 +234,7 @@ public:
                 return res;
             }
         }
-        else if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(col_str.get()))
+        else if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(strcolumn.get()))
         {
             /// Note that const-const case is handled by useDefaultImplementationForConstants.
 
@@ -242,9 +244,9 @@ public:
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
-                    const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(col_num.get());
+                    const ColumnVector<T> * colnum = checkAndGetColumn<ColumnVector<T>>(numcolumn.get());
                     auto col_res = ColumnString::create();
-                    RepeatImpl::constStrVectorRepeat(copy_str, col_res->getChars(), col_res->getOffsets(), column->getData());
+                    RepeatImpl::constStrVectorRepeat(copy_str, col_res->getChars(), col_res->getOffsets(), colnum->getData());
                     res = std::move(col_res);
                     return true;
                 }))

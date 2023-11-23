@@ -110,7 +110,7 @@ public:
                     column->getName(), getName());
         }
 
-        FormatStringImpl::formatExecute(
+        FormatImpl::formatExecute(
             has_column_string,
             has_column_fixed_string,
             std::move(pattern),

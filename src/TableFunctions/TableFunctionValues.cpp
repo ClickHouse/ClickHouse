@@ -9,6 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <TableFunctions/TableFunctionValues.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
@@ -29,32 +30,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
-namespace
-{
-
-/* values(structure, values...) - creates a temporary storage filling columns with values
- * values is case-insensitive table function.
- */
-class TableFunctionValues : public ITableFunction
-{
-public:
-    static constexpr auto name = "values";
-    std::string getName() const override { return name; }
-    bool hasStaticStructure() const override { return true; }
-private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "Values"; }
-
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
-    static DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context);
-
-    ColumnsDescription structure;
-    bool has_structure_in_arguments;
-};
-
-void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
+static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
 {
     if (res_columns.size() == 1) /// Parsing arguments as Fields
     {
@@ -143,14 +119,14 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     structure = ColumnsDescription(names_and_types);
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*context*/) const
 {
     return structure;
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
 
     Block sample_block;
     for (const auto & name_type : columns.getOrdinary())
@@ -168,8 +144,6 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
     auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
-}
-
 }
 
 void registerTableFunctionValues(TableFunctionFactory & factory)

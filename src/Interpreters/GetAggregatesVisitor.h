@@ -23,9 +23,11 @@ public:
     {
         const char * assert_no_aggregates = nullptr;
         const char * assert_no_windows = nullptr;
+        // Explicit empty initializers are needed to make designated initializers
+        // work on GCC 10.
         std::unordered_set<String> uniq_names {};
-        ASTs aggregates{};
-        ASTs window_functions{};
+        std::vector<const ASTFunction *> aggregates {};
+        std::vector<const ASTFunction *> window_functions {};
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -59,7 +61,7 @@ public:
     }
 
 private:
-    static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
+    static void visit(const ASTFunction & node, const ASTPtr &, Data & data)
     {
         if (isAggregateFunction(node))
         {
@@ -72,7 +74,7 @@ private:
                 return;
 
             data.uniq_names.insert(column_name);
-            data.aggregates.push_back(ast);
+            data.aggregates.push_back(&node);
         }
         else if (node.is_window_function)
         {
@@ -85,7 +87,7 @@ private:
                 return;
 
             data.uniq_names.insert(column_name);
-            data.window_functions.push_back(ast);
+            data.window_functions.push_back(&node);
         }
     }
 

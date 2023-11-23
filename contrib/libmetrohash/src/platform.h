@@ -17,8 +17,7 @@
 #ifndef METROHASH_PLATFORM_H
 #define METROHASH_PLATFORM_H
 
-#include <bit>
-#include <cstdint>
+#include <stdint.h>
 #include <cstring>
 
 // rotate right idiom recognized by most compilers
@@ -34,11 +33,6 @@ inline static uint64_t read_u64(const void * const ptr)
     // so we use memcpy() which is the most portable. clang & gcc usually translates `memcpy()` into a single `load` instruction
     // when hardware supports it, so using memcpy() is efficient too.
     memcpy(&result, ptr, sizeof(result));
-
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    result = std::byteswap(result);
-#endif
-
     return result;
 }
 
@@ -46,11 +40,6 @@ inline static uint64_t read_u32(const void * const ptr)
 {
     uint32_t result;
     memcpy(&result, ptr, sizeof(result));
-
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    result = std::byteswap(result);
-#endif
-
     return result;
 }
 
@@ -58,11 +47,6 @@ inline static uint64_t read_u16(const void * const ptr)
 {
     uint16_t result;
     memcpy(&result, ptr, sizeof(result));
-
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    result = std::byteswap(result);
-#endif
-
     return result;
 }
 

@@ -18,14 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/parseGlobs.h>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
 #include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 static void setupLogging(const std::string & log_level)
 {
@@ -96,12 +89,8 @@ static std::vector<std::string> extractFromConfig(
     if (has_zk_includes && process_zk_includes)
     {
         DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
-
-        zkutil::validateZooKeeperConfig(*bootstrap_configuration);
-
         zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(
-            *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper", nullptr);
-
+                *bootstrap_configuration, "zookeeper", nullptr);
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }

@@ -55,11 +55,6 @@ void JSONObjectEachRowInputFormat::readRowStart(MutableColumns & columns)
     }
 }
 
-void JSONObjectEachRowInputFormat::skipRowStart()
-{
-    JSONUtils::readFieldName(*in);
-}
-
 bool JSONObjectEachRowInputFormat::checkEndOfData(bool is_first_row)
 {
     if (in->eof() || JSONUtils::checkAndSkipObjectEnd(*in))
@@ -109,7 +104,7 @@ void JSONObjectEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, D
 
 void JSONObjectEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
