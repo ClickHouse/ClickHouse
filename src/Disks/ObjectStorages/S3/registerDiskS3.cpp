@@ -221,7 +221,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
             }
         }
 
-// TODO myrrc check why Keeper standalone build requires this code to compile and link
+// TODO myrrc supporting VFS disks inside Keeper may be done in the future but it's not worth that now
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
         // TODO myrrc need to sync default value of setting in MergeTreeSettings and here
         constexpr auto key = "merge_tree.allow_object_storage_vfs";
