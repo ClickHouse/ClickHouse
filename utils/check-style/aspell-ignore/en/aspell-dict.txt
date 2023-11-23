@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2633 
+personal_ws-1.1 en 543
 AArch
 ACLs
 ALTERs
@@ -148,7 +148,6 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
-Clangd
 ClickBench
 ClickCat
 ClickHouse
@@ -194,9 +193,7 @@ DDLWorker
 DDLWorkerThreads
 DDLWorkerThreadsActive
 DECRYPT
-DELETEs
 DESC
-DIEs
 DOGEFI
 DataGrip
 DataLens
@@ -278,7 +275,6 @@ FilesystemMainPathTotalBytes
 FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
-FileLog
 FixedString
 Flink
 ForEach
@@ -341,8 +337,6 @@ Hudi
 HyperLogLog
 Hypot
 IANA
-IDE
-IDEs
 IMDS
 INFILE
 INSERTed
@@ -356,7 +350,6 @@ IOUringPendingEvents
 IOWriterThreads
 IOWriterThreadsActive
 IPTrie
-IProcessor
 IPv
 Identifiant
 Incrementing
@@ -366,7 +359,6 @@ Instana
 IntN
 Integrations
 IntelliJ
-IntelliSense
 InterserverConnection
 InterserverThreads
 IsPentagon
@@ -446,7 +438,6 @@ LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
-Levenshtein
 LibFuzzer
 LightHouse
 LineAsString
@@ -577,7 +568,6 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
-NumPy
 OFNS
 OLAP
 OLTP
@@ -591,7 +581,6 @@ OSGuestTimeNormalized
 OSIOWaitTime
 OSIOWaitTimeCPU
 OSIOWaitTimeNormalized
-OSIOWaitMicroseconds
 OSIdleTime
 OSIdleTimeCPU
 OSIdleTimeNormalized
@@ -969,6 +958,7 @@ WikiStat
 WindowView
 WithNames
 WithNamesAndTypes
+Woboq
 WordNet
 WriteBuffer
 WriteBuffers
@@ -979,8 +969,6 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
-YYYYMMDDToDate
-YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 Zabbix
@@ -999,14 +987,10 @@ acos
 acosh
 activecube
 activerecord
-addDate
 addDays
 addHours
-addMicroseconds
-addMilliseconds
 addMinutes
 addMonths
-addNanoseconds
 addQuarters
 addSeconds
 addWeeks
@@ -1060,7 +1044,6 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFlatten
-arrayFold
 arrayIntersect
 arrayJaccardIndex
 arrayJoin
@@ -1076,7 +1059,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -1125,7 +1107,6 @@ azureBlobStorageCluster
 backend
 backoff
 backticks
-backupview
 balancer
 basename
 bcrypt
@@ -1192,9 +1173,7 @@ bugfix
 buildId
 buildable
 builtins
-byteHammingDistance
 byteSize
-byteSwap
 bytebase
 bytesToCutForIPv
 cLoki
@@ -1241,9 +1220,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
-clangd
 cli
-clickcache
 clickcat
 clickhouse
 clickhousedb
@@ -1352,7 +1329,6 @@ ddl
 deallocation
 deallocations
 debian
-decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
@@ -1380,7 +1356,6 @@ denormalize
 denormalized
 denormalizing
 denormals
-dequeued
 deserialization
 deserialized
 deserializing
@@ -1412,14 +1387,12 @@ dmesg
 domainWithoutWWW
 dont
 dotProduct
-downsampling
 dplyr
 dragonbox
 dropoff
 dumpColumnStructure
 durations
 ecto
-editDistance
 embeddings
 emptyArray
 emptyArrayDate
@@ -1437,7 +1410,6 @@ encodeXMLComponent
 encodings
 encryptions
 endian
-endianness
 endsWith
 endsWithUTF
 enum
@@ -1468,14 +1440,11 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
-fibonacci
-fifo
 filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
 filesystems
-filelog
 finalizeAggregation
 fips
 firstLine
@@ -1490,8 +1459,6 @@ fmtlib
 formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
-formatQuery
-formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
 formatReadableSize
@@ -1502,7 +1469,6 @@ formated
 formatschema
 formatter
 freezed
-fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
@@ -1543,7 +1509,6 @@ github
 glibc
 globalIn
 globalNotIn
-globbing
 glushkovds
 golang
 googletest
@@ -1592,8 +1557,6 @@ gzipped
 hadoop
 halfMD
 halfday
-hardlink
-hardlinked
 hardlinks
 hasAll
 hasAny
@@ -1643,7 +1606,6 @@ incrementing
 indexHint
 indexOf
 infi
-inflight
 initcap
 initcapUTF
 initialQueryID
@@ -1652,7 +1614,6 @@ injective
 innogames
 inodes
 instantiation
-instantiations
 intDiv
 intDivOrZero
 intExp
@@ -1675,10 +1636,8 @@ isNotNull
 isNull
 isValidJSON
 isValidUTF
-isZeroOrNull
 iteratively
 jaccard
-jaccardIndex
 javaHash
 javaHashUTF
 jbod
@@ -1686,7 +1645,6 @@ jdbc
 jemalloc
 joinGet
 json
-jsonMergePatch
 jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
@@ -1729,7 +1687,6 @@ kurtsamp
 laion
 lang
 laravel
-largestTriangleThreeBuckets
 latencies
 ldap
 leftPad
@@ -1739,8 +1696,6 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
-levenshtein
-levenshteinDistance
 lexicographically
 lgamma
 libFuzzer
@@ -1780,7 +1735,6 @@ london
 lowcardinality
 lowerUTF
 lowercased
-lttb
 lzma
 macOS
 mailrugo
@@ -1861,7 +1815,6 @@ multiSearchAny
 multiSearchFirstIndex
 multiSearchFirstPosition
 multibyte
-multidirectory
 multiline
 multiplyDecimal
 multipolygon
@@ -1944,7 +1897,6 @@ outfile
 overcommit
 overcommitted
 overfitting
-overparallelization
 packetpool
 packetsize
 pageviews
@@ -2044,7 +1996,6 @@ privateKeyPassphraseHandler
 prlimit
 procfs
 profiler
-proleptic
 prometheus
 proto
 protobuf
@@ -2170,7 +2121,6 @@ requestor
 requireTLSv
 resharding
 reshards
-resolvers
 resultset
 retentions
 rethrow
@@ -2218,7 +2168,6 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID
@@ -2255,13 +2204,11 @@ sparkBar
 sparkbar
 sparsehash
 speedscope
-splitBy
 splitByChar
 splitByNonAlpha
 splitByRegexp
 splitByString
 splitByWhitespace
-splitby
 sql
 sqlalchemy
 sqlinsert
@@ -2289,8 +2236,6 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
-stringJaccardIndex
-stringJaccardIndexUTF
 stringToH
 stripelog
 strtod
@@ -2303,7 +2248,6 @@ structureToProtobufSchema
 studentTTest
 studentttest
 subBitmap
-subDate
 subarray
 subarrays
 subcolumn
@@ -2338,11 +2282,8 @@ substrings
 subtitiles
 subtractDays
 subtractHours
-subtractMicroseconds
-subtractMilliseconds
 subtractMinutes
 subtractMonths
-subtractNanoseconds
 subtractQuarters
 subtractSeconds
 subtractWeeks
@@ -2368,7 +2309,6 @@ symlinks
 syntaxes
 syscall
 syscalls
-sysctl
 syslog
 syslogd
 systemd
@@ -2412,7 +2352,6 @@ toDateTimeOrZero
 toDayOfMonth
 toDayOfWeek
 toDayOfYear
-toDaysSinceYearZero
 toDecimal
 toDecimalString
 toFixedString
@@ -2596,7 +2535,6 @@ visitParamExtractRaw
 visitParamExtractString
 visitParamExtractUInt
 visitParamHas
-vruntime
 wchc
 wchs
 webpage

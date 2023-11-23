@@ -28,8 +28,7 @@ MetadataTransactionPtr MetadataStorageFromStaticFilesWebServer::createTransactio
 
 const std::string & MetadataStorageFromStaticFilesWebServer::getPath() const
 {
-    static const String no_root;
-    return no_root;
+    return root_path;
 }
 
 bool MetadataStorageFromStaticFilesWebServer::exists(const std::string & path) const
@@ -87,7 +86,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
     remote_path = remote_path.substr(object_storage.url.size());
 
     std::shared_lock shared_lock(object_storage.metadata_mutex);
-    return {StoredObject(remote_path, path, object_storage.files.at(path).size)};
+    return {StoredObject(remote_path, object_storage.files.at(path).size, path)};
 }
 
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const
@@ -97,7 +96,7 @@ std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(
     for (const auto & [file_path, _] : object_storage.files)
     {
         if (file_path.starts_with(path))
-            result.push_back(file_path); /// It looks more like recursive listing, not sure it is right
+            result.push_back(file_path);
     }
     return result;
 }

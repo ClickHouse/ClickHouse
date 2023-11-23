@@ -14,29 +14,36 @@ Header: avgWeighted(x, y) Nullable(Float64)
         Header: x_0 Nullable(UInt8)
                 y_1 UInt8
           Union
-          Header: x Nullable(UInt8)
+          Header: NULL Nullable(UInt8)
+                  x Nullable(UInt8)
                   y UInt8
             Expression (Conversion before UNION)
-            Header: x Nullable(UInt8)
+            Header: NULL Nullable(UInt8)
+                    x Nullable(UInt8)
                     y UInt8
               Expression (Project names)
-              Header: x UInt8
+              Header: NULL Nullable(Nothing)
+                      x UInt8
                       y UInt8
                 Expression (Projection)
-                Header: 255_UInt8 UInt8
+                Header: NULL_Nullable(Nothing) Nullable(Nothing)
+                        255_UInt8 UInt8
                         1_UInt8 UInt8
                   Expression (Change column names to column identifiers)
                   Header: dummy_0 UInt8
                     ReadFromStorage (SystemOne)
                     Header: dummy UInt8
             Expression (Conversion before UNION)
-            Header: x Nullable(UInt8)
+            Header: NULL Nullable(UInt8)
+                    x Nullable(UInt8)
                     y UInt8
               Expression (Project names)
-              Header: x Nullable(Nothing)
+              Header: y UInt8
+                      x Nullable(Nothing)
                       y UInt8
                 Expression (Projection)
-                Header: NULL_Nullable(Nothing) Nullable(Nothing)
+                Header: 1_UInt8 UInt8
+                        NULL_Nullable(Nothing) Nullable(Nothing)
                         1_UInt8 UInt8
                   Expression (Change column names to column identifiers)
                   Header: dummy_0 UInt8

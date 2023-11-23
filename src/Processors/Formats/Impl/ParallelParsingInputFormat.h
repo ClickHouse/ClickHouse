@@ -18,7 +18,6 @@ namespace CurrentMetrics
 {
     extern const Metric ParallelParsingInputFormatThreads;
     extern const Metric ParallelParsingInputFormatThreadsActive;
-    extern const Metric ParallelParsingInputFormatThreadsScheduled;
 }
 
 namespace DB
@@ -102,7 +101,7 @@ public:
         , min_chunk_bytes(params.min_chunk_bytes)
         , max_block_size(params.max_block_size)
         , is_server(params.is_server)
-        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, CurrentMetrics::ParallelParsingInputFormatThreadsScheduled, params.max_threads)
+        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously

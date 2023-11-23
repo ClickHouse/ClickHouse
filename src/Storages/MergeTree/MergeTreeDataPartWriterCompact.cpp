@@ -1,11 +1,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/BlockNumberColumn.h>
 
 namespace DB
 {
-
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
 
 namespace ErrorCodes
 {
@@ -56,14 +53,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
     const auto & storage_columns = metadata_snapshot->getColumns();
     for (const auto & column : columns_list)
-    {
-        ASTPtr compression;
-        if (column.name == BlockNumberColumn::name)
-            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
-        else
-            compression = storage_columns.getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, compression);
-    }
+        addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
 }
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
@@ -423,7 +413,7 @@ size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
     return accumulated_columns.at(0)->size();
 }
 
-void MergeTreeDataPartWriterCompact::fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & /*checksums_to_remove*/)
+void MergeTreeDataPartWriterCompact::fillChecksums(IMergeTreeDataPart::Checksums & checksums)
 {
     // If we don't have anything to write, skip finalization.
     if (!columns_list.empty())
