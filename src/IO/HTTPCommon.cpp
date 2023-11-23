@@ -321,7 +321,7 @@ namespace
             /// To avoid such a deadlock we unlock `lock` before entering `pool_ptr->second->get`.
             lock.unlock();
 
-            auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
+            auto retry_timeout = timeouts.connection_timeout.totalMilliseconds();
             auto session = pool_ptr->second->get(retry_timeout);
 
             setTimeouts(*session, timeouts);

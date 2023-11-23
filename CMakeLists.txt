@@ -19,6 +19,7 @@ include (cmake/tools.cmake)
 include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
+include (cmake/utils.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -562,22 +563,6 @@ add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
 
-# Function get_all_targets collects all targets recursively
-function(get_all_targets var)
-    macro(get_all_targets_recursive targets dir)
-        get_property(subdirectories DIRECTORY ${dir} PROPERTY SUBDIRECTORIES)
-        foreach(subdir ${subdirectories})
-            get_all_targets_recursive(${targets} ${subdir})
-        endforeach()
-        get_property(current_targets DIRECTORY ${dir} PROPERTY BUILDSYSTEM_TARGETS)
-        list(APPEND ${targets} ${current_targets})
-    endmacro()
-
-    set(targets)
-    get_all_targets_recursive(targets ${CMAKE_CURRENT_SOURCE_DIR})
-    set(${var} ${targets} PARENT_SCOPE)
-endfunction()
-
 if (FUZZER)
     # Bundle fuzzers target
     add_custom_target(fuzzers)
@@ -592,14 +577,18 @@ if (FUZZER)
             # clickhouse fuzzer isn't working correctly
             # initial PR https://github.com/ClickHouse/ClickHouse/pull/27526
             #if (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse")
-            if (target MATCHES ".+_fuzzer")
+            if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")
                 target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
                 # Add to fuzzers bundle
                 add_dependencies(fuzzers ${target})
+                get_target_filename(${target} target_bin_name)
+                get_target_property(target_bin_dir ${target} BINARY_DIR)
+                add_custom_command(TARGET fuzzers POST_BUILD COMMAND mv "${target_bin_dir}/${target_bin_name}" "${CMAKE_CURRENT_BINARY_DIR}/programs/" VERBATIM)
             endif()
         endif()
     endforeach()
+    add_custom_command(TARGET fuzzers POST_BUILD COMMAND SRC=${CMAKE_SOURCE_DIR} BIN=${CMAKE_BINARY_DIR} OUT=${CMAKE_BINARY_DIR}/programs ${CMAKE_SOURCE_DIR}/tests/fuzz/build.sh VERBATIM)
 endif()
 
 include (cmake/sanitize_targets.cmake)

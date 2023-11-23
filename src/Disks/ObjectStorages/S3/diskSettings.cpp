@@ -52,6 +52,7 @@ std::unique_ptr<S3::Client> getClient(
         config.getString(config_prefix + ".region", ""),
         context->getRemoteHostFilter(),
         static_cast<int>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
+        static_cast<int>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
         context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
         /* for_disk_s3 = */ true,
         settings.request_settings.get_request_throttler,

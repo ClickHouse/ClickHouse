@@ -13,6 +13,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Common/filesystemHelpers.h>
+#include <Storages/BlockNumberColumn.h>
 
 #include <memory>
 #include <list>
@@ -387,6 +388,12 @@ private:
     };
 
     Stages::iterator stages_iterator = stages.begin();
+
+    /// Check for persisting block number column
+    static bool supportsBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
+    {
+        return global_ctx->data->getSettings()->allow_experimental_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    }
 
 };
 

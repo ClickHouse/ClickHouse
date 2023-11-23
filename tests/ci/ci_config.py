@@ -282,6 +282,7 @@ CI_CONFIG = CiConfig(
         "SQLancer (debug)": TestConfig("package_debug"),
         "Sqllogic test (release)": TestConfig("package_release"),
         "SQLTest": TestConfig("package_release"),
+        "libFuzzer tests": TestConfig("fuzzers"),
     },
 )
 CI_CONFIG.validate()

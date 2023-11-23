@@ -150,9 +150,20 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
-        auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
-        SerializationInfo::Settings settings{ratio_of_defaults, false};
-        serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+        try
+        {
+            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
+            SerializationInfo::Settings settings{ratio_of_defaults, false};
+            serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+        }
+        catch (const Poco::Exception & ex)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, ex.message());
+        }
+        catch (...)
+        {
+            throw;
+        }
     }
 
     auto get_serialization = [&serialization_infos](const auto & column)

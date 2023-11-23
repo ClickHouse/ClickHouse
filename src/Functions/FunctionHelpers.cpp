@@ -6,7 +6,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB

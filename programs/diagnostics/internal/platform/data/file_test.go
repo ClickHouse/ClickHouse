@@ -135,7 +135,7 @@ func TestConfigFileFrameCopy(t *testing.T) {
 		sizes := map[string]int64{
 			"users.xml":            int64(2017),
 			"default-password.xml": int64(188),
-			"config.xml":           int64(59506),
+			"config.xml":           int64(59377),
 			"server-include.xml":   int64(168),
 			"user-include.xml":     int64(559),
 		}

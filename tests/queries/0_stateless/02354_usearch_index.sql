@@ -274,3 +274,17 @@ SELECT *
 FROM tab
 WHERE L2Distance(vector, [0.0, 0.0, 10.0]) < 1.0
 LIMIT 3;
+
+DROP TABLE tab;
+
+SELECT '--- Bugs ---';
+
+-- Arrays with default values are rejected, issue #52258
+CREATE TABLE tab (`uuid` String, `vector` Array(Float32), `version` UInt32, INDEX idx vector TYPE usearch()) ENGINE = MergeTree() ORDER BY (uuid);
+INSERT INTO tab (uuid, version) VALUES ('1', 3); -- { serverError INCORRECT_DATA }
+DROP TABLE tab;
+
+-- Tuples with default value work
+CREATE TABLE tab (`uuid` String, `vector` Tuple(Float32, Float32), `version` UInt32, INDEX idx vector TYPE usearch()) ENGINE = MergeTree() ORDER BY (uuid);
+INSERT INTO tab (uuid, version) VALUES ('1', 3); -- works fine
+DROP TABLE tab;

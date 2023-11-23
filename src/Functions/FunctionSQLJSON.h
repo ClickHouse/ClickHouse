@@ -199,6 +199,7 @@ public:
 
             /// Parse JSON for every row
             Impl impl;
+            GeneratorJSONPath<JSONParser> generator_json_path(res);
             for (const auto i : collections::range(0, input_rows_count))
             {
                 std::string_view json{
@@ -208,7 +209,9 @@ public:
                 bool added_to_column = false;
                 if (document_ok)
                 {
-                    added_to_column = impl.insertResultToColumn(*to, document, res, context);
+                    /// Instead of creating a new generator for each row, we can reuse the same one.
+                    generator_json_path.reinitialize();
+                    added_to_column = impl.insertResultToColumn(*to, document, generator_json_path, context);
                 }
                 if (!added_to_column)
                 {
@@ -287,9 +290,8 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, const ContextPtr &)
     {
-        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
@@ -337,9 +339,8 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr & context)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, const ContextPtr & context)
     {
-        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
 
@@ -405,11 +406,10 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, const ContextPtr &)
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
 
-        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
         bool success = false;

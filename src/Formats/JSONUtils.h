@@ -124,6 +124,7 @@ namespace JSONUtils
 
     NamesAndTypesList readMetadata(ReadBuffer & in);
     NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header);
+    void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header);
 
     bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name);
     void skipTheRestOfObject(ReadBuffer & in);
