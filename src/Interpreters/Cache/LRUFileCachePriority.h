@@ -67,16 +67,21 @@ private:
     using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
     void iterate(IterateFunc && func, const CacheGuard::Lock &);
 
-    std::unique_ptr<LRUIterator> move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &);
-    std::unique_ptr<LRUIterator> add(Entry && entry, const CacheGuard::Lock &);
+    LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &);
+    LRUIterator add(Entry && entry, const CacheGuard::Lock &);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator
 {
     friend class LRUFileCachePriority;
     friend class SLRUFileCachePriority;
+
 public:
     LRUIterator(LRUFileCachePriority * cache_priority_, LRUQueue::iterator iterator_);
+
+    LRUIterator(const LRUIterator & other);
+    LRUIterator & operator =(const LRUIterator & other);
+    bool operator ==(const LRUIterator & other) const;
 
     const Entry & getEntry() const override { return *iterator; }
 

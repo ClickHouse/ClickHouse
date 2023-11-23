@@ -3,6 +3,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -63,7 +64,10 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `boundary_alignment` cannot exceed `max_file_segment_size`");
 
     if (has("cache_policy"))
+    {
         cache_policy = get_string("cache_policy");
+        boost::to_upper(cache_policy);
+    }
 
     if (has("slru_size_ratio"))
         slru_size_ratio = get_double("slru_size_ratio");

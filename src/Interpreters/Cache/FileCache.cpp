@@ -771,8 +771,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
         reserve_stat.stat_by_kind.clear();
     }
 
-    /// A file_segment_metadata acquires a LRUQueue iterator on first successful space reservation attempt,
-    /// e.g. queue_iteratir is std::nullopt here if no space has been reserved yet.
+    /// A file_segment_metadata acquires a priority iterator on first successful space reservation attempt,
     auto queue_iterator = file_segment.getQueueIterator();
     chassert(!queue_iterator || file_segment.getReservedSize() > 0);
 

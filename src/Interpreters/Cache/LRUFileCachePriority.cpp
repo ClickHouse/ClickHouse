@@ -32,10 +32,10 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add(
     size_t size,
     const CacheGuard::Lock & lock)
 {
-    return add(Entry(key_metadata->key, offset, size, key_metadata), lock);
+    return std::make_shared<LRUIterator>(add(Entry(key_metadata->key, offset, size, key_metadata), lock));
 }
 
-std::unique_ptr<LRUFileCachePriority::LRUIterator> LRUFileCachePriority::add(Entry && entry, const CacheGuard::Lock &)
+LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(Entry && entry, const CacheGuard::Lock &)
 {
     if (entry.size == 0)
     {
@@ -76,7 +76,7 @@ std::unique_ptr<LRUFileCachePriority::LRUIterator> LRUFileCachePriority::add(Ent
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
         entry.key, entry.offset, entry.size);
 
-    return std::make_unique<LRUIterator>(this, iterator);
+    return LRUIterator(this, iterator);
 }
 
 LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::remove(LRUQueue::iterator it, const CacheGuard::Lock &)
@@ -113,6 +113,26 @@ LRUFileCachePriority::LRUIterator::LRUIterator(
     : cache_priority(cache_priority_)
     , iterator(iterator_)
 {
+}
+
+LRUFileCachePriority::LRUIterator::LRUIterator(const LRUIterator & other)
+{
+    *this = other;
+}
+
+LRUFileCachePriority::LRUIterator & LRUFileCachePriority::LRUIterator::operator =(const LRUIterator & other)
+{
+    if (this == &other)
+        return *this;
+
+    cache_priority = other.cache_priority;
+    iterator = other.iterator;
+    return *this;
+}
+
+bool LRUFileCachePriority::LRUIterator::operator ==(const LRUIterator & other) const
+{
+    return cache_priority == other.cache_priority && iterator == other.iterator;
 }
 
 void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock & lock)
@@ -223,8 +243,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     return can_fit();
 }
 
-std::unique_ptr<LRUFileCachePriority::LRUIterator>
-LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &)
+LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &)
 {
     const auto & entry = it.getEntry();
     if (entry.size == 0)
@@ -254,7 +273,7 @@ LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const
 
     other.updateSize(-entry.size);
     other.updateElementsCount(-1);
-    return std::make_unique<LRUIterator>(this, it.iterator);
+    return LRUIterator(this, it.iterator);
 }
 
 FileSegments LRUFileCachePriority::dump(const CacheGuard::Lock & lock)

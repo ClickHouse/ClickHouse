@@ -109,7 +109,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             for (const auto & candidate : key_candidates.candidates)
             {
                 auto * candidate_it = assert_cast<SLRUIterator *>(candidate->getQueueIterator().get());
-                candidate_it->lru_iterator = probationary_queue.move(*candidate_it->lru_iterator, protected_queue, lk);
+                candidate_it->lru_iterator = probationary_queue.move(candidate_it->lru_iterator, protected_queue, lk);
                 candidate_it->is_protected = false;
             }
         }
@@ -124,7 +124,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     /// we only need to increase its priority within the protected queue.
     if (iterator.is_protected)
     {
-        iterator.lru_iterator->increasePriority(lock);
+        iterator.lru_iterator.increasePriority(lock);
         return;
     }
 
@@ -137,7 +137,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         /// Entry size is bigger than the whole protected queue limit.
         /// This is only possible if protected_queue_size_limit is less than max_file_segment_size,
         /// which is not possible in any realistic cache configuration.
-        iterator.lru_iterator->increasePriority(lock);
+        iterator.lru_iterator.increasePriority(lock);
         return;
     }
 
@@ -153,7 +153,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         /// We cannot make space for entry to be moved to protected queue
         /// (not enough releasable file segments).
         /// Then just increase its priority within probationary queue.
-        iterator.lru_iterator->increasePriority(lock);
+        iterator.lru_iterator.increasePriority(lock);
         return;
     }
 
@@ -176,7 +176,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
             /// "downgrade" candidates cannot be moved to probationary queue,
             /// so entry cannot be moved to protected queue as well.
             /// Then just increase its priority within probationary queue.
-            iterator.lru_iterator->increasePriority(lock);
+            iterator.lru_iterator.increasePriority(lock);
             return;
         }
         /// Make space for "downgrade" candidates.
@@ -186,14 +186,14 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     /// All checks passed, now we can move downgrade candidates to
     /// probationary queue and our entry to protected queue.
     Entry entry_copy = iterator.getEntry();
-    iterator.lru_iterator->remove(lock);
+    iterator.lru_iterator.remove(lock);
 
     for (const auto & [key, key_candidates] : downgrade_candidates)
     {
         for (const auto & candidate : key_candidates.candidates)
         {
             auto * candidate_it = assert_cast<SLRUIterator *>(candidate->getQueueIterator().get());
-            candidate_it->lru_iterator = probationary_queue.move(*candidate_it->lru_iterator, protected_queue, lock);
+            candidate_it->lru_iterator = probationary_queue.move(candidate_it->lru_iterator, protected_queue, lock);
             candidate_it->is_protected = false;
         }
     }
@@ -218,10 +218,10 @@ void SLRUFileCachePriority::shuffle(const CacheGuard::Lock & lock)
 
 SLRUFileCachePriority::SLRUIterator::SLRUIterator(
     SLRUFileCachePriority * cache_priority_,
-    std::unique_ptr<LRUFileCachePriority::LRUIterator> lru_iterator_,
+    LRUFileCachePriority::LRUIterator && lru_iterator_,
     bool is_protected_)
     : cache_priority(cache_priority_)
-    , lru_iterator(std::move(lru_iterator_))
+    , lru_iterator(lru_iterator_)
     , is_protected(is_protected_)
 {
 }
@@ -229,7 +229,7 @@ SLRUFileCachePriority::SLRUIterator::SLRUIterator(
 const SLRUFileCachePriority::Entry & SLRUFileCachePriority::SLRUIterator::getEntry() const
 {
     assertValid();
-    return lru_iterator->getEntry();
+    return lru_iterator.getEntry();
 }
 
 size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CacheGuard::Lock & lock)
@@ -242,26 +242,24 @@ size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CacheGuard::L
 void SLRUFileCachePriority::SLRUIterator::updateSize(int64_t size)
 {
     assertValid();
-    lru_iterator->updateSize(size);
+    lru_iterator.updateSize(size);
 }
 
 void SLRUFileCachePriority::SLRUIterator::invalidate()
 {
     assertValid();
-    lru_iterator->invalidate();
+    lru_iterator.invalidate();
 }
 
 void SLRUFileCachePriority::SLRUIterator::remove(const CacheGuard::Lock & lock)
 {
     assertValid();
-    lru_iterator->remove(lock);
-    lru_iterator = nullptr;
+    lru_iterator.remove(lock);
 }
 
 void SLRUFileCachePriority::SLRUIterator::assertValid() const
 {
-    if (!lru_iterator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to use invalid iterator");
+    lru_iterator.assertValid();
 }
 
 }

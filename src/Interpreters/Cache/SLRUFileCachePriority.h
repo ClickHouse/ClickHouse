@@ -52,7 +52,7 @@ class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator
 public:
     SLRUIterator(
         SLRUFileCachePriority * cache_priority_,
-        std::unique_ptr<LRUIterator> lru_iterator_,
+        LRUIterator && lru_iterator_,
         bool is_protected_);
 
     const Entry & getEntry() const override;
@@ -71,7 +71,7 @@ private:
     void assertValid() const;
 
     SLRUFileCachePriority * cache_priority;
-    mutable std::unique_ptr<LRUIterator> lru_iterator;
+    mutable LRUIterator lru_iterator;
     bool is_protected;
 };
 
