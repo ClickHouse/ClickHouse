@@ -135,10 +135,13 @@ namespace CurrentMetrics
     extern const Metric BackgroundCommonPoolSize;
     extern const Metric MarksLoaderThreads;
     extern const Metric MarksLoaderThreadsActive;
+    extern const Metric MarksLoaderThreadsScheduled;
     extern const Metric IOPrefetchThreads;
     extern const Metric IOPrefetchThreadsActive;
+    extern const Metric IOPrefetchThreadsScheduled;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
+    extern const Metric IOWriterThreadsScheduled;
 }
 
 
@@ -2564,7 +2567,7 @@ ThreadPool & Context::getLoadMarksThreadpool() const
         auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
         auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, pool_size, pool_size, queue_size);
+            CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, CurrentMetrics::MarksLoaderThreadsScheduled, pool_size, pool_size, queue_size);
     });
 
     return *shared->load_marks_threadpool;
@@ -2747,7 +2750,7 @@ ThreadPool & Context::getPrefetchThreadpool() const
         auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 100);
         auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
         shared->prefetch_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, pool_size, pool_size, queue_size);
+            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, CurrentMetrics::IOPrefetchThreadsScheduled, pool_size, pool_size, queue_size);
     });
 
     return *shared->prefetch_threadpool;
@@ -3757,15 +3760,24 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
     return shared->system_logs->backup_log;
 }
 
+std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+    return shared->system_logs->blob_storage_log;
+}
+
 std::vector<ISystemLog *> Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-
     return shared->system_logs->logs;
 }
+
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
@@ -4858,7 +4870,7 @@ ThreadPool & Context::getThreadPoolWriter() const
         auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
 
         shared->threadpool_writer = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, pool_size, pool_size, queue_size);
+            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
     });
 
     return *shared->threadpool_writer;
@@ -4894,6 +4906,7 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.filesystem_cache_segments_batch_size = settings.filesystem_cache_segments_batch_size;
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;

@@ -436,6 +436,22 @@ static ColumnPtr readByteMapFromArrowColumn(std::shared_ptr<arrow::ChunkedArray>
     return nullmap_column;
 }
 
+template <typename T>
+struct ArrowOffsetArray;
+
+template <>
+struct ArrowOffsetArray<arrow::ListArray>
+{
+    using type = arrow::Int32Array;
+};
+
+template <>
+struct ArrowOffsetArray<arrow::LargeListArray>
+{
+    using type = arrow::Int64Array;
+};
+
+template <typename ArrowListArray>
 static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column)
 {
     auto offsets_column = ColumnUInt64::create();
@@ -444,9 +460,9 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+        ArrowListArray & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
-        auto & arrow_offsets = dynamic_cast<arrow::Int32Array &>(*arrow_offsets_array);
+        auto & arrow_offsets = dynamic_cast<ArrowOffsetArray<ArrowListArray>::type &>(*arrow_offsets_array);
 
         /*
          * CH uses element size as "offsets", while arrow uses actual offsets as offsets.
@@ -602,13 +618,14 @@ static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> 
     }
 }
 
+template <typename ArrowListArray>
 static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column)
 {
     arrow::ArrayVector array_vector;
     array_vector.reserve(arrow_column->num_chunks());
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+        ArrowListArray & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
 
         /*
          * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
@@ -819,12 +836,12 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                     key_type_hint = map_type_hint->getKeyType();
                 }
             }
-            auto arrow_nested_column = getNestedArrowColumn(arrow_column);
+            auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_infos, allow_null_type, skip_columns_with_unsupported_types, skipped, date_time_overflow_behavior, nested_type_hint, true);
             if (skipped)
                 return {};
 
-            auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
+            auto offsets_column = readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
 
             const auto * tuple_column = assert_cast<const ColumnTuple *>(nested_column.column.get());
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(nested_column.type.get());
@@ -846,7 +863,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return {std::move(map_column), std::move(map_type), column_name};
         }
         case arrow::Type::LIST:
+        case arrow::Type::LARGE_LIST:
         {
+            bool is_large = arrow_column->type()->id() == arrow::Type::LARGE_LIST;
             DataTypePtr nested_type_hint;
             if (type_hint)
             {
@@ -854,11 +873,11 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                 if (array_type_hint)
                     nested_type_hint = array_type_hint->getNestedType();
             }
-            auto arrow_nested_column = getNestedArrowColumn(arrow_column);
+            auto arrow_nested_column = is_large ? getNestedArrowColumn<arrow::LargeListArray>(arrow_column) : getNestedArrowColumn<arrow::ListArray>(arrow_column);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_infos, allow_null_type, skip_columns_with_unsupported_types, skipped, date_time_overflow_behavior, nested_type_hint);
             if (skipped)
                 return {};
-            auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
+            auto offsets_column = is_large ? readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column) : readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
             auto array_type = std::make_shared<DataTypeArray>(nested_column.type);
             return {std::move(array_column), std::move(array_type), column_name};

@@ -3,7 +3,6 @@
 #include <Disks/DiskSelector.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <cstdint>
 #include <memory>
 

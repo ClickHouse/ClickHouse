@@ -53,6 +53,7 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
+    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -1087,7 +1088,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
     , query_info(query_info_)
-    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
+    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, CurrentMetrics::ObjectStorageAzureThreadsScheduled, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
@@ -1383,7 +1384,7 @@ std::unique_ptr<ReadBuffer> StorageAzureBlobSource::createAsyncAzureReadBuffer(
 {
     auto modified_settings{read_settings};
     modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
-    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, object_size}}, modified_settings);
+    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, /* local_path */ "", object_size}}, modified_settings);
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)
