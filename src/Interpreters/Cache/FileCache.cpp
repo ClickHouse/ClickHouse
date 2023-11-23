@@ -67,6 +67,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy: {}", settings.cache_policy);
 
+    LOG_DEBUG(log, "Using {} cache policy", settings.cache_policy);
+
     if (settings.cache_hits_threshold)
         stash = std::make_unique<HitsCountStash>(settings.cache_hits_threshold, settings.max_elements);
 

@@ -24,6 +24,18 @@ azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
+cache_policy="SLRU"
+#TODO: uncomment this before merge, for testing purposes it is SLRU only before merge.
+#if [$(($RANDOM%2)) -eq 1]; then
+#    cache_policy="LRU"
+#fi
+if [ "$cache_policy" = "SLRU" ]; then
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+fi
+
 function start()
 {
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

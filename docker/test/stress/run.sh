@@ -65,8 +65,22 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
+
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
+
+# Randomly choose between LRU and SLRU policies.
+cache_policy="SLRU"
+#TODO: uncomment this before merge, for testing purposes it is SLRU only before merge.
+#if [$(($RANDOM%2)) -eq 1]; then
+#    cache_policy="LRU"
+#fi
+if [ "$cache_policy" = "SLRU" ]; then
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+fi
 
 start
 
@@ -190,6 +204,13 @@ sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
    | sed "s|<level>trace</level>|<level>test</level>|" \
    > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
 mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
+
+if [ "$cache_policy" = "SLRU" ]; then
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+fi
 
 start
 
