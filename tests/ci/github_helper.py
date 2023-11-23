@@ -111,21 +111,13 @@ class GitHub(github.Github):
             # See https://github.com/PyGithub/PyGithub/issues/2202,
             # obj._rawData doesn't spend additional API requests
             # pylint: disable=protected-access
-            repo_url = issue._rawData["repository_url"]
+            repo_url = issue._rawData["repository_url"]  # type: ignore
             if repo_url not in repos:
                 repos[repo_url] = issue.repository
             prs.append(
                 self.get_pull_cached(repos[repo_url], issue.number, issue.updated_at)
             )
         return prs
-
-    def get_release_pulls(self, repo_name: str) -> PullRequests:
-        return self.get_pulls_from_search(
-            query=f"type:pr repo:{repo_name} is:open",
-            sort="created",
-            order="asc",
-            label="release",
-        )
 
     def sleep_on_rate_limit(self) -> None:
         for limit, data in self.get_rate_limit().raw_data.items():

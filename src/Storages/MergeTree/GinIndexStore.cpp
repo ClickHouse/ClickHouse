@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
-#include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <vector>
 #include <unordered_map>
+#include <iostream>
 #include <numeric>
 #include <algorithm>
 
@@ -72,7 +72,7 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
     }
 }
 
-UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
+UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
 {
     UInt64 written_bytes = 0;
     buffer.write(rowid_lst_length);
@@ -80,24 +80,15 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
 
     if (useRoaring())
     {
-        rowid_bitmap.runOptimize();
         auto size = rowid_bitmap.getSizeInBytes();
-        auto buf = std::make_unique<char[]>(size);
-        rowid_bitmap.write(buf.get());
-
-        auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
-        Memory<> memory;
-        memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(size)));
-        auto compressed_size = codec->compress(buf.get(), static_cast<UInt32>(size), memory.data());
 
         writeVarUInt(size, buffer);
         written_bytes += getLengthOfVarUInt(size);
 
-        writeVarUInt(compressed_size, buffer);
-        written_bytes += getLengthOfVarUInt(compressed_size);
-
-        buffer.write(memory.data(), compressed_size);
-        written_bytes += compressed_size;
+        auto buf = std::make_unique<char[]>(size);
+        rowid_bitmap.write(buf.get());
+        buffer.write(buf.get(), size);
+        written_bytes += size;
     }
     else
     {
@@ -119,18 +110,11 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     if (postings_list_size == USES_BIT_MAP)
     {
         size_t size = 0;
-        size_t compressed_size = 0;
         readVarUInt(size, buffer);
-        readVarUInt(compressed_size, buffer);
-        auto buf = std::make_unique<char[]>(compressed_size);
-        buffer.readStrict(reinterpret_cast<char *>(buf.get()), compressed_size);
+        auto buf = std::make_unique<char[]>(size);
+        buffer.readStrict(reinterpret_cast<char *>(buf.get()), size);
 
-        Memory<> memory;
-        memory.resize(size);
-        auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
-        codec->decompress(buf.get(), static_cast<UInt32>(compressed_size), memory.data());
-
-        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(memory.data()));
+        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.get()));
 
         return postings_list;
     }
@@ -182,7 +166,6 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
         /// Write segment ID 1
         writeVarUInt(1, *ostr);
         ostr->sync();
-        ostr->finalize();
     }
 
     /// Read id in file
@@ -205,7 +188,6 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 
         writeVarUInt(result + n, *ostr);
         ostr->sync();
-        ostr->finalize();
     }
     return result;
 }
@@ -259,15 +241,6 @@ void GinIndexStore::finalize()
 {
     if (!current_postings.empty())
         writeSegment();
-
-    if (metadata_file_stream)
-        metadata_file_stream->finalize();
-
-    if (dict_file_stream)
-        dict_file_stream->finalize();
-
-    if (postings_file_stream)
-        postings_file_stream->finalize();
 }
 
 void GinIndexStore::initFileStreams()

@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     IAsynchronousReader & reader_,
-    Priority priority_,
+    Int32 priority_,
     const std::string & file_name_,
     size_t buf_size,
     int flags,
@@ -60,7 +60,7 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
 
 AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     IAsynchronousReader & reader_,
-    Priority priority_,
+    Int32 priority_,
     int & fd_,
     const std::string & original_file_name,
     size_t buf_size,

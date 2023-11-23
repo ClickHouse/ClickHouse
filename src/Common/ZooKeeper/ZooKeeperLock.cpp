@@ -1,6 +1,4 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
-#include <Common/logger_useful.h>
-#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 namespace DB

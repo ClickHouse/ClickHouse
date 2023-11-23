@@ -1,5 +1,5 @@
 {% for option_value in ['true', 'false'] -%}
-{% for date_fun in ['toStartOfYear', 'toStartOfISOYear', 'toStartOfQuarter', 'toStartOfMonth', 'toStartOfWeek', 'toMonday', 'toLastDayOfWeek', 'toLastDayOfMonth'] -%}
+{% for date_fun in ['toStartOfYear', 'toStartOfISOYear', 'toStartOfQuarter', 'toStartOfMonth', 'toStartOfWeek', 'toMonday', 'toLastDayOfMonth'] -%}
 SELECT '{{ date_fun }};toDate32;{{ option_value }}', {{ date_fun }}(toDate32('1920-02-02')) SETTINGS enable_extended_results_for_datetime_functions = {{ option_value }};
 SELECT 'type;{{ date_fun }};toDate32;{{ option_value }}', toTypeName({{ date_fun }}(toDate32('1920-02-02'))) SETTINGS enable_extended_results_for_datetime_functions = {{ option_value }};
 SELECT '{{ date_fun }};toDateTime64;{{ option_value }}', {{ date_fun }}(toDateTime64('1920-02-02 10:20:30', 3)) SETTINGS enable_extended_results_for_datetime_functions = {{ option_value }};

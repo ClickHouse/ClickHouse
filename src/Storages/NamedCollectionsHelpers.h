@@ -22,7 +22,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts, ContextPtr context, bool throw_unknown_collection = true, std::vector<std::pair<std::string, ASTPtr>> * complex_args = nullptr);
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
 
@@ -35,10 +35,6 @@ struct MongoDBEqualKeysSet
 {
     static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> equal_keys{
         std::pair{"username", "user"}, std::pair{"database", "db"}, std::pair{"hostname", "host"}, std::pair{"table", "collection"}};
-};
-struct RedisEqualKeysSet
-{
-    static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> equal_keys{std::pair{"hostname", "host"}};
 };
 
 template <typename EqualKeys> struct NamedCollectionValidateKey

@@ -1,5 +1,10 @@
+-- Tags: no-parallel
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.restricted_dict (
+DROP DATABASE IF EXISTS dictdb_01045;
+
+CREATE DATABASE dictdb_01045;
+
+CREATE DICTIONARY dictdb_01045.restricted_dict (
   key UInt64,
   value String
 )
@@ -9,9 +14,10 @@ LIFETIME(MIN 0 MAX 1)
 LAYOUT(CACHE(SIZE_IN_CELLS 10));
 
 -- because of lazy load we can check only in dictGet query
-select dictGetString({CLICKHOUSE_DATABASE:String} || '.restricted_dict', 'value', toUInt64(1));  -- {serverError 482}
+select dictGetString('dictdb_01045.restricted_dict', 'value', toUInt64(1));  -- {serverError 482}
 
 select 'Ok.';
 
-DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.restricted_dict;
+DROP DICTIONARY IF EXISTS dictdb_01045.restricted_dict;
 
+DROP DATABASE IF EXISTS dictdb_01045;

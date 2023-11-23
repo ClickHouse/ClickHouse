@@ -10,13 +10,11 @@
 namespace DB
 {
 
-void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
 {
     const char * prefix = "Literal_";
     hash_state.update(prefix, strlen(prefix));
     applyVisitor(FieldVisitorHash(hash_state), value);
-    if (!ignore_aliases)
-        ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTLiteral::clone() const
@@ -88,23 +86,14 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else
     {
-        /// Shortcut for huge AST. The `FieldVisitorToString` becomes expensive
-        /// for tons of literals as it creates temporary String.
-        if (value.getType() == Field::Types::String)
-        {
-            writeQuoted(value.get<String>(), ostr);
-        }
-        else
-        {
-            String column_name = applyVisitor(FieldVisitorToString(), value);
-            writeString(column_name, ostr);
-        }
+        String column_name = applyVisitor(FieldVisitorToString(), value);
+        writeString(column_name, ostr);
     }
 }
 
 void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
 {
-    /// 100 - just arbitrary value.
+     /// 100 - just arbitrary value.
     constexpr auto min_elements_for_hashing = 100;
 
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
@@ -129,31 +118,9 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     }
 }
 
-/// Use different rules for escaping backslashes and quotes
-class FieldVisitorToStringPostgreSQL : public StaticVisitor<String>
-{
-public:
-    template<typename T>
-    String operator() (const T & x) const { return visitor(x); }
-
-private:
-    FieldVisitorToString visitor;
-};
-
-template<>
-String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
-{
-    WriteBufferFromOwnString wb;
-    writeQuotedStringPostgreSQL(x, wb);
-    return wb.str();
-}
-
 void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        settings.ostr << applyVisitor(FieldVisitorToString(), value);
-    else
-        settings.ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+    settings.ostr << applyVisitor(FieldVisitorToString(), value);
 }
 
 }
