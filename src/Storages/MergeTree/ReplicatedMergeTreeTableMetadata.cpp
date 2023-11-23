@@ -119,22 +119,13 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 {
-    out << "metadata format version: " << version << "\n"
+    out << "metadata format version: 1\n"
         << "date column: " << date_column << "\n"
         << "sampling expression: " << sampling_expression << "\n"
         << "index granularity: " << index_granularity << "\n"
         << "mode: " << merging_params_mode << "\n"
-        << "sign column: " << sign_column << "\n";
-
-    if (version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
-    {
-        out << "version column: " << version_column << "\n";
-        out << "is delete column: " << is_deleted_column << "\n";
-        out << "columns to sum: " << columns_to_sum << "\n";
-        out << "graphite hash: " << graphite_params_hash << "\n";
-    }
-
-    out << "primary key: " << primary_key << "\n";
+        << "sign column: " << sign_column << "\n"
+        << "primary key: " << primary_key << "\n";
 
     if (data_format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -159,6 +150,19 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!constraints.empty())
         out << "constraints: " << constraints << "\n";
+
+    if (merge_params_version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
+    {
+        out << "merge parameters format version: " << merge_params_version << "\n";
+        if (!version_column.empty())
+            out << "version column: " << version_column << "\n";
+        if (!is_deleted_column.empty())
+            out << "is delete column: " << is_deleted_column << "\n";
+        if (!columns_to_sum.empty())
+            out << "columns to sum: " << columns_to_sum << "\n";
+        if (!graphite_params_hash.empty())
+            out << "graphite hash: " << graphite_params_hash << "\n";
+    }
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -170,19 +174,12 @@ String ReplicatedMergeTreeTableMetadata::toString() const
 
 void ReplicatedMergeTreeTableMetadata::read(ReadBufferFromString & in)
 {
-    in >> "metadata format version: " >> version >> "\n";
+    in >> "metadata format version: 1\n";
     in >> "date column: " >> date_column >> "\n";
     in >> "sampling expression: " >> sampling_expression >> "\n";
     in >> "index granularity: " >> index_granularity >> "\n";
     in >> "mode: " >> merging_params_mode >> "\n";
     in >> "sign column: " >> sign_column >> "\n";
-    if (version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
-    {
-        in >> "version column: " >> version_column >> "\n";
-        in >> "is delete column: " >> is_deleted_column >> "\n";
-        in >> "columns to sum: " >> columns_to_sum >> "\n";
-        in >> "graphite hash: " >> graphite_params_hash >> "\n";
-    }
     in >> "primary key: " >> primary_key >> "\n";
 
     if (in.eof())
@@ -215,6 +212,26 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBufferFromString & in)
 
     if (peekString("constraints: ", in))
         in >> constraints >> "\n";
+
+    if (peekString("merge parameters format version: ", in))
+        in >> merge_params_version >> "\n";
+    else
+        merge_params_version = REPLICATED_MERGE_TREE_METADATA_LEGACY_VERSION;
+
+    if (merge_params_version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
+    {
+        if (peekString("version column: ", in))
+            in >> version_column >> "\n";
+
+        if (peekString("is delete column: ", in))
+            in >> is_deleted_column >> "\n";
+
+        if (peekString("columns to sum: ", in))
+            in >> columns_to_sum >> "\n";
+
+        if (peekString("graphite hash: ", in))
+            in >> graphite_params_hash >> "\n";
+    }
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -255,7 +272,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
         throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in sign column. "
             "Stored in ZooKeeper: {}, local: {}", from_zk.sign_column, sign_column);
 
-    if (version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS && from_zk.version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
+    if (merge_params_version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS && from_zk.merge_params_version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
     {
         if (version_column != from_zk.version_column)
             throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in version column. "

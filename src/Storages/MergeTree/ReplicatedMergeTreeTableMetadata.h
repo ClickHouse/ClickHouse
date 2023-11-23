@@ -18,14 +18,15 @@ class ReadBuffer;
  */
 struct ReplicatedMergeTreeTableMetadata
 {
-    static constexpr int REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS = 2; /// first version = 1
+    static constexpr int REPLICATED_MERGE_TREE_METADATA_LEGACY_VERSION = 1;
+    static constexpr int REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS = 2;
 
-    int version = REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS;
     String date_column;
     String sampling_expression;
     UInt64 index_granularity;
     /// Merging related params
     int merging_params_mode;
+    int merge_params_version = REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS;
     String sign_column;
     String version_column;
     String is_deleted_column;
