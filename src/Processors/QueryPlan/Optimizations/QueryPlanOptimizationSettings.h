@@ -11,7 +11,8 @@ struct Settings;
 
 struct QueryPlanOptimizationSettings
 {
-    /// If disabled, no optimization applied.
+    /// Allows to globally disable all plan-level optimizations.
+    /// Note: Even if '= true', individual optimizations may still be disabled via below settings.
     bool optimize_plan = true;
 
     /// If not zero, throw if too many optimizations were applied to query plan.
