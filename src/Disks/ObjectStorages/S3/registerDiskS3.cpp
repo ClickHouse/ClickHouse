@@ -169,7 +169,6 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         String type = config.getString(config_prefix + ".type");
         chassert(type == "s3" || type == "s3_plain");
 
-        auto [object_key_compatibility_prefix, object_key_generator] = getPrefixAndKeyGenerator(type, uri, config, config_prefix);
         // TODO myrrc need to sync default value of setting in MergeTreeSettings and here
         constexpr auto key = "merge_tree.allow_object_storage_vfs";
         const bool s3_enable_disk_vfs = config.getBool(key, false);
@@ -222,6 +221,13 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
             }
         }
 
+// TODO myrrc check why Keeper standalone build requires this code to compile and link
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+        // TODO myrrc need to sync default value of setting in MergeTreeSettings and here
+        constexpr auto key = "merge_tree.allow_object_storage_vfs";
+        const bool s3_enable_disk_vfs = config.getBool(key, false);
+        if (s3_enable_disk_vfs) chassert(type == "s3");
+
         /// TODO myrrc this disables zero-copy replication for all disks, not sure whether
         /// we can preserve any compatibility. One option is to specify vfs option per disk,
         /// so zero-copy could be enabled globally but for selected disks if would be off due to
@@ -237,17 +243,12 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
                 std::move(s3_storage),
                 config,
                 config_prefix,
-// TODO myrrc check whether standalone build really uses the disk
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-                context->getZooKeeper()
-#else
-                nullptr
-#endif
-                );
+                context->getZooKeeper());
 
             disk->startup(context, skip_access_check);
             return disk;
         }
+#endif
 
         DiskObjectStoragePtr s3disk = std::make_shared<DiskObjectStorage>(
             name,

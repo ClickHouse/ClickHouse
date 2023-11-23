@@ -14,15 +14,16 @@ def args_to_dict(**kwargs):
     return kwargs
 
 
-@pytest.fixture(scope="module")
-def cluster():
+@pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
+def cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
 
         kwargs = args_to_dict(
             main_configs=[
                 "configs/config.d/storage_conf.xml",
-            ],
+            ]
+            + request.param,
             user_configs=[
                 "configs/config.d/users.xml",
             ],

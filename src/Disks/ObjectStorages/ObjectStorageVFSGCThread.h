@@ -16,6 +16,8 @@ class DiskObjectStorageVFS;
 
 // Despite the name, this thread handles not only garbage collection but also snapshot making and
 // uploading it to corresponding object storage
+// TODO myrrc we should think about dropping the snapshot for log (at some point we want to remove
+// even the latest snapshot if we e.g. clean the bucket)
 class ObjectStorageVFSGCThread
 {
 public:

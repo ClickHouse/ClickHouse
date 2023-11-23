@@ -54,8 +54,8 @@ def generate_cluster_def(port):
     return path
 
 
-@pytest.fixture(scope="module")
-def cluster():
+@pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
+def cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
         port = cluster.azurite_port
@@ -65,7 +65,8 @@ def cluster():
             main_configs=[
                 "configs/config.d/config.xml",
                 path,
-            ],
+            ]
+            + request.param,
             macros={"replica": "1"},
             with_azurite=True,
             with_zookeeper=True,
@@ -75,7 +76,8 @@ def cluster():
             main_configs=[
                 "configs/config.d/config.xml",
                 path,
-            ],
+            ]
+            + request.param,
             macros={"replica": "2"},
             with_azurite=True,
             with_zookeeper=True,

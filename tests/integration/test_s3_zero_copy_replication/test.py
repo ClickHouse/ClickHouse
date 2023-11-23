@@ -8,22 +8,21 @@ from helpers.cluster import ClickHouseCluster
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
-cluster = ClickHouseCluster(__file__)
 
-
-@pytest.fixture(scope="module")
-def started_cluster():
+@pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
+def started_cluster(request):
+    cluster = ClickHouseCluster(__file__)
     try:
         cluster.add_instance(
             "node1",
-            main_configs=["configs/config.d/s3.xml"],
+            main_configs=["configs/config.d/s3.xml"] + request.param,
             macros={"replica": "1"},
             with_minio=True,
             with_zookeeper=True,
         )
         cluster.add_instance(
             "node2",
-            main_configs=["configs/config.d/s3.xml"],
+            main_configs=["configs/config.d/s3.xml"] + request.param,
             macros={"replica": "2"},
             with_minio=True,
             with_zookeeper=True,
@@ -32,7 +31,8 @@ def started_cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        yield cluster
+        testing_vfs = len(request.param) != 0
+        yield cluster, testing_vfs
     finally:
         cluster.shutdown()
 
@@ -98,6 +98,7 @@ def wait_for_active_parts(node, num_expected_parts, table_name, timeout=30):
 @pytest.mark.order(0)
 @pytest.mark.parametrize("policy", ["s3"])
 def test_s3_zero_copy_replication(started_cluster, policy):
+    cluster, testing_vfs = started_cluster
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -143,11 +144,11 @@ def test_s3_zero_copy_replication(started_cluster, policy):
 
     node1.query("OPTIMIZE TABLE s3_test FINAL")
 
-    # Based on version 21.x - after merge, two old parts and one merged
-    wait_for_large_objects_count(cluster, 3)
+    # Based on version 21.x - after merge, two old parts and one merged, for vfs, also a snapshot
+    wait_for_large_objects_count(cluster, 3 + testing_vfs)
 
-    # Based on version 21.x - after cleanup - only one merged part
-    wait_for_large_objects_count(cluster, 1, timeout=60)
+    # Based on version 21.x - after cleanup - only one merged part, for vfs, also a snapshot
+    wait_for_large_objects_count(cluster, 1 + testing_vfs, timeout=60)
 
     node1.query("DROP TABLE IF EXISTS s3_test SYNC")
     node2.query("DROP TABLE IF EXISTS s3_test SYNC")
@@ -182,6 +183,7 @@ def insert_large_data(node, table):
 def test_s3_zero_copy_with_ttl_move(
     started_cluster, storage_policy, large_data, iterations
 ):
+    cluster, _ = started_cluster
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -247,6 +249,7 @@ def test_s3_zero_copy_with_ttl_move(
     ],
 )
 def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
+    cluster, _ = started_cluster
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -404,10 +407,12 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
 
 
 def test_s3_zero_copy_unfreeze_alter(started_cluster):
+    cluster, _ = started_cluster
     s3_zero_copy_unfreeze_base(cluster, "ALTER TABLE unfreeze_test UNFREEZE WITH NAME")
 
 
 def test_s3_zero_copy_unfreeze_system(started_cluster):
+    cluster, _ = started_cluster
     s3_zero_copy_unfreeze_base(cluster, "SYSTEM UNFREEZE WITH NAME")
 
 
@@ -498,15 +503,16 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
 
 def test_s3_zero_copy_drop_detached_alter(started_cluster):
     s3_zero_copy_drop_detached(
-        cluster, "ALTER TABLE drop_detached_test UNFREEZE WITH NAME"
+        started_cluster[0], "ALTER TABLE drop_detached_test UNFREEZE WITH NAME"
     )
 
 
 def test_s3_zero_copy_drop_detached_system(started_cluster):
-    s3_zero_copy_drop_detached(cluster, "SYSTEM UNFREEZE WITH NAME")
+    s3_zero_copy_drop_detached(started_cluster[0], "SYSTEM UNFREEZE WITH NAME")
 
 
 def test_s3_zero_copy_concurrent_merge(started_cluster):
+    cluster, _ = started_cluster
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -554,6 +560,7 @@ def test_s3_zero_copy_concurrent_merge(started_cluster):
 
 
 def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
+    cluster, _ = started_cluster
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 

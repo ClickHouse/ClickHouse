@@ -4,29 +4,40 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1", main_configs=["configs/s3.xml"], with_minio=True, with_zookeeper=True
-)
-node2 = cluster.add_instance(
-    "node2", main_configs=["configs/s3.xml"], with_minio=True, with_zookeeper=True
-)
-node3 = cluster.add_instance(
-    "node3", main_configs=["configs/s3.xml"], with_minio=True, with_zookeeper=True
-)
 
-
-@pytest.fixture(scope="module")
-def started_cluster():
+@pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
+def started_cluster(request):
+    cluster = ClickHouseCluster(__file__)
     try:
+        node1 = cluster.add_instance(
+            "node1",
+            main_configs=["configs/s3.xml"] + request.param,
+            with_minio=True,
+            with_zookeeper=True,
+        )
+        node2 = cluster.add_instance(
+            "node2",
+            main_configs=["configs/s3.xml"] + request.param,
+            with_minio=True,
+            with_zookeeper=True,
+        )
+        node3 = cluster.add_instance(
+            "node3",
+            main_configs=["configs/s3.xml"] + request.param,
+            with_minio=True,
+            with_zookeeper=True,
+        )
+
         cluster.start()
 
-        yield cluster
+        testing_vfs = len(request.param) != 0
+        yield cluster, node1, node2, node3, testing_vfs
     finally:
         cluster.shutdown()
 
 
 def test_ttl_move_and_s3(started_cluster):
+    cluster, node1, node2, node3, testing_vfs = started_cluster
     for i, node in enumerate([node1, node2, node3]):
         node.query(
             """
@@ -68,6 +79,9 @@ def test_ttl_move_and_s3(started_cluster):
     assert node1.query("SELECT COUNT() FROM s3_test_with_ttl") == "30\n"
     assert node2.query("SELECT COUNT() FROM s3_test_with_ttl") == "30\n"
 
+    # the extra object is for snapshot
+    desired_object_count = 300 + testing_vfs
+
     for attempt in reversed(range(5)):
         time.sleep(5)
 
@@ -86,9 +100,9 @@ def test_ttl_move_and_s3(started_cluster):
 
         print(f"Total objects: {counter}")
 
-        if counter == 330:
+        if counter == desired_object_count:
             break
 
         print(f"Attempts remaining: {attempt}")
 
-    assert counter == 330
+    assert counter == desired_object_count
