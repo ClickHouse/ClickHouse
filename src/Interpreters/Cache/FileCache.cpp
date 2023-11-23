@@ -22,13 +22,8 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheLoadMetadataMicroseconds;
-    extern const Event FilesystemCacheEvictedBytes;
-    extern const Event FilesystemCacheEvictedFileSegments;
-    extern const Event FilesystemCacheEvictionSkippedFileSegments;
-    extern const Event FilesystemCacheEvictionTries;
     extern const Event FilesystemCacheLockCacheMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
-    extern const Event FilesystemCacheEvictMicroseconds;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
 }
@@ -53,6 +48,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)

@@ -22,11 +22,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
 struct FileCacheReserveStat

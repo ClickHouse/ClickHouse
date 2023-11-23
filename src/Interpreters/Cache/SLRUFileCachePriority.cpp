@@ -5,13 +5,7 @@
 #include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
-#include <pcg-random/pcg_random.hpp>
 
-namespace CurrentMetrics
-{
-    extern const Metric FilesystemCacheSize;
-    extern const Metric FilesystemCacheElements;
-}
 
 namespace DB
 {
@@ -179,7 +173,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     {
         if (!probationary_queue.collectCandidatesForEviction(size_to_free, stat, eviction_candidates, {}, noop, lock))
         {
-            /// "downgrade" canidates cannot be moved to probationary queue,
+            /// "downgrade" candidates cannot be moved to probationary queue,
             /// so entry cannot be moved to protected queue as well.
             /// Then just increase its priority within probationary queue.
             iterator.lru_iterator->increasePriority(lock);

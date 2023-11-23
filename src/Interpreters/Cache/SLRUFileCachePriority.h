@@ -1,16 +1,8 @@
 #pragma once
 
-#include <list>
-#include <Interpreters/Cache/IFileCachePriority.h>
-#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/Cache/Guards.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric FilesystemCacheSizeLimit;
-}
 
 namespace DB
 {
