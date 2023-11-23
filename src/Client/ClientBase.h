@@ -321,8 +321,6 @@ protected:
     bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
-
-    bool logging_initialized = false;
 };
 
 }

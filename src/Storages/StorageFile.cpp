@@ -106,60 +106,6 @@ namespace ErrorCodes
 
 namespace
 {
-/// Forward-declare to use in expandSelector()
-void listFilesWithRegexpMatchingImpl(
-    const std::string & path_for_ls,
-    const std::string & for_match,
-    size_t & total_bytes_to_read,
-    std::vector<std::string> & result,
-    bool recursive = false);
-
-/// Process {a,b,c...} globs separately: don't match it against regex, but generate a,b,c strings instead.
-void expandSelector(const std::string & path_for_ls,
-                    const std::string & for_match,
-                    size_t & total_bytes_to_read,
-                    std::vector<std::string> & result,
-                    bool recursive)
-{
-    std::vector<size_t> anchor_positions = {};
-    bool opened = false, closed = false;
-
-    for (std::string::const_iterator it = for_match.begin(); it != for_match.end(); it++)
-    {
-        if (*it == '{')
-        {
-            anchor_positions.push_back(std::distance(for_match.begin(), it));
-            opened = true;
-        }
-        else if (*it == '}')
-        {
-            anchor_positions.push_back(std::distance(for_match.begin(), it));
-            closed = true;
-            break;
-        }
-        else if (*it == ',')
-        {
-            if (!opened)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected ''' found in path '{}' at position {}.", for_match, std::distance(for_match.begin(), it));
-            anchor_positions.push_back(std::distance(for_match.begin(), it));
-        }
-    }
-    if (!opened || !closed)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid {{}} glob in path {}.", for_match);
-
-    std::string common_prefix = for_match.substr(0, anchor_positions[0]);
-    std::string common_suffix = for_match.substr(anchor_positions[anchor_positions.size()-1] + 1);
-    for (size_t i = 1; i < anchor_positions.size(); ++i)
-    {
-        std::string expanded_matcher = common_prefix
-            + for_match.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
-            + common_suffix;
-        listFilesWithRegexpMatchingImpl(path_for_ls, expanded_matcher, total_bytes_to_read, result, recursive);
-    }
-}
-
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -170,22 +116,22 @@ void listFilesWithRegexpMatchingImpl(
     std::vector<std::string> & result,
     bool recursive)
 {
-    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
-    static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");
-
-    std::string_view for_match_view(for_match);
-    std::string_view matched;
-    if (RE2::FindAndConsume(&for_match_view, enum_or_range, &matched))
-    {
-        std::string buffer(matched);
-        if (buffer.find(',') != std::string::npos)
-        {
-            expandSelector(path_for_ls, for_match, total_bytes_to_read, result, recursive);
-            return;
-        }
-    }
-
     const size_t first_glob_pos = for_match.find_first_of("*?{");
+
+    if (first_glob_pos == std::string::npos)
+    {
+        try
+        {
+            fs::path path = fs::canonical(path_for_ls + for_match);
+            result.push_back(path.string());
+        }
+        catch (const std::exception &) // NOLINT
+        {
+            /// There is no such file, but we just ignore this.
+            /// throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", for_match);
+        }
+        return;
+    }
 
     const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
@@ -201,7 +147,7 @@ void listFilesWithRegexpMatchingImpl(
         throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
             "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
-    bool skip_regex = current_glob == "/*" ? true : false;
+    bool skip_regex = current_glob == "/*";
     if (!recursive)
         recursive = current_glob == "/**" ;
 
@@ -239,18 +185,22 @@ void listFilesWithRegexpMatchingImpl(
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result);
+                                                total_bytes_to_read, result, false);
         }
     }
 }
 
 std::vector<std::string> listFilesWithRegexpMatching(
-    const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read)
 {
     std::vector<std::string> result;
-    listFilesWithRegexpMatchingImpl(path_for_ls, for_match, total_bytes_to_read, result);
+
+    Strings for_match_paths_expanded = expandSelectionGlob(for_match);
+
+    for (const auto & for_match_expanded : for_match_paths_expanded)
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
+
     return result;
 }
 
@@ -415,7 +365,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read);
+        paths = listFilesWithRegexpMatching(path, total_bytes_to_read);
         can_be_directory = false;
     }
 

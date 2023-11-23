@@ -22,6 +22,7 @@ namespace CurrentMetrics
 {
     extern const Metric QueryPipelineExecutorThreads;
     extern const Metric QueryPipelineExecutorThreadsActive;
+    extern const Metric QueryPipelineExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -332,7 +333,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     tasks.fill(queue);
 
     if (num_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, num_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
 }
 
 void PipelineExecutor::spawnThreads()

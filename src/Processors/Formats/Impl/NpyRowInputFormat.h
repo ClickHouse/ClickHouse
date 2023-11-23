@@ -29,6 +29,9 @@ public:
     String getName() const override { return "NpyRowInputFormat"; }
 
 private:
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
+
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
     void readData(MutableColumns & columns);
@@ -45,12 +48,16 @@ private:
     template <typename ColumnValue, typename DataValue>
     void readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness);
 
+    template <typename ColumnValue>
+    void readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness);
+
     void readRows(MutableColumns & columns);
 
     void readValue(IColumn * column);
 
     DataTypePtr nested_type;
     NumpyHeader header;
+    size_t counted_rows = 0;
 };
 
 class NpySchemaReader : public ISchemaReader
@@ -59,7 +66,9 @@ public:
     explicit NpySchemaReader(ReadBuffer & in_);
 
 private:
+    std::optional<size_t> readNumberOrRows() override;
     NamesAndTypesList readSchema() override;
+    NumpyHeader header;
 };
 
 }

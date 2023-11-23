@@ -476,6 +476,9 @@ struct ChangelogReadResult
 
     /// last offset we were able to read from log
     off_t last_position;
+
+    /// Whether the changelog file was written using compression
+    bool compressed_log;
     bool error;
 };
 
@@ -484,7 +487,7 @@ class ChangelogReader
 public:
     explicit ChangelogReader(DiskPtr disk_, const std::string & filepath_) : disk(disk_), filepath(filepath_)
     {
-        auto compression_method = chooseCompressionMethod(filepath, "");
+        compression_method = chooseCompressionMethod(filepath, "");
         auto read_buffer_from_file = disk->readFile(filepath);
         read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
@@ -493,6 +496,7 @@ public:
     ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, Poco::Logger * log)
     {
         ChangelogReadResult result{};
+        result.compressed_log = compression_method != CompressionMethod::None;
         try
         {
             while (!read_buf->eof())
@@ -583,6 +587,7 @@ public:
 private:
     DiskPtr disk;
     std::string filepath;
+    CompressionMethod compression_method;
     std::unique_ptr<ReadBuffer> read_buf;
 };
 
@@ -590,6 +595,7 @@ Changelog::Changelog(
     Poco::Logger * log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
+    , compress_logs(log_file_settings.compress_logs)
     , log(log_)
     , write_operations(std::numeric_limits<size_t>::max())
     , append_completion_queue(std::numeric_limits<size_t>::max())
@@ -611,8 +617,13 @@ Changelog::Changelog(
 
     /// Load all files on changelog disks
 
+    std::unordered_set<DiskPtr> read_disks;
+
     const auto load_from_disk = [&](const auto & disk)
     {
+        if (read_disks.contains(disk))
+            return;
+
         LOG_TRACE(log, "Reading from disk {}", disk->getName());
         std::unordered_map<std::string, std::string> incomplete_files;
 
@@ -633,19 +644,25 @@ Changelog::Changelog(
         std::vector<std::string> changelog_files;
         for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
         {
-            if (it->name() == changelogs_detached_dir)
+            const auto & file_name = it->name();
+            if (file_name == changelogs_detached_dir)
                 continue;
 
-            if (it->name().starts_with(tmp_prefix))
+            if (file_name.starts_with(tmp_prefix))
             {
-                incomplete_files.emplace(it->name().substr(tmp_prefix.size()), it->path());
+                incomplete_files.emplace(file_name.substr(tmp_prefix.size()), it->path());
                 continue;
             }
 
-            if (clean_incomplete_file(it->path()))
-                continue;
-
-            changelog_files.push_back(it->path());
+            if (file_name.starts_with(DEFAULT_PREFIX))
+            {
+                if (!clean_incomplete_file(it->path()))
+                    changelog_files.push_back(it->path());
+            }
+            else
+            {
+                LOG_WARNING(log, "Unknown file found in log directory: {}", file_name);
+            }
         }
 
         for (const auto & changelog_file : changelog_files)
@@ -665,6 +682,8 @@ Changelog::Changelog(
 
         for (const auto & [name, path] : incomplete_files)
             disk->removeFile(path);
+
+        read_disks.insert(disk);
     };
 
     /// Load all files from old disks
@@ -851,7 +870,8 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             std::erase_if(logs, [last_log_read_result](const auto & item) { return item.first > last_log_read_result->last_read_index; });
             move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
         }
-        else
+        /// don't mix compressed and uncompressed writes
+        else if (compress_logs == last_log_read_result->compressed_log)
         {
             initWriter(description);
         }

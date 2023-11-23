@@ -53,6 +53,7 @@ namespace CurrentMetrics
 {
     extern const Metric MergeTreeDataSelectExecutorThreads;
     extern const Metric MergeTreeDataSelectExecutorThreadsActive;
+    extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -777,22 +778,10 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 {
     if (!filter_dag)
         return {};
-
     auto sample = data.getSampleBlockWithVirtualColumns();
-    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
-    for (const auto * input : filter_dag->getInputs())
-        if (sample.has(input->result_name))
-            allowed_inputs.insert(input);
-
-    if (allowed_inputs.empty())
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(sample, filter_dag, context);
+    if (!dag)
         return {};
-
-    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
-    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
-    if (atoms.empty())
-        return {};
-
-    auto dag = ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
 
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
     VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
@@ -1075,6 +1064,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+                CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
