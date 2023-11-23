@@ -33,19 +33,6 @@ public:
         const StorageMetadataPtr & destination_table_metadata,
         ContextPtr context);
 
-private:
-    static bool isDestinationPartitionExpressionMonotonicallyIncreasing(
-        const SourceTableInfo & source_table_info,
-        const StorageID & destination_table_id,
-        const StorageMetadataPtr & destination_table_metadata,
-        ContextPtr context
-    );
-
-    static void validatePartitionIds(
-        const SourceTableInfo & source_table_info,
-        const StorageMetadataPtr & metadata,
-        ContextPtr context
-    );
 };
 
 }

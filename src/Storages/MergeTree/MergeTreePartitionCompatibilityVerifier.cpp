@@ -11,6 +11,52 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+    bool isDestinationPartitionExpressionMonotonicallyIncreasing(
+        const MergeTreePartitionCompatibilityVerifier::SourceTableInfo & source_table_info,
+        const StorageID & destination_table_id,
+        const StorageMetadataPtr & destination_table_metadata,
+        ContextPtr context
+    )
+    {
+        auto range = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
+
+        auto key_description = destination_table_metadata->getPartitionKey();
+        auto ast_func = key_description.definition_ast->clone();
+
+        auto table_identifier = std::make_shared<ASTIdentifier>(destination_table_id.getTableName());
+        auto table_with_columns = TableWithColumnNamesAndTypes {
+            DatabaseAndTableWithAlias(table_identifier, {}),
+            destination_table_metadata->getColumns().getOrdinary()
+        };
+
+        MonotonicityCheckVisitor::Data data {{table_with_columns}, context, {}};
+
+        data.range = range;
+
+        MonotonicityCheckVisitor(data).visit(ast_func);
+
+        return data.monotonicity.is_monotonic && data.monotonicity.is_positive;
+    }
+
+    void validatePartitionIds(
+        const MergeTreePartitionCompatibilityVerifier::SourceTableInfo & source_table_info,
+        const StorageMetadataPtr & metadata,
+        ContextPtr context
+    )
+    {
+        auto range = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
+        auto block_with_min_and_max_idx = IMergeTreeDataPart::MinMaxIndex::buildBlockWithMinAndMaxIndexes(
+            source_table_info.storage,
+            {range}
+        );
+
+        MergeTreePartition().createAndValidateMinMaxPartitionIds(metadata, block_with_min_and_max_idx, context);
+    }
+
+}
+
 void MergeTreePartitionCompatibilityVerifier::verify(
     const SourceTableInfo & source_table_info,
     const StorageID & destination_table_id,
@@ -24,48 +70,6 @@ void MergeTreePartitionCompatibilityVerifier::verify(
     }
 
     validatePartitionIds(source_table_info, destination_table_metadata, context);
-}
-
-bool MergeTreePartitionCompatibilityVerifier::isDestinationPartitionExpressionMonotonicallyIncreasing(
-    const SourceTableInfo & source_table_info,
-    const StorageID & destination_table_id,
-    const StorageMetadataPtr & destination_table_metadata,
-    ContextPtr context
-)
-{
-    auto range = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
-
-    auto key_description = destination_table_metadata->getPartitionKey();
-    auto ast_func = key_description.definition_ast->clone();
-
-    auto table_identifier = std::make_shared<ASTIdentifier>(destination_table_id.getTableName());
-    auto table_with_columns = TableWithColumnNamesAndTypes {
-        DatabaseAndTableWithAlias(table_identifier, {}),
-        destination_table_metadata->getColumns().getOrdinary()
-    };
-
-    MonotonicityCheckVisitor::Data data {{table_with_columns}, context, {}};
-
-    data.range = range;
-
-    MonotonicityCheckVisitor(data).visit(ast_func);
-
-    return data.monotonicity.is_monotonic && data.monotonicity.is_positive;
-}
-
-void MergeTreePartitionCompatibilityVerifier::validatePartitionIds(
-    const SourceTableInfo & source_table_info,
-    const StorageMetadataPtr & metadata,
-    ContextPtr context
-)
-{
-    auto hyperrectangle = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
-    auto block_with_min_and_max_idx = IMergeTreeDataPart::MinMaxIndex::buildBlockWithMinAndMaxIndexes(
-        source_table_info.storage,
-        {hyperrectangle}
-    );
-
-    MergeTreePartition().createAndValidateMinMaxPartitionIds(metadata, block_with_min_and_max_idx, context);
 }
 
 }
