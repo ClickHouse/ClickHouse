@@ -55,10 +55,10 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 namespace
 {
 
-void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool is_attach)
+void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
-    /// Do not apply this check in ATTACH queries for compatibility reasons.
-    if (!is_attach)
+    /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
+    if (!allow_suspicious)
     {
         if (ttl_expression->getRequiredColumns().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -297,7 +297,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
     }
 
-    checkTTLExpression(result.expression, result.result_column, is_attach);
+    checkTTLExpression(result.expression, result.result_column, is_attach || context->getSettingsRef().allow_suspicious_ttl_expressions);
     return result;
 }
 

@@ -8,7 +8,8 @@
 --     ┌───────────────now()─┬─toDate(toTimeZone(now(), 'America/Mazatlan'))─┬────today()─┐
 --     │ 2023-07-24 06:24:06 │                                    2023-07-23 │ 2023-07-24 │
 --     └─────────────────────┴───────────────────────────────────────────────┴────────────┘
-set session_timezone = '';
+SET session_timezone = '';
+SET allow_suspicious_ttl_expressions = 1;
 
 drop table if exists ttl_00933_1;
 
