@@ -42,11 +42,27 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+template <typename T>
+struct GroupArraySortedNumericData;
+
+template <typename T>
+struct GroupArraySortedNumericData
+{
+    /// For easy serialization.
+    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+
+    // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
+    using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
+    using Array = PODArray<T, 32, Allocator>;
+
+    Array value;
+};
+
 template <typename T, typename Trait>
 class GroupArraySortedNumericImpl final
-    : public IAggregateFunctionDataHelper<GroupArrayNumericData<T, false>, GroupArraySortedNumericImpl<T, Trait>>
+    : public IAggregateFunctionDataHelper<GroupArraySortedNumericData<T>, GroupArraySortedNumericImpl<T, Trait>>
 {
-    using Data = GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>;
+    using Data = GroupArraySortedNumericData<T>;
     static constexpr bool limit_num_elems = Trait::has_limit;
     UInt64 max_elems;
     SerializationPtr serialization;
@@ -54,7 +70,7 @@ class GroupArraySortedNumericImpl final
 public:
     explicit GroupArraySortedNumericImpl(
         const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<GroupArrayNumericData<T, false>, GroupArraySortedNumericImpl<T, Trait>>(
+        : IAggregateFunctionDataHelper<GroupArraySortedNumericData<T>, GroupArraySortedNumericImpl<T, Trait>>(
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , max_elems(max_elems_)
         , serialization(data_type_->getDefaultSerialization())
@@ -103,18 +119,8 @@ public:
         size_t size = value.size();
         writeVarUInt(size, buf);
 
-        for (const Field & elem : value)
-        {
-            if (elem.isNull())
-            {
-                writeBinary(UInt8(1), buf);
-            }
-            else
-            {
-                writeBinary(UInt8(0), buf);
-                serialization->serializeBinary(elem, buf, {});
-            }
-        }
+        for (const auto & elem : value)
+            writeBinaryLittleEndian(elem, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -129,12 +135,7 @@ public:
 
         value.resize(size, arena);
         for (auto & element : value)
-        {
-            UInt8 is_null = 0;
-            readBinary(is_null, buf);
-            if (!is_null)
-                readBinaryLittleEndian(element, buf);
-        }
+            readBinaryLittleEndian(element, buf);
     }
 
     static void checkArraySize(size_t elems, size_t max_elems)
@@ -189,11 +190,10 @@ struct GroupArraySortedGeneralData<Node, true> : public GroupArraySamplerData<No
 };
 
 /// Implementation of groupArraySorted for Generic data via Array
-template <typename Node, typename Trait>
+template <typename Node>
 class GroupArraySortedGeneralImpl final
-    : public IAggregateFunctionDataHelper<GroupArraySortedGeneralData<Node, false>, GroupArraySortedGeneralImpl<Node, Trait>>
+    : public IAggregateFunctionDataHelper<GroupArraySortedGeneralData<Node, false>, GroupArraySortedGeneralImpl<Node>>
 {
-    static constexpr bool limit_num_elems = Trait::has_limit;
     using Data = GroupArraySortedGeneralData<Node, false>;
     static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
@@ -205,7 +205,7 @@ class GroupArraySortedGeneralImpl final
 
 public:
     GroupArraySortedGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<GroupArraySortedGeneralData<Node, false>, GroupArraySortedGeneralImpl<Node, Trait>>(
+        : IAggregateFunctionDataHelper<GroupArraySortedGeneralData<Node, false>, GroupArraySortedGeneralImpl<Node>>(
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , data_type(this->argument_types[0])
         , max_elems(max_elems_)
@@ -240,23 +240,14 @@ public:
             return;
 
         UInt64 new_elems;
-        if (limit_num_elems)
-        {
-            new_elems = std::min(rhs_elems.value.size(), static_cast<size_t>(max_elems) - cur_elems.value.size());
-        }
-        else
-            new_elems = rhs_elems.value.size();
+        new_elems = std::min(rhs_elems.value.size(), static_cast<size_t>(max_elems) - cur_elems.value.size());
 
         for (UInt64 i = 0; i < new_elems; ++i)
             cur_elems.value.push_back(rhs_elems.value[i], arena);
 
         std::sort(cur_elems.value.begin(), cur_elems.value.end());
-        if (limit_num_elems)
-        {
-            if (cur_elems.value.size() < max_elems)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
-            cur_elems.value.resize(max_elems, arena);
-        }
+
+        cur_elems.value.resize(max_elems, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -305,12 +296,8 @@ public:
         auto & value = data(place).value;
 
         std::sort(value.begin(), value.end());
-        if (limit_num_elems)
-        {
-            if (value.size() < max_elems)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
-            value.resize_exact(max_elems, arena);
-        }
+
+        value.resize_exact(max_elems, arena);
         auto & offsets = column_array.getOffsets();
         offsets.push_back(offsets.back() + value.size());
 
