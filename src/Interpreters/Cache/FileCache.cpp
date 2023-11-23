@@ -1046,7 +1046,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
             }
 
             bool limits_satisfied;
-            IFileCachePriority::Iterator cache_it;
+            IFileCachePriority::IteratorPtr cache_it;
             {
                 auto lock = lockCache();
                 limits_satisfied = (size_limit == 0 || main_priority->getSize(lock) + size <= size_limit)

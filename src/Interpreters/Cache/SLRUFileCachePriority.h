@@ -32,13 +32,13 @@ public:
 
     size_t getElementsCount(const CacheGuard::Lock &) const override;
 
-    Iterator add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
+    IteratorPtr add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
 
     bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
-        IFileCachePriority::Iterator,
+        IFileCachePriority::IteratorPtr reservee,
         FinalizeEvictionFunc & finalize_eviction_func,
         const CacheGuard::Lock &) override;
 
@@ -54,7 +54,7 @@ private:
     void increasePriority(SLRUIterator & iterator, const CacheGuard::Lock & lock);
 };
 
-class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::IIterator
+class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator
 {
     friend class SLRUFileCachePriority;
 public:
@@ -76,7 +76,7 @@ public:
     bool isProtected() const { return is_protected; }
 
 private:
-    void checkUsable() const;
+    void assertValid() const;
 
     SLRUFileCachePriority * cache_priority;
     mutable std::unique_ptr<LRUIterator> lru_iterator;

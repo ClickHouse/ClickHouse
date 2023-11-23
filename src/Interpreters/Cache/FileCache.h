@@ -74,7 +74,6 @@ public:
     using QueryLimit = DB::FileCacheQueryLimit;
     using Priority = IFileCachePriority;
     using PriorityEntry = IFileCachePriority::Entry;
-    using PriorityIterator = IFileCachePriority::Iterator;
 
     FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
@@ -205,7 +204,7 @@ private:
         const size_t queue_size;
 
         std::unique_ptr<LRUFileCachePriority> queue;
-        using Records = std::unordered_map<KeyAndOffset, PriorityIterator, FileCacheKeyAndOffsetHash>;
+        using Records = std::unordered_map<KeyAndOffset, Priority::IteratorPtr, FileCacheKeyAndOffsetHash>;
         Records records;
     };
 

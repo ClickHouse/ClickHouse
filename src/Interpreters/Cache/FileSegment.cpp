@@ -54,7 +54,7 @@ FileSegment::FileSegment(
         bool background_download_enabled_,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
-        Priority::Iterator queue_iterator_)
+        Priority::IteratorPtr queue_iterator_)
     : file_key(key_)
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
@@ -146,13 +146,13 @@ size_t FileSegment::getReservedSize() const
     return reserved_size;
 }
 
-FileSegment::Priority::Iterator FileSegment::getQueueIterator() const
+FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
 {
     auto lock = lockFileSegment();
     return queue_iterator;
 }
 
-void FileSegment::setQueueIterator(Priority::Iterator iterator)
+void FileSegment::setQueueIterator(Priority::IteratorPtr iterator)
 {
     auto lock = lockFileSegment();
     if (queue_iterator)
@@ -775,7 +775,7 @@ bool FileSegment::assertCorrectness() const
 
 bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const
 {
-    auto check_iterator = [this](const Priority::Iterator & it)
+    auto check_iterator = [this](const Priority::IteratorPtr & it)
     {
         UNUSED(this);
         if (!it)
@@ -916,6 +916,10 @@ void FileSegment::increasePriority()
         chassert(isDetached());
         return;
     }
+
+    /// Priority can be increased only for downloaded file segments.
+    if (download_state != State::DOWNLOADED)
+        return;
 
     auto it = getQueueIterator();
     if (it)

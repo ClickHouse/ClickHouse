@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IFileCachePriority::Iterator LRUFileCachePriority::add(
+IFileCachePriority::IteratorPtr LRUFileCachePriority::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
@@ -67,7 +67,7 @@ std::unique_ptr<LRUFileCachePriority::LRUIterator> LRUFileCachePriority::add(Ent
             entry.key, entry.offset, entry.size, current_size, size_limit);
     }
 
-    auto it = queue.insert(queue.end(), entry);
+    auto iterator = queue.insert(queue.end(), entry);
 
     updateSize(entry.size);
     updateElementsCount(1);
@@ -76,7 +76,7 @@ std::unique_ptr<LRUFileCachePriority::LRUIterator> LRUFileCachePriority::add(Ent
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
         entry.key, entry.offset, entry.size);
 
-    return std::make_unique<LRUIterator>(this, it);
+    return std::make_unique<LRUIterator>(this, iterator);
 }
 
 LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::remove(LRUQueue::iterator it, const CacheGuard::Lock &)
@@ -107,9 +107,11 @@ void LRUFileCachePriority::updateElementsCount(int64_t num)
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements, num);
 }
 
-
-LRUFileCachePriority::LRUIterator::LRUIterator(LRUFileCachePriority * cache_priority_, LRUQueue::iterator queue_iter_)
-    : cache_priority(cache_priority_), queue_iter(queue_iter_)
+LRUFileCachePriority::LRUIterator::LRUIterator(
+    LRUFileCachePriority * cache_priority_,
+    LRUQueue::iterator iterator_)
+    : cache_priority(cache_priority_)
+    , iterator(iterator_)
 {
 }
 
@@ -166,7 +168,11 @@ bool LRUFileCachePriority::canFit(size_t size, const CacheGuard::Lock & lock) co
     return canFit(size, 0, 0, lock);
 }
 
-bool LRUFileCachePriority::canFit(size_t size, size_t released_size_assumption, size_t released_elements_assumption, const CacheGuard::Lock &) const
+bool LRUFileCachePriority::canFit(
+    size_t size,
+    size_t released_size_assumption,
+    size_t released_elements_assumption,
+    const CacheGuard::Lock &) const
 {
     return (max_size == 0 || (current_size + size - released_size_assumption <= max_size))
         && (max_elements == 0 || current_elements_num + 1 - released_elements_assumption <= max_elements);
@@ -176,7 +182,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     size_t size,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
-    IFileCachePriority::Iterator,
+    IFileCachePriority::IteratorPtr,
     FinalizeEvictionFunc &,
     const CacheGuard::Lock & lock)
 {
@@ -217,7 +223,8 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     return can_fit();
 }
 
-std::unique_ptr<LRUFileCachePriority::LRUIterator> LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &)
+std::unique_ptr<LRUFileCachePriority::LRUIterator>
+LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &)
 {
     const auto & entry = it.getEntry();
     if (entry.size == 0)
@@ -240,14 +247,14 @@ std::unique_ptr<LRUFileCachePriority::LRUIterator> LRUFileCachePriority::move(LR
     }
 #endif
 
-    queue.splice(queue.end(), other.queue, it.queue_iter);
+    queue.splice(queue.end(), other.queue, it.iterator);
 
     updateSize(entry.size);
     updateElementsCount(1);
 
     other.updateSize(-entry.size);
     other.updateElementsCount(-1);
-    return std::make_unique<LRUIterator>(this, it.queue_iter);
+    return std::make_unique<LRUIterator>(this, it.iterator);
 }
 
 FileSegments LRUFileCachePriority::dump(const CacheGuard::Lock & lock)
@@ -263,48 +270,48 @@ FileSegments LRUFileCachePriority::dump(const CacheGuard::Lock & lock)
 
 void LRUFileCachePriority::LRUIterator::remove(const CacheGuard::Lock & lock)
 {
-    checkUsable();
-    cache_priority->remove(queue_iter, lock);
-    queue_iter = LRUQueue::iterator{};
+    assertValid();
+    cache_priority->remove(iterator, lock);
+    iterator = LRUQueue::iterator{};
 }
 
 void LRUFileCachePriority::LRUIterator::invalidate()
 {
-    checkUsable();
+    assertValid();
 
     LOG_TEST(
         cache_priority->log,
         "Invalidating entry in LRU queue. Key: {}, offset: {}, previous size: {}",
-        queue_iter->key, queue_iter->offset, queue_iter->size);
+        iterator->key, iterator->offset, iterator->size);
 
-    cache_priority->updateSize(-queue_iter->size);
+    cache_priority->updateSize(-iterator->size);
     cache_priority->updateElementsCount(-1);
-    queue_iter->size = 0;
+    iterator->size = 0;
 }
 
 void LRUFileCachePriority::LRUIterator::updateSize(int64_t size)
 {
-    checkUsable();
+    assertValid();
 
     LOG_TEST(
         cache_priority->log,
         "Update size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
-        size, queue_iter->key, queue_iter->offset, queue_iter->size);
+        size, iterator->key, iterator->offset, iterator->size);
 
     cache_priority->updateSize(size);
-    queue_iter->size += size;
+    iterator->size += size;
 }
 
 size_t LRUFileCachePriority::LRUIterator::increasePriority(const CacheGuard::Lock &)
 {
-    checkUsable();
-    cache_priority->queue.splice(cache_priority->queue.end(), cache_priority->queue, queue_iter);
-    return ++queue_iter->hits;
+    assertValid();
+    cache_priority->queue.splice(cache_priority->queue.end(), cache_priority->queue, iterator);
+    return ++iterator->hits;
 }
 
-void LRUFileCachePriority::LRUIterator::checkUsable() const
+void LRUFileCachePriority::LRUIterator::assertValid() const
 {
-    if (queue_iter == LRUQueue::iterator{})
+    if (iterator == LRUQueue::iterator{})
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to use invalid iterator");
 }
 

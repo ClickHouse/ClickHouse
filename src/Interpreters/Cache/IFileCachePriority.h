@@ -12,12 +12,10 @@ namespace DB
 struct FileCacheReserveStat;
 class EvictionCandidates;
 
-/// IFileCachePriority is used to maintain the priority of cached data.
 class IFileCachePriority : private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
-    using KeyAndOffset = FileCacheKeyAndOffset;
 
     struct Entry
     {
@@ -32,10 +30,10 @@ public:
         size_t hits = 0;
     };
 
-    class IIterator
+    class Iterator
     {
     public:
-        virtual ~IIterator() = default;
+        virtual ~Iterator() = default;
 
         virtual const Entry & getEntry() const = 0;
 
@@ -47,7 +45,7 @@ public:
 
         virtual void invalidate() = 0;
     };
-    using Iterator = std::shared_ptr<IIterator>;
+    using IteratorPtr = std::shared_ptr<Iterator>;
 
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 
@@ -61,19 +59,18 @@ public:
 
     virtual size_t getElementsCount(const CacheGuard::Lock &) const = 0;
 
-    virtual Iterator add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) = 0;
+    virtual IteratorPtr add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) = 0;
 
     virtual void shuffle(const CacheGuard::Lock &) = 0;
 
     virtual FileSegments dump(const CacheGuard::Lock &) = 0;
 
     using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
-
     virtual bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
-        IFileCachePriority::Iterator it,
+        IFileCachePriority::IteratorPtr reservee,
         FinalizeEvictionFunc & finalize_eviction_func,
         const CacheGuard::Lock &) = 0;
 

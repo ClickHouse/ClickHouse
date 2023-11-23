@@ -11,7 +11,7 @@ namespace DB
 
 /// Based on the LRU algorithm implementation, the record with the lowest priority is stored at
 /// the head of the queue, and the record with the highest priority is stored at the tail.
-class LRUFileCachePriority : public IFileCachePriority
+class LRUFileCachePriority final : public IFileCachePriority
 {
 private:
     class LRUIterator;
@@ -25,13 +25,13 @@ public:
 
     size_t getElementsCount(const CacheGuard::Lock &) const override { return current_elements_num; }
 
-    Iterator add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
+    IteratorPtr add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
 
     bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
-        IFileCachePriority::Iterator it,
+        IFileCachePriority::IteratorPtr reservee,
         FinalizeEvictionFunc & finalize_eviction_func,
         const CacheGuard::Lock &) override;
 
@@ -71,14 +71,14 @@ private:
     std::unique_ptr<LRUIterator> add(Entry && entry, const CacheGuard::Lock &);
 };
 
-class LRUFileCachePriority::LRUIterator : public IFileCachePriority::IIterator
+class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator
 {
     friend class LRUFileCachePriority;
     friend class SLRUFileCachePriority;
 public:
-    LRUIterator(LRUFileCachePriority * cache_priority_, LRUQueue::iterator queue_iter_);
+    LRUIterator(LRUFileCachePriority * cache_priority_, LRUQueue::iterator iterator_);
 
-    const Entry & getEntry() const override { return *queue_iter; }
+    const Entry & getEntry() const override { return *iterator; }
 
     size_t increasePriority(const CacheGuard::Lock &) override;
 
@@ -89,10 +89,10 @@ public:
     void updateSize(int64_t size) override;
 
 private:
-    void checkUsable() const;
+    void assertValid() const;
 
     LRUFileCachePriority * cache_priority;
-    mutable LRUQueue::iterator queue_iter;
+    mutable LRUQueue::iterator iterator;
 };
 
 }

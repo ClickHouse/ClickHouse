@@ -113,7 +113,7 @@ public:
         bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
-        Priority::Iterator queue_iterator_ = Priority::Iterator{});
+        Priority::IteratorPtr queue_iterator_ = nullptr);
 
     ~FileSegment() = default;
 
@@ -219,9 +219,9 @@ public:
 
     FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
 
-    Priority::Iterator getQueueIterator() const;
+    Priority::IteratorPtr getQueueIterator() const;
 
-    void setQueueIterator(Priority::Iterator iterator);
+    void setQueueIterator(Priority::IteratorPtr iterator);
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -309,7 +309,7 @@ private:
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
-    mutable Priority::Iterator queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
+    mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
     std::condition_variable cv;
 
