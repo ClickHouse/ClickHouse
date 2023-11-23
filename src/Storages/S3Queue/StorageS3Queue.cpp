@@ -112,13 +112,16 @@ StorageS3Queue::StorageS3Queue(
     , s3queue_settings(std::move(s3queue_settings_))
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *s3queue_settings))
     , after_processing(s3queue_settings->after_processing)
-    , files_metadata(S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings))
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
     , log(&Poco::Logger::get("StorageS3Queue (" + table_id_.table_name + ")"))
 {
-    if (configuration.url.key.ends_with('/'))
+    if (configuration.url.key.empty())
+    {
+        configuration.url.key = "/*";
+    }
+    else if (configuration.url.key.ends_with('/'))
     {
         configuration.url.key += '*';
     }
@@ -143,16 +146,28 @@ StorageS3Queue::StorageS3Queue(
     {
         storage_metadata.setColumns(columns_);
     }
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-
-    createOrCheckMetadata(storage_metadata);
     setInMemoryMetadata(storage_metadata);
-
     virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
-    task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
+    task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
+
+    /// Get metadata manager from S3QueueMetadataFactory,
+    /// it will increase the ref count for the metadata object.
+    /// The ref count is decreased when StorageS3Queue::drop() method is called.
+    files_metadata = S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings);
+    try
+    {
+        createOrCheckMetadata(storage_metadata);
+    }
+    catch (...)
+    {
+        S3QueueMetadataFactory::instance().remove(zk_path);
+        throw;
+    }
 }
 
 void StorageS3Queue::startup()
@@ -239,11 +254,16 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         configuration_snapshot.url.uri.getHost() + std::to_string(configuration_snapshot.url.uri.getPort()),
         file_iterator, local_context->getSettingsRef().max_download_threads, false, /* query_info */ std::nullopt);
 
-    auto file_deleter = [this, bucket = configuration_snapshot.url.bucket, client = configuration_snapshot.client](const std::string & path)
+    auto file_deleter = [this, bucket = configuration_snapshot.url.bucket, client = configuration_snapshot.client, blob_storage_log = BlobStorageLogWriter::create()](const std::string & path) mutable
     {
         S3::DeleteObjectRequest request;
         request.WithKey(path).WithBucket(bucket);
         auto outcome = client->DeleteObject(request);
+        if (blob_storage_log)
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Delete,
+                bucket, path, {}, 0, outcome.IsSuccess() ? nullptr : &outcome.GetError());
+
         if (!outcome.IsSuccess())
         {
             const auto & err = outcome.GetError();

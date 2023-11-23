@@ -58,6 +58,9 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
 
     if (has("load_metadata_threads"))
         load_metadata_threads = get_uint("load_metadata_threads");
+
+    if (boundary_alignment > max_file_segment_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `boundary_alignment` cannot exceed `max_file_segment_size`");
 }
 
 void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)

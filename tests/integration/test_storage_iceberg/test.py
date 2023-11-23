@@ -9,6 +9,8 @@ import json
 import pytest
 import time
 import glob
+import uuid
+import os
 
 from pyspark.sql.types import (
     StructType,
@@ -506,6 +508,38 @@ def test_metadata_file_selection(started_cluster, format_version):
     for i in range(50):
         spark.sql(
             f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
+        )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    create_iceberg_table(instance, TABLE_NAME)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+def test_metadata_file_format_with_uuid(started_cluster, format_version):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = "test_metadata_selection_with_uuid_" + format_version
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+    )
+
+    for i in range(50):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
+        )
+
+    for i in range(50):
+        os.rename(
+            f"/iceberg_data/default/{TABLE_NAME}/metadata/v{i + 1}.metadata.json",
+            f"/iceberg_data/default/{TABLE_NAME}/metadata/{str(i).zfill(5)}-{uuid.uuid4()}.metadata.json",
         )
 
     files = upload_directory(
