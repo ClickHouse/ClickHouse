@@ -9,6 +9,8 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/Utils.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+
 namespace DB
 {
 
@@ -323,8 +325,21 @@ private:
             /// Because we reduce the number of operands here by eliminating the same equality checks,
             /// the only situation we can end up here is we had AND check where all the equality checks are the same so we know the type is UInt8.
             /// Otherwise, we will have > 1 operands and we don't have to do anything.
-            assert(!function_node.getResultType()->isNullable() && and_operands[0]->getResultType()->equals(*function_node.getResultType()));
-            node = std::move(and_operands[0]);
+
+            auto operand_type = and_operands[0]->getResultType();
+            auto function_type = function_node.getResultType();
+            assert(!function_type->isNullable());
+            if (!function_type->equals(*operand_type))
+            {
+                /// Result of equality operator can be low cardinality, while AND always returns UInt8.
+                /// In that case we replace `(lc = 1) AND (lc = 1)` with `(lc = 1) AS UInt8`
+                assert(function_type->equals(*removeLowCardinality(operand_type)));
+                node = createCastFunction(std::move(and_operands[0]), function_type, getContext());
+            }
+            else
+            {
+                node = std::move(and_operands[0]);
+            }
             return;
         }
 
