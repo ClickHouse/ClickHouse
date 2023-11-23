@@ -444,8 +444,7 @@ void StorageMaterializedView::startup()
 
     if (refresher)
     {
-        refresher->initialize(std::static_pointer_cast<StorageMaterializedView>(shared_from_this()));
-        refresher->start();
+        refresher->initializeAndStart(std::static_pointer_cast<StorageMaterializedView>(shared_from_this()));
     }
 }
 

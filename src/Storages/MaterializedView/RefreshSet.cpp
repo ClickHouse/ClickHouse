@@ -9,7 +9,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-RefreshSetElement::RefreshSetElement(RefreshTaskHolder task, StorageID id)
+RefreshSetElement::RefreshSetElement(StorageID id, RefreshTaskHolder task)
     : corresponding_task(task)
     , view_id(std::move(id))
 {}
@@ -19,8 +19,8 @@ RefreshInfo RefreshSetElement::getInfo() const
     return {
         .database = view_id.getDatabaseName(),
         .view_name = view_id.getTableName(),
-        .refresh_status = toString(RefreshTask::TaskState{state.load()}),
-        .last_refresh_status = toString(RefreshTask::LastTaskState{last_state.load()}),
+        .refresh_status = toString(RefreshTask::RefreshState{state.load()}),
+        .last_refresh_result = toString(RefreshTask::LastTaskResult{last_result.load()}),
         .last_refresh_time = static_cast<UInt32>(last_s.load(std::memory_order_relaxed)),
         .next_refresh_time = static_cast<UInt32>(next_s.load(std::memory_order_relaxed)),
         .progress = static_cast<Float64>(written_rows) / total_rows_to_read,
@@ -108,8 +108,8 @@ RefreshSet::RefreshSet()
 RefreshTaskHolder RefreshSet::getTask(const StorageID & id) const
 {
     std::lock_guard lock(elements_mutex);
-    if (auto element = elements.find(id); element != elements.end())
-        return element->getTask();
+    if (auto element = elements.find(id.uuid); element != elements.end())
+        return element->second.getTask();
     return nullptr;
 }
 
@@ -119,7 +119,7 @@ RefreshSet::InfoContainer RefreshSet::getInfo() const
     InfoContainer res;
     res.reserve(elements.size());
     for (auto && element : elements)
-        res.emplace_back(element.getInfo());
+        res.emplace_back(element.second.getInfo());
     return res;
 }
 

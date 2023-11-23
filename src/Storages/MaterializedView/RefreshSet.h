@@ -14,7 +14,7 @@ struct RefreshInfo
     String database;
     String view_name;
     String refresh_status;
-    String last_refresh_status;
+    String last_refresh_result;
     UInt32 last_refresh_time;
     UInt32 next_refresh_time;
     Float64 progress;
@@ -33,7 +33,7 @@ class RefreshSetElement
 {
     friend class RefreshTask;
 public:
-    RefreshSetElement(RefreshTaskHolder task, StorageID id);
+    RefreshSetElement(StorageID id, RefreshTaskHolder task);
 
     RefreshSetElement(const RefreshSetElement &) = delete;
     RefreshSetElement & operator=(const RefreshSetElement &) = delete;
@@ -48,19 +48,19 @@ private:
     RefreshTaskObserver corresponding_task;
     StorageID view_id;
 
-    mutable std::atomic<UInt64> read_rows{0};
-    mutable std::atomic<UInt64> read_bytes{0};
-    mutable std::atomic<UInt64> total_rows_to_read{0};
-    mutable std::atomic<UInt64> total_bytes_to_read{0};
-    mutable std::atomic<UInt64> written_rows{0};
-    mutable std::atomic<UInt64> written_bytes{0};
-    mutable std::atomic<UInt64> result_rows{0};
-    mutable std::atomic<UInt64> result_bytes{0};
-    mutable std::atomic<UInt64> elapsed_ns{0};
-    mutable std::atomic<Int64> last_s{0};
-    mutable std::atomic<Int64> next_s{0};
-    mutable std::atomic<RefreshTaskStateUnderlying> state{0};
-    mutable std::atomic<RefreshTaskStateUnderlying> last_state{0};
+    std::atomic<UInt64> read_rows{0};
+    std::atomic<UInt64> read_bytes{0};
+    std::atomic<UInt64> total_rows_to_read{0};
+    std::atomic<UInt64> total_bytes_to_read{0};
+    std::atomic<UInt64> written_rows{0};
+    std::atomic<UInt64> written_bytes{0};
+    std::atomic<UInt64> result_rows{0};
+    std::atomic<UInt64> result_bytes{0};
+    std::atomic<UInt64> elapsed_ns{0};
+    std::atomic<Int64> last_s{0};
+    std::atomic<Int64> next_s{0};
+    std::atomic<RefreshTaskStateUnderlying> state{0};
+    std::atomic<RefreshTaskStateUnderlying> last_result{0};
 };
 
 struct RefreshSetLess
@@ -77,7 +77,7 @@ struct RefreshSetLess
 class RefreshSet
 {
 private:
-    using Container = std::set<RefreshSetElement, RefreshSetLess>;
+    using Container = std::map<UUID, RefreshSetElement>;
     using ContainerIter = typename Container::iterator;
 
 public:
@@ -92,7 +92,7 @@ public:
 
         ~Entry();
 
-        const RefreshSetElement * operator->() const { return std::to_address(iter); }
+        RefreshSetElement * operator->() { return &iter->second; }
 
     private:
         RefreshSet * parent_set;
@@ -111,11 +111,11 @@ public:
 
     RefreshSet();
 
-    template <typename... Args>
-    std::optional<Entry> emplace(Args &&... args)
+    std::optional<Entry> emplace(StorageID id, RefreshTaskHolder task)
     {
         std::lock_guard guard(elements_mutex);
-        if (auto [it, is_inserted] = elements.emplace(std::forward<Args>(args)...); is_inserted)
+        auto [it, is_inserted] = elements.emplace(std::piecewise_construct, std::forward_as_tuple(id.uuid), std::forward_as_tuple(id, std::move(task)));
+        if (is_inserted)
             return Entry(*this, std::move(it), set_metric);
         return {};
     }
