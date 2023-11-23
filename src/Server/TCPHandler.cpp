@@ -692,7 +692,7 @@ void TCPHandler::runImpl()
 
         /// Interserver authentication is done only after we read the query.
         /// This fact can be abused by producing exception before or while we read the query.
-        /// To aovid any potential exploits, we simply close connection on any exceptions
+        /// To avoid any potential exploits, we simply close connection on any exceptions
         /// that happen before the first query is authenticated with the cluster secret.
         if (is_interserver_mode && exception && !is_interserver_authenticated)
             exception->rethrow();
