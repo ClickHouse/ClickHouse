@@ -1248,6 +1248,15 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </backup_log>
 
+    <!-- Storage S3Queue log.
+    -->
+    <s3queue_log>
+        <database>system</database>
+        <table>s3queue_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </s3queue_log>
+
     <!-- Blob storage object operations log.
     -->
     <blob_storage_log>

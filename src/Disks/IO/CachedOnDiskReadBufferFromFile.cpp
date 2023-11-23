@@ -28,6 +28,9 @@ extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
+
+extern const Event CachedReadBufferReadFromCacheHits;
+extern const Event CachedReadBufferReadFromCacheMisses;
 }
 
 namespace DB
@@ -114,29 +117,40 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
     cache_log->add(std::move(elem));
 }
 
-void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
+bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
+{
+    chassert(!file_segments || file_segments->empty());
+    size_t size = getRemainingSizeToRead();
+    if (!size)
+        return false;
+
+    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    {
+        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size);
+    }
+    else
+    {
+        CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
+        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), create_settings, settings.filesystem_cache_segments_batch_size);
+    }
+    return !file_segments->empty();
+}
+
+void CachedOnDiskReadBufferFromFile::initialize()
 {
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Caching buffer already initialized");
 
     implementation_buffer.reset();
 
-    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
-    {
-        file_segments = cache->get(cache_key, offset, size);
-    }
-    else
-    {
-        CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
-        file_segments = cache->getOrSet(cache_key, offset, size, file_size.value(), create_settings);
-    }
-
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
      * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
      */
-    if (file_segments->empty())
+    if (!nextFileSegmentsBatch())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of file segments cannot be empty");
+
+    chassert(!file_segments->empty());
 
     LOG_TEST(
         log,
@@ -512,7 +526,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     cache_file_reader.reset();
 
     file_segments->popFront();
-    if (file_segments->empty())
+    if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
     current_file_segment = &file_segments->front();
@@ -788,9 +802,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         return false;
 
     if (!initialized)
-        initialize(file_offset_of_buffer_end, getTotalSizeToRead());
+        initialize();
 
-    if (file_segments->empty())
+    if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
     const size_t original_buffer_size = internal_buffer.size();
@@ -938,11 +952,13 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         if (read_type == ReadType::CACHED)
         {
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheHits);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
         }
         else
         {
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMisses);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
         }
@@ -1159,7 +1175,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     return new_pos;
 }
 
-size_t CachedOnDiskReadBufferFromFile::getTotalSizeToRead()
+size_t CachedOnDiskReadBufferFromFile::getRemainingSizeToRead()
 {
     /// Last position should be guaranteed to be set, as at least we always know file size.
     if (!read_until_position)

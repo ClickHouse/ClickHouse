@@ -279,7 +279,7 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings.max_elements = 5;
     settings.boundary_alignment = 1;
 
-    const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
+    const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
     {
         std::cerr << "Step 1\n";
