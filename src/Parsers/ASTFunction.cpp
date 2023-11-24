@@ -620,7 +620,8 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     {
         hash_state.update(window_name.size());
         hash_state.update(window_name);
-        window_definition->updateTreeHashImpl(hash_state, ignore_aliases);
+        if (window_definition)
+            window_definition->updateTreeHashImpl(hash_state, ignore_aliases);
     }
 }
 
