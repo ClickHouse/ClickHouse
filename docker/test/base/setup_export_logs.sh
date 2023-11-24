@@ -192,3 +192,13 @@ function setup_logs_replication
         " || continue
     done
 )
+
+function stop_logs_replication
+{
+    echo "Detach all logs replication"
+    clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+        tee /dev/stderr
+    } | {
+        xargs -n1 -r -i clickhouse-client --query "drop table {}"
+    }
+}
