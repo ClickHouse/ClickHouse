@@ -60,7 +60,7 @@ function insert_duplicates() {
 
   $CLICKHOUSE_CLIENT -q "insert into r1 values(1);" &
 
-  $CLICKHOUSE_CLIENT -q "insert into r2 values(1);"
+  $CLICKHOUSE_CLIENT --send_logs_level="error" -q "insert into r2 values(1);"
 
   wait
 
