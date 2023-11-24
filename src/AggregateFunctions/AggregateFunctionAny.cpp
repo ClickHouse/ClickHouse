@@ -9,7 +9,7 @@ struct Settings;
 namespace
 {
 template <template <typename> class AggregateFunctionTemplate, template <typename, bool> class Data>
-static IAggregateFunction * createAggregateFunctionSingleValueRespectNulls(
+IAggregateFunction * createAggregateFunctionSingleValueRespectNulls(
     const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);

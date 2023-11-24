@@ -195,7 +195,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     {
         auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? case_insensitive_name : name, action);
         if (opt)
-            found = std::move(*opt);
+            found = *opt;
 
         out_properties = found.properties;
         if (query_context && query_context->getSettingsRef().log_queries)
