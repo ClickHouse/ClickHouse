@@ -16,10 +16,11 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_AGGREGATE_FUNCTION;
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_AGGREGATION;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
@@ -57,11 +58,11 @@ void AggregateFunctionFactory::registerNullsActionTransformation(const String & 
 
     if (!respect_nulls.emplace(source_ignores_nulls, target_respect_nulls).second)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assigment from '{}' is not unique", source_ignores_nulls);
+            ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assignment from '{}' is not unique", source_ignores_nulls);
 
     if (!ignore_nulls.emplace(target_respect_nulls, source_ignores_nulls).second)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assigment from '{}' is not unique", target_respect_nulls);
+            ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assignment from '{}' is not unique", target_respect_nulls);
 }
 
 static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)

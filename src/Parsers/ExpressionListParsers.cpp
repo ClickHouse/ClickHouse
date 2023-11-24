@@ -40,7 +40,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
 
 
