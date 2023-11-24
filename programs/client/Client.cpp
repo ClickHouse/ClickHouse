@@ -325,7 +325,7 @@ try
 
     processConfig();
     adjustSettings();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
@@ -1459,7 +1459,6 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         DB::Client client;
         // Initialize command line options
         client.init(argc, argv);
-        /// Initialize config file
         return client.run();
     }
     catch (const DB::Exception & e)

@@ -23,19 +23,25 @@ namespace ErrorCodes
 
 HedgedConnectionsFactory::HedgedConnectionsFactory(
     const ConnectionPoolWithFailoverPtr & pool_,
-    const Settings * settings_,
+    const Settings & settings_,
     const ConnectionTimeouts & timeouts_,
+    UInt64 max_tries_,
+    bool fallback_to_stale_replicas_,
+    UInt64 max_parallel_replicas_,
+    bool skip_unavailable_shards_,
     std::shared_ptr<QualifiedTableName> table_to_check_)
-    : pool(pool_), settings(settings_), timeouts(timeouts_), table_to_check(table_to_check_), log(&Poco::Logger::get("HedgedConnectionsFactory"))
+    : pool(pool_)
+    , timeouts(timeouts_)
+    , table_to_check(table_to_check_)
+    , log(&Poco::Logger::get("HedgedConnectionsFactory"))
+    , max_tries(max_tries_)
+    , fallback_to_stale_replicas(fallback_to_stale_replicas_)
+    , max_parallel_replicas(max_parallel_replicas_)
+    , skip_unavailable_shards(skip_unavailable_shards_)
 {
-    shuffled_pools = pool->getShuffledPools(settings);
+    shuffled_pools = pool->getShuffledPools(settings_);
     for (auto shuffled_pool : shuffled_pools)
-        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings, log, table_to_check.get()));
-
-    max_tries
-        = (settings ? size_t{settings->connections_with_failover_max_tries} : size_t{DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES});
-
-    fallback_to_stale_replicas = settings && settings->fallback_to_stale_replicas_for_distributed_queries;
+        replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 }
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
@@ -55,7 +61,7 @@ HedgedConnectionsFactory::~HedgedConnectionsFactory()
 
 std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode pool_mode, AsyncCallback async_callback)
 {
-    size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
+    size_t min_entries = skip_unavailable_shards ? 0 : 1;
 
     size_t max_entries = 1;
     switch (pool_mode)
@@ -73,7 +79,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         }
         case PoolMode::GET_MANY:
         {
-            max_entries = settings ? size_t(settings->max_parallel_replicas) : 1;
+            max_entries = max_parallel_replicas;
             break;
         }
     }

@@ -8,8 +8,8 @@ namespace DB
 class GetPriorityForLoadBalancing
 {
 public:
-    GetPriorityForLoadBalancing(LoadBalancing load_balancing_) : load_balancing(load_balancing_) {}
-    GetPriorityForLoadBalancing(){}
+    explicit GetPriorityForLoadBalancing(LoadBalancing load_balancing_) : load_balancing(load_balancing_) {}
+    GetPriorityForLoadBalancing() = default;
 
     bool operator == (const GetPriorityForLoadBalancing & other) const
     {

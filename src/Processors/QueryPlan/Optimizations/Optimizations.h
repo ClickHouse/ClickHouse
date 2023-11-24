@@ -84,7 +84,7 @@ inline const auto & getOptimizations()
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
-        {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
         {tryReuseStorageOrderingForWindowFunctions,
          "reuseStorageOrderingForWindowFunctions",
          &QueryPlanOptimizationSettings::optimize_plan},
