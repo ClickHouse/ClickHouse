@@ -15,6 +15,8 @@
 #include <IO/S3/copyS3File.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <IO/S3/BlobStorageLogWriter.h>
+
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/getRandomASCIIString.h>
@@ -249,12 +251,18 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (write_settings.s3_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
 
+
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
+
     return std::make_unique<WriteBufferFromS3>(
         client.get(),
         bucket,
         object.remote_path,
         buf_size,
         settings_ptr->request_settings,
+        std::move(blob_storage_log),
         attributes,
         std::move(scheduler),
         disk_write_settings);
@@ -321,6 +329,10 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
     request.SetBucket(bucket);
     request.SetKey(object.remote_path);
     auto outcome = client.get()->DeleteObject(request);
+    if (auto blob_storage_log = BlobStorageLogWriter::create(disk_name))
+        blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
+                                   bucket, object.remote_path, object.local_path, object.bytes_size,
+                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
     throwIfUnexpectedError(outcome, if_exists);
 
@@ -344,6 +356,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
         size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
         size_t current_position = 0;
 
+        auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
         while (current_position < objects.size())
         {
             std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
@@ -369,9 +382,18 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
             request.SetDelete(delkeys);
             auto outcome = client.get()->DeleteObjects(request);
 
-            throwIfUnexpectedError(outcome, if_exists);
+            if (blob_storage_log)
+            {
+                const auto * outcome_error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
+                auto time_now = std::chrono::system_clock::now();
+                for (const auto & object : objects)
+                    blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
+                                               bucket, object.remote_path, object.local_path, object.bytes_size,
+                                               outcome_error, time_now);
+            }
 
             LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", keys);
+            throwIfUnexpectedError(outcome, if_exists);
         }
     }
 }
@@ -450,6 +472,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
             object_to.remote_path,
             settings_ptr->request_settings,
             patchSettings(read_settings),
+            BlobStorageLogWriter::create(disk_name),
             object_to_attributes,
             scheduler,
             /* for_disk_s3= */ true);
@@ -478,6 +501,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         object_to.remote_path,
         settings_ptr->request_settings,
         patchSettings(read_settings),
+        BlobStorageLogWriter::create(disk_name),
         object_to_attributes,
         scheduler,
         /* for_disk_s3= */ true);
@@ -520,7 +544,7 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,
-        endpoint, object_key_prefix);
+        endpoint, object_key_prefix, disk_name);
 }
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string &) const
