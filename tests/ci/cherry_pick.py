@@ -67,15 +67,17 @@ The check results does not matter at this step - you can safely ignore them.
 ### Note
 
 This pull-request will be merged automatically as it reaches the mergeable state, \
-**do not merge it manually**.
+**do not merge it manually**. It's 100% safe, but completely meaningless.
 
 ### If the PR was closed and then reopened
 
-If it stuck, check {pr_url} for `{backport_created_label}` and delete it if \
-necessary. Manually merging will do nothing, since `{backport_created_label}` \
-prevents the original PR {pr_url} from being processed.
+If it stuck (e.g. for a day), check {pr_url} for `{backport_created_label}` *label* and \
+delete it if necessary. Manually merging will do nothing, since \
+`{backport_created_label}` *label* prevents the original PR {pr_url} from being \
+processed.
 
-If you want to recreate the PR: delete the `{label_cherrypick}` label and delete this branch.
+If the cherry-pick PR is completely screwed, and you want to recreate it: delete the \
+`{label_cherrypick}` label and delete this branch.
 You may also need to delete the `{backport_created_label}` label from the original PR.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \

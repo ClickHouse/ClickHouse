@@ -24,7 +24,6 @@
 01952_optimize_distributed_group_by_sharding_key
 02139_MV_with_scalar_subquery
 02174_cte_scalar_cache_mv
-02302_s3_file_pruning
 02352_grouby_shadows_arg
 02354_annoy
 02428_parameterized_view

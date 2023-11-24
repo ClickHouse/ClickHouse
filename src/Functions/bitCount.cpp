@@ -1,6 +1,7 @@
 #include <base/bit_cast.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
+#include <bit>
 
 
 namespace DB
@@ -21,19 +22,19 @@ struct BitCountImpl
         {
             ResultType res = 0;
             for (auto item : a.items)
-                res += __builtin_popcountll(item);
+                res += std::popcount(item);
             return res;
         }
         if constexpr (std::is_same_v<A, UInt64> || std::is_same_v<A, Int64>)
-            return __builtin_popcountll(a);
+            return std::popcount(static_cast<UInt64>(a));
         if constexpr (std::is_same_v<A, UInt32> || std::is_same_v<A, Int32> || std::is_unsigned_v<A>)
-            return __builtin_popcount(a);
+            return std::popcount(static_cast<UInt32>(a));
         if constexpr (std::is_same_v<A, Int16>)
-            return __builtin_popcount(static_cast<UInt16>(a));
+            return std::popcount(static_cast<UInt16>(a));
         if constexpr (std::is_same_v<A, Int8>)
-            return __builtin_popcount(static_cast<UInt8>(a));
+            return std::popcount(static_cast<uint8_t>(a));
         else
-            return __builtin_popcountll(bit_cast<uint64_t>(a));
+            return std::popcount(bit_cast<uint64_t>(a));
     }
 
 #if USE_EMBEDDED_COMPILER

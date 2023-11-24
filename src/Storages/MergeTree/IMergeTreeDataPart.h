@@ -380,7 +380,12 @@ public:
                                                    const DiskTransactionPtr & disk_transaction) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
+    MutableDataPartStoragePtr makeCloneOnDisk(
+        const DiskPtr & disk,
+        const String & directory_name,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) const;
 
     /// Checks that .bin and .mrk files exist.
     ///

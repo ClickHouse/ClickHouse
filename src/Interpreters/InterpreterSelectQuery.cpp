@@ -579,7 +579,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     settings.parallel_replica_offset,
                     std::move(custom_key_ast),
                     settings.parallel_replicas_custom_key_filter_type,
-                    *storage,
+                    storage->getInMemoryMetadataPtr()->columns,
                     context);
             }
             else if (settings.parallel_replica_offset > 0)

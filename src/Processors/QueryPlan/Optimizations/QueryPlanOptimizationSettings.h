@@ -21,6 +21,9 @@ struct QueryPlanOptimizationSettings
     /// If filter push down optimization is enabled.
     bool filter_push_down = true;
 
+    /// If reorder-functions-after-sorting optimization is enabled.
+    bool execute_functions_after_sorting;
+
     /// if distinct in order optimization is enabled
     bool distinct_in_order = false;
 

@@ -1,7 +1,7 @@
 ---
 slug: /en/operations/system-tables/blob_storage_log
 ---
-# Blob Storage Operations Log
+# blob_storage_log
 
 Contains logging entries with information about various blob storage operations such as uploads and deletes.
 
