@@ -1,0 +1,42 @@
+SELECT
+    src,
+    dst,
+    other_cols
+FROM test_a
+PREWHERE src = \'42\'
+SELECT
+    src,
+    dst,
+    other_cols
+FROM test_a
+PREWHERE (dst = \'-42\') AND (src IN (
+    SELECT src
+    FROM test_a
+    WHERE dst = \'-42\'
+))
+SELECT
+    src,
+    dst,
+    c1,
+    c2,
+    c3,
+    other_cols
+FROM test_b
+PREWHERE src = \'42\'
+SELECT
+    src,
+    dst,
+    c1,
+    c2,
+    c3,
+    other_cols
+FROM test_b
+PREWHERE (c3 = \'44\') AND (c1 = \'43\') AND (dst = \'-42\') AND (src IN (
+    SELECT src
+    FROM test_b
+    WHERE c1 = \'43\'
+)) AND (src IN (
+    SELECT src
+    FROM test_b
+    WHERE dst = \'-42\'
+))
