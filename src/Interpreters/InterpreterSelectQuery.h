@@ -160,6 +160,10 @@ private:
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
+    ASTPtr pkOptimization(const ProjectionsDescription & projections, const ASTPtr & where_ast, const String & main_table, const String & main_primary_key) const;
+    ASTPtr create_proj_optimized_ast(const ASTPtr & ast, const String & main_table, const String & main_primary_key) const;
+    
+    void analyze_where_ast(const ASTPtr & ast, const ASTPtr & func, NameSet & proj_pks, const String & main_table, const String & main_primary_key, bool & contains_pk) const;
     void addPrewhereAliasActions();
     void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
     bool shouldMoveToPrewhere() const;
@@ -195,7 +199,7 @@ private:
     std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
-
+    String getTableName(const ASTPtr & tables_in_select_query) const;
     enum class Modificator
     {
         ROLLUP = 0,
