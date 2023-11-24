@@ -41,14 +41,39 @@ size_t SLRUFileCachePriority::getElementsCount(const CacheGuard::Lock & lock) co
     return protected_queue.getElementsCount(lock) + probationary_queue.getElementsCount(lock);
 }
 
+bool SLRUFileCachePriority::canFit(size_t size, const CacheGuard::Lock & lock) const
+{
+    return probationary_queue.canFit(size, lock) || protected_queue.canFit(size, lock);
+}
+
 IFileCachePriority::IteratorPtr SLRUFileCachePriority::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const CacheGuard::Lock & lock)
+    const CacheGuard::Lock & lock,
+    bool is_startup)
 {
-    auto lru_iterator = probationary_queue.add(Entry(key_metadata->key, offset, size, key_metadata), lock);
-    return std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
+    if (is_startup)
+    {
+        /// If it is server startup, we put entries in any queue it will fit in,
+        /// but with preference for probationary queue,
+        /// because we do not know the distribution between queues after server restart.
+        if (probationary_queue.canFit(size, lock))
+        {
+            auto lru_iterator = probationary_queue.add(Entry(key_metadata->key, offset, size, key_metadata), lock);
+            return std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
+        }
+        else
+        {
+            auto lru_iterator = protected_queue.add(Entry(key_metadata->key, offset, size, key_metadata), lock);
+            return std::make_shared<SLRUIterator>(this, std::move(lru_iterator), true);
+        }
+    }
+    else
+    {
+        auto lru_iterator = probationary_queue.add(Entry(key_metadata->key, offset, size, key_metadata), lock);
+        return std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
+    }
 }
 
 bool SLRUFileCachePriority::collectCandidatesForEviction(

@@ -59,7 +59,15 @@ public:
 
     virtual size_t getElementsCount(const CacheGuard::Lock &) const = 0;
 
-    virtual IteratorPtr add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) = 0;
+    /// Throws exception if there is not enought size to fit it.
+    virtual IteratorPtr add( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        const CacheGuard::Lock &,
+        bool is_startup = false) = 0;
+
+    virtual bool canFit(size_t size, const CacheGuard::Lock &) const = 0;
 
     virtual void shuffle(const CacheGuard::Lock &) = 0;
 

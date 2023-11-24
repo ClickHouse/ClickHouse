@@ -30,7 +30,8 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add(
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const CacheGuard::Lock & lock)
+    const CacheGuard::Lock & lock,
+    bool /* is_startup */)
 {
     return std::make_shared<LRUIterator>(add(Entry(key_metadata->key, offset, size, key_metadata), lock));
 }

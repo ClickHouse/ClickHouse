@@ -25,7 +25,14 @@ public:
 
     size_t getElementsCount(const CacheGuard::Lock &) const override { return current_elements_num; }
 
-    IteratorPtr add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
+    bool canFit(size_t size, const CacheGuard::Lock &) const override;
+
+    IteratorPtr add( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        const CacheGuard::Lock &,
+        bool is_startup = false) override;
 
     bool collectCandidatesForEviction(
         size_t size,
@@ -53,7 +60,6 @@ private:
     /// because of invalidated entries.
     std::atomic<size_t> current_elements_num = 0;
 
-    bool canFit(size_t size, const CacheGuard::Lock &) const;
     bool canFit(size_t size, size_t released_size_assumption, size_t released_elements_assumption, const CacheGuard::Lock &) const;
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CacheGuard::Lock &);

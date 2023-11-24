@@ -1001,9 +1001,6 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
         const auto key = Key::fromKeyString(key_directory.filename().string());
         auto key_metadata = metadata.getKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, /* is_initial_load */true);
 
-        const size_t size_limit = main_priority->getSizeLimit();
-        const size_t elements_limit = main_priority->getElementsLimit();
-
         for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
         {
             auto offset_with_suffix = offset_it->path().filename().string();
@@ -1044,13 +1041,13 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
 
             bool limits_satisfied;
             IFileCachePriority::IteratorPtr cache_it;
+
             {
                 auto lock = lockCache();
-                limits_satisfied = (size_limit == 0 || main_priority->getSize(lock) + size <= size_limit)
-                    && (elements_limit == 0 || main_priority->getElementsCount(lock) + 1 <= elements_limit);
 
+                limits_satisfied = main_priority->canFit(size, lock);
                 if (limits_satisfied)
-                    cache_it = main_priority->add(key_metadata, offset, size, lock);
+                    cache_it = main_priority->add(key_metadata, offset, size, lock, /* is_startup */true);
 
                 /// TODO: we can get rid of this lockCache() if we first load everything in parallel
                 /// without any mutual lock between loading threads, and only after do removeOverflow().

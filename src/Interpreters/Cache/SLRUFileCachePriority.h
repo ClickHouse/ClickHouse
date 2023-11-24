@@ -24,7 +24,14 @@ public:
 
     size_t getElementsCount(const CacheGuard::Lock &) const override;
 
-    IteratorPtr add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
+    bool canFit(size_t size, const CacheGuard::Lock &) const override;
+
+    IteratorPtr add( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        const CacheGuard::Lock &,
+        bool is_startup = false) override;
 
     bool collectCandidatesForEviction(
         size_t size,
