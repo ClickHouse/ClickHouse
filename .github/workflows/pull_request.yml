@@ -388,14 +388,6 @@ jobs:
       test_name: Stateless tests (release, DatabaseReplicated)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseWideParts:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, wide parts enabled)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestReleaseAnalyzer:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
@@ -847,11 +839,9 @@ jobs:
 #############################################################################################
 #################################### PERFORMANCE TESTS ######################################
 #############################################################################################
-# FIXME: perf jobs always run but then can be exited if label performance-pr is not set
-#        some logic should be added to ci script to skip them w/o starting a runner
   PerformanceComparisonX86:
     needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() && contains( github.event.pull_request.labels.*.name, 'My Label') }}
+    if: ${{ !failure() && !cancelled() && contains( github.event.pull_request.labels.*.name, 'performance-pr') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Performance Comparison
@@ -859,7 +849,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
   PerformanceComparisonAarch:
     needs: [RunConfig, BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !failure() && !cancelled() && contains( github.event.pull_request.labels.*.name, 'performance-pr') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Performance Comparison Aarch64
@@ -894,7 +884,6 @@ jobs:
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
       - FunctionalStatelessTestReleaseDatabaseReplicated
-      - FunctionalStatelessTestReleaseWideParts
       - FunctionalStatelessTestReleaseAnalyzer
       - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan

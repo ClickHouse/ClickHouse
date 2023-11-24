@@ -660,6 +660,9 @@ CI_CONFIG = CiConfig(
         "Stateless tests (aarch64)": TestConfig(
             "package_aarch64", **statless_test_common_params
         ),
+        "Stateless tests (release, wide parts enabled)": TestConfig(
+            "package_release", **statless_test_common_params
+        ),
         "Stateless tests (release, analyzer)": TestConfig(
             "package_release", **statless_test_common_params
         ),
@@ -709,9 +712,6 @@ CI_CONFIG = CiConfig(
         # ),
         "Integration tests (release)": TestConfig(
             "package_release", **integration_test_common_params, num_batches=4
-        ),
-        "Integration tests (msan)": TestConfig(
-            "package_msan", **integration_test_common_params
         ),
         "Integration tests flaky check (asan)": TestConfig(
             "package_asan", **integration_test_common_params
