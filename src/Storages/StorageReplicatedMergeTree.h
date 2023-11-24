@@ -2,7 +2,6 @@
 
 #include <base/UUID.h>
 #include <atomic>
-#include <optional>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
