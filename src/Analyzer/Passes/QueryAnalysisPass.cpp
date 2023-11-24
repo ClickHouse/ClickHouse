@@ -2340,7 +2340,6 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     if (need_add_or_null)
     {
         auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
-        //        if (!properties->returns_default_when_only_null && !properties->is_window_function)
         if (!properties->returns_default_when_only_null)
             result_aggregate_function_name += "OrNull";
     }
