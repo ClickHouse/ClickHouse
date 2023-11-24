@@ -44,7 +44,7 @@ function get_shared_locks()
 
 function filter_temporary_locks()
 {
-  while read lock
+  while read -r lock
   do
     owner=$($CLICKHOUSE_KEEPER_CLIENT -q "get_stat ${lock}" | grep 'ephemeralOwner' | sed 's/.*= //')
     if [[ "${owner}" -eq "0" ]]
@@ -109,9 +109,8 @@ export -f get_shared_locks
 export -f loop
 
 
-TIMEOUT=60
 exit_code=0
-timeout ${TIMEOUT} bash -c loop || exit_code="${?}"
+timeout 60 bash -c loop || exit_code="${?}"
 
 if [[ "${exit_code}" -ne "124" ]]
 then

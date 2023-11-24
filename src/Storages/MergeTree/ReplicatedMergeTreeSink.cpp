@@ -892,7 +892,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         {
             transaction.rollbackPartsToTemporaryState();
 
-            /** CH had tried to commit that part
+            /** ClickHouse had tried to commit that part
              *  No assumptions can be made about data after it
              *  Need to ask keeper
              */
