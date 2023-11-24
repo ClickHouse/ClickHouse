@@ -4809,6 +4809,10 @@ If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x
 
 Toggles query optimization at the query plan level.
 
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
 Possible values:
 
 - 0 - Disable all optimizations at the query plan level
@@ -4822,6 +4826,10 @@ Limits the total number of optimizations applied to query plan, see setting [que
 Useful to avoid long optimization times for complex queries.
 If the actual number of optimizations exceeds this setting, an exception is thrown.
 
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: '10000'
@@ -4830,6 +4838,10 @@ Default value: '10000'
 
 Toggles a query-plan-level optimization which moves ARRAY JOINs up in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
 
 Possible values:
 
@@ -4843,6 +4855,10 @@ Default value: `1`.
 Toggles a query-plan-level optimization which moves LIMITs down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
 Possible values:
 
 - 0 - Disable
@@ -4851,6 +4867,10 @@ Possible values:
 Default value: `1`.
 
 ## query_plan_split_filter
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
 
 Toggles a query-plan-level optimization which splits filters into expressions.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -4867,6 +4887,10 @@ Default value: `1`.
 Toggles a query-plan-level optimization which merges consecutive filters.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
 Possible values:
 
 - 0 - Disable
@@ -4878,6 +4902,10 @@ Default value: `1`.
 
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
 
 Possible values:
 
@@ -4891,6 +4919,10 @@ Default value: `1`.
 Toggles a query-plan-level optimization which moves expressions after sorting steps.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
 Possible values:
 
 - 0 - Disable
@@ -4902,6 +4934,10 @@ Default value: `1`.
 
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
 
 Possible values:
 
@@ -4915,6 +4951,10 @@ Default value: `1`.
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
 Possible values:
 
 - 0 - Disable
@@ -4926,6 +4966,10 @@ Default value: `1`.
 
 Toggles the distinct in-order optimization query-plan-level optimization.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
 
 Possible values:
 
@@ -4939,6 +4983,10 @@ Default value: `1`.
 Toggles the read in-order optimization query-plan-level optimization.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
 Possible values:
 
 - 0 - Disable
@@ -4950,6 +4998,10 @@ Default value: `1`.
 
 Toggles the aggregation in-order query-plan-level optimization.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
 
 Possible values:
 
@@ -4963,6 +5015,10 @@ Default value: `0`.
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
 Possible values:
 
 - 0 - Disable
@@ -4974,6 +5030,10 @@ Default value: `1`.
 
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
 
 Possible values:
 
