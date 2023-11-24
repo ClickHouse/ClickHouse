@@ -1,5 +1,6 @@
 #include "MergeTreeDataPartChecksum.h"
 #include <Common/SipHash.h>
+#include "base/types.h"
 #include <base/hex.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -97,6 +98,14 @@ UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
     UInt64 res = 0;
     for (const auto & [_, checksum] : files)
         res += checksum.file_size;
+    return res;
+}
+
+UInt64 MergeTreeDataPartChecksums::getTotalSizeUncompressedOnDisk() const
+{
+    UInt64 res = 0;
+    for (const auto & [_, checksum] : files)
+        res += checksum.uncompressed_size;
     return res;
 }
 

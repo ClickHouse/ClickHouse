@@ -5459,6 +5459,12 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & se
     return res;
 }
 
+std::optional<UInt64> StorageReplicatedMergeTree::totalBytesUncompressed(const Settings & settings) const
+{
+    UInt64 res = 0;
+    foreachActiveParts([&res](auto & part) { res += part->getBytesUncompressedOnDisk(); }, settings.select_sequential_consistency);
+    return res;
+}
 
 void StorageReplicatedMergeTree::assertNotReadonly() const
 {

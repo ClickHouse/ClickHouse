@@ -2,6 +2,7 @@
 
 #include <base/UUID.h>
 #include <atomic>
+#include <optional>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
@@ -165,6 +166,7 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 

@@ -689,6 +689,13 @@ public:
     /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
 
+    /// If it is possible to quickly determine exact number of uncompressed bytes for the table on storage:
+    /// - disk (uncompressed)
+    ///
+    /// Used for:
+    /// - For total_bytes_uncompressed column in system.tables
+    virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; } 
+
     /// Number of rows INSERTed since server start.
     ///
     /// Does not take the underlying Storage (if any) into account.
