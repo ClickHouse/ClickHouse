@@ -9,6 +9,8 @@
 namespace DB
 {
 
+using DatabaseAndTableNameSet = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+
 struct RefreshInfo
 {
     String database;
@@ -33,7 +35,7 @@ class RefreshSetElement
 {
     friend class RefreshTask;
 public:
-    RefreshSetElement(StorageID id, RefreshTaskHolder task);
+    RefreshSetElement(StorageID id, std::vector<StorageID> deps, RefreshTaskHolder task);
 
     RefreshSetElement(const RefreshSetElement &) = delete;
     RefreshSetElement & operator=(const RefreshSetElement &) = delete;
@@ -41,12 +43,13 @@ public:
     RefreshInfo getInfo() const;
 
     RefreshTaskHolder getTask() const;
-
     const StorageID & getID() const;
+    const std::vector<StorageID> & getDependencies() const;
 
 private:
     RefreshTaskObserver corresponding_task;
     StorageID view_id;
+    std::vector<StorageID> dependencies;
 
     std::atomic<UInt64> read_rows{0};
     std::atomic<UInt64> read_bytes{0};
@@ -63,73 +66,62 @@ private:
     std::atomic<RefreshTaskStateUnderlying> last_result{0};
 };
 
-struct RefreshSetLess
-{
-    using is_transparent = std::true_type;
-
-    bool operator()(const RefreshSetElement & l, const RefreshSetElement & r) const;
-    bool operator()(const StorageID & l, const RefreshSetElement & r) const;
-    bool operator()(const RefreshSetElement & l, const StorageID & r) const;
-    bool operator()(const StorageID & l, const StorageID & r) const;
-};
-
 /// Set of refreshable views
 class RefreshSet
 {
 private:
-    using Container = std::map<UUID, RefreshSetElement>;
-    using ContainerIter = typename Container::iterator;
+    using ElementMap = std::unordered_map<StorageID, RefreshSetElement, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using ElementMapIter = typename ElementMap::iterator;
 
 public:
     class Entry
     {
         friend class RefreshSet;
     public:
-        Entry();
+        Entry() = default;
 
         Entry(Entry &&) noexcept;
         Entry & operator=(Entry &&) noexcept;
 
         ~Entry();
 
-        RefreshSetElement * operator->() { return &iter->second; }
+        explicit operator bool() const { return parent_set != nullptr; }
+        RefreshSetElement * operator->() { chassert(parent_set); return &iter->second; }
+
+        void reset();
 
     private:
-        RefreshSet * parent_set;
-        ContainerIter iter;
+        RefreshSet * parent_set = nullptr;
+        ElementMapIter iter;
         std::optional<CurrentMetrics::Increment> metric_increment;
 
-        Entry(
-            RefreshSet & set,
-            ContainerIter it,
-            const CurrentMetrics::Metric & metric);
-
-        void cleanup(RefreshSet * set);
+        Entry(RefreshSet & set, ElementMapIter it);
     };
 
     using InfoContainer = std::vector<RefreshInfo>;
 
     RefreshSet();
 
-    std::optional<Entry> emplace(StorageID id, RefreshTaskHolder task)
-    {
-        std::lock_guard guard(elements_mutex);
-        auto [it, is_inserted] = elements.emplace(std::piecewise_construct, std::forward_as_tuple(id.uuid), std::forward_as_tuple(id, std::move(task)));
-        if (is_inserted)
-            return Entry(*this, std::move(it), set_metric);
-        return {};
-    }
+    Entry emplace(StorageID id, std::vector<StorageID> dependencies, RefreshTaskHolder task);
 
     RefreshTaskHolder getTask(const StorageID & id) const;
 
     InfoContainer getInfo() const;
 
-private:
-    mutable std::mutex elements_mutex;
-    Container elements;
-    CurrentMetrics::Metric set_metric;
+    /// Get tasks that depend on the given one.
+    std::vector<RefreshTaskHolder> getDependents(const StorageID & id) const;
 
-    void erase(ContainerIter it);
+private:
+    using DependentsMap = std::unordered_map<StorageID, DatabaseAndTableNameSet, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+
+    /// Protects the two maps below, not locked for any nontrivial operations (e.g. operations that
+    /// block or lock other mutexes).
+    mutable std::mutex mutex;
+
+    ElementMap elements;
+    DependentsMap dependents;
+
+    void erase(ElementMapIter it);
 };
 
 using RefreshSetEntry = RefreshSet::Entry;

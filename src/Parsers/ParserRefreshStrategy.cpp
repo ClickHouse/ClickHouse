@@ -54,10 +54,12 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (ParserKeyword{"DEPENDS ON"}.ignore(pos, expected))
     {
         ASTPtr dependencies;
+
         auto list_parser = ParserList{
-            std::make_unique<ParserIdentifier>(),
+            std::make_unique<ParserCompoundIdentifier>(
+                /*table_name_with_optional_uuid_*/ true, /*allow_query_parameter_*/ false),
             std::make_unique<ParserToken>(TokenType::Comma),
-            /* allow_empty= */ false};
+            /*allow_empty*/ false};
         if (!list_parser.parse(pos, dependencies, expected))
             return false;
         refresh->set(refresh->dependencies, dependencies);

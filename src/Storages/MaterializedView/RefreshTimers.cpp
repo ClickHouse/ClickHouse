@@ -1,9 +1,14 @@
 #include <Storages/MaterializedView/RefreshTimers.h>
 
-#include <Parsers/ASTTimeInterval.h>
+#include <Parsers/ASTRefreshStrategy.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -66,6 +71,14 @@ void RefreshAfterTimer::setWithKind(IntervalKind kind, UInt64 val)
         default:
             break;
     }
+}
+
+bool RefreshAfterTimer::operator==(const RefreshAfterTimer & rhs) const
+{
+    /// (Or maybe different implementations of standard library have different sizes of chrono types.
+    ///  If so, feel free to just remove this assert.)
+    static_assert(sizeof(*this) == 40, "RefreshAfterTimer fields appear to have changed. Please update this operator==() here.");
+    return std::tie(seconds, minutes, hours, days, weeks, months, years) == std::tie(rhs.seconds, rhs.minutes, rhs.hours, rhs.days, rhs.weeks, rhs.months, rhs.years);
 }
 
 RefreshEveryTimer::RefreshEveryTimer(const ASTTimePeriod & time_period, const ASTTimeInterval * time_offset)
@@ -239,5 +252,51 @@ std::chrono::sys_seconds RefreshEveryTimer::alignedToSeconds(std::chrono::system
         return tp_minutes + 1min + std::chrono::seconds{value};
     return tp_minutes + next_seconds;
 }
+
+bool RefreshEveryTimer::operator==(const RefreshEveryTimer & rhs) const
+{
+    static_assert(sizeof(*this) == sizeof(offset) + 8, "RefreshEveryTimer fields appear to have changed. Please update this operator==() here.");
+    return std::tie(offset, value, kind) == std::tie(rhs.offset, rhs.value, rhs.kind);
+}
+
+std::variant<RefreshEveryTimer, RefreshAfterTimer> makeTimer(const ASTRefreshStrategy & strategy)
+{
+    using enum ASTRefreshStrategy::ScheduleKind;
+    switch (strategy.schedule_kind)
+    {
+        case EVERY:
+            return RefreshEveryTimer{*strategy.period, strategy.interval};
+        case AFTER:
+            return RefreshAfterTimer{strategy.interval};
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown refresh strategy kind");
+    }
+}
+
+RefreshTimer::RefreshTimer(const ASTRefreshStrategy & strategy) : timer(makeTimer(strategy)) {}
+
+namespace
+{
+
+template <typename... Ts>
+struct CombinedVisitor : Ts... { using Ts::operator()...; };
+template <typename... Ts>
+CombinedVisitor(Ts...) -> CombinedVisitor<Ts...>;
+
+}
+
+std::chrono::sys_seconds RefreshTimer::next(std::chrono::system_clock::time_point tp) const
+{
+    CombinedVisitor visitor{
+        [tp](const RefreshAfterTimer & timer_) { return timer_.after(tp); },
+        [tp](const RefreshEveryTimer & timer_) { return timer_.next(tp); }};
+    auto r = std::visit<std::chrono::sys_seconds>(std::move(visitor), timer);
+    chassert(r > tp);
+    return r;
+}
+
+bool RefreshTimer::operator==(const RefreshTimer & rhs) const { return timer == rhs.timer; }
+const RefreshAfterTimer * RefreshTimer::tryGetAfter() const { return std::get_if<RefreshAfterTimer>(&timer); }
+const RefreshEveryTimer * RefreshTimer::tryGetEvery() const { return std::get_if<RefreshEveryTimer>(&timer); }
 
 }

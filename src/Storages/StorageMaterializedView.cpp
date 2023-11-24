@@ -451,7 +451,7 @@ void StorageMaterializedView::startup()
 void StorageMaterializedView::shutdown(bool)
 {
     if (refresher)
-        refresher->stop();
+        refresher->shutdown();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
