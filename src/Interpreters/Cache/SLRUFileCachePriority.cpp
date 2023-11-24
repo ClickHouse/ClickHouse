@@ -46,7 +46,7 @@ bool SLRUFileCachePriority::canFit(size_t size, const CacheGuard::Lock & lock) c
     return probationary_queue.canFit(size, lock) || protected_queue.canFit(size, lock);
 }
 
-IFileCachePriority::IteratorPtr SLRUFileCachePriority::add(
+IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
