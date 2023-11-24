@@ -59,7 +59,7 @@ public:
 
     virtual size_t getElementsCount(const CacheGuard::Lock &) const = 0;
 
-    /// Throws exception if there is not enought size to fit it.
+    /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
         size_t offset,
