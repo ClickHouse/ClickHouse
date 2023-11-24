@@ -722,7 +722,7 @@ void ClientBase::adjustSettings()
     global_context->setSettings(settings);
 }
 
-void ClientBase::initTtyBuffer(ProgressOption progress)
+void ClientBase::initTTYBuffer(ProgressOption progress)
 {
     if (tty_buf)
         return;
