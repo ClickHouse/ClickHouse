@@ -2236,11 +2236,12 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     LOG_TRACE(log, "Executing DROP_RANGE {}", entry.new_part_name);
 
+    auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+
     /// Wait for loading of outdated parts because DROP_RANGE
     /// command must be applied to all parts on disk.
     waitForOutdatedPartsToBeLoaded();
 
-    auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
     {
         auto pause_checking_parts = part_check_thread.pausePartsCheck();
@@ -2303,7 +2304,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 }
 
 
-bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
+bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 {
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
@@ -2313,6 +2314,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
               entry.znode_name, entry_replace.drop_range_part_name, entry_replace.new_part_names.size(),
               entry_replace.from_database, entry_replace.from_table);
 
+    MergeTreePartInfo drop_range = MergeTreePartInfo::fromPartName(entry_replace.drop_range_part_name, format_version);
+
     /// Wait for loading of outdated parts because REPLACE_RANGE
     /// command must be applied to all parts on disk.
     waitForOutdatedPartsToBeLoaded();
@@ -2320,7 +2323,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage_settings_ptr = getSettings();
 
-    MergeTreePartInfo drop_range = MergeTreePartInfo::fromPartName(entry_replace.drop_range_part_name, format_version);
     /// Range with only one block has special meaning: it's ATTACH PARTITION or MOVE PARTITION, so there is no drop range
     bool replace = !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range);
 
@@ -2529,7 +2531,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             LOG_DEBUG(log, "Part {} is not found on remote replicas", part_desc->new_part_name);
 
             /// Fallback to covering part
-            replica = findReplicaHavingCoveringPart(part_desc->new_part_name, true, found_part_name);
+            replica = findReplicaHavingCoveringPartImplLowLevel(&entry, part_desc->new_part_name, found_part_name, true);
 
             if (replica.empty())
             {
@@ -2537,6 +2539,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 LOG_DEBUG(log, "Parts covering {} are not found on remote replicas", part_desc->new_part_name);
                 continue;
             }
+
+            LOG_TRACE(log, "Found part {} covering {} on replica {}", found_part_name, part_desc->new_part_name, replica);
         }
         else
         {
@@ -4323,6 +4327,12 @@ std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(c
 
 String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entry, bool active)
 {
+    String dummy;
+    return findReplicaHavingCoveringPartImplLowLevel(&entry, entry.new_part_name, dummy, active);
+}
+
+String StorageReplicatedMergeTree::findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active)
+{
     auto zookeeper = getZooKeeper();
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
 
@@ -4341,8 +4351,8 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
         Strings parts = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts");
         for (const String & part_on_replica : parts)
         {
-            if (part_on_replica == entry.new_part_name
-                || MergeTreePartInfo::contains(part_on_replica, entry.new_part_name, format_version))
+            if (part_on_replica == part_name
+                || MergeTreePartInfo::contains(part_on_replica, part_name, format_version))
             {
                 if (largest_part_found.empty()
                     || MergeTreePartInfo::contains(part_on_replica, largest_part_found, format_version))
@@ -4354,15 +4364,16 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
 
         if (!largest_part_found.empty())
         {
-            bool the_same_part = largest_part_found == entry.new_part_name;
+            found_part_name = largest_part_found;
+            bool the_same_part = largest_part_found == part_name;
 
             /// Make a check in case if selected part differs from source part
-            if (!the_same_part)
+            if (!the_same_part && entry)
             {
                 String reject_reason;
-                if (!queue.addFuturePartIfNotCoveredByThem(largest_part_found, entry, reject_reason))
+                if (!queue.addFuturePartIfNotCoveredByThem(largest_part_found, *entry, reject_reason))
                 {
-                    LOG_INFO(log, "Will not fetch part {} covering {}. {}", largest_part_found, entry.new_part_name, reject_reason);
+                    LOG_INFO(log, "Will not fetch part {} covering {}. {}", largest_part_found, part_name, reject_reason);
                     return {};
                 }
             }
@@ -4375,44 +4386,11 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
 }
 
 
-String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
-    const String & part_name, bool active, String & found_part_name)
+bool StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
+    const String & part_name, bool active)
 {
-    auto zookeeper = getZooKeeper();
-    Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
-
-    /// Select replicas in uniformly random order.
-    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
-
-    String largest_part_found;
-    String largest_replica_found;
-
-    for (const String & replica : replicas)
-    {
-        if (replica == replica_name)
-            continue;
-
-        if (active && !zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
-            continue;
-
-        Strings parts = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts");
-        for (const String & part_on_replica : parts)
-        {
-            if (part_on_replica == part_name
-                || MergeTreePartInfo::contains(part_on_replica, part_name, format_version))
-            {
-                if (largest_part_found.empty()
-                    || MergeTreePartInfo::contains(part_on_replica, largest_part_found, format_version))
-                {
-                    largest_part_found = part_on_replica;
-                    largest_replica_found = replica;
-                }
-            }
-        }
-    }
-
-    found_part_name = largest_part_found;
-    return largest_replica_found;
+    String dummy;
+    return !findReplicaHavingCoveringPartImplLowLevel(/* entry */ nullptr, part_name, dummy, active).empty();
 }
 
 
