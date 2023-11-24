@@ -808,10 +808,10 @@ std::optional<time_t> ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::tryGetLa
 template <typename UpdatableSessionPtr>
 HTTPFileInfo ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getFileInfo()
 {
+    /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
+    /// Allows to avoid making unnecessary requests in such cases.
     if (!settings.http_make_head_request)
-    {
-            return HTTPFileInfo{};
-    }
+        return HTTPFileInfo{};
 
     Poco::Net::HTTPResponse response;
     try

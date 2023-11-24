@@ -462,14 +462,9 @@ Default value: 1048576.
 
 ## http_make_head_request {#http-make-head-request}
 
-Enables or disables execution of a HEAD request before the actual GET request
+The `http_make_head_request` setting allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size. Since it's enabled by default, it may be desirable to disable this setting in cases where the server does not support `HEAD` requests.
 
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: 1.
+Default value: `true`.
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
