@@ -19,24 +19,24 @@ namespace ErrorCodes
 namespace
 {
 
-template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
+template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
 AggregateFunctionPtr createWithNumericOrTimeType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
-    if (which.idx == TypeIndex::Date) return std::make_shared<AggregateFunctionTemplate<UInt16, Data>>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::DateTime) return std::make_shared<AggregateFunctionTemplate<UInt32, Data>>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::IPv4) return std::make_shared<AggregateFunctionTemplate<IPv4, Data>>(std::forward<TArgs>(args)...);
-    return AggregateFunctionPtr(createWithNumericType<AggregateFunctionTemplate, Data, TArgs...>(argument_type, std::forward<TArgs>(args)...));
+    if (which.idx == TypeIndex::Date) return std::make_shared<AggregateFunctionTemplate<UInt16>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::DateTime) return std::make_shared<AggregateFunctionTemplate<UInt32>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::IPv4) return std::make_shared<AggregateFunctionTemplate<IPv4>>(std::forward<TArgs>(args)...);
+    return AggregateFunctionPtr(createWithNumericType<AggregateFunctionTemplate, TArgs...>(argument_type, std::forward<TArgs>(args)...));
 }
 
-template <typename Trait, typename ... TArgs>
+template <typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArraySortedImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<GroupArraySortedNumericImpl, Trait>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<GroupArraySortedNumericImpl>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
         return AggregateFunctionPtr(res);
 
     WhichDataType which(argument_type);
-    return std::make_shared<GroupArraySortedGeneralImpl<GroupArrayNodeGeneral>>(argument_type, parameters, std::forward<TArgs>(args)...);
+    return std::make_shared<GroupArraySortedGeneralImpl<GroupArraySortedNodeGeneral>>(argument_type, parameters, std::forward<TArgs>(args)...);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArraySorted(
@@ -66,7 +66,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySorted(
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Function {} does not support this number of arguments", name);
 
-    return createAggregateFunctionGroupArraySortedImpl<GroupArrayTrait</* Thas_limit= */ true, false, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
+    return createAggregateFunctionGroupArraySortedImpl(argument_types[0], parameters, max_elems);
 }
 
 }

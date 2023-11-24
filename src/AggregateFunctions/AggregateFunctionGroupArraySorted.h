@@ -13,7 +13,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <AggregateFunctions/AggregateFunctionGroupArray.h>
 #include <Functions/array/arraySort.h>
 
 #include <Common/Exception.h>
@@ -43,10 +42,10 @@ namespace ErrorCodes
 }
 
 template <typename T>
-struct GroupArraySortedNumericData;
+struct GroupArraySortedData;
 
 template <typename T>
-struct GroupArraySortedNumericData
+struct GroupArraySortedData
 {
     /// For easy serialization.
     static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
@@ -58,19 +57,18 @@ struct GroupArraySortedNumericData
     Array value;
 };
 
-template <typename T, typename Trait>
+template <typename T>
 class GroupArraySortedNumericImpl final
-    : public IAggregateFunctionDataHelper<GroupArraySortedNumericData<T>, GroupArraySortedNumericImpl<T, Trait>>
+    : public IAggregateFunctionDataHelper<GroupArraySortedData<T>, GroupArraySortedNumericImpl<T>>
 {
-    using Data = GroupArraySortedNumericData<T>;
-    static constexpr bool limit_num_elems = Trait::has_limit;
+    using Data = GroupArraySortedData<T>;
     UInt64 max_elems;
     SerializationPtr serialization;
 
 public:
     explicit GroupArraySortedNumericImpl(
         const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<GroupArraySortedNumericData<T>, GroupArraySortedNumericImpl<T, Trait>>(
+        : IAggregateFunctionDataHelper<GroupArraySortedData<T>, GroupArraySortedNumericImpl<T>>(
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , max_elems(max_elems_)
         , serialization(data_type_->getDefaultSerialization())
@@ -105,12 +103,11 @@ public:
 
         if (rhs_elems.value.size())
             cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
-        if (cur_elems.value.size() < max_elems)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
 
         RadixSort<RadixSortNumTraits<T>>::executeLSD(cur_elems.value.data(), cur_elems.value.size());
-        if (limit_num_elems)
-            cur_elems.value.resize(max_elems, arena);
+
+        size_t elems_size = cur_elems.value.size() < max_elems ? cur_elems.value.size() : max_elems;
+        cur_elems.value.resize(elems_size, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -148,11 +145,10 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         auto& value = this->data(place).value;
-        if (value.size() < max_elems)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
+
         RadixSort<RadixSortNumTraits<T>>::executeLSD(value.data(), value.size());
-        if (limit_num_elems)
-            value.resize(max_elems, arena);
+        size_t elems_size = value.size() < max_elems ? value.size() : max_elems;
+        value.resize(elems_size, arena);
         size_t size = value.size();
 
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
@@ -164,6 +160,8 @@ public:
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
             data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+            RadixSort<RadixSortNumTraits<T>>::executeLSD(value.data(), value.size());
+            value.resize(elems_size, arena);
         }
     }
 
@@ -185,9 +183,28 @@ struct GroupArraySortedGeneralData<Node, false>
 };
 
 template <typename Node>
-struct GroupArraySortedGeneralData<Node, true> : public GroupArraySamplerData<Node *>
-{
-};
+ struct GroupArraySortedNodeBase
+ {
+     UInt64 size; // size of payload
+
+     /// Returns pointer to actual payload
+     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
+
+     const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
+ };
+
+ struct GroupArraySortedNodeString : public GroupArraySortedNodeBase<GroupArraySortedNodeString>
+ {
+     using Node = GroupArraySortedNodeString;
+
+
+ };
+
+struct GroupArraySortedNodeGeneral : public GroupArraySortedNodeBase<GroupArraySortedNodeGeneral>
+ {
+     using Node = GroupArraySortedNodeGeneral;
+
+ };
 
 /// Implementation of groupArraySorted for Generic data via Array
 template <typename Node>
@@ -303,7 +320,7 @@ public:
 
         auto & column_data = column_array.getData();
 
-        if (std::is_same_v<Node, GroupArrayNodeString>)
+        if (std::is_same_v<Node, GroupArraySortedNodeString>)
         {
             auto & string_offsets = assert_cast<ColumnString &>(column_data).getOffsets();
             string_offsets.reserve(string_offsets.size() + value.size());

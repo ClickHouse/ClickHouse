@@ -1,6 +1,8 @@
-SELECT groupArraySorted(5)(number) from numbers(100);
+SELECT groupArraySorted(5)(number) FROM numbers(100);
 
-SELECT groupArraySorted(100)(number) from numbers(1000);
+SELECT groupArraySorted(10)(number) FROM numbers(5);
+
+SELECT groupArraySorted(100)(number) FROM numbers(1000);
 
 SELECT groupArraySorted(30)(str) FROM (SELECT toString(number) as str FROM numbers(30));
 
