@@ -1,4 +1,3 @@
-#include <memory>
 #include <stdexcept>
 #include <IO/Operators.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -10,8 +9,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
-#include <Processors/ResizeProcessor.h>
-#include <Processors/Transforms/ScatterByPartitionTransform.h>
 
 namespace CurrentMetrics
 {
@@ -80,21 +77,6 @@ SortingStep::SortingStep(
 }
 
 SortingStep::SortingStep(
-        const DataStream & input_stream,
-        const SortDescription & description_,
-        const SortDescription & partition_by_description_,
-        UInt64 limit_,
-        const Settings & settings_,
-        bool optimize_sorting_by_input_stream_properties_)
-    : SortingStep(input_stream, description_, limit_, settings_, optimize_sorting_by_input_stream_properties_)
-{
-    partition_by_description = partition_by_description_;
-
-    output_stream->sort_description = result_description;
-    output_stream->sort_scope = DataStream::SortScope::Stream;
-}
-
-SortingStep::SortingStep(
     const DataStream & input_stream_,
     SortDescription prefix_description_,
     SortDescription result_description_,
@@ -135,11 +117,7 @@ void SortingStep::updateOutputStream()
 {
     output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
     output_stream->sort_description = result_description;
-
-    if (partition_by_description.empty())
-        output_stream->sort_scope = DataStream::SortScope::Global;
-    else
-        output_stream->sort_scope = DataStream::SortScope::Stream;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -155,55 +133,6 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
 {
     type = Type::FinishSorting;
     prefix_description = std::move(prefix_description_);
-}
-
-void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
-{
-    size_t threads = pipeline.getNumThreads();
-    size_t streams = pipeline.getNumStreams();
-
-    if (!partition_by_description.empty() && threads > 1)
-    {
-        Block stream_header = pipeline.getHeader();
-
-        ColumnNumbers key_columns;
-        key_columns.reserve(partition_by_description.size());
-        for (auto & col : partition_by_description)
-        {
-            key_columns.push_back(stream_header.getPositionByName(col.column_name));
-        }
-
-        pipeline.transform([&](OutputPortRawPtrs ports)
-        {
-            Processors processors;
-            for (auto * port : ports)
-            {
-                auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, threads, key_columns);
-                connect(*port, scatter->getInputs().front());
-                processors.push_back(scatter);
-            }
-            return processors;
-        });
-
-        if (streams > 1)
-        {
-            pipeline.transform([&](OutputPortRawPtrs ports)
-            {
-                Processors processors;
-                for (size_t i = 0; i < threads; ++i)
-                {
-                    size_t output_it = i;
-                    auto resize = std::make_shared<ResizeProcessor>(stream_header, streams, 1);
-                    auto & inputs = resize->getInputs();
-
-                    for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += threads, ++input_it)
-                        connect(*ports[output_it], *input_it);
-                    processors.push_back(resize);
-                }
-                return processors;
-            });
-        }
-    }
 }
 
 void SortingStep::finishSorting(
@@ -247,7 +176,6 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             pipeline.getNumStreams(),
             result_sort_desc,
             sort_settings.max_block_size,
-            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);
@@ -331,19 +259,16 @@ void SortingStep::fullSortStreams(
 void SortingStep::fullSort(
     QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
 {
-    scatterByPartitionIfNeeded(pipeline);
-
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
 
     /// If there are several streams, then we merge them into one
-    if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
+    if (pipeline.getNumStreams() > 1)
     {
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getHeader(),
             pipeline.getNumStreams(),
             result_sort_desc,
             sort_settings.max_block_size,
-            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);
@@ -368,7 +293,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     {
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
-
         if (need_finish_sorting)
         {
             finishSorting(pipeline, prefix_description, result_description, limit);

@@ -56,8 +56,6 @@ public:
         LITTLE_ENDIAN_BYTE_ORDER = 3 /// little-endian byte-order
     };
 
-    static const std::streamsize	DEFAULT_MAX_CSTR_LENGTH { 1024 };
-
     BinaryWriter(std::ostream & ostr, StreamByteOrder byteOrder = NATIVE_BYTE_ORDER);
     /// Creates the BinaryWriter.
 
@@ -132,9 +130,6 @@ public:
 
     void writeRaw(const char * buffer, std::streamsize length);
     /// Writes length raw bytes from the given buffer to the stream.
-
-    void writeCString(const char* cString, std::streamsize maxLength = DEFAULT_MAX_CSTR_LENGTH);
-		/// Writes zero-terminated C-string.
 
     void writeBOM();
     /// Writes a byte-order mark to the stream. A byte order mark is

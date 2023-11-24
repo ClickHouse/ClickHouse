@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Storages/IStorage.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/IStorage.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
 namespace DB
@@ -146,8 +145,7 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
-
-    void applyFilters() override;
+    static bool isFinal(const SelectQueryInfo & query_info);
 
 private:
     const size_t required_max_block_size;
@@ -162,7 +160,7 @@ private:
     StorageSnapshotPtr merge_storage_snapshot;
 
     /// Store read plan for each child table.
-    /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
+    /// It's needed to guarantee lifetime for child steps to be the same as for this step.
     std::vector<QueryPlan> child_plans;
 
     SelectQueryInfo query_info;
@@ -180,37 +178,23 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
-    std::vector<Aliases> table_aliases;
-
-    void createChildPlans();
-
-    void applyFilters(const QueryPlan & plan) const;
-
-    QueryPlan createPlanForTable(
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        const QueryProcessingStage::Enum & processed_stage,
-        UInt64 max_block_size,
-        const StorageWithLockAndName & storage_with_lock,
-        Names real_column_names,
-        ContextMutablePtr modified_context,
-        size_t streams_num);
-
-    QueryPipelineBuilderPtr createSources(
-        QueryPlan & plan,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & modified_query_info,
-        const QueryProcessingStage::Enum & processed_stage,
-        const Block & header,
-        const Aliases & aliases,
-        const StorageWithLockAndName & storage_with_lock,
-        ContextMutablePtr modified_context,
-        bool concat_streams = false) const;
-
     static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
         const ContextPtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot);
+
+    QueryPipelineBuilderPtr createSources(
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        const QueryProcessingStage::Enum & processed_stage,
+        UInt64 max_block_size,
+        const Block & header,
+        const Aliases & aliases,
+        const StorageWithLockAndName & storage_with_lock,
+        Names real_column_names,
+        ContextMutablePtr modified_context,
+        size_t streams_num,
+        bool concat_streams = false);
 
     static void convertingSourceStream(
         const Block & header,

@@ -102,9 +102,6 @@ public:
     Names getNames() const;
     DataTypes getTypes() const;
 
-    /// Remove columns which names are not in the `names`.
-    void filterColumns(const NameSet & names);
-
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const NameSet & names) const;
 
@@ -122,8 +119,6 @@ public:
 
     /// Try to get column position by name, returns number of columns if column isn't found
     size_t getPosByName(const std::string & name) const noexcept;
-
-    String toNamesAndTypesDescription() const;
 };
 
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;

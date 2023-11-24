@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream>
+
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 

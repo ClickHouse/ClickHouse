@@ -74,13 +74,13 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
     setInMemoryMetadata(storage_metadata);
 
+    String replication_identifier = remote_database_name + "_" + remote_table_name_;
     replication_settings->materialized_postgresql_tables_list = remote_table_name_;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
+            replication_identifier,
             remote_database_name,
-            remote_table_name_,
             table_id_.database_name,
-            toString(table_id_.uuid),
             connection_info,
             getContext(),
             is_attach,
@@ -143,7 +143,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     if (tmp_storage)
     {
         LOG_TRACE(&Poco::Logger::get("MaterializedPostgreSQLStorage"), "Temporary table {} already exists, dropping", tmp_table_id.getNameForLogs());
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), getContext(), tmp_table_id, /* sync */true);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), getContext(), tmp_table_id, /* no delay */true);
     }
 
     auto new_context = Context::createCopy(context);
@@ -228,7 +228,7 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 }
 
 
-void StorageMaterializedPostgreSQL::shutdown(bool)
+void StorageMaterializedPostgreSQL::shutdown()
 {
     if (replication_handler)
         replication_handler->shutdown();
@@ -250,7 +250,7 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
 
     auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync, /* ignore_sync_setting */ true);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync);
 }
 
 
@@ -545,10 +545,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
-
-        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
-                                " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
 
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());

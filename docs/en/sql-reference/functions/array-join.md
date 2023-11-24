@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/array-join
-sidebar_position: 15
+sidebar_position: 61
 sidebar_label: arrayJoin
 ---
 
@@ -78,22 +78,6 @@ GROUP BY
 │           1 │ Bobruisk │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
-### Important note!
-Using multiple `arrayJoin` with same expression may not produce expected results due to optimizations.
-For that cases, consider modifying repeated array expression with extra operations that do not affect join result - e.g. `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
-
-Example:
-```sql
-SELECT
-    arrayJoin(dice) as first_throw,
-    /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
-    arrayJoin(arrayConcat(dice, [])) as second_throw -- intentionally changed expression to force re-evaluation
-FROM (
-    SELECT [1, 2, 3, 4, 5, 6] as dice
-);
-```
-
-
 
 Note the [ARRAY JOIN](../statements/select/array-join.md) syntax in the SELECT query, which provides broader possibilities.
 `ARRAY JOIN` allows you to convert multiple arrays with the same number of elements at a time.

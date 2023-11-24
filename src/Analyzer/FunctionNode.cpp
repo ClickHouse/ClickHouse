@@ -209,27 +209,15 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
     }
 
-    const auto & arguments = getArguments();
-    auto new_options = options;
-    const auto & argument_nodes = arguments.getNodes();
-    /// To avoid surrounding constants with several internal casts.
-    if (function_name == "_CAST" && !argument_nodes.empty() && argument_nodes[0]->getNodeType() == QueryTreeNodeType::CONSTANT)
-        new_options.add_cast_for_constants = false;
-
-    /// Avoid cast for `IN tuple(...)` expression.
-    /// Tuples colud be quite big, and adding a type may significantly increase query size.
-    /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
-    if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 &&  argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT)
-        new_options.add_cast_for_constants = false;
-
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {
-        function_ast->children.push_back(parameters.toAST(new_options));
+        function_ast->children.push_back(parameters.toAST(options));
         function_ast->parameters = function_ast->children.back();
     }
 
-    function_ast->children.push_back(arguments.toAST(new_options));
+    const auto & arguments = getArguments();
+    function_ast->children.push_back(arguments.toAST(options));
     function_ast->arguments = function_ast->children.back();
 
     auto window_node = getWindowNode();
@@ -238,7 +226,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         if (auto * identifier_node = window_node->as<IdentifierNode>())
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
-            function_ast->window_definition = window_node->toAST(new_options);
+            function_ast->window_definition = window_node->toAST(options);
     }
 
     return function_ast;

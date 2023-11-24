@@ -85,7 +85,7 @@ ObjectInfo getObjectInfo(
     }
     else if (throw_on_error)
     {
-        throw S3Exception(error.GetErrorType(),
+        throw DB::Exception(ErrorCodes::S3_ERROR,
             "Failed to get object info: {}. HTTP response code: {}",
             error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
     }

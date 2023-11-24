@@ -1,6 +1,6 @@
 option (ENABLE_AZURE_BLOB_STORAGE "Enable Azure blob storage" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_AZURE_BLOB_STORAGE OR OS_FREEBSD)
+if (NOT ENABLE_AZURE_BLOB_STORAGE OR BUILD_STANDALONE_KEEPER OR OS_FREEBSD)
     message(STATUS "Not using Azure blob storage")
     return()
 endif()
@@ -48,8 +48,9 @@ set(AZURE_SDK_INCLUDES
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/inc/"
 )
 
+include("${AZURE_DIR}/cmake-modules/AzureTransportAdapters.cmake")
+
 add_library(_azure_sdk ${AZURE_SDK_UNIFIED_SRC})
-target_compile_definitions(_azure_sdk PRIVATE BUILD_CURL_HTTP_TRANSPORT_ADAPTER)
 
 # Originally, on Windows azure-core is built with bcrypt and crypt32 by default
 if (TARGET OpenSSL::SSL)

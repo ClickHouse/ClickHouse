@@ -40,7 +40,7 @@ def copy_keys(instance, keys_file_name):
 
 
 def create_table():
-    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
     node1.query(
         """
         CREATE TABLE tbl ON CLUSTER 'cluster' (
@@ -92,8 +92,6 @@ def test_different_keys():
     create_table()
 
     insert_data()
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
-
     assert "BAD_DECRYPT" in node1.query_and_get_error("SELECT * FROM tbl")
     assert "BAD_DECRYPT" in node2.query_and_get_error("SELECT * FROM tbl")
 

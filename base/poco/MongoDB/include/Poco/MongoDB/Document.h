@@ -31,7 +31,6 @@ namespace Poco
 namespace MongoDB
 {
 
-    class Array;
 
     class ElementFindByName
     {
@@ -49,8 +48,8 @@ namespace MongoDB
     /// Represents a MongoDB (BSON) document.
     {
     public:
-        using Ptr = SharedPtr<Document>;
-        using Vector = std::vector<Document::Ptr>;
+        typedef SharedPtr<Document> Ptr;
+        typedef std::vector<Document::Ptr> Vector;
 
         Document();
         /// Creates an empty Document.
@@ -87,10 +86,6 @@ namespace MongoDB
         /// Unlike the other add methods, this method returns
         /// a reference to the new document.
 
-        Array & addNewArray(const std::string & name);
-        /// Create a new array and add it to this document.
-        /// Method returns a reference to the new array.
-
         void clear();
         /// Removes all elements from the document.
 
@@ -100,7 +95,7 @@ namespace MongoDB
         bool empty() const;
         /// Returns true if the document doesn't contain any documents.
 
-        bool exists(const std::string & name) const;
+        bool exists(const std::string & name);
         /// Returns true if the document has an element with the given name.
 
         template <typename T>
@@ -162,9 +157,6 @@ namespace MongoDB
         /// or double for a number (count for example). This method will always
         /// return an Int64. When the element is not found, a
         /// Poco::NotFoundException will be thrown.
-
-        bool remove(const std::string & name);
-        /// Removes an element from the document.
 
         template <typename T>
         bool isType(const std::string & name) const
@@ -235,20 +227,9 @@ namespace MongoDB
     }
 
 
-    inline bool Document::exists(const std::string & name) const
+    inline bool Document::exists(const std::string & name)
     {
         return std::find_if(_elements.begin(), _elements.end(), ElementFindByName(name)) != _elements.end();
-    }
-
-
-    inline bool Document::remove(const std::string & name)
-    {
-        auto it = std::find_if(_elements.begin(), _elements.end(), ElementFindByName(name));
-        if (it == _elements.end())
-            return false;
-
-        _elements.erase(it);
-        return true;
     }
 
 
