@@ -2034,9 +2034,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         return ast ? queryToString(ast) : "";
     };
 
-    const auto is_partition_exp_different = query_to_string(my_metadata_snapshot->getPartitionKeyAST()) != query_to_string(source_metadata_snapshot->getPartitionKeyAST());
+    const auto my_partition_expression = my_metadata_snapshot->getPartitionKeyAST();
+    const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
+    const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
 
-    if (is_partition_exp_different)
+    // In case the destination partition expression is not defined, `my_partition_expression` will be null,
+    // but it is still a valid case.
+    if (my_partition_expression && is_partition_exp_different)
     {
         auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(src_data, src_parts);
 

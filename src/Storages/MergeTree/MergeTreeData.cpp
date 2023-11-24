@@ -6968,8 +6968,24 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
 
-    if (src_snapshot->getColumnsRequiredForPartitionKey() != my_snapshot->getColumnsRequiredForPartitionKey())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different columns required for partition expression");
+    const auto is_a_subset_of = [](const auto & lhs, const auto & rhs)
+    {
+        if (lhs.size() > rhs.size())
+            return false;
+
+        const auto rhs_set = NameSet(rhs.begin(), rhs.end());
+        for (const auto & lhs_element : lhs)
+            if (!rhs_set.contains(lhs_element))
+                return false;
+
+        return true;
+    };
+
+    if (!is_a_subset_of(my_snapshot->getColumnsRequiredForPartitionKey(), src_snapshot->getColumnsRequiredForPartitionKey()))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Destination table partition expression columns must be a subset of source table partition expression columns");
+    }
 
     const auto check_definitions = [](const auto & my_descriptions, const auto & src_descriptions)
     {

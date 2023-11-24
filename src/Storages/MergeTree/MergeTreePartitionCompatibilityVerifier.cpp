@@ -13,6 +13,18 @@ namespace ErrorCodes
 
 namespace
 {
+    bool isASTEmptyTupleFunction(const ASTPtr & ast)
+    {
+        const auto * ast_function = ast->as<ASTFunction>();
+
+        if (!ast_function)
+        {
+            return false;
+        }
+
+        return ast_function->name == "tuple" && ast_function->arguments && ast_function->arguments->children.empty();
+    }
+
     bool isDestinationPartitionExpressionMonotonicallyIncreasing(
         const MergeTreePartitionCompatibilityVerifier::SourceTableInfo & source_table_info,
         const StorageID & destination_table_id,
@@ -20,10 +32,17 @@ namespace
         ContextPtr context
     )
     {
-        auto range = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
-
         auto key_description = destination_table_metadata->getPartitionKey();
-        auto ast_func = key_description.definition_ast->clone();
+        auto definition_ast = key_description.definition_ast->clone();
+
+        // Short circuit for empty tuple partition key. It is a single partition, so it should be considered monotonic.
+        // `FunctionTuple` requires at least one argument, but `PARTITION BY tuple()` is allowed.
+        if (isASTEmptyTupleFunction(definition_ast))
+        {
+            return true;
+        }
+
+        auto range = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
 
         auto table_identifier = std::make_shared<ASTIdentifier>(destination_table_id.getTableName());
         auto table_with_columns = TableWithColumnNamesAndTypes {
@@ -35,7 +54,7 @@ namespace
 
         data.range = range;
 
-        MonotonicityCheckVisitor(data).visit(ast_func);
+        MonotonicityCheckVisitor(data).visit(definition_ast);
 
         return data.monotonicity.is_monotonic && data.monotonicity.is_positive;
     }

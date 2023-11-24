@@ -32,12 +32,11 @@ namespace DistinctPartitionExpression
     }
 
     static void deleteMinMaxFiles(
-        const MergeTreeData & merge_tree_data,
         IDataPartStorage & storage,
         const StorageMetadataPtr & metadata_snapshot
     )
     {
-        for (const auto & column_name : merge_tree_data.getMinMaxColumnsNames(metadata_snapshot->partition_key))
+        for (const auto & column_name : MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->partition_key))
         {
             auto file = "minmax_" + escapeForFileName(column_name) + ".idx";
             storage.removeFile(file);
@@ -51,7 +50,7 @@ namespace DistinctPartitionExpression
         const StorageMetadataPtr & metadata_snapshot
     )
     {
-        deleteMinMaxFiles(merge_tree_data, storage, metadata_snapshot);
+        deleteMinMaxFiles(storage, metadata_snapshot);
 
         return dst_part->minmax_idx->store(merge_tree_data, storage, dst_part->checksums);
     }
@@ -71,12 +70,14 @@ namespace DistinctPartitionExpression
         }
     }
 
+//    src_part->storage.getMinMaxColumnsNames(src_part->storage.getInMemoryMetadataPtr()->getPartitionKey());
+
     static void updateNewPartFiles(
         const MergeTreeData & merge_tree_data,
         const MergeTreeData::MutableDataPartPtr & dst_part,
         const MergeTreePartition & new_partition,
         const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageMetadataPtr & src_metadata_snapshot,
         bool sync_new_files
     )
     {
@@ -86,11 +87,14 @@ namespace DistinctPartitionExpression
 
         auto partition_file = updatePartitionFile(merge_tree_data, new_partition, dst_part, storage);
 
-        auto min_max_files = updateMinMaxFiles(merge_tree_data, dst_part, storage, metadata_snapshot);
+        auto min_max_files = updateMinMaxFiles(merge_tree_data, dst_part, storage, src_metadata_snapshot);
 
         IMergeTreeDataPart::MinMaxIndex::WrittenFiles written_files;
 
-        written_files.emplace_back(std::move(partition_file));
+        if (partition_file)
+        {
+            written_files.emplace_back(std::move(partition_file));
+        }
 
         written_files.insert(written_files.end(), std::make_move_iterator(min_max_files.begin()), std::make_move_iterator(min_max_files.end()));
 
@@ -184,7 +188,7 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
         destination_part,
         new_partition,
         new_min_max_index,
-        metadata_snapshot,
+        src_part->storage.getInMemoryMetadataPtr(),
         sync_new_files
     );
 

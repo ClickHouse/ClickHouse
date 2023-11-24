@@ -94,6 +94,38 @@ SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
+-- Should be allowed, partitioned table to unpartitioned. Since the destination is unpartitioned, parts would ultimately
+-- fall into the same partition.
+-- Destination partition by expression is omitted, which causes StorageMetadata::getPartitionKeyAST() to be nullptr.
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple();
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
+
+ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
+-- Same as above, but destination partition by expression is explicitly defined. Test case required to validate that
+-- partition by tuple() is accepted.
+
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY tuple();
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03');
+
+ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
