@@ -963,11 +963,9 @@ Lazy loading of dictionaries.
 
 If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 
-If `false`, then the server starts loading all dictionaries at startup.
-Dictionaries are loaded in background.
-The server doesn't wait at startup until all the dictionaries finish their loading
-(exception: if `wait_dictionaries_load_at_startup` is set to `true` - see below).
-When a dictionary is used in a query for the first time then the query waits until the dictionary is loaded if it's not loaded yet.
+If `false`, then the server loads all dictionaries at startup.
+The server will wait at startup until all the dictionaries finish their loading before receiving any connections
+(exception: if `wait_dictionaries_load_at_startup` is set to `false` - see below).
 
 The default is `true`.
 
@@ -2397,20 +2395,24 @@ Path to the file that contains:
 
 ## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
 
-If `false`, then the server will not wait at startup until all the dictionaries finish their loading.
-This allows to start ClickHouse faster.
+This setting allows to specify behavior if `dictionaries_lazy_load` is `false`.
+(If `dictionaries_lazy_load` is `true` this setting doesn't affect anything.)
 
-If `true`, then the server will wait at startup until all the dictionaries finish their loading (successfully or not)
-before listening to any connections.
-This can make ClickHouse start slowly, however after that some queries can be executed faster
-(because they won't have to wait for the used dictionaries to be load).
+If `wait_dictionaries_load_at_startup` is `false`, then the server
+will start loading all the dictionaries at startup and it will receive connections in parallel with that loading.
+When a dictionary is used in a query for the first time then the query will wait until the dictionary is loaded if it's not loaded yet.
+Setting `wait_dictionaries_load_at_startup` to `false` can make ClickHouse start faster, however some queries can be executed slower
+(because they will have to wait for some dictionaries to be loaded).
 
-The default is `false`.
+If `wait_dictionaries_load_at_startup` is `true`, then the server will wait at startup
+until all the dictionaries finish their loading (successfully or not) before receiving any connections.
+
+The default is `true`.
 
 **Example**
 
 ``` xml
-<wait_dictionaries_load_at_startup>false</wait_dictionaries_load_at_startup>
+<wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 ```
 
 ## zookeeper {#server-settings_zookeeper}
@@ -2740,7 +2742,7 @@ ClickHouse will use it to form the proxy URI using the following template: `{pro
             <proxy_cache_time>10</proxy_cache_time>
         </resolver>
     </http>
-    
+
     <https>
         <resolver>
             <endpoint>http://resolver:8080/hostname</endpoint>

@@ -67,6 +67,17 @@ namespace DB
  * FROM TABLE
  * WHERE a = 1 AND b = 'test';
  * -------------------------------
+ *
+ * 5. Remove unnecessary IS NULL checks in JOIN ON clause
+ *   - equality check with explicit IS NULL check replaced with <=> operator
+ * -------------------------------
+ * SELECT * FROM t1 JOIN t2 ON a = b OR (a IS NULL AND b IS NULL)
+ * SELECT * FROM t1 JOIN t2 ON a <=> b OR (a IS NULL AND b IS NULL)
+ *
+ * will be transformed into
+ *
+ * SELECT * FROM t1 JOIN t2 ON a <=> b
+ * -------------------------------
  */
 
 class LogicalExpressionOptimizerPass final : public IQueryTreePass
