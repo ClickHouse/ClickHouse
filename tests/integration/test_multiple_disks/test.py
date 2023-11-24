@@ -1834,7 +1834,7 @@ def _insert_merge_execute(
             ORDER BY tuple()
             PARTITION BY tuple()
             TTL now()-1 TO VOLUME 'external'
-            SETTINGS storage_policy='{policy}'
+            SETTINGS storage_policy='{policy}', allow_suspicious_ttl_expressions = 1
         """.format(
                 name=name, policy=policy
             )

@@ -297,7 +297,7 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
 
         # Second expression is preferred because d1 > now()-3600.
         node1.query(
-            """ALTER TABLE {name} MODIFY TTL now()-3600 TO DISK 'jbod1', d1 TO DISK 'external'""".format(
+            """ALTER TABLE {name} MODIFY TTL now()-3600 TO DISK 'jbod1', d1 TO DISK 'external' SETTINGS allow_suspicious_ttl_expressions = 1""".format(
                 name=name
             )
         )
