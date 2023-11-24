@@ -266,7 +266,6 @@ void ReplicatedMergeMutateTaskBase::mitigateReplicaSkew(size_t estimated_space) 
 {
     pcg64 rng(randomSeed());
 
-    // TODO myrrc probably shouldn't reuse this setting for DiskObjectStorageVFS
     const size_t min_size_sleep = storage.getSettings()->zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
     if (min_size_sleep == 0 || estimated_space < min_size_sleep)
         return;
