@@ -1215,9 +1215,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
-        database = DatabaseCatalog::instance().getDatabase(database_name);
+        database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    if (need_add_to_database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
@@ -1231,6 +1231,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         chassert(!ddl_guard);
         return executeQueryOnCluster(create);
     }
+
+    if (need_add_to_database && !database)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
     if (create.replace_table)
     {
