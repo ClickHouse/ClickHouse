@@ -195,6 +195,7 @@ private:
 /// Methods with names not starting at try- raise KeeperException on any error.
 class ZooKeeper
 {
+    /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
 public:

@@ -2,6 +2,7 @@
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupCoordinationStageSync.h>
 #include <Backups/RestoreCoordinationRemote.h>
+#include <Core/ServerUUID.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
@@ -43,8 +44,12 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
             /// Recreate this ephemeral node to signal that we are alive.
             if (my_is_internal)
             {
+                String active_id = toString(ServerUUID::get());
                 String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
-                zk->deleteEphemeralNodeIfContentMatches(alive_node_path, "");
+
+                /// Delete the ephemeral node from the previous connection so we don't have to wait for keeper to
+                /// do it automatically
+                zk->deleteEphemeralNodeIfContentMatches(alive_node_path, active_id);
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
                 if (code != Coordination::Error::ZOK)
                     throw zkutil::KeeperException::fromPath(code, alive_node_path);

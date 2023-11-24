@@ -939,6 +939,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                         "Unknown status of part {} (Reason: {}). Data was written locally but we don't know the status in keeper. It will be verified in ~{} seconds.",
                         part->name, multi_code, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
             });
+            /// Independently of how many retries we had left we want to do at least one check of this inner retry
+            /// at least once so a) we try to verify at least once if metadata was written and b) we set the proper
+            /// final error (UNKNOWN_STATUS_OF_INSERT) if we fail to reconnect to keeper
             new_retry_controller.requestUnconditionalRetry();
 
             bool node_exists = false;
