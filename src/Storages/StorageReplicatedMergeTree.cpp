@@ -1432,6 +1432,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
     /// There are no PreActive parts at startup.
+    bool incomplete_list_of_outdated_parts = !outdated_data_parts_loading_finished;
     auto parts = getDataParts({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
     /** Local parts that are not in ZK.
@@ -1469,6 +1470,11 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         if (part->rows_count || part->getState() != MergeTreeDataPartState::Active || expected_parts.contains(part->name))
             continue;
 
+        if (incomplete_list_of_outdated_parts)
+        {
+            LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to handle dropped parts. Need retry.");
+            return false;
+        }
         set_of_empty_unexpected_parts.add(part->name);
     }
     if (auto empty_count = set_of_empty_unexpected_parts.size())
@@ -1520,14 +1526,11 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
         /// We have uncovered unexpected parts, and we are not sure if we can restore them or not.
         /// So we have to exit, load all Outdated parts, and check again.
+        if (incomplete_list_of_outdated_parts)
         {
-            std::lock_guard lock(outdated_data_parts_mutex);
-            if (!outdated_data_parts_loading_finished)
-            {
-                LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to check if unexpected parts can be recovered. "
-                              "Need retry.");
-                return false;
-            }
+            LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to check if unexpected parts can be recovered. "
+                          "Need retry.");
+            return false;
         }
 
         /// Part is unexpected and we don't have covering part: it's suspicious
@@ -7741,7 +7744,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
                 LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", delete_requests[i]->getPath(), delete_responses[i]->error);
     }
 
-    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {}", delete_requests.size(), partition_id);
+    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
+              delete_requests.size(), partition_id, min_block_num, max_block_num);
 }
 
 void StorageReplicatedMergeTree::replacePartitionFrom(
@@ -7886,9 +7890,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (replace)
         {
             /// Cancel concurrent inserts in range
-            clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+            clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.min_block, drop_range.max_block);
             /// Remove deduplication block_ids of replacing parts
-            clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+            clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.min_block, drop_range.max_block);
         }
 
         Coordination::Responses op_results;
@@ -7944,7 +7948,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 if (replace)
                 {
                     parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.partition_id, &data_parts_lock);
-                    removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
+                    /// We ignore the list of parts returned from the function below. We will remove them from zk when executing REPLACE_RANGE
+                    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
                 }
             }
 
@@ -8142,9 +8147,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
 
         /// Cancel concurrent inserts in range
-        clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+        clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.min_block, drop_range.max_block);
 
-        clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+        clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.min_block, drop_range.max_block);
 
         Coordination::Responses op_results;
 
@@ -8185,7 +8190,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                     zkutil::KeeperMultiException::check(code, ops, op_results);
 
                 parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.partition_id, &src_data_parts_lock);
-                removePartsInRangeFromWorkingSet(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
+                /// We ignore the list of parts returned from the function below because we cannot remove them from zk
+                /// because we have not created the DROP_RANGE yet. Yes, MOVE PARTITION is trash.
+                removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
                 transaction.commit(&src_data_parts_lock);
             }
 
@@ -9211,7 +9218,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         }
     }
 
-    if (part.rows_count == 0 && part.remove_tmp_policy == IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS)
+    if (part.rows_count == 0 && part.remove_tmp_policy == IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS_OF_NOT_TEMPORARY)
     {
         /// It's a non-replicated empty part that was created to avoid unexpected parts after DROP_RANGE
         LOG_INFO(log, "Looks like {} is a non-replicated empty part that was created to avoid unexpected parts after DROP_RANGE, "
