@@ -690,17 +690,6 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
     return Chunk(std::move(columns), num_rows);
 }
 
-void registerStorageEmbeddedRocksDB(StorageFactory & factory)
-{
-    StorageFactory::StorageFeatures features{
-        .supports_sort_order = true,
-        .supports_ttl = true,
-        .supports_parallel_insert = true,
-    };
-
-    factory.registerStorage("EmbeddedRocksDB", create, features);
-}
-
 std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & settings) const
 {
     if (!settings.optimize_trivial_approximate_count_query)
@@ -725,4 +714,14 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(const Settings & /*sett
     return estimated_bytes;
 }
 
+void registerStorageEmbeddedRocksDB(StorageFactory & factory)
+{
+    StorageFactory::StorageFeatures features{
+        .supports_sort_order = true,
+        .supports_ttl = true,
+        .supports_parallel_insert = true,
+    };
+
+    factory.registerStorage("EmbeddedRocksDB", create, features);
+}
 }
