@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Storages/MaterializedView/RefreshAllCombiner.h>
-#include <Storages/MaterializedView/RefreshDependencies.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask_fwd.h>
 #include <Storages/MaterializedView/RefreshTimers.h>
@@ -70,8 +68,11 @@ public:
     /// Resume task execution
     void resume();
 
+    /// Permanently disable task scheduling and remove this table from RefreshSet.
+    void shutdown();
+
     /// Notify dependent task
-    void notify(const StorageID & parent_id);
+    void notify(const StorageID & parent_id, std::chrono::system_clock::time_point scheduled_time_without_spread, const RefreshTimer & parent_timer);
 
 private:
     Poco::Logger * log = nullptr;
@@ -79,7 +80,7 @@ private:
     RefreshSet::Entry set_entry;
 
     /// Refresh schedule
-    std::variant<RefreshEveryTimer, RefreshAfterTimer> refresh_timer;
+    RefreshTimer refresh_timer;
     std::uniform_int_distribution<Int64> refresh_spread;
 
     /// Task execution. Non-empty iff a refresh is in progress (possibly paused).
@@ -88,10 +89,9 @@ private:
     std::optional<BlockIO> refresh_block;
     std::shared_ptr<ASTInsertQuery> refresh_query;
 
-    /// Concurrent dependency management
-    RefreshAllCombiner combiner;
-    RefreshDependencies dependencies;
-    std::vector<RefreshDependencies::Entry> deps_entries;
+    /// StorageIDs of our dependencies that we're waiting for.
+    DatabaseAndTableNameSet remaining_dependencies;
+    bool time_arrived = false;
 
     /// Protects all fields below (they're accessed by both refreshTask() and public methods).
     /// Never locked for blocking operations (e.g. creating or dropping the internal table).
@@ -132,12 +132,17 @@ private:
     /// Methods that do the actual work: creating/dropping internal table, executing the query.
     void initializeRefresh(std::shared_ptr<const StorageMaterializedView> view);
     bool executeRefresh();
-    void completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result);
+    void completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result, std::chrono::system_clock::time_point scheduled_time_without_spread);
     void cancelRefresh(LastTaskResult result);
     void cleanState();
 
     /// Assigns next_refresh_*
     void calculateNextRefreshTime(std::chrono::system_clock::time_point now);
+
+    /// Returns true if all dependencies are fulfilled now. Refills remaining_dependencies in this case.
+    bool arriveDependency(const StorageID & parent_table_or_timer);
+    bool arriveTime();
+    void populateDependencies();
 
     std::shared_ptr<StorageMaterializedView> lockView();
 

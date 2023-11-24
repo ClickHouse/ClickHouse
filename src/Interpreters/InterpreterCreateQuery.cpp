@@ -1210,6 +1210,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visit(*create.select);
     }
 
+    if (create.refresh_strategy)
+    {
+        /// TODO: This doesn't work for some reason.
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.visit(*create.refresh_strategy);
+
+        /// TODO: For DEPENDS ON, check that the specified tables exist.
+    }
+
     if (create.columns_list)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);

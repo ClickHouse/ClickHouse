@@ -9,6 +9,7 @@ namespace DB
 
 class ASTTimeInterval;
 class ASTTimePeriod;
+class ASTRefreshStrategy;
 
 /// Schedule timer for MATERIALIZED VIEW ... REFRESH AFTER ... queries
 class RefreshAfterTimer
@@ -25,6 +26,8 @@ public:
     std::chrono::weeks getWeeks() const { return weeks; }
     std::chrono::months getMonths() const { return months; }
     std::chrono::years getYears() const { return years; }
+
+    bool operator==(const RefreshAfterTimer & rhs) const;
 
 private:
     void setWithKind(IntervalKind kind, UInt64 val);
@@ -46,6 +49,8 @@ public:
 
     std::chrono::sys_seconds next(std::chrono::system_clock::time_point tp) const;
 
+    bool operator==(const RefreshEveryTimer & rhs) const;
+
 private:
     std::chrono::sys_seconds alignedToYears(std::chrono::system_clock::time_point tp) const;
 
@@ -64,6 +69,20 @@ private:
     RefreshAfterTimer offset;
     UInt32 value{0};
     IntervalKind kind{IntervalKind::Second};
+};
+
+struct RefreshTimer
+{
+    std::variant<RefreshEveryTimer, RefreshAfterTimer> timer;
+
+    explicit RefreshTimer(const ASTRefreshStrategy & strategy);
+
+    std::chrono::sys_seconds next(std::chrono::system_clock::time_point tp) const;
+
+    bool operator==(const RefreshTimer & rhs) const;
+
+    const RefreshAfterTimer * tryGetAfter() const;
+    const RefreshEveryTimer * tryGetEvery() const;
 };
 
 }

@@ -2,19 +2,20 @@
 
 #include <Storages/StorageMaterializedView.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Executors/ManualPipelineExecutor.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric RefreshingViews;
+}
+
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 namespace
 {
@@ -27,26 +28,12 @@ std::uniform_int_distribution<Int64> makeSpreadDistribution(const ASTTimePeriod 
     return std::uniform_int_distribution(-limit, limit);
 }
 
-std::variant<RefreshEveryTimer, RefreshAfterTimer> makeRefreshTimer(const ASTRefreshStrategy & strategy)
-{
-    using enum ASTRefreshStrategy::ScheduleKind;
-    switch (strategy.schedule_kind)
-    {
-        case EVERY:
-            return RefreshEveryTimer{*strategy.period, strategy.interval};
-        case AFTER:
-            return RefreshAfterTimer{strategy.interval};
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown refresh strategy kind");
-    }
-}
-
 }
 
 RefreshTask::RefreshTask(
     const ASTRefreshStrategy & strategy)
     : log(&Poco::Logger::get("RefreshTask"))
-    , refresh_timer(makeRefreshTimer(strategy))
+    , refresh_timer(strategy)
     , refresh_spread{makeSpreadDistribution(strategy.spread)}
 {}
 
@@ -63,28 +50,13 @@ RefreshTaskHolder RefreshTask::create(
             if (auto t = self.lock())
                 t->refreshTask();
         });
-    task->set_entry = context->getRefreshSet().emplace(view.getStorageID(), task).value();
+
+    std::vector<StorageID> deps;
     if (strategy.dependencies)
-    {
-        if (strategy.schedule_kind != ASTRefreshStrategy::ScheduleKind::AFTER)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dependencies are allowed only for AFTER refresh kind");
-
-        task->deps_entries.reserve(strategy.dependencies->children.size());
         for (auto && dependency : strategy.dependencies->children)
-        {
-            StorageID dep_id(dependency->as<const ASTTableIdentifier &>());
-            /// TODO:
-            ///  * This depends on the order in which different tables are initialized.
-            ///    Is the order guaranteed on startup?
-            ///  * At what point does the table name from the query get mapped to the table's UUID?
-            ///    Does it work at all? Is it reliable?
-            ///  * Don't silently ignore if the table is missing.
-            if (auto dep_task = context->getRefreshSet().getTask(dep_id))
-                task->deps_entries.push_back(dep_task->dependencies.add(task));
-        }
+            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
-        /// TODO: Initialize combiner.
-    }
+    task->set_entry = context->getRefreshSet().emplace(view.getStorageID(), deps, task);
 
     return task;
 }
@@ -93,6 +65,7 @@ void RefreshTask::initializeAndStart(std::shared_ptr<StorageMaterializedView> vi
 {
     view_to_refresh = view;
     /// TODO: Add a setting to stop views on startup, set `stop_requested = true` in that case.
+    populateDependencies();
     calculateNextRefreshTime(std::chrono::system_clock::now());
     refresh_task->schedule();
 }
@@ -148,14 +121,78 @@ void RefreshTask::resume()
     refresh_task->schedule();
 }
 
-void RefreshTask::notify(const StorageID & parent_id)
+void RefreshTask::shutdown()
+{
+    {
+        std::lock_guard guard(mutex);
+        stop_requested = true;
+        interrupt_execution.store(true);
+    }
+
+    /// Wait for the task to return and prevent it from being scheduled in future.
+    refresh_task->deactivate();
+
+    /// Remove from RefreshSet on DROP, without waiting for the IStorage to be destroyed.
+    /// This matters because a table may get dropped and immediately created again with the same name,
+    /// while the old table's IStorage still exists (pinned by ongoing queries).
+    std::lock_guard guard(mutex);
+    set_entry.reset();
+}
+
+void RefreshTask::notify(const StorageID & parent_id, std::chrono::system_clock::time_point scheduled_time_without_spread, const RefreshTimer & parent_timer)
 {
     std::lock_guard guard(mutex);
-    if (!combiner.arriveParent(parent_id))
+    if (!set_entry)
+        return; // we've shut down
+
+    /// In the general case, it's not clear what the meaning of dependencies should be.
+    /// E.g. what behavior would the user want/expect in the following cases?:
+    ///  * REFRESH EVERY 3 HOUR depends on REFRESH EVERY 2 HOUR
+    ///  * REFRESH AFTER 3 HOUR depends on REFRESH AFTER 2 HOUR
+    ///  * REFRESH AFTER 3 HOUR depends on REFRESH EVERY 1 DAY
+    /// I don't know.
+    ///
+    /// Cases that are important to support well include:
+    /// (1) REFRESH EVERY 1 DAY depends on REFRESH EVERY 1 DAY
+    ///     Here the second refresh should start only after the first refresh completed *for the same day*.
+    ///     Yesterday's refresh of the dependency shouldn't trigger today's refresh of the dependent,
+    ///     even if it completed today.
+    /// (2) REFRESH EVERY 1 DAY OFFSET 2 HOUR depends on REFRESH EVERY 1 DAY OFFSET 1 HOUR
+    /// (3) REFRESH EVERY 1 DAY OFFSET 1 HOUR depends on REFRESH EVERY 1 DAY OFFSET 23 HOUR
+    ///     Here the dependency's refresh on day X should trigger dependent's refresh on day X+1.
+    /// (4) REFRESH EVERY 2 HOUR depends on REFRESH EVERY 1 HOUR
+    ///     The 2 HOUR refresh should happen after the 1 HOUR refresh for every other hour, e.g.
+    ///     after the 2pm refresh, then after the 4pm refresh, etc.
+    /// (5) REFRESH AFTER 1 HOUR depends on REFRESH AFTER 1 HOUR
+    ///     Here the two views should try to synchronize their schedules instead of arbitrarily drifting
+    ///     apart. In particular, consider the case where the dependency refreshes slightly faster than
+    ///     the dependent. If we don't do anything special, the DEPENDS ON will have pretty much no effect.
+    ///     To apply some synchronization pressure, we reduce the dependent's delay by some percentage
+    ///     after the dependent completed.
+    /// (6) REFRESH AFTER 1 HOUR depends on REFRESH AFTER 2 HOUR
+    ///     REFRESH EVERY 1 HOUR depends on REFRESH EVERY 2 HOUR
+    ///     Not sure about these. Currently we just make the dependent refresh at the same rate as
+    ///     the dependency, i.e. the 1 HOUR table will actually be refreshed every 2 hours.
+
+    /// Only accept the dependency's refresh if its next refresh time is after ours.
+    /// This takes care of cases (1)-(4), and seems harmless in all other cases.
+    /// Might be mildly helpful in weird cases like REFRESH AFTER 3 HOUR depends on REFRESH AFTER 2 HOUR.
+    if (parent_timer.next(scheduled_time_without_spread) <= next_refresh_without_spread)
         return;
-    if (std::exchange(refresh_immediately, true))
-        return;
-    refresh_task->schedule();
+
+    if (arriveDependency(parent_id) && !std::exchange(refresh_immediately, true))
+        refresh_task->schedule();
+
+    /// Decrease delay in case (5).
+    /// Maybe we should do it for all AFTER-AFTER dependencies, even if periods are different.
+    if (refresh_timer == parent_timer && refresh_timer.tryGetAfter())
+    {
+        /// TODO: Implement this:
+        ///        * Add setting max_after_delay_adjustment_pct
+        ///        * Decrease both next_refresh_without_spread and next_refresh_with_spread,
+        ///          but only if they haven't already been decreased this way during current period
+        ///        * refresh_task->schedule()
+    }
 }
 
 void RefreshTask::refreshTask()
@@ -205,7 +242,7 @@ void RefreshTask::refreshTask()
                 auto now = std::chrono::system_clock::now();
                 if (now >= next_refresh_with_spread)
                 {
-                    if (combiner.arriveTime())
+                    if (arriveTime())
                         refresh_immediately = true;
                     else
                     {
@@ -239,6 +276,9 @@ void RefreshTask::refreshTask()
 
             reportState(RefreshState::Running);
 
+            CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
+            auto scheduled_time_without_spread = next_refresh_without_spread;
+
             lock.unlock();
 
             bool finished = false;
@@ -251,7 +291,7 @@ void RefreshTask::refreshTask()
                 finished = executeRefresh();
 
                 if (finished)
-                    completeRefresh(view, LastTaskResult::Finished);
+                    completeRefresh(view, LastTaskResult::Finished, scheduled_time_without_spread);
             }
             catch (...)
             {
@@ -311,12 +351,17 @@ bool RefreshTask::executeRefresh()
     return !not_finished;
 }
 
-void RefreshTask::completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result)
+void RefreshTask::completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result, std::chrono::system_clock::time_point scheduled_time_without_spread)
 {
     auto stale_table = view->exchangeTargetTable(refresh_query->table_id);
-    dependencies.notifyAll(view->getStorageID());
 
-    auto drop_context = Context::createCopy(view->getContext());
+    auto context = view->getContext();
+    StorageID my_id = set_entry->getID();
+    auto dependents = context->getRefreshSet().getDependents(my_id);
+    for (const RefreshTaskHolder & dep_task : dependents)
+        dep_task->notify(my_id, scheduled_time_without_spread, refresh_timer);
+
+    auto drop_context = Context::createCopy(context);
     InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, drop_context, drop_context, stale_table, /*sync=*/true);
 
     cleanState();
@@ -351,16 +396,6 @@ void RefreshTask::cleanState()
     refresh_query.reset();
 }
 
-namespace
-{
-
-template <typename... Ts>
-struct CombinedVisitor : Ts... { using Ts::operator()...; };
-template <typename... Ts>
-CombinedVisitor(Ts...) -> CombinedVisitor<Ts...>;
-
-}
-
 void RefreshTask::calculateNextRefreshTime(std::chrono::system_clock::time_point now)
 {
     /// TODO: Add a setting to randomize initial delay in case of AFTER, for the case when the server
@@ -368,26 +403,42 @@ void RefreshTask::calculateNextRefreshTime(std::chrono::system_clock::time_point
     /// TODO: Maybe do something like skip_update_after_seconds and skip_update_after_ratio.
     ///       Unclear if that's useful at all if the last refresh timestamp is not remembered across restarts.
 
-    auto advance = [&](std::chrono::system_clock::time_point t)
-    {
-        CombinedVisitor refresh_time_visitor{
-            [t](const RefreshAfterTimer & timer) { return timer.after(t); },
-            [t](const RefreshEveryTimer & timer) { return timer.next(t); }};
-        auto r = std::visit<std::chrono::sys_seconds>(std::move(refresh_time_visitor), refresh_timer);
-        chassert(r > t);
-        return r;
-    };
-
     /// It's important to use time without spread here, otherwise we would do multiple refreshes instead
     /// of one, if the generated spread is negative and the first refresh completes faster than the spread.
-    std::chrono::sys_seconds next = advance(next_refresh_without_spread);
+    std::chrono::sys_seconds next = refresh_timer.next(next_refresh_without_spread);
     if (next < now)
-        next = advance(now); // fell behind, skip to current time
+        next = refresh_timer.next(now); // fell behind, skip to current time
 
     next_refresh_without_spread = next;
     next_refresh_with_spread = next + std::chrono::seconds{refresh_spread(thread_local_rng)};
 
     reportNextRefreshTime(next_refresh_with_spread);
+}
+
+bool RefreshTask::arriveDependency(const StorageID & parent_table_or_timer)
+{
+    remaining_dependencies.erase(parent_table_or_timer);
+    if (!remaining_dependencies.empty() || !time_arrived)
+        return false;
+    populateDependencies();
+    return true;
+}
+
+bool RefreshTask::arriveTime()
+{
+    time_arrived = true;
+    if (!remaining_dependencies.empty() || !time_arrived)
+        return false;
+    populateDependencies();
+    return true;
+}
+
+void RefreshTask::populateDependencies()
+{
+    chassert(remaining_dependencies.empty());
+    auto deps = set_entry->getDependencies();
+    remaining_dependencies.insert(deps.begin(), deps.end());
+    time_arrived = false;
 }
 
 std::shared_ptr<StorageMaterializedView> RefreshTask::lockView()
