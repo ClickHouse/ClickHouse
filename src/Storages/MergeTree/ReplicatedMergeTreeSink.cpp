@@ -892,6 +892,12 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         {
             transaction.rollbackPartsToTemporaryState();
 
+            /** CH had tried to commit that part
+             *  No assumptions can be made about data after it
+             *  Need to ask keeper
+             */
+            part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
+
             part->is_temp = true;
             part->renameTo(temporary_part_relative_path, false);
         };
@@ -1002,6 +1008,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 LOG_INFO(log, "Block with ID {} already exists (it was just appeared). Renaming part {} back to {}. Will retry write.",
                     toString(block_id), part->name, temporary_part_relative_path);
 
+                /// shared locks have been taken before
+                /// they have to be released before the next rename_part_to_temporary call
+                storage.unlockSharedData(*part, zookeeper);
+
                 /// We will try to add this part again on the new iteration as it's just a new part.
                 /// So remove it from storage parts set immediately and transfer state to temporary.
                 rename_part_to_temporary();
@@ -1032,7 +1042,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 }
                 catch (const zkutil::KeeperException & e)
                 {
-                    /// suppress this exception since need to rename part to temporary next
+                    /// suppress this exception since need to rename part to temporary next and throw error any way
                     LOG_DEBUG(log, "Unlocking shared data failed during error handling: code={} message={}", e.code, e.message());
                 }
 
