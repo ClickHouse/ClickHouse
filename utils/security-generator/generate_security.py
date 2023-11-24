@@ -52,6 +52,7 @@ def generate_supported_versions():
     with open(VERSIONS_FILE, "r", encoding="utf-8") as fd:
         versions = [line.split(maxsplit=1)[0][1:] for line in fd.readlines()]
 
+
     # The versions in VERSIONS_FILE are ordered ascending, so the first one is
     # the greatest one. We may have supported versions in the previous year
     unsupported_year = int(versions[0].split(".", maxsplit=1)[0]) - 2
@@ -83,7 +84,7 @@ def generate_supported_versions():
             table.append(f"| {version} | ✔️ |")
             continue
         if year <= unsupported_year:
-            # The whole year is unsopported
+            # The whole year is unsupported
             version = f"{year}.*"
         if not version in unsupported:
             unsupported.append(version)
