@@ -177,9 +177,9 @@ public:
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
 
-    /** Checks that two types is exactly identical. Note that two types may equals but not identical.
+    /** Checks that two types are exactly identical. Note that two types may be equal but not identical.
       * For example, `SimpleAggregateFunction(max, String)` and `SimpleAggregateFunction(anyLast, String)`
-      * This is used when creating replicated table. Column types in different replicas must be identical
+      * This is used when creating a replicated table. Column types in different replicas must be identical
       */
     virtual bool identical(const IDataType & rhs) const;
 
