@@ -100,7 +100,6 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         }
 
         // Find the size of each bucket
-        // size_t single_bucket_size = this->x.size() / total_buckets;
         Float64 single_bucket_size = static_cast<Float64>(this->x.size() - 2) / static_cast<Float64>(total_buckets - 2);
 
         // Include the first data point
