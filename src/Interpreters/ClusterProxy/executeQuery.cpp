@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/Distributed/DistributedSettings.h>
 
 
 namespace DB
@@ -40,7 +41,8 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     const Settings & settings,
     const StorageID & main_table,
     ASTPtr additional_filter_ast,
-    Poco::Logger * log)
+    Poco::Logger * log,
+    const DistributedSettings * distributed_settings)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -98,6 +100,12 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
             if (log)
                 LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings.optimize_skip_unused_shards_nesting);
         }
+    }
+
+    if (!settings.skip_unavailable_shards.changed && distributed_settings)
+    {
+        new_settings.skip_unavailable_shards = distributed_settings->skip_unavailable_shards.value;
+        new_settings.skip_unavailable_shards.changed = true;
     }
 
     if (settings.offset)
@@ -193,6 +201,7 @@ void executeQuery(
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const ClusterPtr & not_optimized_cluster,
+    const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
     const Settings & settings = context->getSettingsRef();
@@ -204,7 +213,8 @@ void executeQuery(
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
-    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log);
+    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log,
+        &distributed_settings);
     if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
         && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
            != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
