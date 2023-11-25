@@ -20,5 +20,5 @@ Expression ((Projection + Before ORDER BY))
       Skip
         Name: i_y
         Description: minmax GRANULARITY 1
-        Parts: 2/2
-        Granules: 2/2
+        Parts: 1/2
+        Granules: 1/2

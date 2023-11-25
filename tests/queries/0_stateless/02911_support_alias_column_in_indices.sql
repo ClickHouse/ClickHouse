@@ -26,6 +26,6 @@ insert into test1 select * from numbers(10);
 insert into test1 select * from numbers(11, 20);
 
 explain indexes = 1 select * from test where y > 10;
-explain indexes = 1 select * from test1 where y2 > 10;
+explain indexes = 1 select * from test1 where y2 > 15;
 
 drop database 02911_support_alias_column_in_indices;
