@@ -2604,7 +2604,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
     }
 
-    /// ignore all heading plus
+    /// ignore all leading plus
     while (pos->type == TokenType::Plus)
     {
         ++pos;

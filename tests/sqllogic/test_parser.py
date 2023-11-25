@@ -167,7 +167,7 @@ class FileBlockBase:
                     "NULLABLE", expressions=[cast.to]
                 )
                 new_sql = ast.sql("clickhouse")
-                logger.info("convert from %s to %s", sql, new_sql)
+                # logger.info("convert from %s to %s", sql, new_sql)
                 return new_sql
         return sql
 
