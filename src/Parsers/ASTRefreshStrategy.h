@@ -7,24 +7,23 @@
 namespace DB
 {
 
+enum class RefreshScheduleKind : UInt8
+{
+    UNKNOWN = 0,
+    AFTER,
+    EVERY
+};
+
 /// Strategy for MATERIALIZED VIEW ... REFRESH ..
 class ASTRefreshStrategy : public IAST
 {
 public:
-    enum class ScheduleKind : UInt8
-    {
-        UNKNOWN = 0,
-        AFTER,
-        EVERY
-    };
-
     ASTSetQuery * settings = nullptr;
     ASTExpressionList * dependencies = nullptr;
-    ASTTimeInterval * interval = nullptr;
-    ASTTimePeriod * period = nullptr;
-    ASTTimeInterval * periodic_offset = nullptr;
-    ASTTimePeriod * spread = nullptr;
-    ScheduleKind schedule_kind{ScheduleKind::UNKNOWN};
+    ASTTimeInterval * period = nullptr;
+    ASTTimeInterval * offset = nullptr;
+    ASTTimeInterval * spread = nullptr;
+    RefreshScheduleKind schedule_kind{RefreshScheduleKind::UNKNOWN};
 
     String getID(char) const override { return "Refresh strategy definition"; }
 

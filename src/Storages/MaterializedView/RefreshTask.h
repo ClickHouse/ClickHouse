@@ -2,7 +2,7 @@
 
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask_fwd.h>
-#include <Storages/MaterializedView/RefreshTimers.h>
+#include <Storages/MaterializedView/RefreshSchedule.h>
 
 #include <Processors/Executors/ManualPipelineExecutor.h>
 
@@ -72,16 +72,14 @@ public:
     void shutdown();
 
     /// Notify dependent task
-    void notify(const StorageID & parent_id, std::chrono::system_clock::time_point scheduled_time_without_spread, const RefreshTimer & parent_timer);
+    void notify(const StorageID & parent_id, std::chrono::sys_seconds prescribed_time, const RefreshSchedule & parent_schedule);
 
 private:
     Poco::Logger * log = nullptr;
     std::weak_ptr<IStorage> view_to_refresh;
     RefreshSet::Entry set_entry;
 
-    /// Refresh schedule
-    RefreshTimer refresh_timer;
-    std::uniform_int_distribution<Int64> refresh_spread;
+    RefreshSchedule refresh_schedule;
 
     /// Task execution. Non-empty iff a refresh is in progress (possibly paused).
     /// Whoever unsets these should also call storeLastState().
@@ -112,7 +110,20 @@ private:
     std::atomic_bool interrupt_execution {false};
 
     /// When to refresh next. Updated when a refresh is finished or canceled.
-    std::chrono::system_clock::time_point next_refresh_without_spread;
+    /// We maintain the distinction between:
+    ///  * The "prescribed" time of the refresh, dictated by the refresh schedule.
+    ///    E.g. for REFERSH EVERY 1 DAY, the prescribed time is always at the exact start of a day.
+    ///  * Actual wall clock timestamps, e.g. when the refresh is scheduled to happen
+    ///    (including random spread) or when a refresh completed.
+    /// The prescribed time is required for:
+    ///  * Doing REFRESH EVERY correctly if the random spread came up negative, and a refresh completed
+    ///    before the prescribed time. E.g. suppose a refresh was prescribed at 05:00, which was randomly
+    ///    adjusted to 4:50, and the refresh completed at 4:55; we shouldn't schedule another refresh
+    ///    at 5:00, so we should remember that the 4:50-4:55 refresh actually had prescribed time 5:00.
+    ///  * Similarly, for dependencies between REFRESH EVERY tables, using actual time would be unreliable.
+    ///    E.g. for REFRESH EVERY 1 DAY, yesterday's refresh of the dependency shouldn't trigger today's
+    ///    refresh of the dependent even if it happened today (e.g. it was slow or had random spread > 1 day).
+    std::chrono::sys_seconds next_refresh_prescribed;
     std::chrono::system_clock::time_point next_refresh_with_spread;
 
     /// Calls refreshTask() from background thread.
@@ -132,15 +143,15 @@ private:
     /// Methods that do the actual work: creating/dropping internal table, executing the query.
     void initializeRefresh(std::shared_ptr<const StorageMaterializedView> view);
     bool executeRefresh();
-    void completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result, std::chrono::system_clock::time_point scheduled_time_without_spread);
+    void completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result, std::chrono::sys_seconds prescribed_time);
     void cancelRefresh(LastTaskResult result);
     void cleanState();
 
     /// Assigns next_refresh_*
-    void calculateNextRefreshTime(std::chrono::system_clock::time_point now);
+    void advanceNextRefreshTime(std::chrono::system_clock::time_point now);
 
     /// Returns true if all dependencies are fulfilled now. Refills remaining_dependencies in this case.
-    bool arriveDependency(const StorageID & parent_table_or_timer);
+    bool arriveDependency(const StorageID & parent);
     bool arriveTime();
     void populateDependencies();
 

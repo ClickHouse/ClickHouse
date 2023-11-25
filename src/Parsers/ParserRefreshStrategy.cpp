@@ -11,41 +11,52 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto refresh = std::make_shared<ASTRefreshStrategy>();
 
     if (ParserKeyword{"AFTER"}.ignore(pos, expected))
     {
-        refresh->schedule_kind = ASTRefreshStrategy::ScheduleKind::AFTER;
-        ASTPtr interval;
-        if (!ParserTimeInterval{}.parse(pos, interval, expected))
+        refresh->schedule_kind = RefreshScheduleKind::AFTER;
+        ASTPtr period;
+        if (!ParserTimeInterval{}.parse(pos, period, expected))
             return false;
 
-        refresh->set(refresh->interval, interval);
+        refresh->set(refresh->period, period);
     }
     else if (ParserKeyword{"EVERY"}.ignore(pos, expected))
     {
-        refresh->schedule_kind = ASTRefreshStrategy::ScheduleKind::EVERY;
+        refresh->schedule_kind = RefreshScheduleKind::EVERY;
         ASTPtr period;
-        if (!ParserTimePeriod{}.parse(pos, period, expected))
+        if (!ParserTimeInterval{{.allow_mixing_calendar_and_clock_units = false}}.parse(pos, period, expected))
             return false;
         refresh->set(refresh->period, period);
         if (ParserKeyword{"OFFSET"}.ignore(pos, expected))
         {
             ASTPtr periodic_offset;
-            if (!ParserTimeInterval{}.parse(pos, periodic_offset, expected))
+            if (!ParserTimeInterval{{.allow_zero = true}}.parse(pos, periodic_offset, expected))
                 return false;
-            refresh->set(refresh->periodic_offset, periodic_offset);
+
+            if (periodic_offset->as<ASTTimeInterval>()->interval.maxSeconds()
+                    >= period->as<ASTTimeInterval>()->interval.minSeconds())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "OFFSET must be less than the period");
+
+            refresh->set(refresh->offset, periodic_offset);
         }
     }
-    if (refresh->schedule_kind == ASTRefreshStrategy::ScheduleKind::UNKNOWN)
+    if (refresh->schedule_kind == RefreshScheduleKind::UNKNOWN)
         return false;
 
     if (ParserKeyword{"RANDOMIZE FOR"}.ignore(pos, expected))
     {
         ASTPtr spread;
-        if (!ParserTimePeriod{}.parse(pos, spread, expected))
+        if (!ParserTimeInterval{{.allow_zero = true}}.parse(pos, spread, expected))
             return false;
 
         refresh->set(refresh->spread, spread);

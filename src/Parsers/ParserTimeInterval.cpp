@@ -14,64 +14,40 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-namespace
-{
-
-struct ValKind
-{
-    UInt64 val;
-    IntervalKind kind;
-    bool empty;
-};
-
-std::optional<ValKind> parseValKind(IParser::Pos & pos, Expected & expected)
-{
-    ASTPtr value;
-    IntervalKind kind;
-    if (!ParserNumber{}.parse(pos, value, expected))
-        return ValKind{ .empty = true };
-    if (!parseIntervalKind(pos, expected, kind))
-        return {};
-    UInt64 val;
-    if (!value->as<ASTLiteral &>().value.tryGet(val))
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Time interval must be an integer");
-    return ValKind{ val, kind, false };
-}
-
-}
-
-bool ParserTimePeriod::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto parsed = parseValKind(pos, expected);
-
-    if (!parsed || parsed->empty || parsed->val == 0)
-        return false;
-
-    auto time_period = std::make_shared<ASTTimePeriod>();
-    time_period->value = parsed->val;
-    time_period->kind = parsed->kind;
-
-    node = time_period;
-    return true;
-}
+ParserTimeInterval::ParserTimeInterval(Options opt) : options(opt) {}
+ParserTimeInterval::ParserTimeInterval() = default;
 
 bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto time_interval = std::make_shared<ASTTimeInterval>();
-
-    auto parsed = parseValKind(pos, expected);
-    while (parsed && !parsed->empty)
+    CalendarTimeInterval::Intervals intervals;
+    while (true)
     {
-        if (parsed->val == 0)
+        ASTPtr value;
+        IntervalKind kind;
+        if (!ParserNumber{}.parse(pos, value, expected))
+            break;
+        if (!parseIntervalKind(pos, expected, kind))
             return false;
-        auto [it, inserted] = time_interval->kinds.emplace(parsed->kind, parsed->val);
-        if (!inserted)
-            return false;
-        parsed = parseValKind(pos, expected);
+
+        UInt64 val;
+        if (!value->as<ASTLiteral &>().value.tryGet(val))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Time interval must be an integer");
+        intervals.emplace_back(kind, val);
     }
 
-    if (!parsed || time_interval->kinds.empty())
+    if (intervals.empty())
         return false;
+
+    CalendarTimeInterval interval(intervals);
+
+    if (!options.allow_zero)
+        interval.assertPositive();
+    if (!options.allow_mixing_calendar_and_clock_units)
+        interval.assertSingleUnit();
+
+    auto time_interval = std::make_shared<ASTTimeInterval>();
+    time_interval->interval = interval;
+
     node = time_interval;
     return true;
 }

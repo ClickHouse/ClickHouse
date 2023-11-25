@@ -5,18 +5,22 @@
 namespace DB
 {
 
-/// Parser for ASTTimePeriod
-class ParserTimePeriod : public IParserBase
-{
-protected:
-    const char * getName() const override { return "time period"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 /// Parser for ASTTimeInterval
 class ParserTimeInterval : public IParserBase
 {
+public:
+    struct Options
+    {
+        bool allow_mixing_calendar_and_clock_units = true;
+        bool allow_zero = false;
+    };
+
+    ParserTimeInterval();
+    explicit ParserTimeInterval(Options opt);
+
 protected:
+    Options options;
+
     const char * getName() const override { return "time interval"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

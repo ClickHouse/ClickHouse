@@ -17,24 +17,10 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace
-{
-
-std::uniform_int_distribution<Int64> makeSpreadDistribution(const ASTTimePeriod * spread)
-{
-    if (!spread)
-        return std::uniform_int_distribution<Int64>(0, 0);
-    Int64 limit = spread->kind.toAvgSeconds() * spread->value / 2;
-    return std::uniform_int_distribution(-limit, limit);
-}
-
-}
-
 RefreshTask::RefreshTask(
     const ASTRefreshStrategy & strategy)
     : log(&Poco::Logger::get("RefreshTask"))
-    , refresh_timer(strategy)
-    , refresh_spread{makeSpreadDistribution(strategy.spread)}
+    , refresh_schedule(strategy)
 {}
 
 RefreshTaskHolder RefreshTask::create(
@@ -66,7 +52,7 @@ void RefreshTask::initializeAndStart(std::shared_ptr<StorageMaterializedView> vi
     view_to_refresh = view;
     /// TODO: Add a setting to stop views on startup, set `stop_requested = true` in that case.
     populateDependencies();
-    calculateNextRefreshTime(std::chrono::system_clock::now());
+    advanceNextRefreshTime(std::chrono::system_clock::now());
     refresh_task->schedule();
 }
 
@@ -139,7 +125,7 @@ void RefreshTask::shutdown()
     set_entry.reset();
 }
 
-void RefreshTask::notify(const StorageID & parent_id, std::chrono::system_clock::time_point scheduled_time_without_spread, const RefreshTimer & parent_timer)
+void RefreshTask::notify(const StorageID & parent_id, std::chrono::sys_seconds prescribed_time, const RefreshSchedule & parent_schedule)
 {
     std::lock_guard guard(mutex);
     if (!set_entry)
@@ -177,7 +163,7 @@ void RefreshTask::notify(const StorageID & parent_id, std::chrono::system_clock:
     /// Only accept the dependency's refresh if its next refresh time is after ours.
     /// This takes care of cases (1)-(4), and seems harmless in all other cases.
     /// Might be mildly helpful in weird cases like REFRESH AFTER 3 HOUR depends on REFRESH AFTER 2 HOUR.
-    if (parent_timer.next(scheduled_time_without_spread) <= next_refresh_without_spread)
+    if (parent_schedule.prescribeNext(prescribed_time, std::chrono::system_clock::now()) <= next_refresh_prescribed)
         return;
 
     if (arriveDependency(parent_id) && !std::exchange(refresh_immediately, true))
@@ -185,11 +171,13 @@ void RefreshTask::notify(const StorageID & parent_id, std::chrono::system_clock:
 
     /// Decrease delay in case (5).
     /// Maybe we should do it for all AFTER-AFTER dependencies, even if periods are different.
-    if (refresh_timer == parent_timer && refresh_timer.tryGetAfter())
+    if (refresh_schedule.kind == RefreshScheduleKind::AFTER &&
+        parent_schedule.kind == RefreshScheduleKind::AFTER &&
+        refresh_schedule.period == parent_schedule.period)
     {
-        /// TODO: Implement this:
+        /// TODO: Implement this.
         ///        * Add setting max_after_delay_adjustment_pct
-        ///        * Decrease both next_refresh_without_spread and next_refresh_with_spread,
+        ///        * Decrease both next_refresh_prescribed and next_refresh_with_spread,
         ///          but only if they haven't already been decreased this way during current period
         ///        * refresh_task->schedule()
     }
@@ -217,11 +205,11 @@ void RefreshTask::refreshTask()
 
                 if (cancel_requested)
                 {
-                    /// Advance to the next refresh time according to schedule.
+                    /// Move on to the next refresh time according to schedule.
                     /// Otherwise we'd start another refresh immediately after canceling this one.
                     auto now = std::chrono::system_clock::now();
                     if (now >= next_refresh_with_spread)
-                        calculateNextRefreshTime(std::chrono::system_clock::now());
+                        advanceNextRefreshTime(now);
                 }
             }
 
@@ -277,7 +265,7 @@ void RefreshTask::refreshTask()
             reportState(RefreshState::Running);
 
             CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-            auto scheduled_time_without_spread = next_refresh_without_spread;
+            auto prescribed_time = next_refresh_prescribed;
 
             lock.unlock();
 
@@ -291,7 +279,7 @@ void RefreshTask::refreshTask()
                 finished = executeRefresh();
 
                 if (finished)
-                    completeRefresh(view, LastTaskResult::Finished, scheduled_time_without_spread);
+                    completeRefresh(view, LastTaskResult::Finished, prescribed_time);
             }
             catch (...)
             {
@@ -311,7 +299,7 @@ void RefreshTask::refreshTask()
             {
                 auto now = std::chrono::system_clock::now();
                 reportLastRefreshTime(now);
-                calculateNextRefreshTime(now);
+                advanceNextRefreshTime(now);
             }
         }
     }
@@ -351,7 +339,7 @@ bool RefreshTask::executeRefresh()
     return !not_finished;
 }
 
-void RefreshTask::completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result, std::chrono::system_clock::time_point scheduled_time_without_spread)
+void RefreshTask::completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result, std::chrono::sys_seconds prescribed_time)
 {
     auto stale_table = view->exchangeTargetTable(refresh_query->table_id);
 
@@ -359,7 +347,7 @@ void RefreshTask::completeRefresh(std::shared_ptr<StorageMaterializedView> view,
     StorageID my_id = set_entry->getID();
     auto dependents = context->getRefreshSet().getDependents(my_id);
     for (const RefreshTaskHolder & dep_task : dependents)
-        dep_task->notify(my_id, scheduled_time_without_spread, refresh_timer);
+        dep_task->notify(my_id, prescribed_time, refresh_schedule);
 
     auto drop_context = Context::createCopy(context);
     InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, drop_context, drop_context, stale_table, /*sync=*/true);
@@ -396,28 +384,24 @@ void RefreshTask::cleanState()
     refresh_query.reset();
 }
 
-void RefreshTask::calculateNextRefreshTime(std::chrono::system_clock::time_point now)
+void RefreshTask::advanceNextRefreshTime(std::chrono::system_clock::time_point now)
 {
     /// TODO: Add a setting to randomize initial delay in case of AFTER, for the case when the server
     ///       is restarted more often than the refresh period.
     /// TODO: Maybe do something like skip_update_after_seconds and skip_update_after_ratio.
-    ///       Unclear if that's useful at all if the last refresh timestamp is not remembered across restarts.
+    ///       Or maybe that should be checked in refreshTask(), just before starting a refresh.
+    ///       Probably only useful after we have concurrency limits. Or maybe it's not useful even then?
 
-    /// It's important to use time without spread here, otherwise we would do multiple refreshes instead
-    /// of one, if the generated spread is negative and the first refresh completes faster than the spread.
-    std::chrono::sys_seconds next = refresh_timer.next(next_refresh_without_spread);
-    if (next < now)
-        next = refresh_timer.next(now); // fell behind, skip to current time
-
-    next_refresh_without_spread = next;
-    next_refresh_with_spread = next + std::chrono::seconds{refresh_spread(thread_local_rng)};
+    std::chrono::sys_seconds next = refresh_schedule.prescribeNext(next_refresh_prescribed, now);
+    next_refresh_prescribed = next;
+    next_refresh_with_spread = refresh_schedule.addRandomSpread(next);
 
     reportNextRefreshTime(next_refresh_with_spread);
 }
 
-bool RefreshTask::arriveDependency(const StorageID & parent_table_or_timer)
+bool RefreshTask::arriveDependency(const StorageID & parent)
 {
-    remaining_dependencies.erase(parent_table_or_timer);
+    remaining_dependencies.erase(parent);
     if (!remaining_dependencies.empty() || !time_arrived)
         return false;
     populateDependencies();
