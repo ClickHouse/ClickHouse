@@ -205,6 +205,12 @@ jobs:
     with:
       build_name: binary_amd64_compat
       checkout_depth: 0
+  BuilderBinAmd64Musl:
+    needs: [ DockerHubPush ]
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_amd64_musl
+      checkout_depth: 0
   BuilderBinAarch64V80Compat:
     needs: [DockerHubPush]
     uses: ./.github/workflows/reusable_build.yml

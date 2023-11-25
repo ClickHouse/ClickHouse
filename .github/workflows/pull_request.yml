@@ -242,6 +242,11 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_amd64_compat
+  BuilderBinAmd64Musl:
+    needs: [ FastTest, StyleCheck ]
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_amd64_musl
   BuilderBinAarch64V80Compat:
     needs: [FastTest, StyleCheck]
     uses: ./.github/workflows/reusable_build.yml
