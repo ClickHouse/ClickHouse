@@ -10,12 +10,10 @@ ASTPtr ASTRefreshStrategy::clone() const
     auto res = std::make_shared<ASTRefreshStrategy>(*this);
     res->children.clear();
 
-    if (interval)
-        res->set(res->interval, interval->clone());
     if (period)
         res->set(res->period, period->clone());
-    if (periodic_offset)
-        res->set(res->periodic_offset, periodic_offset->clone());
+    if (offset)
+        res->set(res->offset, offset->clone());
     if (spread)
         res->set(res->spread, spread->clone());
     if (settings)
@@ -32,20 +30,20 @@ void ASTRefreshStrategy::formatImpl(
     frame.need_parens = false;
 
     f_settings.ostr << (f_settings.hilite ? hilite_keyword : "") << "REFRESH " << (f_settings.hilite ? hilite_none : "");
-    using enum ScheduleKind;
+    using enum RefreshScheduleKind;
     switch (schedule_kind)
     {
         case AFTER:
             f_settings.ostr << "AFTER " << (f_settings.hilite ? hilite_none : "");
-            interval->formatImpl(f_settings, state, frame);
+            period->formatImpl(f_settings, state, frame);
             break;
         case EVERY:
             f_settings.ostr << "EVERY " << (f_settings.hilite ? hilite_none : "");
             period->formatImpl(f_settings, state, frame);
-            if (periodic_offset)
+            if (offset)
             {
                 f_settings.ostr << (f_settings.hilite ? hilite_keyword : "") << " OFFSET " << (f_settings.hilite ? hilite_none : "");
-                periodic_offset->formatImpl(f_settings, state, frame);
+                offset->formatImpl(f_settings, state, frame);
             }
             break;
         default:
