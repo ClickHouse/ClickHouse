@@ -163,6 +163,13 @@ DatabaseOnDisk::DatabaseOnDisk(
 }
 
 
+void DatabaseOnDisk::shutdown()
+{
+    waitDatabaseStarted();
+    DatabaseWithOwnTablesBase::shutdown();
+}
+
+
 void DatabaseOnDisk::createTable(
     ContextPtr local_context,
     const String & table_name,
