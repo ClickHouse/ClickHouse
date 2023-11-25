@@ -1,0 +1,24 @@
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (02911_support_alias_column_in_indices.test)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          x
+        Condition: (plus(x, 1) in [11, +Inf))
+        Parts: 1/2
+        Granules: 1/2
+      Skip
+        Name: i_y
+        Description: minmax GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/1
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (02911_support_alias_column_in_indices.test1)
+    Indexes:
+      Skip
+        Name: i_y
+        Description: minmax GRANULARITY 1
+        Parts: 2/2
+        Granules: 2/2

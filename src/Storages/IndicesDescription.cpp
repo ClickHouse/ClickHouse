@@ -10,6 +10,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
+#include <Storages/ReplaceAliasToExprVisitor.h>
+
 #include <Core/Defines.h>
 #include "Common/Exception.h"
 
@@ -94,6 +96,10 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     if (index_definition->expr)
     {
         expr_list = extractKeyExpressionList(index_definition->expr->clone());
+
+        ReplaceAliasToExprVisitor::Data data{columns};
+        ReplaceAliasToExprVisitor{data}.visit(expr_list);
+
         result.expression_list_ast = expr_list->clone();
     }
     else
