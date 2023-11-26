@@ -238,7 +238,7 @@ def parse_env_variables(
         cc = compiler[: -len(AMD64_MUSL_SUFFIX)]
         result.append("DEB_ARCH=amd64")
         cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64-musl.cmake"
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake"
         )
     else:
         cc = compiler
