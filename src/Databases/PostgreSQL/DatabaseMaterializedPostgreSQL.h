@@ -41,7 +41,7 @@ public:
     String getMetadataPath() const override { return metadata_path; }
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
-    void waitDatabaseStarted() const override;
+    void waitDatabaseStarted(bool no_throw = false) const override;
 
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;

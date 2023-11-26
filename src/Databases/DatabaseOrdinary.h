@@ -51,7 +51,7 @@ public:
 
     void waitTableStarted(const String & name) const override;
 
-    void waitDatabaseStarted() const override;
+    void waitDatabaseStarted(bool no_throw = false) const override;
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 

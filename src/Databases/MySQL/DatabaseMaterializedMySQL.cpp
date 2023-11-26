@@ -83,10 +83,10 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
     return startup_mysql_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseMaterializedMySQL::waitDatabaseStarted() const
+void DatabaseMaterializedMySQL::waitDatabaseStarted(bool no_throw) const
 {
     if (startup_mysql_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_mysql_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_mysql_database_task, no_throw);
 }
 
 void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
@@ -174,7 +174,7 @@ void DatabaseMaterializedMySQL::checkIsInternalQuery(ContextPtr context_, const 
 
 void DatabaseMaterializedMySQL::stopReplication()
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(/* no_throw = */ true);
     materialize_thread.stopSynchronization();
     started_up = false;
 }

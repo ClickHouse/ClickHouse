@@ -79,7 +79,7 @@ public:
     // Value may change during job execution by `prioritize()`.
     size_t pool() const;
 
-    // Returns number of threads blocked by `wait()` or `waitNoThrow()` calls.
+    // Returns number of threads blocked by `wait()` calls.
     size_t waitersCount() const;
 
     // Introspection
@@ -335,12 +335,9 @@ public:
     void prioritize(const LoadJobPtr & job, size_t new_pool);
 
     // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
-    // Throws if job is FAILED or CANCELED. Returns or throws immediately if called on non-pending job.
+    // Throws if job is FAILED or CANCELED unless `no_throw` is set. Returns or throws immediately if called on non-pending job.
     // If job was not scheduled, it will be implicitly scheduled before the wait (deadlock auto-resolution).
-    void wait(const LoadJobPtr & job);
-
-    // Wait for a job to reach any non PENDING status. The same as `wait()` but does not throw.
-    void waitNoThrow(const LoadJobPtr & job);
+    void wait(const LoadJobPtr & job, bool no_throw = false);
 
     // Remove finished jobs, cancel scheduled jobs, wait for executing jobs to finish and remove them.
     void remove(const LoadJobSet & jobs);
@@ -418,11 +415,12 @@ private:
 //      Note that prioritization may be done
 //          (1) before scheduling (to ensure all jobs are started in the correct pools)
 //          (2) after scheduling (for dynamic prioritization, e.g. when new query arrives)
-//  waitLoad([loader], pool_id, {jobs|task|tasks}):
+//  waitLoad([loader], pool_id, {jobs|task|tasks}, [no_throw]):
 //      Prioritize and wait for jobs.
 //      Note that to avoid deadlocks it implicitly schedules all the jobs before waiting for them.
 //      Also to avoid priority inversion you should never wait for a job that has lower priority.
 //      So it prioritizes all jobs, then schedules all jobs and waits every job.
+//      IMPORTANT: Any load error will be rethrown, unless `no_throw` is set.
 //      Common usage pattern is:
 //          waitLoad(currentPoolOr(foreground_pool_id), tasks);
 
@@ -449,24 +447,24 @@ inline void scheduleLoad(const LoadTaskPtrs & tasks)
     loader.schedule(tasks);
 }
 
-inline void waitLoad(AsyncLoader & loader, const LoadJobSet & jobs)
+inline void waitLoad(AsyncLoader & loader, const LoadJobSet & jobs, bool no_throw = false)
 {
     scheduleLoad(loader, jobs);
     for (const auto & job : jobs)
-        loader.wait(job);
+        loader.wait(job, no_throw);
 }
 
-inline void waitLoad(const LoadTaskPtr & task)
+inline void waitLoad(const LoadTaskPtr & task, bool no_throw = false)
 {
     scheduleLoad(task);
-    waitLoad(task->loader, task->goals());
+    waitLoad(task->loader, task->goals(), no_throw);
 }
 
-inline void waitLoad(const LoadTaskPtrs & tasks)
+inline void waitLoad(const LoadTaskPtrs & tasks, bool no_throw = false)
 {
     scheduleLoad(tasks);
     for (const auto & task : tasks)
-        waitLoad(task->loader, task->goals());
+        waitLoad(task->loader, task->goals(), no_throw);
 }
 
 inline void prioritizeLoad(AsyncLoader & loader, size_t pool_id, const LoadJobSet & jobs)
@@ -486,22 +484,22 @@ inline void prioritizeLoad(size_t pool_id, const LoadTaskPtrs & tasks)
         prioritizeLoad(task->loader, pool_id, task->goals());
 }
 
-inline void waitLoad(AsyncLoader & loader, size_t pool_id, const LoadJobSet & jobs)
+inline void waitLoad(AsyncLoader & loader, size_t pool_id, const LoadJobSet & jobs, bool no_throw = false)
 {
     prioritizeLoad(loader, pool_id, jobs);
-    waitLoad(loader, jobs);
+    waitLoad(loader, jobs, no_throw);
 }
 
-inline void waitLoad(size_t pool_id, const LoadTaskPtr & task)
+inline void waitLoad(size_t pool_id, const LoadTaskPtr & task, bool no_throw = false)
 {
     prioritizeLoad(task->loader, pool_id, task->goals());
-    waitLoad(task->loader, task->goals());
+    waitLoad(task->loader, task->goals(), no_throw);
 }
 
-inline void waitLoad(size_t pool_id, const LoadTaskPtrs & tasks)
+inline void waitLoad(size_t pool_id, const LoadTaskPtrs & tasks, bool no_throw = false)
 {
     prioritizeLoad(pool_id, tasks);
-    waitLoad(tasks);
+    waitLoad(tasks, no_throw);
 }
 
 inline LoadJobSet getGoals(const LoadTaskPtrs & tasks, const LoadJobSet & alternative = {})

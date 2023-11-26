@@ -369,18 +369,12 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool)
     prioritize(job, new_pool, lock);
 }
 
-void AsyncLoader::wait(const LoadJobPtr & job)
+void AsyncLoader::wait(const LoadJobPtr & job, bool no_throw)
 {
     std::unique_lock job_lock{job->mutex};
     wait(job_lock, job);
-    if (job->load_exception)
+    if (!no_throw && job->load_exception)
         std::rethrow_exception(job->load_exception);
-}
-
-void AsyncLoader::waitNoThrow(const LoadJobPtr & job)
-{
-    std::unique_lock job_lock{job->mutex};
-    wait(job_lock, job);
 }
 
 void AsyncLoader::remove(const LoadJobSet & jobs)
@@ -413,7 +407,7 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
             ALLOW_ALLOCATIONS_IN_SCOPE;
             chassert(info->second.isExecuting());
             lock.unlock();
-            waitNoThrow(job); // Wait for job to finish
+            wait(job, /* no_throw = */ true); // Wait for job to finish
             lock.lock();
         }
     }

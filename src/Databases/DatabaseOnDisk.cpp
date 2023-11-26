@@ -165,7 +165,7 @@ DatabaseOnDisk::DatabaseOnDisk(
 
 void DatabaseOnDisk::shutdown()
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(/* no_throw = */ true);
     DatabaseWithOwnTablesBase::shutdown();
 }
 

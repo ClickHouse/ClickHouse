@@ -153,10 +153,10 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
     return startup_postgresql_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseMaterializedPostgreSQL::waitDatabaseStarted() const
+void DatabaseMaterializedPostgreSQL::waitDatabaseStarted(bool no_throw) const
 {
     if (startup_postgresql_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_postgresql_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_postgresql_database_task, no_throw);
 }
 
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
@@ -436,7 +436,7 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(/* no_throw = */ true);
 
     std::lock_guard lock(handler_mutex);
     if (replication_handler)

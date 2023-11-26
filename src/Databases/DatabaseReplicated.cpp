@@ -578,10 +578,10 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
     return startup_replicated_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseReplicated::waitDatabaseStarted() const
+void DatabaseReplicated::waitDatabaseStarted(bool no_throw) const
 {
     if (startup_replicated_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_replicated_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_replicated_database_task, no_throw);
 }
 
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
@@ -1257,7 +1257,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(/* no_throw = */ true);
     if (ddl_worker)
         ddl_worker->shutdown();
 }

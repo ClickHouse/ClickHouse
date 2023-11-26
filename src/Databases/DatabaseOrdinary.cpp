@@ -245,11 +245,11 @@ void DatabaseOrdinary::waitTableStarted(const String & name) const
         waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
 }
 
-void DatabaseOrdinary::waitDatabaseStarted() const
+void DatabaseOrdinary::waitDatabaseStarted(bool no_throw) const
 {
     /// Prioritize load and startup of all tables and database itself and wait for them synchronously
     if (startup_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_database_task, no_throw);
 }
 
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const

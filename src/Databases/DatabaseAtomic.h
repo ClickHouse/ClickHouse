@@ -51,7 +51,7 @@ public:
     void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
-    void waitDatabaseStarted() const override;
+    void waitDatabaseStarted(bool no_throw = false) const override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleanup) override;

@@ -470,10 +470,10 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
     return startup_atomic_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseAtomic::waitDatabaseStarted() const
+void DatabaseAtomic::waitDatabaseStarted(bool no_throw) const
 {
     if (startup_atomic_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_atomic_database_task);
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_atomic_database_task, no_throw);
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)

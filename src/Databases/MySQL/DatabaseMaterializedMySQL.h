@@ -52,7 +52,7 @@ public:
     String getEngineName() const override { return "MaterializedMySQL"; }
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
-    void waitDatabaseStarted() const override;
+    void waitDatabaseStarted(bool no_throw = false) const override;
 
     void createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
