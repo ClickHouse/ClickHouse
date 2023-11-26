@@ -478,7 +478,6 @@
   * - compress the state for URL's #hash;
   * - footer with "about" or a link to source code;
   * - allow to configure a table on a server to save the dashboards;
-  * - multiple lines on chart;
   * - if a query returned one value, display this value instead of a diagram;
   * - if a query returned something unusual, display the table;
   */
@@ -966,7 +965,7 @@ async function doFetch(query, url_params = '') {
     user = document.getElementById('user').value;
     password = document.getElementById('password').value;
 
-    let url = `${host}?default_format=JSONCompactColumns&enable_http_compression=1`
+    let url = `${host}?default_format=JSONColumnsWithMetadata&enable_http_compression=1`
 
     if (add_http_cors_header) {
         // For debug purposes, you may set add_http_cors_header from a browser console
@@ -980,14 +979,14 @@ async function doFetch(query, url_params = '') {
         url += `&password=${encodeURIComponent(password)}`;
     }
 
-    let response, data, error;
+    let response, reply, error;
     try {
         response = await fetch(url + url_params, { method: "POST", body: query });
-        data = await response.text();
+        reply = await response.text();
         if (response.ok) {
-            data = JSON.parse(data);
+            reply = JSON.parse(reply);
         } else {
-            error = data;
+            error = reply;
         }
     } catch (e) {
         console.log(e);
@@ -1006,7 +1005,7 @@ async function doFetch(query, url_params = '') {
         }
     }
 
-    return {data, error};
+    return {reply, error};
 }
 
 async function draw(idx, chart, url_params, query) {
@@ -1015,17 +1014,21 @@ async function draw(idx, chart, url_params, query) {
         plots[idx] = null;
     }
 
-    let {data, error} = await doFetch(query, url_params);
-
+    let {reply, error} = await doFetch(query, url_params);
     if (!error) {
-        if (!Array.isArray(data)) {
-            error = "Query should return an array.";
-        } else if (data.length == 0) {
+        if (reply.rows.length == 0) {
             error = "Query returned empty result.";
-        } else if (data.length != 2) {
-            error = "Query should return exactly two columns: unix timestamp and value.";
-        } else if (!Array.isArray(data[0]) || !Array.isArray(data[1]) || data[0].length != data[1].length) {
-            error = "Wrong data format of the query.";
+        } else if (reply.meta.length < 2) {
+            error = "Query should return at least two columns: unix timestamp and value.";
+        } else {
+            for (let i = 0; i < reply.meta.length; i++) {
+                let label = reply.meta[i].name;
+                let column = reply.data[label];
+                if (!Array.isArray(column) || column.length != reply.data[reply.meta[0].name].length) {
+                    error = "Wrong data format of the query.";
+                    break;
+                }
+            }
         }
     }
 
@@ -1048,19 +1051,32 @@ async function draw(idx, chart, url_params, query) {
 
     let sync = uPlot.sync("sync");
 
-    const max_value = Math.max(...data[1]);
+    let axes = [];
+    let series = [];
+    let data = [];
+    series.push({ label: "x" });
+    data.push(reply.data[reply.meta[0].name]);
+    let max_value = Number.NEGATIVE_INFINITY;
+    for (let i = 1; i < reply.meta.length; i++) {
+        let label = reply.meta[i].name;
+        axes.push({
+            stroke: axes_color,
+            grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+            ticks: { width: 1 / devicePixelRatio, stroke: grid_color }
+        });
+        series.push({ label, stroke: line_color, fill: fill_color });
+        data.push(reply.data[label]);
+        max_value = Math.max(max_value, ...reply.data[label]);
+    }
+    if (reply.meta.length == 2) {
+        series[1].label = "y";
+    }
 
     const opts = {
         width: chart.clientWidth,
         height: chart.clientHeight,
-        axes: [ { stroke: axes_color,
-                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-                { stroke: axes_color,
-                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-        series: [ { label: "x" },
-                  { label: "y", stroke: line_color, fill: fill_color } ],
+        axes,
+        series,
         padding: [ null, null, null, (Math.round(max_value * 100) / 100).toString().length * 6 - 10 ],
         plugins: [ legendAsTooltipPlugin() ],
         cursor: {
@@ -1216,22 +1232,21 @@ function saveState() {
 }
 
 async function searchQueries() {
-    let {data, error} = await doFetch(search_query);
+    let {reply, error} = await doFetch(search_query);
     if (error) {
         throw new Error(error);
     }
-    if (!Array.isArray(data)) {
-        throw new Error("Search query should return an array.");
-    } else if (data.length == 0) {
+    let data = reply.data;
+    if (reply.rows == 0) {
         throw new Error("Search query returned empty result.");
-    } else if (data.length != 2) {
+    } else if (reply.meta.length != 2 || reply.meta[0].name != "title" || reply.meta[1].name != "query") {
         throw new Error("Search query should return exactly two columns: title and query.");
-    } else if (!Array.isArray(data[0]) || !Array.isArray(data[1]) || data[0].length != data[1].length) {
+    } else if (!Array.isArray(data.title) || !Array.isArray(data.query) || data.title.length != data.query.length) {
         throw new Error("Wrong data format of the search query.");
     }
 
-    for (let i = 0; i < data[0].length; i++) {
-        queries.push({title: data[0][i], query: data[1][i]});
+    for (let i = 0; i < data.title.length; i++) {
+        queries.push({title: data.title[i], query: data.query[i]});
     }
 
     regenerate();
