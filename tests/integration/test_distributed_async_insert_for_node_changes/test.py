@@ -64,6 +64,7 @@ config2 = """<clickhouse>
 </clickhouse>
 """
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
