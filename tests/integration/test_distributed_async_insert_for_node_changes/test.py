@@ -73,7 +73,7 @@ def started_cluster():
             node.query(
                 f"""
                 create table dist_local (c1 Int32, c2 String) engine=MergeTree() order by c1;
-                create table dist (c1 Int32, c2 String) engine=Distributed(test_cluster, currentDatabase(), dist_local, intHash32(c1));
+                create table dist (c1 Int32, c2 String) engine=Distributed(test_cluster, currentDatabase(), dist_local, c1);
                 """
             )
         yield cluster
