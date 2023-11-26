@@ -356,6 +356,13 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
+            Strings files_with_size;
+            for (const auto & file : part->getFilesChecksums())
+            {
+                files_with_size.push_back(fmt::format("{}: {} ({})",
+                    file.first, file.second.file_size, getHexUIntLowercase(file.second.file_hash)));
+            }
+
             LOG_ERROR(log,
                 "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons:"
                 " 1. Using newer version of compression library after server update."
@@ -367,8 +374,10 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
                 " 7. Manual modification of source data after server startup."
                 " 8. Manual modification of checksums stored in ZooKeeper."
                 " 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas."
-                " We will download merged part from replica to force byte-identical result.",
-                getCurrentExceptionMessage(false));
+                " We will download merged part from replica to force byte-identical result."
+                " List of files in local parts:\n{}",
+                getCurrentExceptionMessage(false),
+                fmt::join(files_with_size, "\n"));
 
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 
