@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ROCKSDB_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
@@ -311,6 +312,36 @@ void StorageEmbeddedRocksDB::drop()
 {
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
+}
+
+bool StorageEmbeddedRocksDB::optimize(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Names & /* deduplicate_by_columns */,
+    bool cleanup,
+    ContextPtr /*context*/)
+{
+    if (partition)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition cannot be specified when optimizing table of type EmbeddedRocksDB");
+
+    if (final)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FINAL cannot be specified when optimizing table of type EmbeddedRocksDB");
+
+    if (deduplicate)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type EmbeddedRocksDB");
+
+    if (cleanup)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type EmbeddedRocksDB");
+
+    std::shared_lock lock(rocksdb_ptr_mx);
+    rocksdb::CompactRangeOptions compact_options;
+    auto status = rocksdb_ptr->CompactRange(compact_options, nullptr, nullptr);
+    if (!status.ok())
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Compaction failed: {}", status.ToString());
+    return true;
 }
 
 void StorageEmbeddedRocksDB::initDB()
