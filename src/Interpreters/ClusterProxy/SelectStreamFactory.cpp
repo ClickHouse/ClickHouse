@@ -117,7 +117,8 @@ void SelectStreamFactory::createForShard(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
-    bool parallel_replicas_enabled)
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator)
 {
     auto it = objects_by_shard.find(shard_info.shard_num);
     if (it != objects_by_shard.end())
@@ -139,6 +140,7 @@ void SelectStreamFactory::createForShard(
             .shard_info = shard_info,
             .lazy = lazy,
             .local_delay = local_delay,
+            .shard_filter_generator = shard_filter_generator,
         });
     };
 

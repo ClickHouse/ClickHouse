@@ -34,7 +34,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     const ColumnsDescription & columns,
     const ContextPtr & context)
 {
-    assert(replicas_count > 1);
+    chassert(replicas_count > 1);
     if (filter_type == ParallelReplicasCustomKeyFilterType::DEFAULT)
     {
         // first we do modulo with replica count

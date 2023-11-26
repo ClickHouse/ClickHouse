@@ -235,17 +235,17 @@ void executeQuery(
 
         if (shard_filter_generator)
         {
-            auto shard_filter = shard_filter_generator(shard_info.shard_num);
-            if (shard_filter)
-            {
-                auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
-
-                auto where_expression = select_query.where();
-                if (where_expression)
-                    shard_filter = makeASTFunction("and", where_expression, shard_filter);
-
-                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
-            }
+            // auto shard_filter = shard_filter_generator(shard_info.shard_num);
+            // if (shard_filter)
+            // {
+            //     auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
+            //
+            //     auto where_expression = select_query.where();
+            //     if (where_expression)
+            //         shard_filter = makeASTFunction("and", where_expression, shard_filter);
+            //
+            //     select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
+            // }
         }
 
         // decide for each shard if parallel reading from replicas should be enabled
@@ -256,7 +256,7 @@ void executeQuery(
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
             new_context, plans, remote_shards, static_cast<UInt32>(shards),
-            parallel_replicas_enabled);
+            parallel_replicas_enabled, shard_filter_generator);
     }
 
     if (!remote_shards.empty())
@@ -280,7 +280,7 @@ void executeQuery(
             log,
             shards,
             query_info.storage_limits,
-            not_optimized_cluster->getName());
+            not_optimized_cluster);
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));

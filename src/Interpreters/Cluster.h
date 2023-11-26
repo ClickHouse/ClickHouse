@@ -222,6 +222,7 @@ public:
         /// Connection pool for each replica, contains nullptr for local replicas
         ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication = false;
+        Addresses addresses;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;
@@ -291,7 +292,7 @@ private:
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
 
-    void addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
+    void addShard(const Settings & settings, Addresses addresses, bool treat_local_as_remote, UInt32 current_shard_num,
                   ShardInfoInsertPathForInternalReplication && insert_paths = {}, UInt32 weight = 1, bool internal_replication = false);
 
     /// Inter-server secret

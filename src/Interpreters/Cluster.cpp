@@ -560,7 +560,7 @@ Cluster::Cluster(
     initMisc();
 }
 
-void Cluster::addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
+void Cluster::addShard(const Settings & settings, Addresses addresses, bool treat_local_as_remote, UInt32 current_shard_num,
                        ShardInfoInsertPathForInternalReplication && insert_paths, UInt32 weight, bool internal_replication)
 {
     Addresses shard_local_addresses;
@@ -596,7 +596,8 @@ void Cluster::addShard(const Settings & settings, Addresses && addresses, bool t
         std::move(shard_local_addresses),
         std::move(shard_pool),
         std::move(all_replicas_pools),
-        internal_replication
+        internal_replication,
+        std::move(addresses),
     });
 }
 
