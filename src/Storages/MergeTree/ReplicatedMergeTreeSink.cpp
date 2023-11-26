@@ -910,6 +910,18 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         catch (const Exception &)
         {
+            /// shared locks could have been taken before
+            /// they have to be released before the renameTo call inside rename_part_to_temporary call
+            try
+            {
+                storage.unlockSharedData(*part, zookeeper);
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                /// suppress this exception otherwise that retries are not working at all
+                LOG_DEBUG(log, "Unlocking shared data failed during error handling: code={} message={}", e.code, e.message());
+            }
+
             rename_part_to_temporary();
             throw;
         }
@@ -1009,8 +1021,16 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     toString(block_id), part->name, temporary_part_relative_path);
 
                 /// shared locks have been taken before
-                /// they have to be released before the next rename_part_to_temporary call
-                storage.unlockSharedData(*part, zookeeper);
+                /// they have to be released before the renameTo call inside rename_part_to_temporary call
+                try
+                {
+                    storage.unlockSharedData(*part, zookeeper);
+                }
+                catch (const zkutil::KeeperException & e)
+                {
+                    /// suppress this exception otherwise that retries are not working at all
+                    LOG_DEBUG(log, "Unlocking shared data failed during error handling: code={} message={}", e.code, e.message());
+                }
 
                 /// We will try to add this part again on the new iteration as it's just a new part.
                 /// So remove it from storage parts set immediately and transfer state to temporary.
@@ -1036,6 +1056,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
             else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
             {
+
+                /// shared locks have been taken before
+                /// they have to be released before the renameTo call inside rename_part_to_temporary call
                 try
                 {
                     storage.unlockSharedData(*part, zookeeper);
@@ -1048,15 +1071,24 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
                 /// Part was not committed to keeper
                 /// So make it temporary to avoid its resurrection on restart
-                rename_part_to_temporary();
+                rename_part_to_temporary(); /// That part will be renamed to temporary_part_relative_path, is that ok?
 
                 throw Exception(ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE, "Another quorum insert has been already started");
             }
             else
             {
-                storage.unlockSharedData(*part, zookeeper);
+                try
+                {
+                    storage.unlockSharedData(*part, zookeeper);
+                }
+                catch (const zkutil::KeeperException & e)
+                {
+                    /// suppress this exception otherwise operation is retried however we are going to throw the error
+                    LOG_DEBUG(log, "Unlocking shared data failed during error handling: code={} message={}", e.code, e.message());
+                }
+
                 /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
-                transaction.rollback();
+                transaction.rollback(); /// Do we need to rollback it manually and have a chance to get an exception?
                 throw Exception(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                     "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
@@ -1068,7 +1100,15 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else
         {
-            storage.unlockSharedData(*part, zookeeper);
+            try
+            {
+                storage.unlockSharedData(*part, zookeeper);
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                /// suppress this exception otherwise operation is retried however we are going to throw the error
+                LOG_DEBUG(log, "Unlocking shared data failed during error handling: code={} message={}", e.code, e.message());
+            }
             transaction.rollback();
             throw Exception(
                 ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
