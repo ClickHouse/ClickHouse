@@ -74,61 +74,49 @@ def started_cluster():
                 create table dist_local (c1 Int32, c2 String) engine=MergeTree() order by c1;
                 create table dist (c1 Int32, c2 String) engine=Distributed(test_cluster, currentDatabase(), dist_local, intHash32(c1));
                 """
-    )
+            )
         yield cluster
     finally:
         cluster.shutdown()
 
 
 def test_distributed_async_insert(started_cluster):
-        node1.query("insert into dist select number,'A' from system.numbers limit 10;")
-        node1.query("system flush distributed dist;")
+    node1.query("insert into dist select number,'A' from system.numbers limit 10;")
+    node1.query("system flush distributed dist;")
 
-        assert int(node3.query("select count() from dist_local where c2 = 'A'")) == 5
-        assert int(node1.query("select count() from dist_local where c2 = 'A'")) == 5
+    assert int(node3.query("select count() from dist_local where c2 = 'A'")) == 5
+    assert int(node1.query("select count() from dist_local where c2 = 'A'")) == 5
 
-        # Add node2
-        node1.replace_config(
-            "/etc/clickhouse-server/config.d/remote_servers.xml",
-            config2)
-        node1.query("SYSTEM RELOAD CONFIG;")
+    # Add node2
+    node1.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config2)
+    node1.query("SYSTEM RELOAD CONFIG;")
 
-        node2.replace_config(
-        "/etc/clickhouse-server/config.d/remote_servers.xml",
-        config2)
-        node2.query("SYSTEM RELOAD CONFIG;")
+    node2.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config2)
+    node2.query("SYSTEM RELOAD CONFIG;")
 
-        node3.replace_config(
-            "/etc/clickhouse-server/config.d/remote_servers.xml",
-            config2)
-        node3.query("SYSTEM RELOAD CONFIG;")
+    node3.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config2)
+    node3.query("SYSTEM RELOAD CONFIG;")
 
-        node1.query("insert into dist select number,'B' from system.numbers limit 12;")
-        node1.query("system flush distributed dist;")
+    node1.query("insert into dist select number,'B' from system.numbers limit 12;")
+    node1.query("system flush distributed dist;")
 
-        assert int(node1.query("select count() from dist_local where c2 = 'B'")) == 4
-        assert int(node2.query("select count() from dist_local where c2 = 'B'")) == 4
-        assert int(node3.query("select count() from dist_local where c2 = 'B'")) == 4
+    assert int(node1.query("select count() from dist_local where c2 = 'B'")) == 4
+    assert int(node2.query("select count() from dist_local where c2 = 'B'")) == 4
+    assert int(node3.query("select count() from dist_local where c2 = 'B'")) == 4
 
-        # Delete node2
-        node1.replace_config(
-            "/etc/clickhouse-server/config.d/remote_servers.xml",
-            config1)
-        node1.query("SYSTEM RELOAD CONFIG;")
+    # Delete node2
+    node1.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config1)
+    node1.query("SYSTEM RELOAD CONFIG;")
 
-        node2.replace_config(
-            "/etc/clickhouse-server/config.d/remote_servers.xml",
-            config1)
-        node2.query("SYSTEM RELOAD CONFIG;")
+    node2.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config1)
+    node2.query("SYSTEM RELOAD CONFIG;")
 
-        node3.replace_config(
-            "/etc/clickhouse-server/config.d/remote_servers.xml",
-            config1)
-        node3.query("SYSTEM RELOAD CONFIG;")
+    node3.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config1)
+    node3.query("SYSTEM RELOAD CONFIG;")
 
-        node1.query("insert into dist select number,'C' from system.numbers limit 10;")
-        node1.query("system flush distributed dist;")
+    node1.query("insert into dist select number,'C' from system.numbers limit 10;")
+    node1.query("system flush distributed dist;")
 
-        assert int(node1.query("select count() from dist_local where c2 = 'C'")) == 5
-        assert int(node2.query("select count() from dist_local where c2 = 'C'")) == 0
-        assert int(node3.query("select count() from dist_local where c2 = 'C'")) == 5
+    assert int(node1.query("select count() from dist_local where c2 = 'C'")) == 5
+    assert int(node2.query("select count() from dist_local where c2 = 'C'")) == 0
+    assert int(node3.query("select count() from dist_local where c2 = 'C'")) == 5
