@@ -19,6 +19,7 @@ public:
     }
 
     String getName() const override;
+    bool identical(const IDataTypeCustomName & rhs_) const override;
 };
 
 DataTypePtr createNested(const DataTypes & types, const Names & names);
