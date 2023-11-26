@@ -233,21 +233,6 @@ void executeQuery(
             visitor.visit(query_ast_for_shard);
         }
 
-        if (shard_filter_generator)
-        {
-            // auto shard_filter = shard_filter_generator(shard_info.shard_num);
-            // if (shard_filter)
-            // {
-            //     auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
-            //
-            //     auto where_expression = select_query.where();
-            //     if (where_expression)
-            //         shard_filter = makeASTFunction("and", where_expression, shard_filter);
-            //
-            //     select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
-            // }
-        }
-
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard
         const auto & addresses = cluster->getShardsAddresses().at(i);

@@ -428,13 +428,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    if (query_info.use_custom_key)
-    {
-        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
-        // query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
-        query_info.cluster = cluster;
-    }
-    else
+    query_info.cluster = cluster;
+    if (!query_info.use_custom_key)
     {
         query_info.cluster = cluster;
 
