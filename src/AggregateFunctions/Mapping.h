@@ -43,6 +43,10 @@ public:
 
     int key(Float64 value) const
     {
+        if (value < min_possible || value > max_possible)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value {} is out of range [{}, {}]", value, min_possible, max_possible);
+        }
         return static_cast<int>(std::ceil(logGamma(value)) + offset);
     }
 
