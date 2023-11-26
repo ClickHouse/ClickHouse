@@ -53,6 +53,7 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
+    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -843,8 +844,10 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
     /// We don't have to list bucket, because there is no asterisks.
     if (key_prefix.size() == blob_path_with_globs.size())
     {
-        ObjectMetadata object_metadata = object_storage->getObjectMetadata(blob_path_with_globs);
-        blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
+        auto object_metadata = object_storage->getObjectMetadata(blob_path_with_globs);
+        blobs_with_metadata.emplace_back(
+            blob_path_with_globs,
+            object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
         if (file_progress_callback)
@@ -923,8 +926,10 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
         blobs_with_metadata = std::move(new_batch);
         if (file_progress_callback)
         {
-            for (const auto & [_, info] : blobs_with_metadata)
+            for (const auto & [relative_path, info] : blobs_with_metadata)
+            {
                 file_progress_callback(FileProgress(0, info.size_bytes));
+            }
         }
     }
 
@@ -970,7 +975,7 @@ StorageAzureBlobSource::KeysIterator::KeysIterator(
         ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
-        keys.emplace_back(RelativePathWithMetadata{key, object_metadata});
+        keys.emplace_back(key, object_metadata);
     }
 
     if (outer_blobs)
@@ -1083,7 +1088,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
     , query_info(query_info_)
-    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
+    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, CurrentMetrics::ObjectStorageAzureThreadsScheduled, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
@@ -1114,7 +1119,8 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
+    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files
+        ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
     if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
@@ -1378,7 +1384,7 @@ std::unique_ptr<ReadBuffer> StorageAzureBlobSource::createAsyncAzureReadBuffer(
 {
     auto modified_settings{read_settings};
     modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
-    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, object_size}}, modified_settings);
+    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, /* local_path */ "", object_size}}, modified_settings);
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)

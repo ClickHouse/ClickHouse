@@ -556,10 +556,13 @@ public:
     }
 
     /// Resolve query node projection columns
-    void resolveProjectionColumns(NamesAndTypes projection_columns_value)
-    {
-        projection_columns = std::move(projection_columns_value);
-    }
+    void resolveProjectionColumns(NamesAndTypes projection_columns_value);
+
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
+
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
 
     QueryTreeNodeType getNodeType() const override
     {

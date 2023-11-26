@@ -21,6 +21,7 @@ namespace CurrentMetrics
 {
     extern const Metric ParallelFormattingOutputFormatThreads;
     extern const Metric ParallelFormattingOutputFormatThreadsActive;
+    extern const Metric ParallelFormattingOutputFormatThreadsScheduled;
 }
 
 namespace DB
@@ -80,7 +81,7 @@ public:
     explicit ParallelFormattingOutputFormat(Params params)
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
-        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, params.max_threads_for_parallel_formatting)
+        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, params.max_threads_for_parallel_formatting)
 
     {
         LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
