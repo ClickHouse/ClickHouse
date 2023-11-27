@@ -2566,14 +2566,6 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
-    if (!global_context->getSettings().log_comment.changed)
-    {
-        Settings settings = global_context->getSettings();
-        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
-        settings.log_comment = fs::absolute(fs::path(file_name));
-        global_context->setSettings(settings);
-    }
-
     return executeMultiQuery(queries_from_file);
 }
 
@@ -2861,7 +2853,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
-        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
+        ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
@@ -2996,12 +2988,65 @@ void ClientBase::init(int argc, char ** argv)
     clearPasswordFromCommandLine(argc, argv);
 
     /// Limit on total memory usage
-    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
-    if (max_client_memory_usage != 0)
+    std::string max_client_memory_usage = config().getString("max_memory_usage_in_client", "0" /*default value*/);
+    if (max_client_memory_usage != "0")
     {
-        total_memory_tracker.setHardLimit(max_client_memory_usage);
-        total_memory_tracker.setDescription("(total)");
-        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        UInt64 multiplier = 1;
+        size_t pos = max_client_memory_usage.size()-1;
+        if (!isdigit(max_client_memory_usage[pos]))
+        {
+            switch (std::tolower(max_client_memory_usage[pos]))
+            {
+                case 'k':
+                {
+                    multiplier = 1e3;
+                    break;
+                }
+                case 'm':
+                {
+                    multiplier = 1e6;
+                    break;
+                }
+                case 'g':
+                {
+                    multiplier = 1e9;
+                    break;
+                }
+                case 't':
+                {
+                    multiplier = 1e12;
+                    break;
+                }
+                case 'p':
+                {
+                    multiplier = 1e15;
+                    break;
+                }
+                case 'e':
+                {
+                    multiplier = 1e18;
+                    break;
+                }
+                default:
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid character '{}' in max_memory_usage_in_client", max_client_memory_usage[pos]);
+            }
+        }
+        long double mem_usage_float = std::stod((max_client_memory_usage.substr(0, pos+1))) * multiplier;
+        if (mem_usage_float < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' for max_memory_usage_in_client cannot be negative.", mem_usage_float);
+        if (mem_usage_float > UInt64(mem_usage_float))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type of argument '{}' for max_memory_usage_in_client must be integer", mem_usage_float);
+        try
+        {
+            UInt64 max_client_memory_usage_int = UInt64(mem_usage_float);
+            total_memory_tracker.setHardLimit(max_client_memory_usage_int);
+            total_memory_tracker.setDescription("(total)");
+            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid input '{}' in max_memory_usage_in_client", max_client_memory_usage);
+        }
     }
 }
 
