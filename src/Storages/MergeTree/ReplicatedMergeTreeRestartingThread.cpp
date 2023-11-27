@@ -79,8 +79,9 @@ void ReplicatedMergeTreeRestartingThread::run()
 
     if (first_time)
     {
-        if (storage.is_readonly)
+        if (storage.is_readonly && !storage.is_readonly_metric_set)
         {
+            storage.is_readonly_metric_set = true;
             /// We failed to start replication, table is still readonly, so we should increment the metric. See also setNotReadonly().
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
         }
@@ -360,21 +361,20 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
         return;
 
     if (became_readonly)
-        CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-
-    /// Replica was already readonly, but we should decrement the metric, because we are detaching/dropping table.
-    /// if first pass wasn't done we don't have to decrement because it wasn't incremented in the first place
-    /// the task should be deactivated if it's full shutdown so no race is present
-    if (!first_time && on_shutdown)
     {
-        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+        storage.is_readonly_metric_set = true;
+        CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+        return;
     }
 
-    if (storage.since_metadata_err_incr_readonly_metric)
+    /// Replica was already readonly, but we should decrement the metric if it was set because we are detaching/dropping table.
+    /// the task should be deactivated if it's full shutdown so no race is present
+    chassert(on_shutdown);
+    if (storage.is_readonly_metric_set)
     {
+        storage.is_readonly_metric_set = false;
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+        chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
 }
 
@@ -384,10 +384,11 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
     /// is_readonly is true on startup, but ReadonlyReplica metric is not incremented,
     /// because we don't want to change this metric if replication is started successfully.
     /// So we should not decrement it when replica stopped being readonly on startup.
-    if (storage.is_readonly.compare_exchange_strong(old_val, false) && !first_time)
+    if (storage.is_readonly.compare_exchange_strong(old_val, false) && storage.is_readonly_metric_set)
     {
+        storage.is_readonly_metric_set = false;
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+        chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
 }
 

@@ -2,6 +2,11 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric ReadonlyReplica;
+}
+
 namespace DB
 {
 
@@ -67,6 +72,12 @@ void ReplicatedMergeTreeAttachThread::run()
             LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", getCurrentExceptionMessage(/* with_stacktrace */ true));
             storage.initialization_done = true;
         }
+
+        if (!storage.is_readonly_metric_set)
+        {
+            storage.is_readonly_metric_set = true;
+            CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+        }
     }
 
     if (!first_try_done.exchange(true))
@@ -74,6 +85,12 @@ void ReplicatedMergeTreeAttachThread::run()
 
     if (shutdown_called)
     {
+        if (storage.is_readonly_metric_set)
+        {
+            storage.is_readonly_metric_set = false;
+            CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+        }
+
         LOG_WARNING(log, "Shutdown called, cancelling initialization");
         return;
     }
