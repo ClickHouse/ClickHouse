@@ -726,7 +726,7 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool print_without_leading_zeros)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros)
     {
         static constexpr std::array variable_width_formatter = {'W'};
         static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
@@ -739,7 +739,7 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
-                    if (print_without_leading_zeros)
+                    if (mysql_format_ckl_without_leading_zeros)
                     {
                         if (std::any_of(
                                 variable_width_formatter_leading_zeros.begin(), variable_width_formatter_leading_zeros.end(),
@@ -772,7 +772,7 @@ private:
 
     const bool mysql_M_is_month_name;
     const bool mysql_f_prints_single_zero;
-    const bool print_without_leading_zeros;
+    const bool mysql_format_ckl_without_leading_zeros;
 
 public:
     static constexpr auto name = Name::name;
@@ -782,7 +782,7 @@ public:
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
         : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
         , mysql_f_prints_single_zero(context->getSettings().formatdatetime_f_prints_single_zero)
-        , print_without_leading_zeros(context->getSettings().formatdatetime_enable_format_without_leading_zeros)
+        , mysql_format_ckl_without_leading_zeros(context->getSettings().formatdatetime_format_without_leading_zeros)
     {
     }
 
@@ -932,7 +932,7 @@ public:
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
         ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
         ///   written which is obviously slow.
-        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, print_without_leading_zeros) : false;
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros) : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
         std::vector<Instruction<T>> instructions;
@@ -1125,12 +1125,12 @@ public:
                     }
 
                     // Month as a integer number:
-                    // - if formatdatetime_enable_format_without_leading_zeros=true, prints without leading zero, i.e. 1-12
-                    // - otherwise with, i.e. 01-12
+                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 1-12
+                    // - otherwise: print with leading zeros: i.e. 01-12
                     case 'c':
                     {
                         Instruction<T> instruction;
-                        if (print_without_leading_zeros)
+                        if (mysql_format_ckl_without_leading_zeros)
                         {
                             instruction.setMysqlFunc(&Instruction<T>::mysqlMonthWithoutLeadingZero);
                             instructions.push_back(std::move(instruction));
@@ -1449,12 +1449,12 @@ public:
                     }
 
                     // Hour in 24h format:
-                    // - if formatdatetime_enable_format_without_leading_zeros=true, prints without leading zero, i.e. 0-23
-                    // - otherwise with, i.e. 00-23
+                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 0-23
+                    // - otherwise: print with leading zeros: i.e. 00-23
                     case 'k':
                     {
                         static constexpr std::string_view val = "00";
-                        if (print_without_leading_zeros)
+                        if (mysql_format_ckl_without_leading_zeros)
                             add_time_instruction(&Instruction<T>::mysqlHour24WithoutLeadingZero, val);
                         else
                             add_time_instruction(&Instruction<T>::mysqlHour24, val);
@@ -1463,12 +1463,12 @@ public:
                     }
 
                     // Hour in 12h format:
-                    // - if formatdatetime_enable_format_without_leading_zeros=true, prints without leading zero, i.e. 0-12
-                    // - otherwise with, i.e. 00-12
+                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 0-12
+                    // - otherwise: print with leading zeros: i.e. 00-12
                     case 'l':
                     {
                         static constexpr std::string_view val = "12";
-                        if (print_without_leading_zeros)
+                        if (mysql_format_ckl_without_leading_zeros)
                             add_time_instruction(&Instruction<T>::mysqlHour12WithoutLeadingZero, val);
                         else
                             add_time_instruction(&Instruction<T>::mysqlHour12, val);

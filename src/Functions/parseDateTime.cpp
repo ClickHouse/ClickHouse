@@ -466,14 +466,14 @@ namespace
     {
     public:
         const bool mysql_M_is_month_name;
-        const bool enable_format_without_leading_zeros;
+        const bool mysql_parse_ckl_without_leading_zeros;
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
 
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
-            , enable_format_without_leading_zeros(context->getSettings().parsedatetime_enable_format_without_leading_zeros)
+            , mysql_parse_ckl_without_leading_zeros(context->getSettings().parsedatetime_parse_without_leading_zeros)
         {
         }
 
@@ -1517,15 +1517,14 @@ namespace
                             break;
 
                         // Month as a decimal number:
-                        // - if parsedatetime_enable_format_without_leading_zeros=true, possibly without leading zero, i.e. 1-12
-                        // - else with leading zero required, i.e. 01-12
+                        // - if parsedatetime_parse_without_leading_zeros = true: possibly without leading zero, i.e. 1-12
+                        // - else: with leading zero required, i.e. 01-12
                         case 'c':
-                            if (enable_format_without_leading_zeros)
+                            if (mysql_parse_ckl_without_leading_zeros)
                                 instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthWithoutLeadingZero));
                             else
                                 instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonth));
                             break;
-
 
                         // Year, divided by 100, zero-padded
                         case 'C':
@@ -1678,20 +1677,20 @@ namespace
                             break;
 
                         // Hour in 24h format:
-                        // - if parsedatetime_enable_format_without_leading_zeros=true, possibly without leading zero, i.e. 0-23
-                        // - else with leading zero required, i.e. 00-23
+                        // - if parsedatetime_parse_without_leading_zeros = true, possibly without leading zero: i.e. 0-23
+                        // - else with leading zero required: i.e. 00-23
                         case 'k':
-                            if (enable_format_without_leading_zeros)
+                            if (mysql_parse_ckl_without_leading_zeros)
                                 instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24WithoutLeadingZero));
                             else
                                 instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24));
                             break;
 
                         // Hour in 12h format:
-                        // - if parsedatetime_enable_format_without_leading_zeros=true, possibly without leading zero, i.e. 0-12
-                        // - else with leading zero required, i.e. 00-12
+                        // - if parsedatetime_parse_without_leading_zeros = true: possibly without leading zero, i.e. 0-12
+                        // - else with leading zero required: i.e. 00-12
                         case 'l':
-                            if (enable_format_without_leading_zeros)
+                            if (mysql_parse_ckl_without_leading_zeros)
                                 instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12WithoutLeadingZero));
                             else
                                 instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
