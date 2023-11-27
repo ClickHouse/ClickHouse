@@ -13,6 +13,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <base/types.h>
 #include <base/defines.h>
 
@@ -90,6 +91,10 @@ void ReplicatedMergeTreeClusterBalancer::shutdown()
 
 void ReplicatedMergeTreeClusterBalancer::waitSynced(bool throw_if_stopped)
 {
+    LOG_TRACE(log, "Syncing cluster");
+    Stopwatch watch;
+    SCOPE_EXIT({ LOG_TRACE(log, "Cluster sync took: {} ms", watch.elapsedMilliseconds()); });
+
     auto task_blocker = background_task->getExecLock();
 
     /// TODO:
