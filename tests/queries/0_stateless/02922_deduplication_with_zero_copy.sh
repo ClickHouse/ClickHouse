@@ -56,11 +56,9 @@ function filter_temporary_locks()
 
 
 function insert_duplicates() {
-  # $CLICKHOUSE_CLIENT -q "system stop fetches r2;"
+  query_with_retry "insert into r1 values(1);" --send_logs_level="error"  &
 
-  $CLICKHOUSE_CLIENT -q "insert into r1 values(1);" &
-
-  $CLICKHOUSE_CLIENT --send_logs_level="error" -q "insert into r2 values(1);"
+  query_with_retry "insert into r2 values(1);" --send_logs_level="error"
 
   wait
 
@@ -103,6 +101,7 @@ system sync replica r2;
 
 }
 
+export -f query_with_retry
 export -f filter_temporary_locks
 export -f insert_duplicates
 export -f get_shared_locks

@@ -694,6 +694,29 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     const auto settings = getSettings();
     if (settings->allow_remote_fs_zero_copy_replication)
     {
+        auto disks = getStoragePolicy()->getDisks();
+        std::set<DataSourceType> disk_types_for_zero_copy;
+        for (auto & disk : disks)
+        {
+            if (!disk->supportZeroCopyReplication())
+                continue;
+
+            disk_types_for_zero_copy.insert(disk->getDataSourceDescription().type);
+        }
+
+        const auto table_shared_id_ = getTableSharedID();
+
+        if (!disk_types_for_zero_copy.empty())
+            futures.push_back(zookeeper->asyncTryCreateNoThrow(settings->remote_fs_zero_copy_zookeeper_path.toString(), String(), zkutil::CreateMode::Persistent));
+
+        for (const auto & disk_type: disk_types_for_zero_copy)
+        {
+            auto zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
+            auto zero_copy_path = fs::path(settings->remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy;
+            futures.push_back(zookeeper->asyncTryCreateNoThrow(zero_copy_path, String(), zkutil::CreateMode::Persistent));
+            futures.push_back(zookeeper->asyncTryCreateNoThrow(zero_copy_path / table_shared_id_, String(), zkutil::CreateMode::Persistent));
+        }
+
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_s3", String(), zkutil::CreateMode::Persistent));
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_s3/shared", String(), zkutil::CreateMode::Persistent));
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_hdfs", String(), zkutil::CreateMode::Persistent));
