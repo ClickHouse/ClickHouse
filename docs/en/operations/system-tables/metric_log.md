@@ -6,7 +6,7 @@ slug: /en/operations/system-tables/metric_log
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 
 Columns:
-- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.

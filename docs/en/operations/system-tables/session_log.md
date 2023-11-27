@@ -7,7 +7,7 @@ Contains information about all successful and failed login and logout events.
 
 Columns:
 
-- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
     - `LoginFailure` — Login error.
     - `LoginSuccess` — Successful login.

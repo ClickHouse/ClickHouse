@@ -9,7 +9,7 @@ For requests, only columns with request parameters are filled in, and the remain
 
 Columns with request parameters:
 
-- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum](../../sql-reference/data-types/enum.md)) — Event type in the ZooKeeper client. Can have one of the following values:
     - `Request` — The request has been sent.
     - `Response` — The response was received.

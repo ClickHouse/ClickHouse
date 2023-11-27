@@ -7,7 +7,7 @@ Contains logging entries with the information about `BACKUP` and `RESTORE` opera
 
 Columns:
 
-- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of the entry.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Time of the entry with microseconds precision.
 - `id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.

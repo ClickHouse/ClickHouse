@@ -7,7 +7,7 @@ Contains information about stack traces for fatal errors. The table does not exi
 
 Columns:
 
-- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date of the event.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Time of the event.
 - `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Timestamp of the event with nanoseconds.

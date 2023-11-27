@@ -34,7 +34,7 @@ You can use the [log_formatted_queries](../../operations/settings/settings.md#se
 
 Columns:
 
-- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
     - `'QueryStart' = 1` — Successful start of query execution.
     - `'QueryFinish' = 2` — Successful end of query execution.

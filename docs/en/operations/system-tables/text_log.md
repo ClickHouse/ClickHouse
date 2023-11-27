@@ -7,7 +7,7 @@ Contains logging entries. The logging level which goes to this table can be limi
 
 Columns:
 
-- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` (Date) — Date of the entry.
 - `event_time` (DateTime) — Time of the entry.
 - `event_time_microseconds` (DateTime) — Time of the entry with microseconds precision.
