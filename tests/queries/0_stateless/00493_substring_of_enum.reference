@@ -144,5 +144,12 @@ Offset: 	-6	Length: 	3	world	eagle	wo	ea
 Offset: 	-6	Length: 	4	world	eagle	wor	eag
 Offset: 	-6	Length: 	5	world	eagle	worl	eagl
 Offset: 	-6	Length: 	6	world	eagle	world	eagle
+-- Zero offset/length
+Offset: 	0	Length: 	0				
+Offset: 	0	Length: 	1				
+Offset: 	1	Length: 	0	hello	shark		
+Offset: 	0	Length: 	0				
+Offset: 	0	Length: 	1				
+Offset: 	1	Length: 	0	world	eagle		
 -- Constant enums
 f	fo

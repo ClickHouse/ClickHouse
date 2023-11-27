@@ -18,6 +18,14 @@ SELECT 'Offset: ', p.offset, 'Length: ', p.length,
        substring(e8, p.offset, p.length) AS s3, substring(e16, p.offset, p.length) AS s4
 FROM substring_enums_test LEFT JOIN permutations AS p ON true;
 
+SELECT '-- Zero offset/length';
+WITH cte AS (SELECT number AS n FROM system.numbers LIMIT 2),
+     permutations AS (SELECT c1.n AS offset, c2.n AS length FROM cte AS c1 CROSS JOIN cte AS c2 LIMIT 3)
+SELECT 'Offset: ', p.offset, 'Length: ', p.length,
+       substring(e8, p.offset) AS s1, substring(e16, p.offset) AS s2,
+       substring(e8, p.offset, p.length) AS s3, substring(e16, p.offset, p.length) AS s4
+FROM substring_enums_test LEFT JOIN permutations AS p ON true;
+
 SELECT '-- Constant enums';
 SELECT substring(CAST('foo', 'Enum8(\'foo\' = 1)'), 1, 1), substring(CAST('foo', 'Enum16(\'foo\' = 1111)'), 1, 2);
 
