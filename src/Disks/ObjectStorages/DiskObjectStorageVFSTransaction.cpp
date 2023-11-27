@@ -36,8 +36,8 @@ void DiskObjectStorageVFSTransaction::removeSharedFile(const String & path, bool
 
 void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & path, bool)
 {
-    DiskObjectStorageTransaction::removeSharedFileIfExists(path, /*keep_shared_data=*/true);
     if (!metadata_storage.exists(path)) return;
+    DiskObjectStorageTransaction::removeSharedFileIfExists(path, /*keep_shared_data=*/true);
     addStoredObjectsOp(Unlink, metadata_storage.getStorageObjects(path));
 }
 
