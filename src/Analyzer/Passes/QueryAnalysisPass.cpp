@@ -5185,24 +5185,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, parameters, properties);
-        if (aggregate_function->getName() == "nothing")
-        {
-            /** When we resolve aggregate function into `nothing` it may have different result type.
-              * For functions with peorperty `returns_default_when_only_null` set to true, it will be UInt64, for other functions it will be Null.
-              * Aggregate function `nothing` returns the same type as first argument has.
-              * In that case we may need to set first argument to correct type.
-              * Also we don't want to replace first argument, but just prepend it because it may have aliases, for example
-              * SELECT count(NULL AS a), sum(a) FROM table
-              */
-            const auto & actual_result_type = aggregate_function->getResultType();
-            if (!argument_types.empty() && !argument_types.front()->equals(*actual_result_type))
-            {
-                QueryTreeNodes & nodes = function_node.getArguments().getNodes();
-                QueryTreeNodes new_nodes = {std::make_shared<ConstantNode>(actual_result_type->getDefault(), actual_result_type)};
-                std::move(nodes.begin(), nodes.end(), std::back_inserter(new_nodes));
-                nodes = std::move(new_nodes);
-            }
-        }
+
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
         return result_projection_names;
