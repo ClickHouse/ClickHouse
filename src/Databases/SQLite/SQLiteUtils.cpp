@@ -26,10 +26,11 @@ void processSQLiteError(const String & message, bool throw_on_error)
 
 String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
 {
-    if (fs::path(path).is_relative())
-        return fs::absolute(fs::path(user_files_path) / path).lexically_normal();
-
     String absolute_path = fs::absolute(path).lexically_normal();
+
+    if (fs::path(path).is_relative())
+        absolute_path = fs::absolute(fs::path(user_files_path) / path).lexically_normal();
+
     String absolute_user_files_path = fs::absolute(user_files_path).lexically_normal();
 
     if (need_check && !absolute_path.starts_with(absolute_user_files_path))

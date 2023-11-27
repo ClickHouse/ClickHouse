@@ -722,7 +722,7 @@ void ClientBase::adjustSettings()
     global_context->setSettings(settings);
 }
 
-void ClientBase::initTtyBuffer(ProgressOption progress)
+void ClientBase::initTTYBuffer(ProgressOption progress)
 {
     if (tty_buf)
         return;
@@ -1797,7 +1797,12 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     {
         const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
         if (logs_level_field)
-            updateLoggerLevel(logs_level_field->safeGet<String>());
+        {
+            auto logs_level = logs_level_field->safeGet<String>();
+            /// Check that setting value is correct before updating logger level.
+            SettingFieldLogsLevelTraits::fromString(logs_level);
+            updateLoggerLevel(logs_level);
+        }
     }
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
@@ -2560,6 +2565,14 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
 
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
+
+    if (!global_context->getSettings().log_comment.changed)
+    {
+        Settings settings = global_context->getSettings();
+        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
+        settings.log_comment = fs::absolute(fs::path(file_name));
+        global_context->setSettings(settings);
+    }
 
     return executeMultiQuery(queries_from_file);
 }

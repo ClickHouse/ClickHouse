@@ -11,11 +11,9 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSparse.h>
 #include <Formats/NativeWriter.h>
-#include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
@@ -23,7 +21,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Core/ProtocolDefines.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/Stopwatch.h>
@@ -37,12 +34,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/JSONBuilder.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Interpreters/AggregationUtils.h>
+
 
 namespace ProfileEvents
 {
@@ -63,6 +60,7 @@ namespace CurrentMetrics
     extern const Metric TemporaryFilesForAggregation;
     extern const Metric AggregatorThreads;
     extern const Metric AggregatorThreadsActive;
+    extern const Metric AggregatorThreadsScheduled;
 }
 
 namespace DB
@@ -1122,7 +1120,9 @@ void NO_INLINE Aggregator::executeImplBatch(
             return;
 
         /// For all rows.
-        AggregateDataPtr place = aggregates_pool->alloc(0);
+
+        /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
+        AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
         {
             state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
@@ -2466,7 +2466,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     std::unique_ptr<ThreadPool> thread_pool;
     if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000  /// TODO Make a custom threshold.
         && data_variants.isTwoLevel())                      /// TODO Use the shared thread pool with the `merge` function.
-        thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, max_threads);
+        thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, max_threads);
 
     if (data_variants.without_key)
         blocks.emplace_back(prepareBlockAndFillWithoutKey(
@@ -2656,7 +2656,7 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
     ManyAggregatedDataVariants & non_empty_data) const
 {
-    ThreadPool thread_pool{CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, params.max_threads};
+    ThreadPool thread_pool{CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, params.max_threads};
 
     AggregatedDataVariantsPtr & res = non_empty_data[0];
 
@@ -3144,7 +3144,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         std::unique_ptr<ThreadPool> thread_pool;
         if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
-            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, max_threads);
+            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)
         {

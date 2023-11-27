@@ -17,6 +17,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -43,7 +44,6 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
-#include <Analyzer/Passes/MoveFunctionsOutOfAnyPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 
 
@@ -243,6 +243,7 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 void addQueryTreePasses(QueryTreePassManager & manager)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>());
+    manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
@@ -282,7 +283,6 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
-    manager.addPass(std::make_unique<MoveFunctionsOutOfAnyPass>());
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
 
 }

@@ -269,6 +269,7 @@ KeeperStateManager::KeeperStateManager(
 void KeeperStateManager::loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep)
 {
     log_store->init(last_commited_index, logs_to_keep);
+    log_store_initialized = true;
 }
 
 void KeeperStateManager::system_exit(const int /* exit_code */)
@@ -361,6 +362,8 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
 nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 {
+    chassert(log_store_initialized);
+
     const auto & old_path = getOldServerStatePath();
 
     auto disk = getStateFileDisk();
@@ -454,7 +457,12 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         disk->removeFile(copy_lock_file);
     }
 
-    LOG_WARNING(logger, "No state was read");
+    if (log_store->next_slot() != 1)
+        LOG_ERROR(
+            logger,
+            "No state was read but Keeper contains data which indicates that the state file was lost. This is dangerous and can lead to "
+            "data loss.");
+
     return nullptr;
 }
 

@@ -1448,6 +1448,21 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
+    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+    if (replicated_storage)
+    {
+        const auto probability = getContext()->getSettingsRef().create_replicated_merge_tree_fault_injection_probability;
+        std::bernoulli_distribution fault(probability);
+        if (fault(thread_local_rng))
+        {
+            /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
+            if (!create.attach)
+                replicated_storage->dropIfEmpty();
+
+            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
+        }
+    }
+
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
