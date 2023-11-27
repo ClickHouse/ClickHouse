@@ -430,8 +430,9 @@ private:
 
         size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto x = ToHourImpl::execute(source, timezone);
-            return writeNumber2(dest, x == 0 ? 12 : (x > 12 ? x - 12 : x));
+            auto hour = ToHourImpl::execute(source, timezone);
+            hour = (hour == 0) ? 12 : (hour > 12 ? hour - 12 : hour);
+            return writeNumber2(dest, hour);
         }
 
         size_t mysqlHour12WithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -739,17 +740,17 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
-                    if (mysql_format_ckl_without_leading_zeros)
-                    {
-                        if (std::any_of(
-                                variable_width_formatter_leading_zeros.begin(), variable_width_formatter_leading_zeros.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
                     if (mysql_M_is_month_name)
                     {
                         if (std::any_of(
                                 variable_width_formatter_M_is_month_name.begin(), variable_width_formatter_M_is_month_name.end(),
+                                [&](char c){ return c == format[i + 1]; }))
+                            return false;
+                    }
+                    if (mysql_format_ckl_without_leading_zeros)
+                    {
+                        if (std::any_of(
+                                variable_width_formatter_leading_zeros.begin(), variable_width_formatter_leading_zeros.end(),
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }

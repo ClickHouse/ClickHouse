@@ -171,19 +171,19 @@ select parseDateTime('', '', toString(number)) from numbers(13); -- { serverErro
 -- %h
 select parseDateTime('Aug 13, 2022, 7:58:32 PM', '%b %e, %G, %h:%i:%s %p', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('Aug 13, 2022, 07:58:32 PM', '%b %e, %G, %h:%i:%s %p', 'UTC');
--- %l
+-- %l accepts single or double digits inputs
 select parseDateTime('Aug 13, 2022, 7:58:32 PM', '%b %e, %G, %l:%i:%s %p', 'UTC');
 select parseDateTime('Aug 13, 2022, 07:58:32 PM', '%b %e, %G, %l:%i:%s %p', 'UTC');
 -- %H
 select parseDateTime('Aug 13, 2022, 7:58:32', '%b %e, %G, %H:%i:%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('Aug 13, 2022, 07:58:32', '%b %e, %G, %H:%i:%s', 'UTC');
--- %k
+-- %k accepts single or double digits inputs
 select parseDateTime('Aug 13, 2022, 7:58:32', '%b %e, %G, %k:%i:%s', 'UTC');
 select parseDateTime('Aug 13, 2022, 07:58:32', '%b %e, %G, %k:%i:%s', 'UTC');
 -- %m
 select parseDateTime('8 13, 2022, 7:58:32', '%m %e, %G, %k:%i:%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('08 13, 2022, 07:58:32', '%m %e, %G, %k:%i:%s', 'UTC');
--- %c
+-- %c accepts single or double digits inputs
 select parseDateTime('8 13, 2022, 7:58:32', '%c %e, %G, %k:%i:%s', 'UTC');
 select parseDateTime('08 13, 2022, 07:58:32', '%c %e, %G, %k:%i:%s', 'UTC');
 
