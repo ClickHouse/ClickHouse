@@ -57,6 +57,16 @@ public:
     void mutate(const MutationCommands &, ContextPtr) override;
     void drop() override;
 
+    bool optimize(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & partition,
+        bool final,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        bool cleanup,
+        ContextPtr context) override;
+
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(

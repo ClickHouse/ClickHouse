@@ -22,6 +22,8 @@ public:
     virtual ~IDataTypeCustomName() = default;
 
     virtual String getName() const = 0;
+
+    virtual bool identical(const IDataTypeCustomName & rhs) const = 0;
 };
 
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
@@ -51,6 +53,12 @@ private:
 public:
     explicit DataTypeCustomFixedName(String name_) : name(name_) {}
     String getName() const override { return name; }
+    bool identical(const IDataTypeCustomName & rhs_) const override
+    {
+        if (const auto * rhs = typeid_cast<decltype(this)>(&rhs_))
+            return name == rhs->getName();
+        return false;
+    }
 };
 
 }

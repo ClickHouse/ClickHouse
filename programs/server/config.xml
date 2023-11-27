@@ -830,13 +830,13 @@
                  And also (and which is more important), the initial_user will
                  be used as current user for the query.
 
-                 Right now the protocol is pretty simple and it only takes into account:
+                 Right now the protocol is pretty simple, and it only takes into account:
                  - cluster name
                  - query
 
-                 Also it will be nice if the following will be implemented:
-                 - source hostname (see interserver_http_host), but then it will depends from DNS,
-                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 Also, it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depend on DNS,
+                   it can use IP address instead, but then you need to get correct on the initiator node.
                  - target hostname / ip address (same notes as for source hostname)
                  - time-based security tokens
             -->
@@ -1248,6 +1248,25 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </backup_log>
 
+    <!-- Storage S3Queue log.
+    -->
+    <s3queue_log>
+        <database>system</database>
+        <table>s3queue_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </s3queue_log>
+
+    <!-- Blob storage object operations log.
+    -->
+    <blob_storage_log>
+        <database>system</database>
+        <table>blob_storage_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </blob_storage_log>
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
@@ -1272,10 +1291,10 @@
     <dictionaries_lazy_load>true</dictionaries_lazy_load>
 
     <!-- Wait at startup until all the dictionaries finish their loading (successfully or not)
-         before listening to connections. Setting this to 1 can make ClickHouse start slowly,
-         however some queries can be executed faster (because it won't have to wait for the used dictionaries to be load).
+         before receiving any connections. Affects dictionaries only if "dictionaries_lazy_load" is false.
+         Setting this to false can make ClickHouse start faster, however some queries can be executed slower.
     -->
-    <wait_dictionaries_load_at_startup>false</wait_dictionaries_load_at_startup>
+    <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
