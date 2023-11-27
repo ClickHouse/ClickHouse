@@ -462,23 +462,34 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto settings_ptr = s3_settings.get();
         auto size = S3::getObjectSize(*client_, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
         auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-        copyS3File(
-            client_,
-            bucket,
-            object_from.remote_path,
-            0,
-            size,
-            dest_s3->bucket,
-            object_to.remote_path,
-            settings_ptr->request_settings,
-            patchSettings(read_settings),
-            BlobStorageLogWriter::create(disk_name),
-            object_to_attributes,
-            scheduler,
-            /* for_disk_s3= */ true);
+        try {
+            copyS3File(
+                client_,
+                bucket,
+                object_from.remote_path,
+                0,
+                size,
+                dest_s3->bucket,
+                object_to.remote_path,
+                settings_ptr->request_settings,
+                patchSettings(read_settings),
+                BlobStorageLogWriter::create(disk_name),
+                object_to_attributes,
+                scheduler,
+                /* for_disk_s3= */ true);
+            return;
+        }
+        catch (S3Exception & exc)
+        {
+            /// If authentication/permissions error occurs then fallthrough to copy with buffer.
+            if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED) throw;
+            LOG_WARNING(&Poco::Logger::get("S3ObjectStorage"),
+                "S3-server-side copy object from the disk {} to the disk {} can not be performed: {}\n"
+                getName(), dest_s3->getName(), exc.what());
+        }
     }
-    else
-        IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
+
+    IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
 void S3ObjectStorage::copyObject( // NOLINT
