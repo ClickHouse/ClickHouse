@@ -88,6 +88,15 @@ struct FormatSettings
         IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
     } interval;
 
+    enum class DateTimeOverflowBehavior
+    {
+        Ignore,
+        Throw,
+        Saturate
+    };
+
+    DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
+
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
 
@@ -141,6 +150,7 @@ struct FormatSettings
         bool allow_double_quotes = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
+        bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
         bool arrays_as_nested_csv = false;
         String null_representation = "\\N";
@@ -364,6 +374,8 @@ struct FormatSettings
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
         bool use_fast_decoder = true;
+        bool filter_push_down = true;
+        UInt64 output_row_index_stride = 10'000;
     } orc;
 
     /// For capnProto format we should determine how to

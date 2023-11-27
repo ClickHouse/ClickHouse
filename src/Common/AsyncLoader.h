@@ -271,8 +271,8 @@ inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & 
 // Basic usage example:
 //     // Start async_loader with two thread pools (0=fg, 1=bg):
 //     AsyncLoader async_loader({
-//         {"FgPool", CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, .max_threads = 2, .priority{0}}
-//         {"BgPool", CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, .max_threads = 1, .priority{1}}
+//         {"FgPool", CurrentMetrics::AsyncLoaderThreads, ..., .max_threads = 2, .priority{0}}
+//         {"BgPool", CurrentMetrics::AsyncLoaderThreads, ..., .max_threads = 1, .priority{1}}
 //     });
 //
 //     // Create and schedule a task consisting of three jobs. Job1 has no dependencies and is run first.
@@ -368,6 +368,7 @@ public:
         String name;
         Metric metric_threads;
         Metric metric_active_threads;
+        Metric metric_scheduled_threads;
         size_t max_threads;
         Priority priority;
     };

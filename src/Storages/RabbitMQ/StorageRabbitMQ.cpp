@@ -1,6 +1,7 @@
 #include <amqpcpp.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -240,7 +241,11 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
+    if (rabbitmq_settings->rabbitmq_handle_error_mode == StreamingHandleErrorMode::DEFAULT)
+        modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
+    else
+        modified_context->setSetting("input_format_allow_errors_num", Field(0));
+
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});
 
@@ -730,7 +735,7 @@ void StorageRabbitMQ::read(
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, modified_context, column_names, 1,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_commit_on_select);
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -757,7 +762,7 @@ void StorageRabbitMQ::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info, local_context);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
@@ -796,7 +801,7 @@ void StorageRabbitMQ::startup()
 }
 
 
-void StorageRabbitMQ::shutdown()
+void StorageRabbitMQ::shutdown(bool)
 {
     shutdown_called = true;
 
@@ -1076,7 +1081,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms, false);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, false);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1212,7 +1217,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
 NamesAndTypesList StorageRabbitMQ::getVirtuals() const
 {
-    return NamesAndTypesList{
+    auto virtuals = NamesAndTypesList{
             {"_exchange_name", std::make_shared<DataTypeString>()},
             {"_channel_id", std::make_shared<DataTypeString>()},
             {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
@@ -1220,6 +1225,14 @@ NamesAndTypesList StorageRabbitMQ::getVirtuals() const
             {"_message_id", std::make_shared<DataTypeString>()},
             {"_timestamp", std::make_shared<DataTypeUInt64>()}
     };
+
+    if (rabbitmq_settings->rabbitmq_handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        virtuals.push_back({"_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+    }
+
+    return virtuals;
 }
 
 }

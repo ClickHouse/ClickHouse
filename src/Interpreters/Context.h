@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/Net/NameValueCollection.h>
-#include <Core/Types.h>
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
@@ -13,6 +11,7 @@
 #include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
+#include <Common/SharedMutexHelper.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -108,6 +107,7 @@ class FilesystemReadPrefetchesLog;
 class S3QueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
+class BlobStorageLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
@@ -229,6 +229,17 @@ struct SharedContextHolder
 
 private:
     std::unique_ptr<ContextSharedPart> shared;
+};
+
+class ContextSharedMutex : public SharedMutexHelper<ContextSharedMutex>
+{
+private:
+    using Base = SharedMutexHelper<ContextSharedMutex, SharedMutex>;
+    friend class SharedMutexHelper<ContextSharedMutex, SharedMutex>;
+
+    void lockImpl();
+
+    void lockSharedImpl();
 };
 
 class ContextData
@@ -491,7 +502,7 @@ class Context: public ContextData, public std::enable_shared_from_this<Context>
 {
 private:
     /// ContextData mutex
-    mutable SharedMutex mutex;
+    mutable ContextSharedMutex mutex;
 
     Context();
     Context(const Context &);
@@ -629,7 +640,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers = {});
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
@@ -778,15 +789,14 @@ public:
 
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();
-    ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
+    void waitForDictionariesLoad() const;
 
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
-    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
     const IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader() const;
     IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
@@ -938,6 +948,8 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
+    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
+
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// --- Caches ------------------------------------------------------------------------------------------
@@ -1046,6 +1058,7 @@ public:
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
+    std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
     std::vector<ISystemLog *> getSystemLogs() const;
 
@@ -1220,37 +1233,27 @@ public:
     const ServerSettings & getServerSettings() const;
 
 private:
-    std::unique_lock<SharedMutex> getGlobalLock() const;
-
-    std::shared_lock<SharedMutex> getGlobalSharedLock() const;
-
-    std::unique_lock<SharedMutex> getLocalLock() const;
-
-    std::shared_lock<SharedMutex> getLocalSharedLock() const;
-
-    const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::unique_lock<SharedMutex> & lock) const;
-
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
-    void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+    void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+    void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+    void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::unique_lock<SharedMutex> & lock);
+    void setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setSettingWithLock(std::string_view name, const String & value, const std::unique_lock<SharedMutex> & lock);
+    void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setSettingWithLock(std::string_view name, const Field & value, const std::unique_lock<SharedMutex> & lock);
+    void setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void applySettingChangeWithLock(const SettingChange & change, const std::unique_lock<SharedMutex> & lock);
+    void applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void applySettingsChangesWithLock(const SettingsChanges & changes, const std::unique_lock<SharedMutex> & lock);
+    void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setUserIDWithLock(const UUID & user_id_, const std::unique_lock<SharedMutex> & lock);
+    void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setCurrentDatabaseWithLock(const String & name, const std::unique_lock<SharedMutex> & lock);
+    void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
     void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const;
 
@@ -1263,6 +1266,10 @@ private:
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
+
+    ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
+
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 
     void initGlobal();
 

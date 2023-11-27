@@ -9,50 +9,14 @@ endif()
 set(_gRPC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/grpc")
 set(_gRPC_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/grpc")
 
-# Use re2 from ClickHouse contrib, not from gRPC third_party.
-set(gRPC_RE2_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(_gRPC_RE2_INCLUDE_DIR "")
-set(_gRPC_RE2_LIBRARIES ch_contrib::re2)
-
-# Use zlib from ClickHouse contrib, not from gRPC third_party.
-set(gRPC_ZLIB_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(_gRPC_ZLIB_INCLUDE_DIR "")
-set(_gRPC_ZLIB_LIBRARIES ch_contrib::zlib)
-
-# Use protobuf from ClickHouse contrib, not from gRPC third_party.
-set(gRPC_PROTOBUF_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(_gRPC_PROTOBUF_LIBRARIES ch_contrib::protobuf)
-set(_gRPC_PROTOBUF_PROTOC "protoc")
-set(_gRPC_PROTOBUF_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
-set(_gRPC_PROTOBUF_PROTOC_LIBRARIES ch_contrib::protoc)
-
 if(TARGET OpenSSL::SSL)
   set(gRPC_USE_UNSECURE_LIBRARIES FALSE)
 else()
   set(gRPC_USE_UNSECURE_LIBRARIES TRUE)
 endif()
 
-# Use OpenSSL from ClickHouse contrib, not from gRPC third_party.
-set(gRPC_SSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(_gRPC_SSL_INCLUDE_DIR "")
-set(_gRPC_SSL_LIBRARIES OpenSSL::Crypto OpenSSL::SSL)
-
-# Use abseil-cpp from ClickHouse contrib, not from gRPC third_party.
-set(gRPC_ABSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-
-# We don't want to build C# extensions.
-set(gRPC_BUILD_CSHARP_EXT OFF)
-
-# TODO: Remove this. We generally like to compile with C++23 but grpc isn't ready yet.
-set (CMAKE_CXX_STANDARD 20)
-
-set(_gRPC_CARES_LIBRARIES ch_contrib::c-ares)
-set(gRPC_CARES_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-add_subdirectory("${_gRPC_SOURCE_DIR}" "${_gRPC_BINARY_DIR}")
-
-# The contrib/grpc/CMakeLists.txt redefined the PROTOBUF_GENERATE_GRPC_CPP() function for its own purposes,
-# so we need to redefine it back.
-include("${ClickHouse_SOURCE_DIR}/contrib/grpc-cmake/protobuf_generate_grpc.cmake")
+include(grpc.cmake)
+include(protobuf_generate_grpc.cmake)
 
 set(gRPC_CPP_PLUGIN $<TARGET_FILE:grpc_cpp_plugin>)
 set(gRPC_PYTHON_PLUGIN $<TARGET_FILE:grpc_python_plugin>)
