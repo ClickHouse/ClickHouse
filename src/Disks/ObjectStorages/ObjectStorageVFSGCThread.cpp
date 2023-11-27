@@ -55,10 +55,18 @@ void ObjectStorageVFSGCThread::run()
         return;
     }
 
-    const auto [start_str, end_str] = std::ranges::minmax(storage.zookeeper->getChildren(VFS_LOG_BASE_NODE));
+    const Strings batch = storage.zookeeper->getChildren(VFS_LOG_BASE_NODE);
+    if (batch.empty()) // ranges::minmax is UB on empty range
+    {
+        zookeeper_lock->unlock();
+        task->scheduleAfter(sleep_ms);
+        return;
+    }
+
+    const auto [start_str, end_str] = std::ranges::minmax(batch);
     // log- is a prefix
-    const size_t start_logpointer = start_str.empty() ? 0 : parseFromString<size_t>(start_str.substr(4));
-    const size_t end_logpointer = end_str.empty() ? 0 : parseFromString<size_t>(end_str.substr(4));
+    const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4));
+    const size_t end_logpointer = parseFromString<size_t>(end_str.substr(4));
 
     LOG_DEBUG(log, "Acquired lock for log range [{};{}]", start_logpointer, end_logpointer);
 
@@ -85,11 +93,9 @@ void ObjectStorageVFSGCThread::run()
 
 VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer)
 {
-    if (start_logpointer == 0)
-        return {};
-
-    VFSSnapshotWithObsoleteObjects out;
+    const bool has_previous_snapshot = start_logpointer > 0;
     const size_t log_batch_length = end_logpointer - start_logpointer + 1;
+    VFSSnapshotWithObsoleteObjects out;
 
     Coordination::Requests requests(log_batch_length);
     for (size_t i = 0; i < log_batch_length; ++i)
@@ -125,25 +131,28 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
         log_batch[i] = std::move(log_item);
     }
 
-    // TODO myrrc what if replica capturing log entry doesn't get snapshot due to stale read?
-    // Consider using zk->sync(VFS_LOG_BASE_NODE)
-    if (previous_snapshot_log_item.remote_path.empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "No snapshot for {} found in log entries [{};{}]",
-            start_logpointer - 1,
-            start_logpointer,
-            end_logpointer);
+    if (has_previous_snapshot)
+    {
+        // TODO myrrc what if replica capturing log entry doesn't get snapshot due to stale read?
+        // Consider using zk->sync(VFS_LOG_BASE_NODE)
+        if (previous_snapshot_log_item.remote_path.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "No snapshot for {} found in log entries [{};{}]",
+                start_logpointer - 1,
+                start_logpointer,
+                end_logpointer);
 
-    previous_snapshot_log_item.type = Unlink;
-    // Issue previous snapshot remote file for removal (no local metadata file as we use direct readObject)
-    log_batch.emplace_back(previous_snapshot_log_item);
+        previous_snapshot_log_item.type = Unlink;
+        // Issue previous snapshot remote file for removal (no local metadata file as we use direct readObject)
+        log_batch.emplace_back(previous_snapshot_log_item);
 
-    auto snapshot_buf = storage.object_storage->readObject(previous_snapshot_log_item);
-    String snapshot_str;
-    readStringUntilEOF(snapshot_str, *snapshot_buf);
+        auto snapshot_buf = storage.object_storage->readObject(previous_snapshot_log_item);
+        String snapshot_str;
+        readStringUntilEOF(snapshot_str, *snapshot_buf);
 
-    out.snapshot = VFSSnapshot::deserialize(snapshot_str);
+        out.snapshot = VFSSnapshot::deserialize(snapshot_str);
+    }
 
     LOG_TRACE(log, "Loaded snapshot {}\nGot log batch\n{}", out.snapshot, fmt::join(log_batch, "\n"));
 

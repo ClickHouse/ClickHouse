@@ -16,9 +16,8 @@ def args_to_dict(**kwargs):
 
 @pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
 def cluster(request):
+    cluster = ClickHouseCluster(__file__)
     try:
-        cluster = ClickHouseCluster(__file__)
-
         kwargs = args_to_dict(
             main_configs=[
                 "configs/config.d/storage_conf.xml",
@@ -36,7 +35,8 @@ def cluster(request):
         cluster.add_instance("node2", **kwargs)
 
         cluster.start()
-        yield cluster
+        testing_vfs = len(request.param) != 0
+        yield cluster, testing_vfs
 
     finally:
         cluster.shutdown()
@@ -44,22 +44,22 @@ def cluster(request):
 
 @pytest.fixture(scope="module")
 def all_cluster_nodes(cluster):
-    yield cluster.instances.values()
+    yield cluster[0].instances.values()
 
 
 @pytest.fixture(scope="module")
 def first_cluster_node(cluster):
-    yield cluster.instances["node1"]
+    yield cluster[0].instances["node1"]
 
 
 @pytest.fixture(scope="module")
 def second_cluster_node(cluster):
-    yield cluster.instances["node2"]
+    yield cluster[0].instances["node2"]
 
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8081")
+    yield start_s3_mock(cluster[0], "broken_s3", "8081")
 
 
 @pytest.fixture(scope="function")
@@ -98,10 +98,10 @@ def clear_minio(cluster):
     try:
         # CH do some writes to the S3 at start. For example, file data/clickhouse_access_check_{server_uuid}.
         # Set the timeout there as 10 sec in order to resolve the race with that file exists.
-        wait_for_delete_s3_objects(cluster, 0, timeout=10)
+        wait_for_delete_s3_objects(cluster[0], 0, timeout=10)
     except:
         # Remove extra objects to prevent tests cascade failing
-        remove_all_s3_objects(cluster)
+        remove_all_s3_objects(cluster[0])
 
     yield
 
@@ -120,6 +120,7 @@ def drop_table_guard(nodes, table):
 def test_all_projection_files_are_dropped_when_part_is_dropped(
     cluster, first_cluster_node
 ):
+    cluster, testing_vfs = cluster
     node = first_cluster_node
 
     with drop_table_guard([node], "test_all_projection_files_are_dropped"):
@@ -152,13 +153,26 @@ def test_all_projection_files_are_dropped_when_part_is_dropped(
             "ALTER TABLE test_all_projection_files_are_dropped DROP PARTITION ID 'all'"
         )
 
+        # TODO myrrc better lower down VFS GC timeout as config variable
+        if testing_vfs:
+            time.sleep(11)
+
         objects_at_the_end = list_objects(cluster)
-        assert objects_at_the_end == objects_empty_table
+
+        if testing_vfs:
+            # objects_at_the_end should contain a snapshot as an extra file
+            assert len(set(objects_at_the_end) - set(objects_empty_table)) == 1
+        else:
+            assert objects_at_the_end == objects_empty_table
 
 
 def test_hardlinks_preserved_when_projection_dropped(
     cluster, all_cluster_nodes, first_cluster_node, second_cluster_node
 ):
+    cluster, testing_vfs = cluster
+    if testing_vfs:
+        pytest.skip("Hardlinks work differently for VFS")
+
     with drop_table_guard(
         all_cluster_nodes, "test_hardlinks_preserved_when_projection_dropped"
     ):
