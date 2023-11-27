@@ -20,8 +20,12 @@
 namespace ProfileEvents
 {
     extern const Event ThreadpoolReaderTaskMicroseconds;
+    extern const Event ThreadpoolReaderPrepareMicroseconds;
     extern const Event ThreadpoolReaderReadBytes;
     extern const Event ThreadpoolReaderSubmit;
+    extern const Event ThreadpoolReaderSubmitReadSynchronously;
+    extern const Event ThreadpoolReaderSubmitReadSynchronouslyBytes;
+    extern const Event ThreadpoolReaderSubmitReadSynchronouslyMicroseconds;
     extern const Event AsynchronousReaderIgnoredBytes;
 }
 
@@ -70,15 +74,25 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
     auto & reader = fd->getReader();
 
-    /// `seek` have to be done before checking `isContentCached`, and `set` have to be done prior to `seek`
-    reader.set(request.buf, request.size);
-    reader.seek(request.offset, SEEK_SET);
+    {
+        ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
+        /// `seek` have to be done before checking `isContentCached`, and `set` have to be done prior to `seek`
+        reader.set(request.buf, request.size);
+        reader.seek(request.offset, SEEK_SET);
+    }
 
     if (reader.isContentCached(request.offset, request.size))
     {
         std::promise<Result> promise;
         std::future<Result> future = promise.get_future();
-        promise.set_value(execute(request, /*seek_performed=*/true));
+        auto && res = execute(request, /*seek_performed=*/true);
+
+        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderSubmitReadSynchronously);
+        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderSubmitReadSynchronouslyBytes, res.size);
+        if (res.execution_watch)
+            ProfileEvents::increment(ProfileEvents::ThreadpoolReaderSubmitReadSynchronouslyMicroseconds, res.execution_watch->elapsedMicroseconds());
+
+        promise.set_value(std::move(res));
         return future;
     }
 
@@ -102,19 +116,22 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     auto read_counters = fd->getReadCounters();
     std::optional<AsyncReadIncrement> increment = read_counters ? std::optional<AsyncReadIncrement>(read_counters) : std::nullopt;
 
+    {
+        ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
+        if (!seek_performed)
+        {
+            reader.set(request.buf, request.size);
+            reader.seek(request.offset, SEEK_SET);
+        }
+
+        if (request.ignore)
+        {
+            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
+            reader.ignore(request.ignore);
+        }
+    }
+
     auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
-
-    if (!seek_performed)
-    {
-        reader.set(request.buf, request.size);
-        reader.seek(request.offset, SEEK_SET);
-    }
-
-    if (request.ignore)
-    {
-        ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
-        reader.ignore(request.ignore);
-    }
 
     bool result = reader.available();
     if (!result)
