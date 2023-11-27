@@ -413,7 +413,7 @@ FutureSetPtr makeExplicitSet(
 
     auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
 
-    auto set_key = right_arg->getTreeHash();
+    auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 
@@ -1391,7 +1391,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             set_key = query_tree->getTreeHash();
         }
         else
-            set_key = right_in_operand->getTreeHash();
+            set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);
 
         if (auto set = data.prepared_sets->findSubquery(set_key))
             return set;

@@ -480,7 +480,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, bool attach)
+    const ASTExpressionList & columns_ast, ContextPtr context_, bool attach, bool is_restore_from_backup)
 {
     /// First, deduce implicit types.
 
@@ -489,7 +489,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
-    bool make_columns_nullable = !attach && context_->getSettingsRef().data_type_default_nullable;
+    bool make_columns_nullable = !attach && !is_restore_from_backup && context_->getSettingsRef().data_type_default_nullable;
 
     for (const auto & ast : columns_ast.children)
     {
@@ -645,7 +645,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (!attach && context_->getSettingsRef().flatten_nested)
+    if (!attach && !is_restore_from_backup && context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
@@ -692,7 +692,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach);
+            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach, is_restore_from_backup);
         }
 
         if (create.columns_list->indices)
@@ -752,7 +752,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-
         Block as_select_sample;
 
         if (getContext()->getSettingsRef().allow_experimental_analyzer)
@@ -902,8 +901,8 @@ namespace
 {
     void checkTemporaryTableEngineName(const String& name)
     {
-        if (name.starts_with("Replicated") || name == "KeeperMap")
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
+        if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
     }
 
     void setDefaultTableEngine(ASTStorage &storage, DefaultTableEngine engine)
@@ -1077,7 +1076,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
             create.setDatabase(database_name);
             guard->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup });
         }
 
         if (!create.cluster.empty())
@@ -1225,15 +1224,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
-        database = DatabaseCatalog::instance().getDatabase(database_name);
+        database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    if (need_add_to_database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
         assertOrSetUUID(create, database);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup });
     }
 
     if (!create.cluster.empty())
@@ -1241,6 +1240,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         chassert(!ddl_guard);
         return executeQueryOnCluster(create);
     }
+
+    if (need_add_to_database && !database)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
     if (create.replace_table)
     {
@@ -1445,6 +1447,21 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
+
+    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+    if (replicated_storage)
+    {
+        const auto probability = getContext()->getSettingsRef().create_replicated_merge_tree_fault_injection_probability;
+        std::bernoulli_distribution fault(probability);
+        if (fault(thread_local_rng))
+        {
+            /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
+            if (!create.attach)
+                replicated_storage->dropIfEmpty();
+
+            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
+        }
+    }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 

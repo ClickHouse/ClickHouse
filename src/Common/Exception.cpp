@@ -21,7 +21,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 namespace fs = std::filesystem;
 
@@ -41,17 +41,11 @@ namespace ErrorCodes
 void abortOnFailedAssertion(const String & description)
 {
     LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", description);
-
-    /// This is to suppress -Wmissing-noreturn
-    volatile bool always_false = false;
-    if (always_false)
-        return;
-
     abort();
 }
 
 bool terminate_on_any_exception = false;
-
+static int terminate_status_code = 128 + SIGABRT;
 thread_local bool update_error_statistics = true;
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
@@ -92,7 +86,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     , remote(remote_)
 {
     if (terminate_on_any_exception)
-        std::terminate();
+        std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
@@ -102,7 +96,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     , remote(remote_)
 {
     if (terminate_on_any_exception)
-        std::terminate();
+        std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(message(), code, remote, getStackFramePointers());
 }
@@ -111,7 +105,7 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
 {
     if (terminate_on_any_exception)
-        std::terminate();
+        std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
@@ -125,7 +119,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
     if (terminate_on_any_exception)
-        std::terminate();
+        std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();

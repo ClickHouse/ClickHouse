@@ -51,6 +51,7 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
+    UInt8 original_index = 0;
     Priority priority;
     UInt64 random = 0;
 
@@ -134,6 +135,16 @@ struct MultiReadResponses
             responses);
     }
 
+    /// If Keeper/ZooKeeper doesn't support MultiRead feature we will dispatch
+    /// asynchronously all the read requests separately
+    /// Sometimes it's important to process all requests instantly
+    /// e.g. we want to trigger exceptions while we are in the ZK client retry loop
+    void waitForResponses()
+    {
+        if (auto * responses_with_futures = std::get_if<ResponsesWithFutures>(&responses))
+            responses_with_futures->waitForResponses();
+    }
+
 private:
     using RegularResponses = std::vector<Coordination::ResponsePtr>;
     using FutureResponses = std::vector<std::future<ResponseType>>;
@@ -155,6 +166,15 @@ private:
 
             cached_responses[index] = future_responses[index].get();
             return *cached_responses[index];
+        }
+
+        void waitForResponses()
+        {
+            for (size_t i = 0; i < size(); ++i)
+            {
+                if (!cached_responses[i].has_value())
+                    cached_responses[i] = future_responses[i].get();
+            }
         }
 
         size_t size() const { return future_responses.size(); }
@@ -551,10 +571,9 @@ public:
 
     void setServerCompletelyStarted();
 
-    String getConnectedZooKeeperHost() const { return connected_zk_host; }
-    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
-    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
-    UInt64 getConnectedTime() const { return connected_time; }
+    Int8 getConnectedHostIdx() const;
+    String getConnectedHostPort() const;
+    int32_t getConnectionXid() const;
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
@@ -620,11 +639,6 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
-
-    String connected_zk_host;
-    UInt16 connected_zk_port;
-    size_t connected_zk_index;
-    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
 
     std::mutex mutex;
 

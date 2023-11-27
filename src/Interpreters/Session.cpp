@@ -15,7 +15,6 @@
 #include <Interpreters/Cluster.h>
 
 #include <magic_enum.hpp>
-#include <Poco/Net/NameValueCollection.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -351,7 +350,10 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
+        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
+        user_id = auth_result.user_id;
+        settings_from_auth_server = auth_result.settings;
+
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -429,18 +431,17 @@ void Session::setClientConnectionId(uint32_t connection_id)
         prepared_client_info->connection_id = connection_id;
 }
 
-void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
+void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     if (session_context)
     {
-        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer, http_headers);
+        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer);
     }
     else
     {
         prepared_client_info->http_method = http_method;
         prepared_client_info->http_user_agent = http_user_agent;
         prepared_client_info->http_referer = http_referer;
-        prepared_client_info->headers = http_headers;
     }
 }
 
@@ -522,6 +523,10 @@ ContextMutablePtr Session::makeSessionContext()
         *user_id,
         {},
         session_context->getSettingsRef().max_sessions_for_user);
+
+    // Use QUERY source as for SET query for a session
+    session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+    session_context->applySettingsChanges(settings_from_auth_server);
 
     recordLoginSucess(session_context);
 

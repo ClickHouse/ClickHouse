@@ -372,6 +372,7 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
     /// Creates a table by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
+    interpreter.setIsRestoreFromBackup(true);
     interpreter.execute();
 }
 

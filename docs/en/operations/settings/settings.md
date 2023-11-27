@@ -731,11 +731,13 @@ Default value: LZ4.
 
 ## max_block_size {#setting-max_block_size}
 
-In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
+In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
 
-Default value: 65,536.
+The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
 
-Blocks the size of `max_block_size` are not always loaded from the table. If it is obvious that less data needs to be retrieved, a smaller block is processed.
+The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
+
+Default value: `65,409`
 
 ## preferred_block_size_bytes {#preferred-block-size-bytes}
 
@@ -1657,16 +1659,17 @@ Possible values:
 
 Default value: `1`.
 
-## query_cache_store_results_of_queries_with_nondeterministic_functions {#query-cache-store-results-of-queries-with-nondeterministic-functions}
+## query_cache_nondeterministic_function_handling {#query-cache-nondeterministic-function-handling}
 
-If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
 
-- 0 - Disabled
-- 1 - Enabled
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
 
-Default value: `0`.
+Default value: `throw`.
 
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
@@ -2403,6 +2406,17 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
+
+Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+
+Default value: `0`.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
@@ -2462,7 +2476,7 @@ See also:
 - [distributed_replica_error_cap](#distributed_replica_error_cap)
 - [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
 Base interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
@@ -2472,9 +2486,9 @@ Possible values:
 
 Default value: 100 milliseconds.
 
-## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
 
-Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) setting.
 
 Possible values:
 
@@ -2482,7 +2496,7 @@ Possible values:
 
 Default value: 30000 milliseconds (30 seconds).
 
-## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_background_insert_batch {#distributed_background_insert_batch}
 
 Enables/disables inserted data sending in batches.
 
@@ -2495,13 +2509,13 @@ Possible values:
 
 Default value: 0.
 
-## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
+## distributed_background_insert_split_batch_on_failure {#distributed_background_insert_split_batch_on_failure}
 
 Enables/disables splitting batches on failures.
 
 Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
 
-So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_background_insert_batch` for failed batches).
 
 Possible values:
 
@@ -2684,15 +2698,15 @@ Possible values:
 
 Default value: 0.
 
-## insert_distributed_sync {#insert_distributed_sync}
+## distributed_foreground_insert {#distributed_foreground_insert}
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
 
-By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in background mode. When `distributed_foreground_insert=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
 
 Possible values:
 
-- 0 — Data is inserted in asynchronous mode.
+- 0 — Data is inserted in background mode.
 - 1 — Data is inserted in synchronous mode.
 
 Default value: `0`.
@@ -2701,6 +2715,10 @@ Default value: `0`.
 
 - [Distributed Table Engine](../../engines/table-engines/special/distributed.md/#distributed)
 - [Managing Distributed Tables](../../sql-reference/statements/system.md/#query-language-system-distributed)
+
+## insert_distributed_sync {#insert_distributed_sync}
+
+Alias for [`distributed_foreground_insert`](#distributed_foreground_insert).
 
 ## insert_shard_id {#insert_shard_id}
 
@@ -2751,7 +2769,7 @@ Result:
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
-Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
+Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
 
 Possible values:
 
@@ -2761,7 +2779,7 @@ Possible values:
 Default value: `1`.
 
 :::note
-- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for background INSERT.
 - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
 :::
 
@@ -3299,22 +3317,11 @@ Possible values:
 
 Default value: `0`.
 
-## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
-
-Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Possible values:
-
-- 0 - Show names of native ClickHouse data types.
-- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
-
-Default value: `0`.
-
 ## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
 
 When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+Has an effect only when the connection is made through the MySQL wire protocol.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3325,7 +3332,7 @@ Default value: `0`.
 
 When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+Has an effect only when the connection is made through the MySQL wire protocol.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3933,6 +3940,27 @@ Possible values:
 
 Default value: `0`.
 
+## force_optimize_projection_name {#force-optimize-projection_name}
+
+If it is set to a non-empty string, check that this projection is used in the query at least once.
+
+Possible values:
+
+- string: name of projection that used in a query
+
+Default value: `''`.
+
+## preferred_optimize_projection_name {#preferred_optimize_projection_name}
+
+If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
+
+
+Possible values:
+
+- string: name of preferred projection
+
+Default value: `''`.
+
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -3944,6 +3972,10 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
+
+:::note
+`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
+:::
 
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
@@ -4143,6 +4175,18 @@ Possible values:
 - 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
+
+## date_time_overflow_behavior {#date_time_overflow_behavior}
+
+Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+
+Possible values:
+
+- `ignore` — Silently ignore overflows. The result is random.
+- `throw` — Throw an exception in case of conversion overflow.
+- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+Default value: `ignore`.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -4708,18 +4752,6 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 └─────────────────────┴──────────────────────────┘
 ```
 
-## partial_result_update_duration_ms
-
-Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
-
-:::note
-It's an experimental feature. Enable `allow_experimental_partial_result` setting first to use it.
-:::
-
-## max_rows_in_partial_result
-
-Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
-
 ## validate_tcp_client_information {#validate-tcp-client-information}
 
 Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
@@ -4768,3 +4800,273 @@ a	Tuple(
     l Nullable(String)
 )
 ```
+
+## analyze_index_with_space_filling_curves
+
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+
+## query_plan_enable_optimizations {#query_plan_enable_optimizations}
+
+Toggles query optimization at the query plan level.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable all optimizations at the query plan level
+- 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
+
+Default value: `1`.
+
+## query_plan_max_optimizations_to_apply
+
+Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
+Useful to avoid long optimization times for complex queries.
+If the actual number of optimizations exceeds this setting, an exception is thrown.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+Default value: '10000'
+
+## query_plan_lift_up_array_join
+
+Toggles a query-plan-level optimization which moves ARRAY JOINs up in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_push_down_limit
+
+Toggles a query-plan-level optimization which moves LIMITs down in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_split_filter
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Toggles a query-plan-level optimization which splits filters into expressions.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_merge_expressions
+
+Toggles a query-plan-level optimization which merges consecutive filters.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_filter_push_down
+
+Toggles a query-plan-level optimization which moves filters down in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_execute_functions_after_sorting
+
+Toggles a query-plan-level optimization which moves expressions after sorting steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_reuse_storage_ordering_for_window_functions
+
+Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_lift_up_union
+
+Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_distinct_in_order
+
+Toggles the distinct in-order optimization query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_read_in_order
+
+Toggles the read in-order optimization query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_aggregation_in_order
+
+Toggles the aggregation in-order query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `0`.
+
+## query_plan_remove_redundant_sorting
+
+Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_remove_redundant_distinct
+
+Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## dictionary_use_async_executor {#dictionary_use_async_executor}
+
+Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
+
+You may specify it in `SETTINGS` section of dictionary definition:
+
+```sql
+CREATE DICTIONARY t1_dict ( key String, attr UInt64 )
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY `SELECT key, attr FROM t1 GROUP BY key`))
+LIFETIME(MIN 0 MAX 3600)
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+SETTINGS(dictionary_use_async_executor=1, max_threads=8);
+```
+
+## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
+
+When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
+
+Default value: `false`.
+
+## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
+
+When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
+When set to `false` than all attempts are made with identical timeouts.
+
+Default value: `true`.

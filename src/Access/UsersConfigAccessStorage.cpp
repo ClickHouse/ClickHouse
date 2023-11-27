@@ -12,7 +12,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <Core/Settings.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -135,18 +135,22 @@ namespace
         const auto ssh_keys_config = user_config + ".ssh_keys";
         bool has_ssh_keys = config.has(ssh_keys_config);
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates + has_ssh_keys;
+        const auto http_auth_config = user_config + ".http_authentication";
+        bool has_http_auth = config.has(http_auth_config);
+
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
-                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys' "
-                            "are used to specify authentication info for user {}. "
+                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
+                            "'http_authentication' are used to specify authentication info for user {}. "
                             "Must be only one of them.", user_name);
 
         if (num_password_fields < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
-                            "or 'ssl_certificates' or 'ssh_keys' must be specified for user {}.", user_name);
+                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
 
         if (has_password_plaintext)
         {
@@ -247,6 +251,13 @@ namespace
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
+        }
+        else if (has_http_auth)
+        {
+            user->auth_data = AuthenticationData{AuthenticationType::HTTP};
+            user->auth_data.setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
+            auto scheme = config.getString(http_auth_config + ".scheme");
+            user->auth_data.setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
         }
 
         auto auth_type = user->auth_data.getType();

@@ -42,7 +42,6 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/MemoryStream.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
@@ -505,7 +504,7 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request);
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
     session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 
@@ -902,6 +901,7 @@ void HTTPHandler::processQuery(
         /* allow_into_outfile = */ false,
         context,
         set_query_result,
+        QueryFlags{},
         {},
         handle_exception_in_output_format);
 
@@ -1206,6 +1206,16 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
     if (receive_params.contains(key))
     {
         context->setQueryParameter(key, value);
+        return true;
+    }
+
+    if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
+    {
+        /// Save name and values of substitution in dictionary.
+        const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+
+        if (receive_params.contains(parameter_name))
+            context->setQueryParameter(parameter_name, value);
         return true;
     }
 

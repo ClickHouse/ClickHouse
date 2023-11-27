@@ -576,7 +576,7 @@ uint8_t CompressionCodecEncrypted::getMethodByte() const
 
 void CompressionCodecEncrypted::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_size) const
