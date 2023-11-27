@@ -579,7 +579,7 @@ A function is called injective if it returns for different arguments different r
 
 ## substring(s, offset, length)
 
-Returns a substring with `length` many bytes, starting at the byte at index `offset`. Character indexing starts from 1.
+Returns a substring with `length` many bytes, starting at the byte at index `offset`. Character indexing starts from 1. Can be also used with [Enum](../../sql-reference/data-types/enum.md) types.
 
 **Syntax**
 
