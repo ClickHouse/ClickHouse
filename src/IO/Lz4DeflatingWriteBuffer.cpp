@@ -102,7 +102,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
 
     if (first_time)
     {
-        auto sink = SinkToOut(out.get(), tmp_memory, LZ4F_HEADER_SIZE_MAX);
+        auto sink = SinkToOut(out, tmp_memory, LZ4F_HEADER_SIZE_MAX);
         chassert(sink.getCapacity() >= LZ4F_HEADER_SIZE_MAX);
 
         /// write frame header and check for errors
@@ -128,7 +128,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
         /// Ensure that there is enough space for compressed block of minimal size
         size_t min_compressed_block_size = LZ4F_compressBound(1, &kPrefs);
 
-        auto sink = SinkToOut(out.get(), tmp_memory, min_compressed_block_size);
+        auto sink = SinkToOut(out, tmp_memory, min_compressed_block_size);
         chassert(sink.getCapacity() >= min_compressed_block_size);
 
         /// LZ4F_compressUpdate compresses whole input buffer at once so we need to shink it manually
@@ -165,7 +165,7 @@ void Lz4DeflatingWriteBuffer::finalizeBefore()
         return;
 
     auto suffix_size = LZ4F_compressBound(0, &kPrefs);
-    auto sink = SinkToOut(out.get(), tmp_memory, suffix_size);
+    auto sink = SinkToOut(out, tmp_memory, suffix_size);
     chassert(sink.getCapacity() >= suffix_size);
 
     /// compression end
