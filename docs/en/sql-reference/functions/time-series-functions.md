@@ -61,8 +61,9 @@ Result:
 ## seriesDecomposeSTL
 
 Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-Returns an array of arrays where the first array include seasonal components, the second array - trend,
+Returns an array of three arrays where the first array include seasonal components, the second array - trend,
 and the third array - residue component. 
+https://www.wessa.net/download/stl.pdf
 
 **Syntax**
 

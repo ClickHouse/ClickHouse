@@ -75,8 +75,8 @@ if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
 endif()
 
-if (TARGET ch_contrib::stl-cpp)
-    list (APPEND PRIVATE_LIBS ch_contrib::stl-cpp)
+if (TARGET ch_contrib::seasonal-decompose)
+    list (APPEND PRIVATE_LIBS ch_contrib::seasonal-decompose)
 endif()
 
 if (ENABLE_NLP)

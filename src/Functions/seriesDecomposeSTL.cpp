@@ -1,28 +1,28 @@
 #include "config.h"
 
 #if USE_SEASONAL
-#    ifdef __clang__
-#        pragma clang diagnostic push
-#        pragma clang diagnostic ignored "-Wold-style-cast"
-#        pragma clang diagnostic ignored "-Wshadow"
-#        pragma clang diagnostic ignored "-Wimplicit-float-conversion"
-#    endif
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wshadow"
+#pragma clang diagnostic ignored "-Wimplicit-float-conversion"
+#endif
 
-#    include <stl.hpp>
+#include <stl.hpp>
 
-#    ifdef __clang__
-#        pragma clang diagnostic pop
-#    endif
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
-#    include <cmath>
-#    include <Columns/ColumnArray.h>
-#    include <Columns/ColumnConst.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/FunctionHelpers.h>
-#    include <Functions/IFunction.h>
+#include <cmath>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -46,8 +46,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    bool isVariadic() const override { return true; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -56,7 +54,7 @@ public:
     {
         FunctionArgumentDescriptors args{
             {"time-series", &isArray<IDataType>, nullptr, "Array"},
-            {"period", &isNumber<IDataType>, nullptr, "Number"},
+            {"period", &isNativeNumber<IDataType>, nullptr, "Number"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -158,18 +156,28 @@ public:
         size_t len = src_vec.size();
         if (len < 4)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least four data points are needed for function {}", getName());
+        else if (period > (len / 2))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The series should have data of at least two period lengths for function {}", getName());
 
         std::vector<float> src(src_vec.begin(), src_vec.end());
 
-        auto res = stl::params().fit(src, static_cast<size_t>(period));
+        try
+        {
+            auto res = stl::params().fit(src, static_cast<size_t>(period));
 
-        if (res.seasonal.empty())
-            return false;
+            if (res.seasonal.empty())
+                return false;
 
-        seasonal = res.seasonal;
-        trend = res.trend;
-        residue = res.remainder;
-        return true;
+            seasonal = res.seasonal;
+            trend = res.trend;
+            residue = res.remainder;
+            return true;
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, e.what());
+        }
     }
 };
 REGISTER_FUNCTION(seriesDecomposeSTL)

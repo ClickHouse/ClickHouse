@@ -1,10 +1,9 @@
-option (ENABLE_SEASONAL "Enable stl-cpp" ${ENABLE_LIBRARIES})
+option (ENABLE_SEASONAL "Enable seasonal decompose (stl-cpp) library" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_SEASONAL)
-    message(STATUS "Not using stl-cpp")
+    message(STATUS "Not using seasonal decompose (stl-cpp)")
     return()
 endif()
-#set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/stl-cpp")
 add_library(_stl-cpp INTERFACE)
 target_include_directories(_stl-cpp INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/stl-cpp/include)
-add_library(ch_contrib::stl-cpp ALIAS _stl-cpp)
+add_library(ch_contrib::seasonal-decompose ALIAS _stl-cpp)
