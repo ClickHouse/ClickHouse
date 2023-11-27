@@ -4,10 +4,8 @@
 #include <QueryCoordination/Coordinator.h>
 #include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
-#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
 #include <QueryCoordination/QueryCoordinationMetaInfo.h>
 #include <QueryCoordination/fragmentsToPipelines.h>
-#include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/typeid_cast.h>
@@ -37,11 +35,11 @@ void Coordinator::schedulePrepareDistributedPipelines()
 
     for (auto & [host, fragment_ids] : host_fragments)
         for (auto & fragment : fragment_ids)
-            LOG_INFO(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentID());
+            LOG_DEBUG(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentID());
 
     for (auto & [fragment_id, hosts] : fragment_hosts)
         for (auto & host : hosts)
-            LOG_INFO(log, "fragment_id_hosts: host {}, fragment {}", host, fragment_id);
+            LOG_DEBUG(log, "fragment_id_hosts: host {}, fragment {}", host, fragment_id);
 
     sendFragmentsToPreparePipelines();
 
@@ -200,7 +198,7 @@ bool Coordinator::isUpToDate(const QualifiedTableName & table_name)
     else
         status.is_replicated = false;
 
-    bool is_up_to_date = false;
+    bool is_up_to_date;
     UInt64 max_allowed_delay = UInt64(context->getSettingsRef().max_replica_delay_for_distributed_queries);
     if (!max_allowed_delay)
     {
@@ -258,10 +256,11 @@ std::unordered_map<UInt32, FragmentRequest> Coordinator::buildFragmentRequest()
 
 void Coordinator::sendFragmentsToPreparePipelines()
 {
-    const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
+    LOG_DEBUG(log, "Sending query {} to build fragments", query);
 
+    const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
     for (const auto & [f_id, request] : fragment_requests)
-        LOG_INFO(log, "Send fragment to distributed request {}", request.toString());
+        LOG_DEBUG(log, "Send fragment to distributed request {}", request.toString());
 
     auto current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
@@ -312,7 +311,11 @@ void Coordinator::sendFragmentsToPreparePipelines()
                 package.exception->rethrow();
 
             if (package.type != Protocol::Server::PipelinesReady)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No receive ready from {}", host);
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Received {} but not PipelinesReady from {}",
+                    Protocol::Server::toString(package.type),
+                    host);
         }
     }
 }

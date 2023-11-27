@@ -74,7 +74,7 @@ bool optimizeTrivialCount(const ASTPtr & query, const Settings & settings)
     return optimize_trivial_count;
 }
 
-void addSettings(ASTPtr & query, const String & name, const Field & value)
+void addSettingToQuery(ASTPtr & query, const String & name, const Field & value)
 {
     if (auto * select_query = query->as<ASTSelectQuery>())
     {
@@ -93,7 +93,7 @@ void addSettings(ASTPtr & query, const String & name, const Field & value)
     else if (auto * union_query = query->as<ASTSelectWithUnionQuery>())
     {
         for (auto & select : union_query->list_of_selects->children)
-            addSettings(select, name, value);
+            addSettingToQuery(select, name, value);
     }
 }
 
@@ -113,7 +113,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
         auto cloned_query = query_ptr->clone();
-        auto setting_changes = setIncompatibleSettings(cloned_query);
+        auto setting_changes = setIncompatibleSettings();
 
         /// Expand CET in advance
         if (!options.is_subquery)
@@ -162,10 +162,11 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
             query_ptr = cloned_query;
         else
             /// restore changed settings
-            for (auto & change : setting_changes)
+            for (const auto & change : setting_changes)
                 context->setSetting(change.name, change.value);
 
-        addSettings(query_ptr, "allow_experimental_query_coordination", context->isDistributedForQueryCoord());
+        context->setSetting("allow_experimental_query_coordination", context->isDistributedForQueryCoord());
+        LOG_DEBUG(log, "query_coordination_enabled = {}", query_coordination_enabled);
     }
     else
     {
@@ -176,16 +177,14 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     LOG_DEBUG(log, "query_coordination_enabled = {}", query_coordination_enabled);
 }
 
-/// add settings to query_ptr to propagate to others
-SettingsChanges InterpreterSelectQueryCoordination::setIncompatibleSettings(ASTPtr & query_)
+/// Disable use_index_for_in_with_subqueries
+SettingsChanges InterpreterSelectQueryCoordination::setIncompatibleSettings()
 {
     SettingsChanges changes;
     if (context->getSettings().use_index_for_in_with_subqueries)
     {
-        addSettings(query_, "use_index_for_in_with_subqueries", false);
-        /// add settings to query_ptr to propagate to others
         context->getSettings().use_index_for_in_with_subqueries = false;
-        changes.setSetting("use_index_for_in_with_subqueries", false);
+        changes.setSetting("use_index_for_in_with_subqueries", true);
     }
     return changes;
 }
@@ -333,8 +332,6 @@ BlockIO InterpreterSelectQueryCoordination::execute()
     }
     else
     {
-        LOG_INFO(log, "query_coordination is not enabled");
-
         auto builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 

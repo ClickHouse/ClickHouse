@@ -20,7 +20,7 @@ public:
     void explainFragment(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentOptions & options_);
 
     /// Disable use_index_for_in_with_subqueries. /// TODO remove in the future
-    SettingsChanges setIncompatibleSettings(ASTPtr & query_);
+    SettingsChanges setIncompatibleSettings();
 
     bool ignoreQuota() const override { return false; }
     bool ignoreLimits() const override { return false; }
