@@ -14,7 +14,8 @@ void registerAggregateFunctionNothing(AggregateFunctionFactory & factory)
     {
         assertNoParameters(name, parameters);
 
-        return std::make_shared<AggregateFunctionNothing>(argument_types, parameters);
+        auto result_type = argument_types.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : argument_types.front();
+        return std::make_shared<AggregateFunctionNothing>(argument_types, parameters, result_type);
     });
 }
 

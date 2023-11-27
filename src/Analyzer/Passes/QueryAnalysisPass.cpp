@@ -5194,11 +5194,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
               * Also we don't want to replace first argument, but just prepend it because it may have aliases, for example
               * SELECT count(NULL AS a), sum(a) FROM table
               */
-            const auto & actual_argument_types = aggregate_function->getArgumentTypes();
-            if (!actual_argument_types.empty() && !argument_types.empty() && !argument_types[0]->equals(*actual_argument_types[0]))
+            const auto & actual_result_type = aggregate_function->getResultType();
+            if (!argument_types.empty() && !argument_types.front()->equals(*actual_result_type))
             {
                 QueryTreeNodes & nodes = function_node.getArguments().getNodes();
-                QueryTreeNodes new_nodes = {std::make_shared<ConstantNode>(actual_argument_types[0]->getDefault(), actual_argument_types[0])};
+                QueryTreeNodes new_nodes = {std::make_shared<ConstantNode>(actual_result_type->getDefault(), actual_result_type)};
                 std::move(nodes.begin(), nodes.end(), std::back_inserter(new_nodes));
                 nodes = std::move(new_nodes);
             }
