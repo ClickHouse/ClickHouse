@@ -213,7 +213,10 @@ Block ArrayJoinResultIterator::next()
 
         /// Reuse cut_any_col if possible to avoid unnecessary cut.
         if (!is_unaligned && !is_left && current.name == *columns.begin())
+        {
             current.column = cut_any_col;
+            current.type = getArrayJoinDataType(current.type);
+        }
         else
             current.column = current.column->cut(current_row, next_row - current_row);
 
