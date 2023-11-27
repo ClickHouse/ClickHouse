@@ -30,6 +30,7 @@
 #include <type_traits>
 #include <utility>
 
+#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE 0xFFFFFF
 
 namespace DB
 {
@@ -196,7 +197,6 @@ struct GroupArraySortedNodeString : public GroupArraySortedNodeBase<GroupArraySo
 {
     using Node = GroupArraySortedNodeString;
 
-
 };
 
 struct GroupArraySortedNodeGeneral : public GroupArraySortedNodeBase<GroupArraySortedNodeGeneral>
@@ -266,10 +266,18 @@ public:
         cur_elems.value.resize(max_elems, arena);
     }
 
+    static void checkArraySize(size_t elems, size_t max_elems)
+    {
+        if (unlikely(elems > max_elems))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size {} (maximum: {})", elems, max_elems);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & value = data(place).value;
         size_t size = value.size();
+        checkArraySize(size, AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE);
         writeVarUInt(size, buf);
 
         for (const Field & elem : value)
@@ -294,6 +302,7 @@ public:
         if (unlikely(size > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
 
+        checkArraySize(size, AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE);
         auto & value = data(place).value;
 
         value.resize(size, arena);
@@ -313,6 +322,7 @@ public:
 
         std::sort(value.begin(), value.end());
 
+        checkArraySize(value.size(), max_elems);
         value.resize_exact(max_elems, arena);
         auto & offsets = column_array.getOffsets();
         offsets.push_back(offsets.back() + value.size());
