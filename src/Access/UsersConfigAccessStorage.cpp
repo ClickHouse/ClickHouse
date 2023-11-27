@@ -12,7 +12,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <Core/Settings.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>

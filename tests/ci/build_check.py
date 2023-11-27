@@ -11,7 +11,7 @@ from ci_config import CI_CONFIG, BuildConfig
 from ccache_utils import CargoCache
 from docker_pull_helper import get_image_with_version
 from env_helper import (
-    GITHUB_JOB,
+    GITHUB_JOB_API_URL,
     IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
@@ -128,18 +128,16 @@ def check_for_success_run(
     version: ClickHouseVersion,
 ) -> None:
     # TODO: Remove after S3 artifacts
-    # the final empty argument is necessary for distinguish build and build_suffix
-    logged_prefix = "/".join((S3_BUILDS_BUCKET, s3_prefix, ""))
-    logging.info("Checking for artifacts in %s", logged_prefix)
+    logging.info("Checking for artifacts %s in bucket %s", s3_prefix, S3_BUILDS_BUCKET)
     try:
         # Performance artifacts are now part of regular build, so we're safe
         build_results = s3_helper.list_prefix(s3_prefix)
     except Exception as ex:
-        logging.info("Got exception while listing %s: %s\nRerun", logged_prefix, ex)
+        logging.info("Got exception while listing %s: %s\nRerun", s3_prefix, ex)
         return
 
     if build_results is None or len(build_results) == 0:
-        logging.info("Nothing found in %s, rerun", logged_prefix)
+        logging.info("Nothing found in %s, rerun", s3_prefix)
         return
 
     logging.info("Some build results found:\n%s", build_results)
@@ -163,9 +161,14 @@ def check_for_success_run(
         version.describe,
         SUCCESS if success else FAILURE,
         0,
-        GITHUB_JOB,
+        GITHUB_JOB_API_URL(),
     )
-    build_result.write_json(Path(TEMP_PATH))
+    result_json_path = build_result.write_json(Path(TEMP_PATH))
+    logging.info(
+        "Build result file %s is written, content:\n %s",
+        result_json_path,
+        result_json_path.read_text(encoding="utf-8"),
+    )
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
@@ -207,10 +210,17 @@ def upload_master_static_binaries(
     elif pr_info.base_ref != "master":
         return
 
-    s3_path = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
-    binary = build_output_path / "clickhouse"
-    url = s3_helper.upload_build_file_to_s3(binary, s3_path)
-    print(f"::notice ::Binary static URL: {url}")
+    # Full binary with debug info:
+    s3_path_full = "/".join((pr_info.base_ref, static_binary_name, "clickhouse-full"))
+    binary_full = build_output_path / "clickhouse"
+    url_full = s3_helper.upload_build_file_to_s3(binary_full, s3_path_full)
+    print(f"::notice ::Binary static URL (with debug info): {url_full}")
+
+    # Stripped binary without debug info:
+    s3_path_compact = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
+    binary_compact = build_output_path / "clickhouse-stripped"
+    url_compact = s3_helper.upload_build_file_to_s3(binary_compact, s3_path_compact)
+    print(f"::notice ::Binary static URL (compact): {url_compact}")
 
 
 def main():
@@ -242,7 +252,9 @@ def main():
 
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
-    check_for_success_run(s3_helper, s3_path_prefix, build_name, version)
+    # The s3_path_prefix has additional "/" in the end to prevent finding
+    # e.g. `binary_darwin_aarch64/clickhouse` for `binary_darwin`
+    check_for_success_run(s3_helper, f"{s3_path_prefix}/", build_name, version)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
@@ -348,7 +360,7 @@ def main():
         version.describe,
         build_status,
         elapsed,
-        GITHUB_JOB,
+        GITHUB_JOB_API_URL(),
     )
     result_json_path = build_result.write_json(temp_path)
     logging.info(
@@ -414,16 +426,19 @@ FORMAT JSONCompactEachRow"""
         url = f"https://{ci_logs_credentials.host}/"
         profiles_dir = temp_path / "profiles_source"
         profiles_dir.mkdir(parents=True, exist_ok=True)
-        logging.info("Processing profile JSON files from {GIT_REPO_ROOT}/build_docker")
+        logging.info(
+            "Processing profile JSON files from %s", repo_path / "build_docker"
+        )
         git_runner(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"build_docker {profiles_dir.absolute()}"
         )
         profile_data_file = temp_path / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
-            for profile_sourse in profiles_dir.iterdir():
-                with open(profiles_dir / profile_sourse, "rb") as ps_fd:
-                    profile_fd.write(ps_fd.read())
+            for profile_source in profiles_dir.iterdir():
+                if profile_source.name != "binary_sizes.txt":
+                    with open(profiles_dir / profile_source, "rb") as ps_fd:
+                        profile_fd.write(ps_fd.read())
 
         logging.info(
             "::notice ::Log Uploading profile data, path: %s, size: %s, query: %s",
@@ -432,6 +447,32 @@ FORMAT JSONCompactEachRow"""
             query,
         )
         ch_helper.insert_file(url, auth, query, profile_data_file)
+
+        query = f"""INSERT INTO binary_sizes
+(
+    pull_request_number,
+    commit_sha,
+    check_start_time,
+    check_name,
+    instance_type,
+    instance_id,
+    file,
+    size
+)
+SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', file, size
+FROM input('size UInt64, file String')
+SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
+FORMAT Regexp"""
+
+        binary_sizes_file = profiles_dir / "binary_sizes.txt"
+
+        logging.info(
+            "::notice ::Log Uploading binary sizes data, path: %s, size: %s, query: %s",
+            binary_sizes_file,
+            binary_sizes_file.stat().st_size,
+            query,
+        )
+        ch_helper.insert_file(url, auth, query, binary_sizes_file)
 
     # Upload statistics to CI database
     prepared_events = prepare_tests_results_for_clickhouse(

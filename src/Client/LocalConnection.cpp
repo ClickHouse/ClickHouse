@@ -131,7 +131,7 @@ void LocalConnection::sendQuery(
 
     try
     {
-        state->io = executeQuery(state->query, query_context, false, state->stage).second;
+        state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
         {
@@ -251,10 +251,12 @@ void LocalConnection::finishQuery()
     else if (state->pushing_async_executor)
     {
         state->pushing_async_executor->finish();
+        state->pushing_async_executor.reset();
     }
     else if (state->pushing_executor)
     {
         state->pushing_executor->finish();
+        state->pushing_executor.reset();
     }
 
     state->io.onFinish();

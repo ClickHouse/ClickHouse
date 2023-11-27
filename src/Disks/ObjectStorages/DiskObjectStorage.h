@@ -163,7 +163,9 @@ public:
         IDisk & to_disk,
         const String & to_file_path,
         const ReadSettings & read_settings = {},
-        const WriteSettings & write_settings = {}) override;
+        const WriteSettings & write_settings = {},
+        const std::function<void()> & cancellation_hook = {}
+        ) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 

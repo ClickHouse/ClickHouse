@@ -4,6 +4,8 @@
 
 #if USE_AWS_S3
 
+#    include <base/types.h>
+
 #    include <aws/core/client/ClientConfiguration.h>
 #    include <aws/core/internal/AWSHttpResourceClient.h>
 #    include <aws/core/config/AWSProfileConfigLoader.h>
@@ -17,6 +19,12 @@ namespace DB::S3
 {
 
 inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
+
+/// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
+static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
+
+/// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
+std::string getRunningAvailabilityZone();
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -50,10 +58,11 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    virtual Aws::String getCurrentAvailabilityZone() const;
+    friend String getRunningAvailabilityZone();
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
+    static String getAvailabilityZoneOrException();
 
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
@@ -177,4 +186,17 @@ public:
 
 }
 
+#else
+
+#    include <string>
+
+namespace DB
+{
+
+namespace S3
+{
+std::string getRunningAvailabilityZone();
+}
+
+}
 #endif

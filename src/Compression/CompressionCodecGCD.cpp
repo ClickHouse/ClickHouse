@@ -1,10 +1,10 @@
 #include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionInfo.h>
+#include <Common/Exception.h>
 #include <Compression/CompressionFactory.h>
-#include <base/unaligned.h>
+#include <Compression/CompressionInfo.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
-#include "Common/Exception.h"
-#include "DataTypes/IDataType.h"
+#include <base/unaligned.h>
 
 #include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
@@ -64,7 +64,7 @@ uint8_t CompressionCodecGCD::getMethodByte() const
 
 void CompressionCodecGCD::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 namespace
@@ -74,29 +74,37 @@ template <typename T>
 void compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot GCD compress, data size {} is not aligned to {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with GCD codec, data size {} is not aligned to {}", source_size, sizeof(T));
 
     const char * const source_end = source + source_size;
 
-    T gcd_divider = 0;
+    T gcd = 0;
     const auto * cur_source = source;
-    while (gcd_divider != T(1) && cur_source < source_end)
+    while (gcd != T(1) && cur_source < source_end)
     {
         if (cur_source == source)
-            gcd_divider = unalignedLoad<T>(cur_source);
+            gcd = unalignedLoad<T>(cur_source);
         else
-            gcd_divider = boost::integer::gcd(gcd_divider, unalignedLoad<T>(cur_source));
+            gcd = boost::integer::gcd(gcd, unalignedLoad<T>(cur_source));
         cur_source += sizeof(T);
     }
 
-    unalignedStore<T>(dest, gcd_divider);
+    unalignedStore<T>(dest, gcd);
     dest += sizeof(T);
+
+    /// GCD compression is pointless if GCD = 1 or GCD = 0 (happens with 0 values in data).
+    /// In these cases only copy the source to dest, i.e. don't compress.
+    if (gcd == 0 || gcd == 1)
+    {
+        memcpy(dest, source, source_size);
+        return;
+    }
 
     if constexpr (sizeof(T) <= 8)
     {
         /// libdivide supports only UInt32 and UInt64.
         using LibdivideT = std::conditional_t<sizeof(T) <= 4, UInt32, UInt64>;
-        libdivide::divider<LibdivideT> divider(static_cast<LibdivideT>(gcd_divider));
+        libdivide::divider<LibdivideT> divider(static_cast<LibdivideT>(gcd));
         cur_source = source;
         while (cur_source < source_end)
         {
@@ -110,7 +118,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
         cur_source = source;
         while (cur_source < source_end)
         {
-            unalignedStore<T>(dest, unalignedLoad<T>(cur_source) / gcd_divider);
+            unalignedStore<T>(dest, unalignedLoad<T>(cur_source) / gcd);
             cur_source += sizeof(T);
             dest += sizeof(T);
         }
@@ -121,10 +129,10 @@ template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress, data size {} is not aligned to {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data, data size {} is not aligned to {}", source_size, sizeof(T));
 
     if (source_size < sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress, data size {} is less than {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data, data size {} is less than {}", source_size, sizeof(T));
 
     const char * const source_end = source + source_size;
     const char * const dest_end = dest + output_size;
@@ -132,10 +140,21 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     const T gcd_multiplier = unalignedLoad<T>(source);
     source += sizeof(T);
 
+    /// Handle special cases GCD = 1 and GCD = 0.
+    if (gcd_multiplier == 0 || gcd_multiplier == 1)
+    {
+        /// Subtraction is safe, because we checked that source_size >= sizeof(T)
+        if (source_size - sizeof(T) != output_size)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
+
+        memcpy(dest, source, source_size);
+        return;
+    }
+
     while (source < source_end)
     {
         if (dest + sizeof(T) > dest_end) [[unlikely]]
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
         unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd_multiplier);
 
         source += sizeof(T);
@@ -179,7 +198,7 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
 void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     if (uncompressed_size == 0)
         return;
@@ -187,13 +206,13 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
     UInt8 bytes_size = source[0];
 
     if (!(bytes_size == 1 || bytes_size == 2 || bytes_size == 4 || bytes_size == 8 || bytes_size == 16 || bytes_size == 32))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
@@ -227,7 +246,7 @@ UInt8 getGCDBytesSize(const IDataType * column_type)
 {
     WhichDataType which(column_type);
     if (!(which.isInt() || which.isUInt() || which.isDecimal() || which.isDateOrDate32() || which.isDateTime() ||which.isDateTime64()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD is not applicable for {} because the data type is not of fixed size",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD cannot be applied to column {} because it can only be used with Int*, UInt*, Decimal*, Date* or DateTime* types.",
             column_type->getName());
 
     size_t max_size = column_type->getSizeOfValueInMemory();

@@ -10,86 +10,17 @@ on: # yamllint disable-line rule:truthy
   workflow_call:
 jobs:
   BuilderFuzzers:
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=fuzzers
-          EOF
-      - name: Download changed images
-        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
-        continue-on-error: true
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-          ref: ${{github.ref}}
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: fuzzers
   libFuzzerTest:
     needs: [BuilderFuzzers]
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/libfuzzer
-          REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=libFuzzer tests
-          REPO_COPY=${{runner.temp}}/libfuzzer/ClickHouse
-          KILL_TIMEOUT=10800
-          EOF
-      - name: Download changed images
-        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
-        continue-on-error: true
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.TEMP_PATH }}
-      - name: Download json reports
-        uses: actions/download-artifact@v3
-        with:
-          path: ${{ env.REPORTS_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: libFuzzer test
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 libfuzzer_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH"
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: libFuzzer tests
+      runner_type: func-tester
+      additional_envs: |
+        KILL_TIMEOUT=10800
+      run_command: |
+        cd "$REPO_COPY/tests/ci"
+        python3 libfuzzer_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"

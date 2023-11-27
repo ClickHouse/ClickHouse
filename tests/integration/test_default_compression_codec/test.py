@@ -27,9 +27,9 @@ node2 = cluster.add_instance(
 )
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/default_compression.xml", "configs/wide_parts_only.xml"],
+    main_configs=["configs/default_compression.xml"],
     image="yandex/clickhouse-server",
-    tag="20.3.16",
+    tag="19.16.9.37",
     stay_alive=True,
     with_installed_binary=True,
     allow_analyzer=False,

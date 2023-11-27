@@ -46,6 +46,54 @@ QueryNode::QueryNode(ContextMutablePtr context_)
     : QueryNode(std::move(context_), {} /*settings_changes*/)
 {}
 
+void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
+{
+    if (projection_columns_value.size() != getProjection().getNodes().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected projection columns size to match projection nodes size");
+
+    projection_columns = std::move(projection_columns_value);
+}
+
+void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
+{
+    auto & projection_nodes = getProjection().getNodes();
+    size_t projection_columns_size = projection_columns.size();
+    size_t write_index = 0;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        if (!used_projection_columns.contains(projection_columns[i].name))
+            continue;
+
+        projection_nodes[write_index] = projection_nodes[i];
+        projection_columns[write_index] = projection_columns[i];
+        ++write_index;
+    }
+
+    projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
+    projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+}
+
+void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
+{
+    auto & projection_nodes = getProjection().getNodes();
+    size_t projection_columns_size = projection_columns.size();
+    size_t write_index = 0;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        if (!used_projection_columns_indexes.contains(i))
+            continue;
+
+        projection_nodes[write_index] = projection_nodes[i];
+        projection_columns[write_index] = projection_columns[i];
+        ++write_index;
+    }
+
+    projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
+    projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+}
+
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "QUERY id: " << format_state.getNodeId(this);
