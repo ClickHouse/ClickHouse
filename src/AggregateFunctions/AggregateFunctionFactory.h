@@ -94,7 +94,10 @@ private:
     using ActionMap = std::unordered_map<String, String>;
 
     AggregateFunctions aggregate_functions;
+    /// Mapping from functions with `RESPECT NULLS` modifier to actual aggregate function names
+    /// Example: `any(x) RESPECT NULLS` should be executed as function `any_respect_nulls`
     ActionMap respect_nulls;
+    /// Same as above for `IGNORE NULLS` modifier
     ActionMap ignore_nulls;
     std::optional<AggregateFunctionWithProperties> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
 
