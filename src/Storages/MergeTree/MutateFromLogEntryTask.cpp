@@ -118,8 +118,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     {
         if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
-            String dummy;
-            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
+            if (storage.findReplicaHavingCoveringPart(entry.new_part_name, true))
             {
                 LOG_DEBUG(log, "Mutation of part {} finished by some other replica, will download mutated part", entry.new_part_name);
                 return PrepareResult{
@@ -167,7 +166,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                     .part_log_writer = {}
                 };
             }
-            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, dummy).empty())
+            else if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
             {
                 /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
                 /// and exclusive zero copy lock will be released. We will take the lock and execute mutation one more time, while it was possible just to download the part from other replica.

@@ -1556,7 +1556,7 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 
 - Result of aggregation for every row passed to the function.
 
-The return type is the same as the return type of function, that `initializeAgregation` takes as first argument.
+The return type is the same as the return type of function, that `initializeAggregation` takes as first argument.
 
 **Example**
 

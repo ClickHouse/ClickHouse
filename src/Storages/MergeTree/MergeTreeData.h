@@ -1464,7 +1464,7 @@ protected:
 
     /// This has to be "true" by default, because in case of empty table or absence of Outdated parts
     /// it is automatically finished.
-    bool outdated_data_parts_loading_finished TSA_GUARDED_BY(outdated_data_parts_mutex) = true;
+    std::atomic_bool outdated_data_parts_loading_finished = true;
 
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedDataPartsLoadingTask();

@@ -75,7 +75,7 @@ class IColumn;
     M(UInt64, poll_interval, DBMS_DEFAULT_POLL_INTERVAL, "Block at the query wait loop on the server for the specified number of seconds.", 0) \
     M(UInt64, idle_connection_timeout, 3600, "Close idle TCP connections after specified number of seconds.", 0) \
     M(UInt64, distributed_connections_pool_size, 1024, "Maximum number of connections with one remote server in the pool.", 0) \
-    M(UInt64, connections_with_failover_max_tries, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES, "The maximum number of attempts to connect to replicas.", 0) \
+    M(UInt64, connections_with_failover_max_tries, 3, "The maximum number of attempts to connect to replicas.", 0) \
     M(UInt64, s3_strict_upload_part_size, 0, "The exact size of part to upload during multipart upload to S3 (some implementations does not supports variable size parts).", 0) \
     M(UInt64, s3_min_upload_part_size, 16*1024*1024, "The minimum size of part to upload during multipart upload to S3.", 0) \
     M(UInt64, s3_max_upload_part_size, 5ull*1024*1024*1024, "The maximum size of part to upload during multipart upload to S3.", 0) \
@@ -682,12 +682,19 @@ class IColumn;
     M(Bool, optimize_group_by_constant_keys, true, "Optimize GROUP BY when all keys in block are constant", 0) \
     M(Bool, legacy_column_name_of_tuple_literal, false, "List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.", 0) \
     \
-    M(Bool, query_plan_enable_optimizations, true, "Apply optimizations to query plan", 0) \
+    M(Bool, query_plan_enable_optimizations, true, "Globally enable/disable query optimization at the query plan level", 0) \
     M(UInt64, query_plan_max_optimizations_to_apply, 10000, "Limit the total number of optimizations applied to query plan. If zero, ignored. If limit reached, throw exception", 0) \
+    M(Bool, query_plan_lift_up_array_join, true, "Allow to move array joins up in the query plan", 0) \
+    M(Bool, query_plan_push_down_limit, true, "Allow to move LIMITs down in the query plan", 0) \
+    M(Bool, query_plan_split_filter, true, "Allow to split filters in the query plan", 0) \
+    M(Bool, query_plan_merge_expressions, true, "Allow to merge expressions in the query plan", 0) \
     M(Bool, query_plan_filter_push_down, true, "Allow to push down filter by predicate query plan step", 0) \
+    M(Bool, query_plan_execute_functions_after_sorting, true, "Allow to re-order functions after sorting", 0) \
+    M(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, "Allow to use the storage sorting for window functions", 0) \
+    M(Bool, query_plan_lift_up_union, true, "Allow to move UNIONs up so that more parts of the query plan can be optimized", 0) \
     M(Bool, query_plan_optimize_primary_key, true, "Analyze primary key using query plan (instead of AST)", 0) \
-    M(Bool, query_plan_read_in_order, true, "Use query plan for read-in-order optimisation", 0) \
-    M(Bool, query_plan_aggregation_in_order, true, "Use query plan for aggregation-in-order optimisation", 0) \
+    M(Bool, query_plan_read_in_order, true, "Use query plan for read-in-order optimization", 0) \
+    M(Bool, query_plan_aggregation_in_order, true, "Use query plan for aggregation-in-order optimization", 0) \
     M(Bool, query_plan_remove_redundant_sorting, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries", 0) \
     M(Bool, query_plan_remove_redundant_distinct, true, "Remove redundant Distinct step in query plan", 0) \
     M(Bool, query_plan_enable_multithreading_after_window_functions, true, "Enable multithreading after evaluating window functions to allow parallel stream processing", 0) \
@@ -799,6 +806,7 @@ class IColumn;
     M(Bool, optimize_uniq_to_count, true, "Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.", 0) \
     \
     /** Experimental functions */ \
+    M(Bool, allow_experimental_materialized_postgresql_table, false, "Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental", 0) \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
     M(Bool, allow_experimental_hash_functions, false, "Enable experimental hash functions", 0) \

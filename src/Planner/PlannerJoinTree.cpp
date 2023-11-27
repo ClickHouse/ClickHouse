@@ -485,7 +485,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
             settings.parallel_replica_offset,
             std::move(custom_key_ast),
             settings.parallel_replicas_custom_key_filter_type,
-            *storage,
+            storage->getInMemoryMetadataPtr()->columns,
             query_context);
 
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);

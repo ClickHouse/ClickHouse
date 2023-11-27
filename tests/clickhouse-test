@@ -8,6 +8,7 @@
 import enum
 from queue import Full
 import shutil
+import itertools
 import sys
 import os
 import os.path
@@ -1640,6 +1641,8 @@ class TestSuite:
             if USE_JINJA
             else None
         )
+        if j2env is not None:
+            j2env.globals.update(product=itertools.product)
 
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
