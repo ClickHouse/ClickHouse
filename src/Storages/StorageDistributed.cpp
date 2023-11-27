@@ -1412,7 +1412,7 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
 
         /// Check new format shard{shard_index}_replica{replica_index}
         /// (shard_index and replica_index starts from 1).
-        if (address.shard_index && dirname.ends_with("_all_replicas"))
+        if (address.shard_index)
         {
             if (address.shard_index > shards_info.size())
             {
@@ -1423,11 +1423,28 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
             const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
             size_t replicas = replicas_addresses.size();
 
-            for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
+            if (dirname.ends_with("_all_replicas"))
             {
-                address.replica_index = static_cast<UInt32>(replica_index);
-                addresses.push_back(address);
+                for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
+                {
+                    Cluster::Address replica_address = replicas_addresses[replica_index - 1];
+                    replica_address.shard_index = address.shard_index;
+                    replica_address.replica_index = static_cast<UInt32>(replica_index);
+                    addresses.emplace_back(std::move(replica_address));
+                }
+                continue;
             }
+
+            if (address.replica_index > replicas)
+            {
+                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
+                continue;
+            }
+
+            Cluster::Address replica_address = replicas_addresses[address.replica_index - 1];
+            replica_address.shard_index = address.shard_index;
+            replica_address.replica_index = address.replica_index;
+            addresses.emplace_back(std::move(replica_address));
         }
         else
             addresses.push_back(address);
