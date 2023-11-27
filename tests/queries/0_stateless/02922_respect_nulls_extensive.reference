@@ -73,17 +73,27 @@ SELECT number, avgIf (number) RESPECT NULLS over (order by number) from numbers(
 SELECT number, first_value_respect_nulls (number) RESPECT NULLS over (order by number) from numbers(1); -- { serverError NOT_IMPLEMENTED }
 SELECT number, last_value_respect_nulls (number) RESPECT NULLS over (order by number) from numbers(1); -- { serverError NOT_IMPLEMENTED }
 -- Aggregate_functions_null_for_empty should work the same way
+SELECT toTypeName(any(number) RESPECT NULLS) from numbers(1);
+UInt64
 SELECT toTypeName(anyOrNull(number) RESPECT NULLS) from numbers(1);
 Nullable(UInt64)
+SELECT any(number) RESPECT NULLS from numbers(0);
+0
 SELECT anyOrNull(number) RESPECT NULLS from numbers(0);
+\N
+SELECT any(number) RESPECT NULLS from (Select NULL::Nullable(UInt8) as number FROM numbers(10));
 \N
 SELECT anyOrNull(number) RESPECT NULLS from (Select NULL::Nullable(UInt8) as number FROM numbers(10));
 \N
+SELECT any(number) RESPECT NULLS from (Select if(number > 8, NULL, number) as number FROM numbers(10));
+0
 SELECT anyOrNull(number) RESPECT NULLS from (Select if(number > 8, NULL, number) as number FROM numbers(10));
 0
+SELECT any(number) RESPECT NULLS from (Select if(number < 8, NULL, number) as number FROM numbers(10));
+\N
 SELECT anyOrNull(number) RESPECT NULLS from (Select if(number < 8, NULL, number) as number FROM numbers(10));
 \N
 SELECT toTypeName(any(number) RESPECT NULLS) from numbers(1) SETTINGS aggregate_functions_null_for_empty = 1;
 Nullable(UInt64)
-SELECT any(number) RESPECT NULLS from numbers(0) SETTINGS aggregate_functions_null_for_empty = 1;;
+SELECT any(number) RESPECT NULLS from numbers(0) SETTINGS aggregate_functions_null_for_empty = 1;
 \N

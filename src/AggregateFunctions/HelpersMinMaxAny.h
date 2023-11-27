@@ -45,7 +45,7 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionTemplate<Data<SingleValueDataString>>(argument_type);
 
-    return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<>>>(argument_type);
+    return new AggregateFunctionTemplate<Data<SingleValueDataGeneric>>(argument_type);
 }
 
 /// argMin, argMax
@@ -77,7 +77,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataString>>>(res_type, val_type);
 
-    return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataGeneric<>>>>(res_type, val_type);
+    return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataGeneric>>>(res_type, val_type);
 }
 
 template <template <typename> class MinMaxData>
@@ -113,7 +113,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name
     if (which.idx == TypeIndex::String)
         return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataString>(res_type, val_type);
 
-    return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataGeneric<>>(res_type, val_type);
+    return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataGeneric>(res_type, val_type);
 }
 
 }

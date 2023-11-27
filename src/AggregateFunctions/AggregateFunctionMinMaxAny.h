@@ -771,26 +771,18 @@ static_assert(
 
 
 /// For any other value types.
-template <bool RESULT_IS_NULLABLE = false>
 struct SingleValueDataGeneric
 {
 private:
     using Self = SingleValueDataGeneric;
-
     Field value;
-    bool has_value = false;
 
 public:
-    static constexpr bool result_is_nullable = RESULT_IS_NULLABLE;
-    static constexpr bool should_skip_null_arguments = !RESULT_IS_NULLABLE;
+    static constexpr bool result_is_nullable = false;
+    static constexpr bool should_skip_null_arguments = true;
     static constexpr bool is_any = false;
 
-    bool has() const
-    {
-        if constexpr (result_is_nullable)
-            return has_value;
-        return !value.isNull();
-    }
+    bool has() const { return !value.isNull(); }
 
     void insertResultInto(IColumn & to) const
     {
@@ -820,19 +812,9 @@ public:
             serialization.deserializeBinary(value, buf, {});
     }
 
-    void change(const IColumn & column, size_t row_num, Arena *)
-    {
-        column.get(row_num, value);
-        if constexpr (result_is_nullable)
-            has_value = true;
-    }
+    void change(const IColumn & column, size_t row_num, Arena *) { column.get(row_num, value); }
 
-    void change(const Self & to, Arena *)
-    {
-        value = to.value;
-        if constexpr (result_is_nullable)
-            has_value = true;
-    }
+    void change(const Self & to, Arena *) { value = to.value; }
 
     bool changeFirstTime(const IColumn & column, size_t row_num, Arena * arena)
     {
@@ -847,7 +829,7 @@ public:
 
     bool changeFirstTime(const Self & to, Arena * arena)
     {
-        if (!has() && (result_is_nullable || to.has()))
+        if (!has() && to.has())
         {
             change(to, arena);
             return true;
@@ -882,30 +864,15 @@ public:
         }
         else
         {
-            if constexpr (result_is_nullable)
+            Field new_value;
+            column.get(row_num, new_value);
+            if (new_value < value)
             {
-                Field new_value;
-                column.get(row_num, new_value);
-                if (!value.isNull() && (new_value.isNull() || new_value < value))
-                {
-                    value = new_value;
-                    return true;
-                }
-                else
-                    return false;
+                value = new_value;
+                return true;
             }
             else
-            {
-                Field new_value;
-                column.get(row_num, new_value);
-                if (new_value < value)
-                {
-                    value = new_value;
-                    return true;
-                }
-                else
-                    return false;
-            }
+                return false;
         }
     }
 
@@ -913,30 +880,13 @@ public:
     {
         if (!to.has())
             return false;
-        if constexpr (result_is_nullable)
+        if (!has() || to.value < value)
         {
-            if (!has())
-            {
-                change(to, arena);
-                return true;
-            }
-            if (to.value.isNull() || (!value.isNull() && to.value < value))
-            {
-                value = to.value;
-                return true;
-            }
-            return false;
+            change(to, arena);
+            return true;
         }
         else
-        {
-            if (!has() || to.value < value)
-            {
-                change(to, arena);
-                return true;
-            }
-            else
-                return false;
-        }
+            return false;
     }
 
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
@@ -948,29 +898,15 @@ public:
         }
         else
         {
-            if constexpr (result_is_nullable)
+            Field new_value;
+            column.get(row_num, new_value);
+            if (new_value > value)
             {
-                Field new_value;
-                column.get(row_num, new_value);
-                if (!value.isNull() && (new_value.isNull() || value < new_value))
-                {
-                    value = new_value;
-                    return true;
-                }
-                return false;
+                value = new_value;
+                return true;
             }
             else
-            {
-                Field new_value;
-                column.get(row_num, new_value);
-                if (new_value > value)
-                {
-                    value = new_value;
-                    return true;
-                }
-                else
-                    return false;
-            }
+                return false;
         }
     }
 
@@ -978,36 +914,18 @@ public:
     {
         if (!to.has())
             return false;
-        if constexpr (result_is_nullable)
+        if (!has() || to.value > value)
         {
-            if (!value.isNull() && (to.value.isNull() || value < to.value))
-            {
-                value = to.value;
-                return true;
-            }
-            return false;
+            change(to, arena);
+            return true;
         }
         else
-        {
-            if (!has() || to.value > value)
-            {
-                change(to, arena);
-                return true;
-            }
-            else
-                return false;
-        }
+            return false;
     }
 
-    bool isEqualTo(const IColumn & column, size_t row_num) const
-    {
-        return has() && value == column[row_num];
-    }
+    bool isEqualTo(const IColumn & column, size_t row_num) const { return has() && value == column[row_num]; }
 
-    bool isEqualTo(const Self & to) const
-    {
-        return has() && to.value == value;
-    }
+    bool isEqualTo(const Self & to) const { return has() && to.value == value; }
 
     static bool allocatesMemoryInArena()
     {
@@ -1084,7 +1002,7 @@ struct AggregateFunctionMaxData : Data
 #endif
 };
 
-template <typename Data, bool RespectNulls = false>
+template <typename Data>
 struct AggregateFunctionAnyData : Data
 {
     using Self = AggregateFunctionAnyData;
@@ -1094,13 +1012,7 @@ struct AggregateFunctionAnyData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeFirstTime(to, arena); }
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeFirstTime(column, 0, arena); }
 
-    static const char * name()
-    {
-        if constexpr (RespectNulls)
-            return "any_respect_nulls";
-        else
-            return "any";
-    }
+    static const char * name() { return "any"; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -1119,7 +1031,7 @@ struct AggregateFunctionAnyData : Data
 #endif
 };
 
-template <typename Data, bool RespectNulls = false>
+template <typename Data>
 struct AggregateFunctionAnyLastData : Data
 {
     using Self = AggregateFunctionAnyLastData;
@@ -1128,13 +1040,7 @@ struct AggregateFunctionAnyLastData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeEveryTime(to, arena); }
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeEveryTime(column, 0, arena); }
 
-    static const char * name()
-    {
-        if constexpr (RespectNulls)
-            return "anyLast_respect_nulls";
-        else
-            return "anyLast";
-    }
+    static const char * name() { return "anyLast"; }
 
 #if USE_EMBEDDED_COMPILER
 
