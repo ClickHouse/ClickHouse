@@ -55,7 +55,7 @@ def generate_cluster_def(port):
 
 
 @pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
-def cluster(request):
+def started_cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
         port = cluster.azurite_port
@@ -86,7 +86,8 @@ def cluster(request):
         cluster.start()
         logging.info("Cluster started")
 
-        yield cluster
+        testing_vfs = len(request.param) > 0
+        yield cluster, testing_vfs
     finally:
         cluster.shutdown()
 
@@ -117,7 +118,8 @@ def get_large_objects_count(blob_container_client, large_size_threshold=100):
     )
 
 
-def test_zero_copy_replication(cluster):
+def test_zero_copy_replication(started_cluster):
+    cluster, testing_vfs = started_cluster
     node1 = cluster.instances[NODE1]
     node2 = cluster.instances[NODE2]
     create_table(node1, TABLE_NAME, 1)
@@ -141,7 +143,8 @@ def test_zero_copy_replication(cluster):
     )
 
     # Based on version 21.x - should be only one file with size 100+ (checksums.txt), used by both nodes
-    assert get_large_objects_count(blob_container_client) == 1
+    # if testing vfs, the extra file is snapshot
+    assert get_large_objects_count(blob_container_client) == 1 + testing_vfs
 
     azure_query(node2, f"INSERT INTO {TABLE_NAME} VALUES {values2}")
     node1.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
@@ -155,5 +158,5 @@ def test_zero_copy_replication(cluster):
         == values1 + "," + values2
     )
 
-    assert get_large_objects_count(blob_container_client) == 2
+    assert get_large_objects_count(blob_container_client) == 2 + testing_vfs
     node1.query(drop_table_statement)
