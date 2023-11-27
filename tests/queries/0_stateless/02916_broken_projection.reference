@@ -55,6 +55,7 @@ select from projection 'proj', expect error: proj_2
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
 select from projection 'proj_2', expect error: proj_2
+FILE_DOESNT_EXIST
 check table
 0
 broken projections info

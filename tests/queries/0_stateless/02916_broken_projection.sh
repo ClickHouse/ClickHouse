@@ -115,7 +115,10 @@ function check()
 
     if [ "$expect_broken_part" = "proj" ]
         then
-            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --send_logs_level 'fatal' --query_id $query_id -q "SELECT c FROM test WHERE d == 12 ORDER BY c;" 2>&1 | grep -o $expected_error
+            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -nm -q "
+SET send_logs_level='fatal';
+SELECT c FROM test WHERE d == 12 ORDER BY c;
+" 2>&1 | grep -oF "$expected_error"
         else
             $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;"
             echo 'used projections'
@@ -130,7 +133,10 @@ function check()
 
     if [ "$expect_broken_part" = "proj_2" ]
         then
-            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --send_logs_level 'fatal' --query_id $query_id -q "SELECT d FROM test WHERE c == 12 ORDER BY d;" 2>&1 | grep -o $expected_error
+            $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -nm -q "
+SET send_logs_level='fatal';
+SELECT d FROM test WHERE c == 12 ORDER BY d;
+" 2>&1 | grep -oF "$expected_error"
         else
             $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;"
             echo 'used projections'
@@ -234,7 +240,7 @@ break_projection proj_2 all_2_2_0 data
 broken_projections_info
 
 # Select now fails with error "File doesn't exist"
-check "proj_2" "FILE_DOESNT_EXIST"
+check "proj_2" FILE_DOESNT_EXIST
 
 # Projection 'proj_2' from part all_2_2_0 will now appear in broken parts info.
 broken_projections_info
