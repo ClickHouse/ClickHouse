@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
@@ -141,10 +141,19 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
         that->addBatch(0, input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
     }
 
-    for (size_t i = 0; i < input_rows_count; ++i)
+    if (agg_func.isState())
+    {
         /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
         /// correctly if result contains AggregateFunction's states
-        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+        for (size_t i = 0; i < input_rows_count; ++i)
+            agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+    }
+    else
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            agg_func.insertResultInto(places[i], res_col, arena.get());
+    }
+
     return result_holder;
 }
 

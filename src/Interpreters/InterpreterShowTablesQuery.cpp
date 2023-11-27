@@ -120,9 +120,9 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.merges)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query << "SELECT table, database, round((elapsed * (1 / progress)) - elapsed, 2) AS estimate_complete, elapsed, "
-                           "round(progress, 2) AS progress, is_mutation, formatReadableSize(total_size_bytes_compressed) AS size, "
-                           "formatReadableSize(memory_usage) AS mem FROM system.merges";
+        rewritten_query << "SELECT table, database, round((elapsed * (1 / merges.progress)) - merges.elapsed, 2) AS estimate_complete, round(elapsed,2) elapsed, "
+                           "round(progress*100, 2) AS progress, is_mutation, formatReadableSize(total_size_bytes_compressed) AS size_compressed, "
+                           "formatReadableSize(memory_usage) AS memory_usage FROM system.merges";
 
         if (!query.like.empty())
         {
@@ -214,7 +214,7 @@ BlockIO InterpreterShowTablesQuery::execute()
         return res;
     }
 
-    return executeQuery(getRewrittenQuery(), getContext(), true).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to

@@ -1028,10 +1028,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             all_asts, all_columns, source.getStorage(), storage_snapshot,
             false, true, execute_scalar_subqueries);
 
-        if (execute_scalar_subqueries && context->hasQueryContext())
-            for (const auto & it : syntax_result->getScalars())
-                context->getQueryContext()->addScalar(it.first, it.second);
-
         stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;

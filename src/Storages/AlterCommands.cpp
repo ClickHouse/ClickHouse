@@ -34,6 +34,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -428,11 +431,35 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         column.ttl = ttl;
 
-        metadata.columns.add(column, after_column, first);
-
-        /// Slow, because each time a list is copied
         if (context->getSettingsRef().flatten_nested)
-            metadata.columns.flattenNested();
+        {
+            StorageInMemoryMetadata temporary_metadata;
+            temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
+            temporary_metadata.columns.flattenNested();
+
+            const auto transformed_columns = temporary_metadata.columns.getAll();
+
+            auto add_column = [&](const String & name)
+            {
+                const auto & transformed_column = temporary_metadata.columns.get(name);
+                metadata.columns.add(transformed_column, after_column, first);
+            };
+
+            if (!after_column.empty() || first)
+            {
+                for (const auto & col: transformed_columns | std::views::reverse)
+                    add_column(col.name);
+            }
+            else
+            {
+                for (const auto & col: transformed_columns)
+                    add_column(col.name);
+            }
+        }
+        else
+        {
+            metadata.columns.add(column, after_column, first);
+        }
     }
     else if (type == DROP_COLUMN)
     {
@@ -1167,6 +1194,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
+            /// FIXME: Adding a new column of type Object(JSON) is broken.
+            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
+            /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
+            /// So we don't allow to do it for now.
+            if (command.data_type->hasDynamicSubcolumns())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
+
             if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
                                 "this column name is reserved for lightweight delete feature", backQuote(column_name));
@@ -1229,17 +1263,22 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
 
-            /// The change of data type to/from Object is broken, so disable it for now
+            /// FIXME: Modifying the column to/from Object(JSON) is broken.
+            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
+            /// But after ALTER TABLE MODIFY COLUMN we need to fill existing rows with something (exactly the default value) or calculate the common type for it.
+            /// So we don't allow to do it for now.
             if (command.data_type)
             {
-                const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
+                const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                if (command.data_type->getName().contains("Object")
-                    || old_data_type->getName().contains("Object"))
+                bool new_type_has_object = command.data_type->hasDynamicSubcolumns();
+                bool old_type_has_object = old_data_type->hasDynamicSubcolumns();
+
+                if (new_type_has_object || old_type_has_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The change of data type {} of column {} to {} is not allowed",
+                        "The change of data type {} of column {} to {} is not allowed. It has known bugs",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 

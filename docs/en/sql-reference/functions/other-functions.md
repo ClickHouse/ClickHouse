@@ -1556,7 +1556,7 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 
 - Result of aggregation for every row passed to the function.
 
-The return type is the same as the return type of function, that `initializeAgregation` takes as first argument.
+The return type is the same as the return type of function, that `initializeAggregation` takes as first argument.
 
 **Example**
 
@@ -2760,10 +2760,13 @@ message Root
 
 Returns a formatted, possibly multi-line, version of the given SQL query.
 
+Throws an exception if the query is not well-formed. To return `NULL` instead, function `formatQueryOrNull()` may be used.
+
 **Syntax**
 
 ```sql
 formatQuery(query)
+formatQueryOrNull(query)
 ```
 
 **Arguments**
@@ -2796,10 +2799,13 @@ WHERE (a > 3) AND (b < 3)            │
 
 Like formatQuery() but the returned formatted string contains no line breaks.
 
+Throws an exception if the query is not well-formed. To return `NULL` instead, function `formatQuerySingleLineOrNull()` may be used.
+
 **Syntax**
 
 ```sql
 formatQuerySingleLine(query)
+formatQuerySingleLineOrNull(query)
 ```
 
 **Arguments**

@@ -68,6 +68,7 @@ RUN python3 -m pip install --no-cache-dir \
     asyncio \
     avro==1.10.2 \
     azure-storage-blob \
+    boto3 \
     cassandra-driver \
     confluent-kafka==1.9.2 \
     delta-spark==2.3.0 \
