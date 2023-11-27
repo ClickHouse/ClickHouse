@@ -23,7 +23,7 @@ from commit_status_helper import (
 from env_helper import REPO_COPY, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
-from git_helper import git_runner
+from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
 from report import TestResults, read_test_results
 from s3_helper import S3Helper
@@ -33,13 +33,6 @@ from docker_images_helper import get_docker_image, pull_image
 from upload_result_helper import upload_results
 
 NAME = "Style Check"
-
-GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
-    "git -c user.email=robot-clickhouse@users.noreply.github.com "
-    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-    "-c core.sshCommand="
-    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
-)
 
 
 def process_result(
@@ -80,12 +73,6 @@ def process_result(
 def parse_args():
     parser = argparse.ArgumentParser("Check and report style issues in the repository")
     parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        help="tag for docker image",
-    )
     parser.add_argument(
         "--no-push",
         action="store_false",
@@ -192,7 +179,9 @@ def main():
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, state, report_url, description, NAME, pr_info)
+    post_commit_status(
+        commit, state, report_url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

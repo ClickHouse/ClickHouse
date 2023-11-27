@@ -39,14 +39,12 @@ jobs:
       - name: PrepareRunConfig
         id: runconfig
         run: |
-            # Check docker images:
-            # FIXME: login to dockerhub?
-            aws ssm get-parameter --region us-east-1 --name dockerhub_robot_password --query 'Parameter.Value' --output=text --with-decryption \
-            | docker login --username robotclickhouse --password-stdin
+            echo "::group::configure CI run"
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --rebuild-all-binaries --outfile ${{ runner.temp }}/ci_run_data.json
-            # pretty printing
-            echo "=== CI run config ==="
+            echo "::endgroup::"
+            echo "::group::CI run configure results"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
+            echo "::endgroup::"
             {
               echo 'CI_DATA<<EOF'
               cat  ${{ runner.temp }}/ci_run_data.json
@@ -90,69 +88,65 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_release
-      # FIXME: should be 1 everywhere!!!!
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_aarch64
-      # FIXME: should be 1 everywhere!!!!
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAsan:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_asan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebUBsan:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_ubsan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebTsan:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_tsan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebMsan:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_msan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebDebug:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinDarwin:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_darwin
-      # FIXME: should be 1 everywhere!!!!
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinDarwinAarch64:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_darwin_aarch64
-      # FIXME: should be 1 everywhere!!!!
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
 ############################################################################################
@@ -166,7 +160,6 @@ jobs:
       test_name: Docker server and keeper images
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      # FIXME: should be 1 everywhere!!!!
       checkout_depth: 0
       run_command: |
         cd "$GITHUB_WORKSPACE/tests/ci"

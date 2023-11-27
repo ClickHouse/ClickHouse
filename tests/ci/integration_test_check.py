@@ -145,11 +145,7 @@ def process_results(
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--check-name",
-        required=False,
-        default="",
-    )
+    parser.add_argument("check_name")
     parser.add_argument(
         "--validate-bugfix",
         action="store_true",
@@ -160,12 +156,6 @@ def parse_args():
         default="commit_status",
         choices=["commit_status", "file"],
         help="Where to public post commit status",
-    )
-    parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        help="tag for docker image",
     )
     return parser.parse_args()
 
@@ -228,9 +218,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    images: List[DockerImage] = []
-    for image in IMAGES:
-        images.append(pull_image(get_docker_image(image)))
+    images = [pull_image(get_docker_image(i)) for i in IMAGES]
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
 
@@ -325,7 +313,13 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
+            commit,
+            state,
+            report_url,
+            description,
+            check_name_with_group,
+            pr_info,
+            dump_to_file=True,
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(post_commit_path, description, state, report_url)

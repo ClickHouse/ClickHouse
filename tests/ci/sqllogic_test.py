@@ -80,12 +80,6 @@ def parse_args() -> argparse.Namespace:
         required=False,
         default=0,
     )
-    parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        help="tag for docker image",
-    )
     return parser.parse_args()
 
 
@@ -212,7 +206,9 @@ def main():
     assert description is not None
     # FIXME: force SUCCESS until all cases are fixed
     status = SUCCESS
-    post_commit_status(commit, status, report_url, description, check_name, pr_info)
+    post_commit_status(
+        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
+    )
 
 
 if __name__ == "__main__":

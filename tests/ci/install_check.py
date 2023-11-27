@@ -228,12 +228,6 @@ def parse_args() -> argparse.Namespace:
         "check_name",
         help="check name, used to download the packages",
     )
-    parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        help="tag for docker image",
-    )
     parser.add_argument("--download", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-download",
@@ -364,7 +358,15 @@ def main():
 
     description = format_description(description)
 
-    post_commit_status(commit, state, report_url, description, args.check_name, pr_info)
+    post_commit_status(
+        commit,
+        state,
+        report_url,
+        description,
+        args.check_name,
+        pr_info,
+        dump_to_file=True,
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

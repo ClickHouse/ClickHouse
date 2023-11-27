@@ -10,7 +10,6 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
-    NotSet,
     RerunHelper,
     get_commit,
     post_commit_status,
@@ -79,7 +78,13 @@ def main():
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")
         post_commit_status(
-            commit, "success", NotSet, "No changes in docs", NAME, pr_info
+            commit,
+            "success",
+            "",
+            "No changes in docs",
+            NAME,
+            pr_info,
+            dump_to_file=True,
         )
         sys.exit(0)
 
@@ -142,7 +147,9 @@ def main():
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print("::notice ::Report url: {report_url}")
-    post_commit_status(commit, status, report_url, description, NAME, pr_info)
+    post_commit_status(
+        commit, status, report_url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

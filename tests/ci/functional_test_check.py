@@ -20,7 +20,6 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    NotSet,
     RerunHelper,
     get_commit,
     override_status,
@@ -203,22 +202,8 @@ def process_results(
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--check-name",
-        required=False,
-        default="",
-    )
-    parser.add_argument(
-        "--kill-timeout",
-        required=False,
-        type=int,
-        default=0,
-    )
-    parser.add_argument(
-        "--tag",
-        required=False,
-        type=str,
-    )
+    parser.add_argument("check_name")
+    parser.add_argument("kill_timeout", type=int)
     parser.add_argument(
         "--validate-bugfix",
         action="store_true",
@@ -307,10 +292,11 @@ def main():
                 post_commit_status(
                     commit,
                     state,
-                    NotSet,
+                    "",
                     NO_CHANGES_MSG,
                     check_name_with_group,
                     pr_info,
+                    dump_to_file=True,
                 )
             elif args.post_commit_status == "file":
                 post_commit_status_to_file(
@@ -402,7 +388,13 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
+            commit,
+            state,
+            report_url,
+            description,
+            check_name_with_group,
+            pr_info,
+            dump_to_file=True,
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(

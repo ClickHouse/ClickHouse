@@ -3,7 +3,7 @@
 import logging
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
@@ -30,22 +30,14 @@ class JobConfig:
     @num_batches - sets number of batches for multi-batch job
     """
 
-    digest: DigestConfig
-    run_command: str
-    timeout: Optional[int]
-    num_batches: int
-
-    def __init__(self, **kwargs):
-        # parent dataclass is not allowed to have default values if child has any non-default
-        #   so need to define __init__ for this class to set "defaults" values
-        self.digest = kwargs.get("digest", DigestConfig())
-        self.run_command = kwargs.get("run_command", "")
-        self.timeout = kwargs.get("timeout", None)
-        self.num_batches = kwargs.get("num_batches", 1)
+    digest: DigestConfig = DigestConfig()
+    run_command: str = ""
+    timeout: Optional[int] = None
+    num_batches: int = 1
 
 
 @dataclass
-class BuildConfig(JobConfig):
+class BuildConfig:
     name: str
     compiler: str
     package_type: Literal["deb", "binary", "fuzzers"]
@@ -56,10 +48,8 @@ class BuildConfig(JobConfig):
     sparse_checkout: bool = False
     comment: str = ""
     static_binary_name: str = ""
-
-    def __init__(self, **kwargs):
-        # digest config for build job is the same for all builds:
-        build_digest_config = DigestConfig(
+    job_config: JobConfig = JobConfig(
+        digest=DigestConfig(
             include_paths=[
                 "./src",
                 "./contrib/*-cmake",
@@ -70,17 +60,8 @@ class BuildConfig(JobConfig):
             ],
             exclude_files=[".md"],
             docker=["clickhouse/binary-builder"],
-        )
-        # initialize parent JobConfig class
-        super().__init__(digest=build_digest_config, **kwargs)
-        # rest kwargs fields initializes this child class
-        for field in fields(self):
-            field_name = field.name
-            setattr(
-                self,
-                field_name,
-                kwargs.pop(field_name, getattr(self, field_name, None)),
-            )
+        ),
+    )
 
     def export_env(self, export: bool = False) -> str:
         def process(field_name: str, field: Union[bool, str]) -> str:
@@ -94,41 +75,21 @@ class BuildConfig(JobConfig):
 
 
 @dataclass
-class BuildReportConfig(JobConfig):
+class BuildReportConfig:
     builds: List[str]
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        for field in fields(self):
-            field_name = field.name
-            setattr(
-                self,
-                field_name,
-                kwargs.pop(field_name, getattr(self, field_name, None)),
-            )
+    job_config: JobConfig = JobConfig()
 
 
 @dataclass
-class TestConfig(JobConfig):
+class TestConfig:
     required_build: str
     force_tests: bool = False
-
-    def __init__(self, required_build, **kwargs):
-        super().__init__(**kwargs)
-        self.required_build = required_build
-        for field in fields(self):
-            field_name = field.name
-            setattr(
-                self,
-                field_name,
-                kwargs.pop(field_name, getattr(self, field_name, None)),
-            )
+    job_config: JobConfig = JobConfig()
 
 
 BuildConfigs = Dict[str, BuildConfig]
 BuildsReportConfig = Dict[str, BuildReportConfig]
 TestConfigs = Dict[str, TestConfig]
-OtherJobsConfigs = Dict[str, JobConfig]
 
 
 # common digests configs
@@ -239,12 +200,12 @@ bugfix_validate_check = DigestConfig(
 # common test params
 statless_test_common_params = {
     "digest": statless_check_digest,
-    "run_command": "functional_test_check.py",
+    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 10800,
 }
 stateful_test_common_params = {
     "digest": stateful_check_digest,
-    "run_command": "functional_test_check.py",
+    "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 3600,
 }
 stress_test_common_params = {
@@ -261,7 +222,7 @@ astfuzzer_test_common_params = {
 }
 integration_test_common_params = {
     "digest": integration_check_digest,
-    "run_command": "integration_test_check.py",
+    "run_command": 'integration_test_check.py "$CHECK_NAME"',
 }
 unit_test_common_params = {
     "digest": unit_check_digest,
@@ -297,7 +258,7 @@ class CiConfig:
     build_config: BuildConfigs
     builds_report_config: BuildsReportConfig
     test_configs: TestConfigs
-    other_jobs_configs: OtherJobsConfigs
+    other_jobs_configs: TestConfigs
 
     def get_job_config(self, check_name: str) -> JobConfig:
         res = None
@@ -308,7 +269,7 @@ class CiConfig:
             self.other_jobs_configs,
         ):
             if check_name in config:  # type: ignore
-                res = config[check_name]  # type: ignore
+                res = config[check_name].job_config  # type: ignore
                 break
         assert (
             res is not None
@@ -324,7 +285,7 @@ class CiConfig:
             self.test_configs,
         ):
             if check_name in config:  # type: ignore
-                res = config[check_name].digest  # type: ignore
+                res = config[check_name].job_config.digest  # type: ignore
         assert (
             res
         ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
@@ -563,204 +524,271 @@ CI_CONFIG = CiConfig(
         ),
     },
     other_jobs_configs={
-        "Docker server and keeper images": JobConfig(
-            digest=DigestConfig(include_paths=["tests/ci/docker_server.py"])
-        ),
-        # FIXME: should we rerun docker job on docker checnge and/or tests/ci/docs_check.py
-        "Docs check": JobConfig(
-            digest=DigestConfig(
-                include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
-                docker=["clickhouse/docs-builder"],
+        "Docker server and keeper images": TestConfig(
+            "",
+            job_config=JobConfig(
+                digest=DigestConfig(
+                    include_paths=[
+                        "tests/ci/docker_server.py",
+                        "./docker/server",
+                        "./docker/keeper",
+                    ]
+                )
             ),
         ),
-        "Fast tests": JobConfig(
-            digest=DigestConfig(
-                include_paths=["./tests/queries/0_stateless/"],
-                exclude_files=[".md"],
-                docker=["clickhouse/fasttest"],
-            )
+        "Docs check": TestConfig(
+            "",
+            job_config=JobConfig(
+                digest=DigestConfig(
+                    include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
+                    docker=["clickhouse/docs-builder"],
+                ),
+            ),
         ),
-        "Style check": JobConfig(
-            digest=DigestConfig(include_paths=["."], exclude_dirs=[".git"])
+        "Fast tests": TestConfig(
+            "",
+            job_config=JobConfig(
+                digest=DigestConfig(
+                    include_paths=["./tests/queries/0_stateless/"],
+                    exclude_files=[".md"],
+                    docker=["clickhouse/fasttest"],
+                )
+            ),
         ),
-        "tests bugfix validate check": JobConfig(digest=bugfix_validate_check),
+        "Style check": TestConfig(
+            "",
+            job_config=JobConfig(
+                digest=DigestConfig(
+                    include_paths=["."], exclude_dirs=[".git", "__pycache__"]
+                )
+            ),
+        ),
+        "tests bugfix validate check": TestConfig(
+            "",
+            job_config=JobConfig(digest=bugfix_validate_check),
+        ),
     },
     test_configs={
         "Install packages (amd64)": TestConfig(
-            "package_release", digest=install_check_digest
+            "package_release", job_config=JobConfig(digest=install_check_digest)
         ),
         "Install packages (arm64)": TestConfig(
-            "package_aarch64", digest=install_check_digest
+            "package_aarch64", job_config=JobConfig(digest=install_check_digest)
         ),
         "Stateful tests (asan)": TestConfig(
-            "package_asan", **stateful_test_common_params
+            "package_asan", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (tsan)": TestConfig(
-            "package_tsan", **stateful_test_common_params
+            "package_tsan", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (msan)": TestConfig(
-            "package_msan", **stateful_test_common_params
+            "package_msan", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (ubsan)": TestConfig(
-            "package_ubsan", **stateful_test_common_params
+            "package_ubsan", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (debug)": TestConfig(
-            "package_debug", **stateful_test_common_params
+            "package_debug", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (release)": TestConfig(
-            "package_release", **stateful_test_common_params
+            "package_release", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (aarch64)": TestConfig(
-            "package_aarch64", **stateful_test_common_params
+            "package_aarch64", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (release, DatabaseOrdinary)": TestConfig(
-            "package_release", **stateful_test_common_params
+            "package_release", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
-        "Stateful tests (release, DatabaseReplicated)": TestConfig(
-            "package_release", **stateful_test_common_params
-        ),
+        # "Stateful tests (release, DatabaseReplicated)": TestConfig(
+        #     "package_release", job_config=JobConfig(**stateful_test_common_params) # type: ignore
+        # ),
         # Stateful tests for parallel replicas
         "Stateful tests (release, ParallelReplicas)": TestConfig(
-            "package_release", **stateful_test_common_params
+            "package_release", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (debug, ParallelReplicas)": TestConfig(
-            "package_debug", **stateful_test_common_params
+            "package_debug", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (asan, ParallelReplicas)": TestConfig(
-            "package_asan", **stateful_test_common_params
+            "package_asan", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (msan, ParallelReplicas)": TestConfig(
-            "package_msan", **stateful_test_common_params
+            "package_msan", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (ubsan, ParallelReplicas)": TestConfig(
-            "package_ubsan", **stateful_test_common_params
+            "package_ubsan", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (tsan, ParallelReplicas)": TestConfig(
-            "package_tsan", **stateful_test_common_params
+            "package_tsan", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         # End stateful tests for parallel replicas
         "Stateless tests (asan)": TestConfig(
-            "package_asan", **statless_test_common_params, num_batches=4
+            "package_asan",
+            job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
         ),
         "Stateless tests (tsan)": TestConfig(
-            "package_tsan", **statless_test_common_params, num_batches=5
+            "package_tsan",
+            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
         "Stateless tests (msan)": TestConfig(
-            "package_msan", **statless_test_common_params, num_batches=6
+            "package_msan",
+            job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
         "Stateless tests (ubsan)": TestConfig(
-            "package_ubsan", **statless_test_common_params, num_batches=2
+            "package_ubsan",
+            job_config=JobConfig(num_batches=2, **statless_test_common_params),  # type: ignore
         ),
         "Stateless tests (debug)": TestConfig(
-            "package_debug", **statless_test_common_params, num_batches=5
+            "package_debug",
+            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
         "Stateless tests (release)": TestConfig(
-            "package_release", **statless_test_common_params
+            "package_release", job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
         "Stateless tests (aarch64)": TestConfig(
-            "package_aarch64", **statless_test_common_params
-        ),
-        "Stateless tests (release, wide parts enabled)": TestConfig(
-            "package_release", **statless_test_common_params
+            "package_aarch64", job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
         "Stateless tests (release, analyzer)": TestConfig(
-            "package_release", **statless_test_common_params
+            "package_release", job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
         "Stateless tests (release, DatabaseOrdinary)": TestConfig(
-            "package_release", **statless_test_common_params
+            "package_release", job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
         "Stateless tests (release, DatabaseReplicated)": TestConfig(
-            "package_release", **statless_test_common_params, num_batches=4
+            "package_release",
+            job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
         ),
         "Stateless tests (release, s3 storage)": TestConfig(
-            "package_release", **statless_test_common_params, num_batches=2
+            "package_release",
+            job_config=JobConfig(num_batches=2, **statless_test_common_params),  # type: ignore
         ),
         "Stateless tests (debug, s3 storage)": TestConfig(
-            "package_debug", **statless_test_common_params, num_batches=6
+            "package_debug",
+            job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
         "Stateless tests (tsan, s3 storage)": TestConfig(
-            "package_tsan", **statless_test_common_params, num_batches=5
+            "package_tsan",
+            job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
-        "Stress test (asan)": TestConfig("package_asan", **stress_test_common_params),
-        "Stress test (tsan)": TestConfig("package_tsan", **stress_test_common_params),
-        "Stress test (ubsan)": TestConfig("package_ubsan", **stress_test_common_params),
-        "Stress test (msan)": TestConfig("package_msan", **stress_test_common_params),
-        "Stress test (debug)": TestConfig("package_debug", **stress_test_common_params),
+        "Stress test (asan)": TestConfig(
+            "package_asan", job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        ),
+        "Stress test (tsan)": TestConfig(
+            "package_tsan", job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        ),
+        "Stress test (ubsan)": TestConfig(
+            "package_ubsan", job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        ),
+        "Stress test (msan)": TestConfig(
+            "package_msan", job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        ),
+        "Stress test (debug)": TestConfig(
+            "package_debug", job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        ),
         "Upgrade check (asan)": TestConfig(
-            "package_asan", **upgrade_test_common_params
+            "package_asan", job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
         ),
         "Upgrade check (tsan)": TestConfig(
-            "package_tsan", **upgrade_test_common_params
+            "package_tsan", job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
         ),
         "Upgrade check (msan)": TestConfig(
-            "package_msan", **upgrade_test_common_params
+            "package_msan", job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
         ),
         "Upgrade check (debug)": TestConfig(
-            "package_debug", **upgrade_test_common_params
+            "package_debug", job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
         ),
         "Integration tests (asan)": TestConfig(
-            "package_asan", **integration_test_common_params, num_batches=4
+            "package_asan",
+            job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
         ),
         "Integration tests (asan, analyzer)": TestConfig(
-            "package_asan", **integration_test_common_params, num_batches=6
+            "package_asan",
+            job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
         ),
         "Integration tests (tsan)": TestConfig(
-            "package_tsan", **integration_test_common_params, num_batches=6
+            "package_tsan",
+            job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
         ),
         # FIXME: currently no wf has this job. Try to enable
-        # "Integration tests (msan)": TestConfig("package_msan", **integration_test_common_params, num_batches=6
+        # "Integration tests (msan)": TestConfig("package_msan", job_config=JobConfig(num_batches=6, **integration_test_common_params) # type: ignore
         # ),
         "Integration tests (release)": TestConfig(
-            "package_release", **integration_test_common_params, num_batches=4
+            "package_release",
+            job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
         ),
         "Integration tests flaky check (asan)": TestConfig(
-            "package_asan", **integration_test_common_params
+            "package_asan", job_config=JobConfig(**integration_test_common_params)  # type: ignore
         ),
         "Compatibility check (amd64)": TestConfig(
-            "package_release", digest=compatibility_check_digest
+            "package_release", job_config=JobConfig(digest=compatibility_check_digest)
         ),
         "Compatibility check (aarch64)": TestConfig(
-            "package_aarch64", digest=compatibility_check_digest
+            "package_aarch64", job_config=JobConfig(digest=compatibility_check_digest)
         ),
-        "Unit tests (release)": TestConfig("binary_release", **unit_test_common_params),
-        "Unit tests (asan)": TestConfig("package_asan", **unit_test_common_params),
-        "Unit tests (msan)": TestConfig("package_msan", **unit_test_common_params),
-        "Unit tests (tsan)": TestConfig("package_tsan", **unit_test_common_params),
-        "Unit tests (ubsan)": TestConfig("package_ubsan", **unit_test_common_params),
+        "Unit tests (release)": TestConfig(
+            "binary_release", job_config=JobConfig(**unit_test_common_params)  # type: ignore
+        ),
+        "Unit tests (asan)": TestConfig(
+            "package_asan", job_config=JobConfig(**unit_test_common_params)  # type: ignore
+        ),
+        "Unit tests (msan)": TestConfig(
+            "package_msan", job_config=JobConfig(**unit_test_common_params)  # type: ignore
+        ),
+        "Unit tests (tsan)": TestConfig(
+            "package_tsan", job_config=JobConfig(**unit_test_common_params)  # type: ignore
+        ),
+        "Unit tests (ubsan)": TestConfig(
+            "package_ubsan", job_config=JobConfig(**unit_test_common_params)  # type: ignore
+        ),
         "AST fuzzer (debug)": TestConfig(
-            "package_debug", **astfuzzer_test_common_params
+            "package_debug", job_config=JobConfig(**astfuzzer_test_common_params)  # type: ignore
         ),
-        "AST fuzzer (asan)": TestConfig("package_asan", **astfuzzer_test_common_params),
-        "AST fuzzer (msan)": TestConfig("package_msan", **astfuzzer_test_common_params),
-        "AST fuzzer (tsan)": TestConfig("package_tsan", **astfuzzer_test_common_params),
+        "AST fuzzer (asan)": TestConfig(
+            "package_asan", job_config=JobConfig(**astfuzzer_test_common_params)  # type: ignore
+        ),
+        "AST fuzzer (msan)": TestConfig(
+            "package_msan", job_config=JobConfig(**astfuzzer_test_common_params)  # type: ignore
+        ),
+        "AST fuzzer (tsan)": TestConfig(
+            "package_tsan", job_config=JobConfig(**astfuzzer_test_common_params)  # type: ignore
+        ),
         "AST fuzzer (ubsan)": TestConfig(
-            "package_ubsan", **astfuzzer_test_common_params
+            "package_ubsan", job_config=JobConfig(**astfuzzer_test_common_params)  # type: ignore
         ),
         "Stateless tests flaky check (asan)": TestConfig(
-            "package_asan", **{**statless_test_common_params, "timeout": 3600}  # type: ignore
+            # replace to non-default
+            "package_asan",
+            job_config=JobConfig(**{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
         # FIXME: add digest and params
         "ClickHouse Keeper Jepsen": TestConfig("binary_release"),
         # FIXME: add digest and params
         "ClickHouse Server Jepsen": TestConfig("binary_release"),
         "Performance Comparison": TestConfig(
-            "package_release", **perf_test_common_params, num_batches=4
+            "package_release",
+            job_config=JobConfig(num_batches=4, **perf_test_common_params),  # type: ignore
         ),
         "Performance Comparison Aarch64": TestConfig(
-            "package_aarch64", **perf_test_common_params, num_batches=4
+            "package_aarch64",
+            job_config=JobConfig(num_batches=4, **perf_test_common_params),  # type: ignore
         ),
         "SQLancer (release)": TestConfig(
-            "package_release", **sqllancer_test_common_params
+            "package_release", job_config=JobConfig(**sqllancer_test_common_params)  # type: ignore
         ),
-        "SQLancer (debug)": TestConfig("package_debug", **sqllancer_test_common_params),
+        "SQLancer (debug)": TestConfig(
+            "package_debug", job_config=JobConfig(**sqllancer_test_common_params)  # type: ignore
+        ),
         "Sqllogic test (release)": TestConfig(
-            "package_release", **sqllogic_test_params
+            "package_release", job_config=JobConfig(**sqllogic_test_params)  # type: ignore
+        ),
+        "SQLTest": TestConfig(
+            "package_release", job_config=JobConfig(**sql_test_params)  # type: ignore
         ),
         "SQLTest": TestConfig("package_release", **sql_test_params),
         "ClickBench (amd64)": TestConfig("package_release"),
         "ClickBench (aarch64)": TestConfig("package_aarch64"),
         # FIXME: add digest and params
-        "libFuzzer tests": TestConfig("fuzzers"),
+        "libFuzzer tests": TestConfig("fuzzers"),  # type: ignore
     },
 )
 CI_CONFIG.validate()

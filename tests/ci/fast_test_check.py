@@ -23,6 +23,7 @@ from commit_status_helper import (
     format_description,
 )
 
+from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
@@ -30,7 +31,6 @@ from report import TestResult, TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from docker_images_helper import DockerImage, get_docker_image, pull_image
 from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
 
@@ -105,12 +105,6 @@ def parse_args() -> argparse.Namespace:
         # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
         default=40,
         help="Timeout in minutes",
-    )
-    parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        help="tag for docker image",
     )
     args = parser.parse_args()
     args.timeout = args.timeout * 60
@@ -237,7 +231,9 @@ def main():
         build_urls,
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, state, report_url, description, NAME, pr_info)
+    post_commit_status(
+        commit, state, report_url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

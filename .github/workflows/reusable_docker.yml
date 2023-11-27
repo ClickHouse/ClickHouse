@@ -11,25 +11,16 @@ name: Build docker images
         required: false
         type: boolean
         default: false
-      git_ref:
-        description: commit to use, merge commit for pr or head
-        required: false
-        type: string
-        default: ${{ github.event.after }} # no merge commit
 jobs:
   DockerBuildAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_aarch64) != '[]'
     steps:
-      - name: Docker login
-        run: |
-          aws ssm get-parameter --region us-east-1 --name dockerhub_robot_password --query 'Parameter.Value' --output=text --with-decryption \
-            | docker login --username robotclickhouse --password-stdin
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
-          ref: ${{ inputs.git_ref }}
+          ref: ${{ fromJson(inputs.data).git_ref }}
       - name: Build images
         run: |
           python3 "${GITHUB_WORKSPACE}/tests/ci/docker_images_check.py" \
@@ -41,14 +32,10 @@ jobs:
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_amd64) != '[]'
     steps:
-      - name: Docker login
-        run: |
-          aws ssm get-parameter --region us-east-1 --name dockerhub_robot_password --query 'Parameter.Value' --output=text --with-decryption \
-            | docker login --username robotclickhouse --password-stdin
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
-          ref: ${{ github.event.after }}
+          ref: ${{ fromJson(inputs.data).git_ref }}
       - name: Build images
         run: |
           python3 "${GITHUB_WORKSPACE}/tests/ci/docker_images_check.py" \
@@ -63,6 +50,8 @@ jobs:
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+        with:
+          ref: ${{ fromJson(inputs.data).git_ref }}
       - name: Build images
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"

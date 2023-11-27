@@ -30,5 +30,4 @@ jobs:
       additional_envs: |
         KILL_TIMEOUT=10800
       run_command: |
-        cd "$REPO_COPY/tests/ci"
         python3 libfuzzer_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"

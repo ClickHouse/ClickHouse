@@ -16,7 +16,6 @@ jobs:
       test_name: Jepsen keeper check
       runner_type: style-checker
       run_command: |
-        cd "$REPO_COPY/tests/ci"
         python3 jepsen_check.py keeper
   # ServerJepsenRelease:
   #   uses: ./.github/workflows/reusable_simple_job.yml

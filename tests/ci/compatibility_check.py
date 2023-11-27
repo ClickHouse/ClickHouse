@@ -134,12 +134,6 @@ def parse_args():
     parser.add_argument(
         "--check-distributions", action="store_true"
     )  # currently hardcoded to x86, don't enable for ARM
-    parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        help="tag for docker image",
-    )
     return parser.parse_args()
 
 
@@ -245,7 +239,15 @@ def main():
         args.check_name,
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, state, report_url, description, args.check_name, pr_info)
+    post_commit_status(
+        commit,
+        state,
+        report_url,
+        description,
+        args.check_name,
+        pr_info,
+        dump_to_file=True,
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

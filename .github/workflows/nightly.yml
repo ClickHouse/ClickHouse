@@ -25,14 +25,13 @@ jobs:
       - name: PrepareRunConfig
         id: runconfig
         run: |
-            # Check docker images:
-            # FIXME: login to dockerhub?
-            aws ssm get-parameter --region us-east-1 --name dockerhub_robot_password --query 'Parameter.Value' --output=text --with-decryption \
-            | docker login --username robotclickhouse --password-stdin
+            echo "::group::configure CI run"
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --rebuild-all-docker --outfile ${{ runner.temp }}/ci_run_data.json
-            # pretty printing
-            echo "=== CI run config ==="
+            echo "::endgroup::"
+
+            echo "::group::CI run configure results"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
+            echo "::endgroup::"
             {
               echo 'CI_DATA<<EOF'
               cat  ${{ runner.temp }}/ci_run_data.json

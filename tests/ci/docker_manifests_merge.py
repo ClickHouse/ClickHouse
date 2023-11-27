@@ -16,14 +16,14 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import format_description, get_commit, post_commit_status
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from env_helper import ROOT_DIR
 from upload_result_helper import upload_results
-from docker_images_helper import get_images_oredered_list
+from docker_images_helper import docker_login, get_images_oredered_list
 
 NAME = "Push multi-arch images to Dockerhub"
 
@@ -134,12 +134,7 @@ def main():
     args = parse_args()
 
     if args.push:
-        subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
-            input=get_parameter_from_ssm("dockerhub_robot_password"),
-            encoding="utf-8",
-            shell=True,
-        )
+        docker_login()
 
     archs = args.suffixes
     assert len(archs) > 1, "arch suffix input param is invalid"
@@ -192,7 +187,9 @@ def main():
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    post_commit_status(commit, status, url, description, NAME, pr_info)
+    post_commit_status(
+        commit, status, url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

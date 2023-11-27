@@ -12,42 +12,19 @@ from s3_helper import S3Helper
 from digest_helper import DockerDigester, JobDigester
 import docker_images_helper
 from env_helper import (
+    CI,
     ROOT_DIR,
     S3_BUILDS_BUCKET,
-    S3_TEST_REPORTS_BUCKET,
-    S3_URL,
     TEMP_PATH,
     REPORT_PATH,
 )
-from commit_status_helper import get_commit, set_status_comment
+from commit_status_helper import CommitStatusData, get_commit, set_status_comment
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from ci_config import CI_CONFIG
-
-
-class SuccessJobMeta:
-    """
-    Class object stores data about successfully finished job
-    """
-
-    def __init__(self, sha, ref, report_url):
-        self.sha = sha
-        self.ref = ref  # GITHUB_REF_NAME: master or pr_num
-        self.report_url = report_url
-
-    @staticmethod
-    def create_job_meta(check_name: str, sha: str, ref: int):  # type: ignore
-        pr_num = ref
-        report_url = f"{S3_URL}/{S3_TEST_REPORTS_BUCKET}/{pr_num}/{sha}/{normalize_check_name(check_name)}.html"
-        return SuccessJobMeta(sha, ref, report_url)
-
-    def dump_to_file(self, file_name: str) -> None:
-        with open(file_name, "w") as file:
-            print(json.dumps(self.__dict__), file=file)
-
-    @staticmethod
-    def create_from_file(file_name: str):  # type: ignore
-        return SuccessJobMeta(**json.load(open(file_name)))
+from git_helper import Git, Runner as GitRunner, GIT_PREFIX
+from report import BuildResult
+from version_helper import get_version_from_repo
 
 
 def get_check_name(check_name: str, batch: int, num_batches: int) -> str:
@@ -65,7 +42,7 @@ def normalize_check_name(check_name: str) -> str:
 
 
 def is_build_job(job: str) -> bool:
-    if "package_" in job or "binary_" in job:
+    if "package_" in job or "binary_" in job or job == "fuzzers":
         return True
     return False
 
@@ -79,6 +56,7 @@ def is_docs_job(job: str) -> bool:
 
 
 def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
+    # FIXME: consider switching to sub_parser for configure, pre, run, post actions
     parser.add_argument(
         "--configure",
         action="store_true",
@@ -102,7 +80,7 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     parser.add_argument(
         "--post",
         action="store_true",
-        help="Action that executes postrequisites for the job provided in --job-name",
+        help="Action that executes post actions for the job provided in --job-name",
     )
     parser.add_argument(
         "--mark-success",
@@ -156,13 +134,13 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--rebuild-all-docker",
         action="store_true",
         default=False,
-        help="will create config for rebuilding all dockers, used in --configure action (for nightly docker job)",
+        help="will create run config for rebuilding all dockers, used in --configure action (for nightly docker job)",
     )
     parser.add_argument(
         "--rebuild-all-binaries",
         action="store_true",
         default=False,
-        help="will create config without skipping build jobs in any case , used in --configure action (for release branches)",
+        help="will create run config without skipping build jobs in any case, used in --configure action (for release branches)",
     )
     return parser.parse_args()
 
@@ -258,7 +236,7 @@ def check_missing_images_on_dockerhub(
     return result
 
 
-def check_and_update_for_early_style_check(run_config: dict) -> None:
+def _check_and_update_for_early_style_check(run_config: dict) -> None:
     """
     This is temporary hack to start style check before docker build if possible
     FIXME: need better solution to do style check as soon as possible and as fast as possible w/o dependency on docker job
@@ -274,6 +252,195 @@ def check_and_update_for_early_style_check(run_config: dict) -> None:
         jobs_to_do[index] = "Style check early"
 
 
+def _configure_docker_jobs(rebuild_all_dockers: bool) -> Dict:
+    # generate docker jobs data
+    docker_digester = DockerDigester()
+    imagename_digest_dict = (
+        docker_digester.get_all_digests()
+    )  # 'image name - digest' mapping
+    images_info = docker_images_helper.get_images_info()
+
+    # a. check missing images
+    print("Start checking missing images in dockerhub")
+    # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+    #         find if it's possible to use the setting of /etc/docker/daemon.json
+    docker_images_helper.docker_login()
+    if not rebuild_all_dockers:
+        missing_multi_dict = check_missing_images_on_dockerhub(imagename_digest_dict)
+
+        # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
+        # to avoid extra dockerhub api calls
+        missing_amd64 = list(
+            check_missing_images_on_dockerhub(missing_multi_dict, "amd64").keys()
+        )
+        # FIXME: WA until full arm support: skip not supported arm images
+        missing_aarch64 = list(
+            check_missing_images_on_dockerhub(
+                {
+                    im: digest
+                    for im, digest in missing_multi_dict.items()
+                    if not images_info[im]["only_amd64"]
+                },
+                "aarch64",
+            ).keys()
+        )
+        missing_multi = list(missing_multi_dict)
+    else:
+        # add all images to missing
+        missing_multi = list(imagename_digest_dict)
+        missing_amd64 = missing_multi
+        # FIXME: WA until full arm support: skip not supported arm images
+        missing_aarch64 = [
+            name
+            for name in imagename_digest_dict
+            if not images_info[name]["only_amd64"]
+        ]
+    print("...checking missing images in dockerhub - done")
+    return {
+        "images": imagename_digest_dict,
+        "missing_aarch64": missing_aarch64,
+        "missing_amd64": missing_amd64,
+        "missing_multi": missing_multi,
+    }
+
+
+def _configure_jobs(
+    build_digest: str,
+    docs_digest: str,
+    job_digester: JobDigester,
+    s3: S3Helper,
+    rebuild_all_binaries: bool,
+) -> Dict:
+    # a. digest each item from the config
+    job_digester = JobDigester()
+    jobs_params: Dict[str, Dict] = {}
+    jobs_to_do: List[str] = []
+    jobs_to_skip: List[str] = []
+    digests: Dict[str, str] = {}
+    print("Calculating job digests - start")
+    for job in CI_CONFIG.job_generator():
+        digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
+        digests[job] = digest
+        print(f"    job [{job.rjust(50)}] has digest [{digest}]")
+    print("Calculating job digests - done")
+
+    # b. check if we have something done
+    path = get_s3_path(build_digest)
+    done_files = s3.list_prefix(path)
+    done_files = [file.split("/")[-1] for file in done_files]
+    print(f"S3 CI files for the build [{build_digest}]: {done_files}")
+    docs_path = get_s3_path_docs(docs_digest)
+    done_files_docs = s3.list_prefix(docs_path)
+    done_files_docs = [file.split("/")[-1] for file in done_files_docs]
+    print(f"S3 CI files for the docs [{docs_digest}]: {done_files_docs}")
+    done_files += done_files_docs
+    for job in digests:
+        digest = digests[job]
+        num_batches: int = CI_CONFIG.get_job_config(job).num_batches
+        batches_to_do: List[int] = []
+        for batch in range(num_batches):  # type: ignore
+            success_flag_name = get_file_flag_name(job, digest, batch, num_batches)
+            if success_flag_name not in done_files or (
+                rebuild_all_binaries and is_build_job(job)
+            ):
+                batches_to_do.append(batch)
+        if batches_to_do:
+            jobs_to_do.append(job)
+            jobs_params[job] = {
+                "batches": batches_to_do,
+                "num_batches": num_batches,
+            }
+        else:
+            jobs_to_skip += (job,)
+    return {
+        "digests": digests,
+        "jobs_to_do": jobs_to_do,
+        "jobs_to_skip": jobs_to_skip,
+        "jobs_params": jobs_params,
+    }
+
+
+def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
+    # This action is required to re-create all GH statuses for skiped jobs, so that ci report can be generated afterwards
+    temp_path = Path(TEMP_PATH)
+    if not temp_path.exists():
+        temp_path.mkdir(parents=True, exist_ok=True)
+
+    # clean up before start
+    ci_files = list(temp_path.glob("*.ci"))
+    for file in ci_files:
+        file.unlink()
+
+    # download all metadata files
+    path = get_s3_path(indata["build"])
+    files = s3.download_files(  # type: ignore
+        bucket=S3_BUILDS_BUCKET,
+        s3_path=path,
+        file_suffix=".ci",
+        local_directory=temp_path,
+    )
+    print(f"CI metadata files [{files}]")
+    path = get_s3_path_docs(indata["docs"])
+    files_docs = s3.download_files(  # type: ignore
+        bucket=S3_BUILDS_BUCKET,
+        s3_path=path,
+        file_suffix=".ci",
+        local_directory=temp_path,
+    )
+    print(f"CI docs metadata files [{files_docs}]")
+    files += files_docs
+
+    # parse CI metadata
+    job_digests = indata["jobs_data"]["digests"]
+    # create GH status
+    pr_info = PRInfo()
+    commit = get_commit(Github(get_best_robot_token(), per_page=100), pr_info.sha)
+
+    def run_create_status(job, digest, batch, num_batches):
+        success_flag_name = get_file_flag_name(job, digest, batch, num_batches)
+        if success_flag_name in files:
+            print(f"Going to re-create GH status for job [{job}] sha [{pr_info.sha}]")
+            job_status = CommitStatusData.load_from_file(
+                f"{TEMP_PATH}/{success_flag_name}"
+            )  # type: CommitStatusData
+            assert job_status.status == "success", "BUG!"
+            commit.create_status(
+                state=job_status.status,
+                target_url=job_status.report_url,
+                description=f"Reused from [{job_status.pr_num}-{job_status.sha[0:8]}]: {job_status.description}",
+                context=get_check_name(job, batch=batch, num_batches=num_batches),
+            )
+            print(f"GH status re-created from file [{success_flag_name}]")
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        for job in job_digests:
+            if is_build_job(job):
+                # no GH status for build jobs
+                continue
+            digest = job_digests[job]
+            num_batches = CI_CONFIG.get_job_config(job).num_batches
+            for batch in range(num_batches):
+                future = executor.submit(
+                    run_create_status, job, digest, batch, num_batches
+                )
+                futures.append(future)
+        done, _ = concurrent.futures.wait(futures)
+        for future in done:
+            try:
+                _ = future.result()
+            except Exception as e:
+                raise e
+    print("Going to update overall CI report")
+    set_status_comment(commit, pr_info)
+    print("... CI report update - done")
+
+    # clean up
+    ci_files = list(temp_path.glob("*.ci"))
+    for file in ci_files:
+        file.unlink()
+
+
 def main() -> int:
     exit_code = 0
     parser = argparse.ArgumentParser(
@@ -281,11 +448,8 @@ def main() -> int:
     )
     args = parse_args(parser)
 
-    if (args.mark_success or args.pre or args.post) and not args.infile:
-        print("ERROR: need option --infile to be provided")
-        parser.print_help()
-        parser.exit(1)
     if args.mark_success or args.pre or args.post or args.run:
+        assert args.infile, "Run config must be provided via --infile"
         assert args.job_name, "Job name must be provided via --job-name"
 
     indata: Optional[Dict[str, Any]] = None
@@ -298,214 +462,84 @@ def main() -> int:
         assert indata and isinstance(indata, dict), "Invalid --infile json"
 
     result: Dict[str, Any] = {}
-
     s3 = S3Helper()
 
     if args.configure:
-        docker_data = {}
-        if not args.skip_docker:
-            # generate docker jobs data
-            docker_digester = DockerDigester()
-            imagename_digest_dict = (
-                docker_digester.get_all_digests()
-            )  # 'image name - digest' mapping
-            images_info = docker_images_helper.get_images_info()
-
-            # a. check missing images
-            print("Start checking missing images in dockerhub")
-            if not args.rebuild_all_docker:
-                missing_multi_dict = check_missing_images_on_dockerhub(
-                    imagename_digest_dict
-                )
-
-                # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
-                # to avoid extra dockerhub api calls
-                missing_amd64 = list(
-                    check_missing_images_on_dockerhub(
-                        missing_multi_dict, "amd64"
-                    ).keys()
-                )
-                # FIXME: WA until full arm support: skip not supported arm images
-                missing_aarch64 = list(
-                    check_missing_images_on_dockerhub(
-                        {
-                            im: digest
-                            for im, digest in missing_multi_dict.items()
-                            if not images_info[im]["only_amd64"]
-                        },
-                        "aarch64",
-                    ).keys()
-                )
-                missing_multi = list(missing_multi_dict)
-            else:
-                # add all images to missing
-                missing_multi = list(imagename_digest_dict)
-                missing_amd64 = missing_multi
-                # FIXME: WA until full arm support: skip not supported arm images
-                missing_aarch64 = [
-                    name
-                    for name in imagename_digest_dict
-                    if not images_info[name]["only_amd64"]
-                ]
-            print("...checking missing images in dockerhub - done")
-            docker_data = {
-                "images": imagename_digest_dict,
-                "missing_aarch64": missing_aarch64,
-                "missing_amd64": missing_amd64,
-                "missing_multi": missing_multi,
-            }
-        # generate jobs data
-        jobs_data: Dict[str, Any] = {}
-        if not args.skip_jobs:
-            # a. digest each item from the config
-            job_digester = JobDigester()
-            jobs_params: Dict[str, Dict] = {}
-            jobs_to_do: List[str] = []
-            jobs_to_skip: List[str] = []
-            digests: Dict[str, str] = {}
-            build_digest = job_digester.get_job_digest(
-                CI_CONFIG.get_digest_config("package_release")
-            )
-            docs_digest = job_digester.get_job_digest(
-                CI_CONFIG.get_digest_config("Docs check")
-            )
-            print("Calculating job digests - start")
-            for job in CI_CONFIG.job_generator():
-                digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
-                digests[job] = digest
-                print(f"    job [{job.rjust(50)}] has digest [{digest}]")
-            print("Calculating job digests - done")
-
-            # b. check if we have something done
-            path = get_s3_path(build_digest)
-            done_files = s3.list_prefix(path)
-            done_files = [file.split("/")[-1] for file in done_files]
-            print(f"S3 CI files for the build [{build_digest}]: {done_files}")
-            docs_path = get_s3_path_docs(docs_digest)
-            done_files_docs = s3.list_prefix(docs_path)
-            done_files_docs = [file.split("/")[-1] for file in done_files_docs]
-            print(f"S3 CI files for the docs [{docs_digest}]: {done_files_docs}")
-            done_files += done_files_docs
-            for job in digests:
-                digest = digests[job]
-                num_batches: int = CI_CONFIG.get_job_config(job).num_batches
-                batches_to_do: List[int] = []
-                for batch in range(num_batches):  # type: ignore
-                    success_flag_name = get_file_flag_name(
-                        job, digest, batch, num_batches
-                    )
-                    if success_flag_name not in done_files or (
-                        args.rebuild_all_binaries and is_build_job(job)
-                    ):
-                        batches_to_do.append(batch)
-                if batches_to_do:
-                    jobs_to_do.append(job)
-                    jobs_params[job] = {
-                        "batches": batches_to_do,
-                        "num_batches": num_batches,
-                    }
-                else:
-                    jobs_to_skip += (job,)
-                jobs_data = {
-                    "digests": digests,
-                    "jobs_to_do": jobs_to_do,
-                    "jobs_to_skip": jobs_to_skip,
-                    "jobs_params": jobs_params,
-                }
-        # conclude results
-        if not args.skip_jobs:
-            result["build"] = build_digest
-            result["docs"] = docs_digest
-            result["jobs_data"] = jobs_data
-        if not args.skip_docker:
-            result["docker_data"] = docker_data
-        check_and_update_for_early_style_check(result)
-        # END: --configure action
-    elif args.update_gh_statuses:
-        # This action is required to re-create all GH statuses for skiped jobs, so that ci report can be generated afterwards
-        assert indata, "Run config must be provided via --infile"
-        temp_path = Path(TEMP_PATH)
-        if not temp_path.exists():
-            temp_path.mkdir(parents=True, exist_ok=True)
-
-        # clean up before start
-        ci_files = list(temp_path.glob("*.ci"))
-        for file in ci_files:
-            file.unlink()
-
-        # download all metadata files
-        path = get_s3_path(indata["build"])
-        files = s3.download_files(  # type: ignore
-            bucket=S3_BUILDS_BUCKET,
-            s3_path=path,
-            file_suffix=".ci",
-            local_directory=temp_path,
-        )
-        print(f"CI metadata files [{files}]")
-        path = get_s3_path_docs(indata["docs"])
-        files_docs = s3.download_files(  # type: ignore
-            bucket=S3_BUILDS_BUCKET,
-            s3_path=path,
-            file_suffix=".ci",
-            local_directory=temp_path,
-        )
-        print(f"CI docs metadata files [{files_docs}]")
-        files += files_docs
-
-        # parse CI metadata
-        job_digests = indata["jobs_data"]["digests"]
-        # create GH status
+        GR = GitRunner()
         pr_info = PRInfo()
-        commit = get_commit(Github(get_best_robot_token(), per_page=100), pr_info.sha)
-        for job in job_digests:
-            digest = job_digests[job]
-            num_batches: int = CI_CONFIG.get_job_config(job).num_batches  # type: ignore[no-redef]
-            for batch in range(num_batches):  # type: ignore
-                success_flag_name = get_file_flag_name(job, digest, batch, num_batches)
-                if success_flag_name in files:
-                    if os.path.getsize(f"{TEMP_PATH}/{success_flag_name}") == 0:
-                        # FIXME: remove if after transition
-                        continue
-                    print(f"Going to re-create GH status for job [{job}]")
-                    job_meta = SuccessJobMeta.create_from_file(
-                        f"{TEMP_PATH}/{success_flag_name}"
-                    )
-                    commit.create_status(
-                        state="success",
-                        target_url=job_meta.report_url,
-                        description=f"Reused from [{job_meta.ref}-{job_meta.sha[0:8]}]",
-                        context=get_check_name(
-                            job, batch=batch, num_batches=num_batches
-                        ),
-                    )
-                    print(f"GH status re-created from file [{success_flag_name}]")
-        print("Going to update overall CI report")
-        set_status_comment(commit, pr_info)
-        print("... CI report update - done")
 
-        # clean up
-        ci_files = list(temp_path.glob("*.ci"))
-        for file in ci_files:
-            file.unlink()
-        # END: --update-gh-statuses action
-    elif args.post:
-        if is_build_job(args.job_name):
+        docker_data = {}
+        git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
+
+        # if '#no-merge-commit' is set in commit message - set git ref to PR branch head to avoid merge-commit
+        if pr_info.number != 0:
+            message = GR.run(f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1")
+            if "#no-merge-commit" in message and CI:
+                GR.run(f"{GIT_PREFIX} checkout {pr_info.sha}")
+                git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
+                print(
+                    "#no-merge-commit is set in commit message - Setting git ref to PR branch HEAD to not use merge commit"
+                )
+
+        # let's get CH version
+        version = get_version_from_repo(git=Git(True)).string
+        print(f"Got CH version for this commit: [{version}]")
+
+        docker_data = (
+            _configure_docker_jobs(args.rebuild_all_docker)
+            if not args.skip_docker
+            else {}
+        )
+
+        job_digester = JobDigester()
+        build_digest = job_digester.get_job_digest(
+            CI_CONFIG.get_digest_config("package_release")
+        )
+        docs_digest = job_digester.get_job_digest(
+            CI_CONFIG.get_digest_config("Docs check")
+        )
+        jobs_data = (
+            _configure_jobs(
+                build_digest, docs_digest, job_digester, s3, args.rebuild_all_binaries
+            )
+            if not args.skip_jobs
+            else {}
+        )
+
+        # conclude results
+        result["git_ref"] = git_ref
+        result["version"] = version
+        result["build"] = build_digest
+        result["docs"] = docs_digest
+        result["jobs_data"] = jobs_data
+        result["docker_data"] = docker_data
+        _check_and_update_for_early_style_check(result)
+
+    elif args.update_gh_statuses:
+        assert indata, "Run config must be provided via --infile"
+        _update_gh_statuses(indata=indata, s3=s3)
+
+    elif args.pre:
+        # remove job status file if any
+        CommitStatusData.cleanup()
+
+        if is_test_job(args.job_name):
             assert indata, "Run config must be provided via --infile"
-            report_path = Path(TEMP_PATH) # build-check.py stores report in TEMP_PATH
-            assert report_path.is_dir(), f"File [{report_path}] is not a dir"
-            files = list(report_path.glob(f"*{args.job_name}.json"))  # type: ignore[arg-type]
-            assert len(files) == 1, f"Which is the report file: {files}?"
-            local_report = f"{files[0]}"
-            report_name = f"{args.job_name}.json"
-            s3_path = get_s3_path(indata["build"]) + report_name
-            report_url = s3.upload_file(
-                bucket=S3_BUILDS_BUCKET, file_path=local_report, s3_path=s3_path
+            report_path = Path(REPORT_PATH)
+            report_path.mkdir(exist_ok=True, parents=True)
+            path = get_s3_path(indata["build"])
+            files = s3.download_files(  # type: ignore
+                bucket=S3_BUILDS_BUCKET,
+                s3_path=path,
+                file_suffix=".json",
+                local_directory=report_path,
             )
             print(
-                f"Post action done. Report file [{local_report}] has been uploaded to [{report_url}]"
+                f"Pre action done. Report files [{files}] have been downloaded from [{path}] to [{report_path}]"
             )
         else:
-            print(f"Post action done. Nothing to do for [{args.job_name}]")
+            print("Pre action done. Nothing to do for [{args.job_name}]")
+
     elif args.run:
         assert CI_CONFIG.get_job_config(
             args.job_name
@@ -527,7 +561,7 @@ def main() -> int:
             stderr=sys.stderr,
             text=True,
             check=False,
-            shell=True
+            shell=True,
         )
         if process.returncode == 0:
             print(f"Run action done for: [{args.job_name}]")
@@ -536,24 +570,26 @@ def main() -> int:
                 f"Run action failed for: [{args.job_name}] with exit code [{process.returncode}]"
             )
             exit_code = process.returncode
-    elif args.pre:
-        if is_test_job(args.job_name):
-            assert indata, "Run config must be provided via --infile"
-            # FIXME: avoid using env
-            report_path = Path(REPORT_PATH)
-            report_path.mkdir(exist_ok=True, parents=True)
-            path = get_s3_path(indata["build"])
-            files = s3.download_files(  # type: ignore
-                bucket=S3_BUILDS_BUCKET,
-                s3_path=path,
-                file_suffix=".json",
-                local_directory=report_path,
+
+    elif args.post:
+        if is_build_job(args.job_name):
+            report_path = Path(TEMP_PATH)  # build-check.py stores report in TEMP_PATH
+            assert report_path.is_dir(), f"File [{report_path}] is not a dir"
+            files = list(report_path.glob(f"*{args.job_name}.json"))  # type: ignore[arg-type]
+            assert len(files) == 1, f"Which is the report file: {files}?"
+            local_report = f"{files[0]}"
+            report_name = BuildResult.get_report_name(args.job_name)
+            assert indata
+            s3_path = Path(get_s3_path(indata["build"])) / report_name
+            report_url = s3.upload_file(
+                bucket=S3_BUILDS_BUCKET, file_path=local_report, s3_path=s3_path
             )
             print(
-                f"Pre action done. Report files [{files}] have been downloaded from [{path}] to [{report_path}]"
+                f"Post action done. Report file [{local_report}] has been uploaded to [{report_url}]"
             )
         else:
-            print("Pre action done. Nothing to do for [{args.job_name}]")
+            print(f"Post action done. Nothing to do for [{args.job_name}]")
+
     elif args.mark_success:
         assert indata, "Run config must be provided via --infile"
         job = args.job_name
@@ -561,27 +597,50 @@ def main() -> int:
         assert (
             num_batches <= 1 or 0 <= args.batch < num_batches
         ), f"--batch must be provided and in range [0, {num_batches}) for {job}"
-        success_flag_name = get_file_flag_name(
-            job, indata["jobs_data"]["digests"][job], args.batch, num_batches
-        )
-        if not is_docs_job(job):
-            path = get_s3_path(indata["build"]) + success_flag_name
+
+        # FIXME: find generic design for propagating and handling job status (e.g. stop using statuses in GH api)
+        #   now job ca be build job w/o status data, any other job that exit with 0 with or w/o status data
+        if is_build_job(job):
+            # there is no status for build jobs
+            # create dummy success to mark it as done
+            job_status = CommitStatusData(
+                status="success", description="dummy status", report_url="dummy_url"
+            )
         else:
-            path = get_s3_path_docs(indata["docs"]) + success_flag_name
+            if not CommitStatusData.is_present():
+                # apperently exit after rerun-helper check
+                # do nothing, exit without failure
+                print("ERROR: no status file for job [{job}]")
+                job_status = CommitStatusData(
+                    status="dummy failure",
+                    description="dummy status",
+                    report_url="dummy_url",
+                )
+            else:
+                # normal case
+                job_status = CommitStatusData.load_status()
 
-        # create success file flag with metadata, upload to s3, remove local file
-        SuccessJobMeta.create_job_meta(
-            get_check_name(job, args.batch, num_batches), PRInfo().sha, PRInfo().number
-        ).dump_to_file(success_flag_name)
-        _ = s3.upload_file(
-            bucket=S3_BUILDS_BUCKET, file_path=success_flag_name, s3_path=path
-        )
-        os.remove(success_flag_name)
+        # Storing job data (report_url) to restore OK GH status on job results reuse
+        if job_status.is_ok():
+            success_flag_name = get_file_flag_name(
+                job, indata["jobs_data"]["digests"][job], args.batch, num_batches
+            )
+            if not is_docs_job(job):
+                path = get_s3_path(indata["build"]) + success_flag_name
+            else:
+                path = get_s3_path_docs(indata["docs"]) + success_flag_name
+            job_status.dump_to_file(success_flag_name)
+            _ = s3.upload_file(
+                bucket=S3_BUILDS_BUCKET, file_path=success_flag_name, s3_path=path
+            )
+            os.remove(success_flag_name)
+            print(
+                f"Job [{job}] with digest [{indata['jobs_data']['digests'][job]}] {f'and batch {args.batch}/{num_batches}' if num_batches > 1 else ''} marked as successful. path: [{path}]"
+            )
+        else:
+            print(f"Job [{job}] is not ok, status [{job_status.status}]")
 
-        print(
-            f"Job [{job}] with digest [{indata['jobs_data']['digests'][job]}] {f'and batch {args.batch}/{num_batches}' if num_batches > 1 else ''} marked as successful. path: [{path}]"
-        )
-
+    # print results
     if args.outfile:
         with open(args.outfile, "w") as f:
             if isinstance(result, str):

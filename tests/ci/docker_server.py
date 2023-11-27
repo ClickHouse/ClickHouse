@@ -4,7 +4,6 @@
 import argparse
 import json
 import logging
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -16,7 +15,7 @@ from github import Github
 from build_check import get_release_or_pr
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from docker_images_helper import DockerImageData
+from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
     CI,
     GITHUB_RUN_URL,
@@ -25,7 +24,7 @@ from env_helper import (
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
 )
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from get_robot_token import get_best_robot_token
 from git_helper import Git
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -360,12 +359,7 @@ def main():
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
 
     if args.push:
-        subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
-            input=get_parameter_from_ssm("dockerhub_robot_password"),
-            encoding="utf-8",
-            shell=True,
-        )
+        docker_login()
         NAME = f"Docker image {image.repo} build and push"
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
@@ -395,7 +389,9 @@ def main():
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    post_commit_status(commit, status, url, description, NAME, pr_info)
+    post_commit_status(
+        commit, status, url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

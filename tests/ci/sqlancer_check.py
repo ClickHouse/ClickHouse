@@ -150,7 +150,9 @@ def main():
         check_name,
     )
 
-    post_commit_status(commit, status, report_url, description, check_name, pr_info)
+    post_commit_status(
+        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
+    )
     print(f"::notice:: {check_name} Report url: {report_url}")
 
     ch_helper = ClickHouseHelper()

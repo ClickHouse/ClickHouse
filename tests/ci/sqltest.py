@@ -154,7 +154,9 @@ def main():
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, status, report_url, description, check_name, pr_info)
+    post_commit_status(
+        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
+    )
 
 
 if __name__ == "__main__":

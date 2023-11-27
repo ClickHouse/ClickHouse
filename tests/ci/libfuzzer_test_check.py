@@ -98,12 +98,6 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
     parser.add_argument("kill_timeout", type=int)
-    parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        help="tag for docker image",
-    )
     return parser.parse_args()
 
 

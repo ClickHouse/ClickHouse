@@ -227,16 +227,7 @@ def upload_master_static_binaries(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser("Clickhouse builder script")
     parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        type=str,
-        help="tag for docker image",
-    )
-    parser.add_argument(
-        "--build-name",
-        required=True,
-        type=str,
+        "build_name",
         help="build name",
     )
     return parser.parse_args()

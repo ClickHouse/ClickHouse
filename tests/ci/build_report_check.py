@@ -179,7 +179,13 @@ def main():
     )
 
     post_commit_status(
-        commit, summary_status, url, description, build_check_name, pr_info
+        commit,
+        summary_status,
+        url,
+        description,
+        build_check_name,
+        pr_info,
+        dump_to_file=True,
     )
 
     if summary_status == ERROR:

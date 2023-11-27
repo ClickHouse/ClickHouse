@@ -236,7 +236,9 @@ def main():
         check_name,
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, state, report_url, description, check_name, pr_info)
+    post_commit_status(
+        commit, state, report_url, description, check_name, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

@@ -124,7 +124,13 @@ def main():
         message = "Skipped, not labeled with 'pr-performance'"
         report_url = GITHUB_RUN_URL
         post_commit_status(
-            commit, status, report_url, message, check_name_with_group, pr_info
+            commit,
+            status,
+            report_url,
+            message,
+            check_name_with_group,
+            pr_info,
+            dump_to_file=True,
         )
         sys.exit(0)
 
@@ -265,7 +271,13 @@ def main():
     )
 
     post_commit_status(
-        commit, status, report_url, message, check_name_with_group, pr_info
+        commit,
+        status,
+        report_url,
+        message,
+        check_name_with_group,
+        pr_info,
+        dump_to_file=True,
     )
 
     if status == "error":

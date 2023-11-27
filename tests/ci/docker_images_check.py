@@ -3,7 +3,6 @@ import argparse
 import json
 import logging
 import os
-import subprocess
 import time
 import sys
 from pathlib import Path
@@ -14,14 +13,14 @@ from github import Github
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
 from env_helper import ROOT_DIR, RUNNER_TEMP, GITHUB_RUN_URL
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
-from docker_images_helper import DockerImageData, get_images_oredered_list
+from docker_images_helper import DockerImageData, docker_login, get_images_oredered_list
 
 NAME = "Push to Dockerhub"
 TEMP_PATH = Path(RUNNER_TEMP) / "docker_images_check"
@@ -178,12 +177,8 @@ def main():
 
     args = parse_args()
     if args.push:
-        subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
-            input=get_parameter_from_ssm("dockerhub_robot_password"),
-            encoding="utf-8",
-            shell=True,
-        )
+        logging.info("login to docker hub")
+        docker_login()
 
     test_results = []  # type: TestResults
     additional_cache = []  # type: List[str]
@@ -259,7 +254,9 @@ def main():
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    post_commit_status(commit, status, url, description, NAME, pr_info)
+    post_commit_status(
+        commit, status, url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

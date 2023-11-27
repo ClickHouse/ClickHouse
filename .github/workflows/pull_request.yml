@@ -4,7 +4,6 @@ name: PullRequestCI
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
-  S3_CI_REPORTS: 'clickhouse-builds/CI_data'
 
 on:  # yamllint disable-line rule:truthy
   pull_request:
@@ -34,7 +33,8 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
-          ref: ${{ github.event.after }} # no merge commit
+          fetch-depth: 0 # to get version
+          filter: tree:0
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -51,14 +51,14 @@ jobs:
       - name: PrepareRunConfig
         id: runconfig
         run: |
-            # Check docker images:
-            # FIXME: login to dockerhub?
-            aws ssm get-parameter --region us-east-1 --name dockerhub_robot_password --query 'Parameter.Value' --output=text --with-decryption \
-            | docker login --username robotclickhouse --password-stdin
+            echo "::group::configure CI run"
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --outfile ${{ runner.temp }}/ci_run_data.json
-            # pretty printing
-            echo "=== CI run config ==="
+            echo "::endgroup::"
+
+            echo "::group::CI run configure results"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
+            echo "::endgroup::"
+
             {
               echo 'CI_DATA<<EOF'
               cat  ${{ runner.temp }}/ci_run_data.json
@@ -138,113 +138,111 @@ jobs:
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
+  BuilderDebDebug:
+    needs: [RunConfig, FastTest]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_debug
+      data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebRelease:
     needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_release
-      # FIXME: should be 1 everywhere!!!!
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_aarch64
-      # FIXME: should be 1 everywhere!!!!
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinRelease:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_release
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAsan:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_asan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebUBsan:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_ubsan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebTsan:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_tsan
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebMsan:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_msan
       data: ${{ needs.RunConfig.outputs.data }}
-  BuilderDebDebug:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: package_debug
-      data: ${{ needs.RunConfig.outputs.data }}
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderBinClangTidy:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_tidy
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinDarwin:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_darwin
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinAarch64:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_aarch64
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinFreeBSD:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_freebsd
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinDarwinAarch64:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_darwin_aarch64
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinPPC64:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_ppc64le
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinAmd64Compat:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
@@ -257,21 +255,21 @@ jobs:
       build_name: binary_amd64_musl
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinAarch64V80Compat:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_aarch64_v80compat
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinRISCV64:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_riscv64
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinS390X:
-    needs: [RunConfig, BuilderDebRelease]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
@@ -488,13 +486,11 @@ jobs:
         KILL_TIMEOUT=3600
       run_command: |
         TEMP_PATH="${TEMP_PATH}/integration" \
-          REPORTS_PATH="${REPORTS_PATH}/integration" \
-          python3 integration_test_check.py --check-name "Integration $CHECK_NAME" \
+          python3 integration_test_check.py "Integration $CHECK_NAME" \
             --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
 
         TEMP_PATH="${TEMP_PATH}/stateless" \
-          REPORTS_PATH="${REPORTS_PATH}/stateless" \
-          python3 functional_test_check.py --check-name "Stateless $CHECK_NAME" --kill-timeout "$KILL_TIMEOUT" \
+          python3 functional_test_check.py "Stateless $CHECK_NAME" "$KILL_TIMEOUT" \
             --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
 
         python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/functional_commit_status.tsv" "${TEMP_PATH}/integration/integration_commit_status.tsv"
@@ -940,6 +936,8 @@ jobs:
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
