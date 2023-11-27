@@ -329,6 +329,16 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
+    asio_opts.worker_start_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::addUniqueLock(VariableContext::Global);
+    };
+
+    asio_opts.worker_stop_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::removeUniqueLock();
+    };
+
     if (state_manager->isSecure())
     {
 #if USE_SSL
