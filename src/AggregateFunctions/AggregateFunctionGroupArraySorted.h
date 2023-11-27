@@ -38,7 +38,6 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int INCORRECT_DATA;
 }
 
 template <typename T>
@@ -183,28 +182,28 @@ struct GroupArraySortedGeneralData<Node, false>
 };
 
 template <typename Node>
- struct GroupArraySortedNodeBase
- {
-     UInt64 size; // size of payload
+struct GroupArraySortedNodeBase
+{
+    UInt64 size; // size of payload
 
-     /// Returns pointer to actual payload
-     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
+    /// Returns pointer to actual payload
+    char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
-     const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
- };
+    const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
+};
 
- struct GroupArraySortedNodeString : public GroupArraySortedNodeBase<GroupArraySortedNodeString>
- {
-     using Node = GroupArraySortedNodeString;
+struct GroupArraySortedNodeString : public GroupArraySortedNodeBase<GroupArraySortedNodeString>
+{
+    using Node = GroupArraySortedNodeString;
 
 
- };
+};
 
 struct GroupArraySortedNodeGeneral : public GroupArraySortedNodeBase<GroupArraySortedNodeGeneral>
- {
-     using Node = GroupArraySortedNodeGeneral;
+{
+    using Node = GroupArraySortedNodeGeneral;
 
- };
+};
 
 /// Implementation of groupArraySorted for Generic data via Array
 template <typename Node>
