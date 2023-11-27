@@ -163,7 +163,7 @@ void Lz4DeflatingWriteBuffer::finalizeBefore()
     /// Don't write out if no data was ever compressed
     if (!compress_empty && first_time)
         return;
-  
+ 
     auto suffix_size = LZ4F_compressBound(0, &kPrefs);
     auto sink = SinkToOut(out.get(), tmp_memory, suffix_size);
     chassert(sink.getCapacity() >= suffix_size);
