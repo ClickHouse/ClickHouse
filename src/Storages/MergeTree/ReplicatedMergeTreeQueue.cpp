@@ -749,7 +749,7 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
         const auto & key = entry->znode_name;
         switch (entry->type)
         {
-            /// explicitly specify all types of entries without default, so if
+            /// explicetely specify all types of entries without default, so if
             /// someone decide to add new type it will produce a compiler warning (error in our case)
             case LogEntryType::GET_PART:
             case LogEntryType::ATTACH_PART:
@@ -2403,7 +2403,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
         }
     }
 
-    return MergeTreeData::partsContainSameProjections(left, right, out_reason);
+    return MergeTreeData::partsContainSameProjections(left, right);
 }
 
 template<typename VirtualPartsT, typename MutationsStateT>

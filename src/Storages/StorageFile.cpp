@@ -1237,9 +1237,7 @@ public:
                 chassert(file_num > 0);
 
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads / file_num, 1UL);
-                input_format = FormatFactory::instance().getInput(
-                    storage->format_name, *read_buf, block_for_format, context, max_block_size, storage->format_settings,
-                    max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
+                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, need_only_count ? 1 : max_parsing_threads);
                 input_format->setQueryInfo(query_info, context);
                 if (need_only_count)
                     input_format->needOnlyCount();

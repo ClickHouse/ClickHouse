@@ -5,7 +5,7 @@
 #define VERSION "0.9.7"
 
 #define SYSCONFDIR "etc"
-#define BINARYDIR "/home/ubuntu/workdir/ClickHouse/build/s390x"
+#define BINARYDIR "/home/ubuntu/workdir/ClickHouse/build/ppc64le"
 #define SOURCEDIR "/home/ubuntu/workdir/ClickHouse"
 
 /* Global bind configuration file path */
@@ -127,9 +127,7 @@
 /* #undef HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID */
 
 /* Define to 1 if you have the `FIPS_mode' function. */
-#if USE_BORINGSSL
-#define HAVE_OPENSSL_FIPS_MODE 1
-#endif
+/* #undef HAVE_OPENSSL_FIPS_MODE */
 
 /* Define to 1 if you have the `EVP_DigestSign' function. */
 #define HAVE_OPENSSL_EVP_DIGESTSIGN 1
@@ -284,4 +282,4 @@
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
-#define WORDS_BIGENDIAN 1
+/* #undef WORDS_BIGENDIAN */

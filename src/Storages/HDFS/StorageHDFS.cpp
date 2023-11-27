@@ -226,13 +226,6 @@ namespace
         auto res = LSWithRegexpMatching("/", fs, path_from_uri);
         return res;
     }
-
-    struct HDFSFileInfoDeleter
-    {
-        /// Can have only one entry (see hdfsGetPathInfo())
-        void operator()(hdfsFileInfo * info) { hdfsFreeFileInfo(info, 1); }
-    };
-    using HDFSFileInfoPtr = std::unique_ptr<hdfsFileInfo, HDFSFileInfoDeleter>;
 }
 
 StorageHDFS::StorageHDFS(
@@ -466,7 +459,7 @@ public:
     StorageHDFS::PathWithInfo next()
     {
         String uri;
-        HDFSFileInfoPtr hdfs_info;
+        hdfsFileInfo * hdfs_info;
         do
         {
             size_t current_index = index.fetch_add(1);
@@ -475,7 +468,7 @@ public:
 
             uri = uris[current_index];
             auto path_and_uri = getPathFromUriAndUriWithoutPath(uri);
-            hdfs_info.reset(hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str()));
+            hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
         }
         /// Skip non-existed files.
         while (!hdfs_info && String(hdfsGetLastError()).find("FileNotFoundException") != std::string::npos);
@@ -561,7 +554,7 @@ bool HDFSSource::initialize()
         {
             auto builder = createHDFSBuilder(uri_without_path + "/", getContext()->getGlobalContext()->getConfigRef());
             auto fs = createHDFSFS(builder.get());
-            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_from_uri.c_str()));
+            auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_from_uri.c_str());
             if (hdfs_info)
                 path_with_info.info = StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)};
         }
@@ -1033,7 +1026,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
 
             auto builder = createHDFSBuilder(uri_without_path + "/", ctx->getGlobalContext()->getConfigRef());
             auto fs = createHDFSFS(builder.get());
-            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_with_info.path.c_str()));
+            auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_with_info.path.c_str());
             if (hdfs_info)
                 return hdfs_info->mLastMod;
 

@@ -71,13 +71,6 @@ protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
     Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
 
-    void SetUp() override
-    {
-        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
-    }
-
     void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
 
     void setSnapshotDirectory(const std::string & path)
@@ -2917,5 +2910,14 @@ TEST_P(CoordinationTest, TestReapplyingDeltas)
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,
     ::testing::ValuesIn(std::initializer_list<CompressionParam>{CompressionParam{true, ".zstd"}, CompressionParam{false, ""}}));
+
+int main(int argc, char ** argv)
+{
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("trace");
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
 
 #endif

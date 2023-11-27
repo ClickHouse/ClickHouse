@@ -1413,7 +1413,6 @@ ClickHouse supports the following algorithms of choosing replicas:
 
 - [Random](#load_balancing-random) (by default)
 - [Nearest hostname](#load_balancing-nearest_hostname)
-- [Hostname levenshtein distance](#load_balancing-hostname_levenshtein_distance)
 - [In order](#load_balancing-in_order)
 - [First or random](#load_balancing-first_or_random)
 - [Round robin](#load_balancing-round_robin)
@@ -1444,25 +1443,6 @@ This method might seem primitive, but it does not require external data about ne
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
 We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
-
-### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
-
-``` sql
-load_balancing = hostname_levenshtein_distance
-```
-
-Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
-
-``` text
-example-clickhouse-0-0 ample-clickhouse-0-0
-1
-
-example-clickhouse-0-0 example-clickhouse-1-10
-2
-
-example-clickhouse-0-0 example-clickhouse-12-0
-3
-```
 
 ### In Order {#load_balancing-in_order}
 
@@ -3296,39 +3276,6 @@ Possible values:
 
 - 1 — The data types in column definitions are set to `Nullable` by default.
 - 0 — The data types in column definitions are set to not `Nullable` by default.
-
-Default value: `0`.
-
-## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
-
-Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Possible values:
-
-- 0 - Show names of native ClickHouse data types.
-- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
-
-Default value: `0`.
-
-## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
-
-When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
-
-- 0 - Use `BLOB`.
-- 1 - Use `TEXT`.
-
-Default value: `0`.
-
-## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
-
-When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
-
-Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
-
-- 0 - Use `BLOB`.
-- 1 - Use `TEXT`.
 
 Default value: `0`.
 

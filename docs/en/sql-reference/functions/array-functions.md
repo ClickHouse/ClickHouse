@@ -1123,32 +1123,6 @@ Result:
 └─────────────────────────────┘
 ```
 
-## arrayFold
-
-Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.
-
-**Syntax**
-
-``` sql
-arrayFold(lambda_function, arr1, arr2, ..., accumulator)
-```
-
-**Example**
-
-Query:
-
-``` sql
-SELECT arrayFold( x,acc -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
-```
-
-Result:
-
-``` text
-┌─arrayFold(lambda(tuple(x, acc), plus(acc, multiply(x, 2))), [1, 2, 3, 4], toInt64(3))─┐
-│                                                                                     3 │
-└───────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 ## arrayReverse(arr)
 
 Returns an array of the same size as the original array containing the elements in reverse order.
@@ -2142,80 +2116,6 @@ Result:
 ┌─res─────────────────┐
 │ [4242,4242,1,2,3,4] │
 └─────────────────────┘
-```
-
-
-## arrayRandomSample
-
-Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array. In this case, all elements of the input array are returned, but the order is not guaranteed. The function can handle both flat arrays and nested arrays.
-
-**Syntax**
-
-```sql
-arrayRandomSample(arr, samples)
-```
-
-**Arguments**
-
-- `arr` — The input array from which to sample elements. This may be flat or nested arrays.
-- `samples` — An unsigned integer specifying the number of elements to include in the random sample.
-
-**Returned Value**
-
-- An array containing a random sample of elements from the input array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;
-```
-
-Result:
-```
-┌─res────────────────┐
-│ ['banana','apple'] │
-└────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
-```
-
-Result:
-```
-┌─res───────────┐
-│ [[3,4],[5,6]] │
-└───────────────┘
-```
-
-Query:
-
-```sql
-SELECT arrayRandomSample([1, 2, 3, 4, 5], 0) as res;
-```
-
-Result:
-```
-┌─res─┐
-│ []  │
-└─────┘
-```
-
-Query:
-
-```sql
-SELECT arrayRandomSample([1, 2, 3], 5) as res;
-```
-
-Result:
-```
-┌─res─────┐
-│ [3,1,2] │
-└─────────┘
 ```
 
 ## Distance functions

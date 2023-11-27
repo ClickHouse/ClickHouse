@@ -218,36 +218,9 @@ namespace
 }
 
 
-BackupsWorker::BackupsWorker(
-    ContextPtr global_context,
-    size_t num_backup_threads,
-    size_t num_restore_threads,
-    bool allow_concurrent_backups_,
-    bool allow_concurrent_restores_)
-    : backups_thread_pool(std::make_unique<ThreadPool>(
-        CurrentMetrics::BackupsThreads,
-        CurrentMetrics::BackupsThreadsActive,
-        num_backup_threads,
-        /* max_free_threads = */ 0,
-        num_backup_threads))
-    , restores_thread_pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::RestoreThreads,
-          CurrentMetrics::RestoreThreadsActive,
-          num_restore_threads,
-          /* max_free_threads = */ 0,
-          num_restore_threads))
-    , backup_async_executor_pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::BackupsThreads,
-          CurrentMetrics::BackupsThreadsActive,
-          num_backup_threads,
-          num_backup_threads,
-          num_backup_threads))
-    , restore_async_executor_pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::RestoreThreads,
-          CurrentMetrics::RestoreThreadsActive,
-          num_restore_threads,
-          num_restore_threads,
-          num_restore_threads))
+BackupsWorker::BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
+    : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
+    , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
@@ -313,16 +286,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 
         if (backup_settings.async)
         {
-            backup_async_executor_pool->scheduleOrThrowOnError(
-                [this,
-                 backup_query,
-                 backup_id,
-                 backup_name_for_logging,
-                 backup_info,
-                 backup_settings,
-                 backup_coordination,
-                 context_in_use,
-                 mutable_context]
+            backups_thread_pool->scheduleOrThrowOnError(
+                [this, backup_query, backup_id, backup_name_for_logging, backup_info, backup_settings, backup_coordination, context_in_use, mutable_context]
                 {
                     doBackup(
                         backup_query,
@@ -666,25 +631,18 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 
         if (restore_settings.async)
         {
-            restore_async_executor_pool->scheduleOrThrowOnError(
-                [this,
-                 restore_query,
-                 restore_id,
-                 backup_name_for_logging,
-                 backup_info,
-                 restore_settings,
-                 restore_coordination,
-                 context_in_use]
-            {
-                doRestore(
-                    restore_query,
-                    restore_id,
-                    backup_name_for_logging,
-                    backup_info,
-                    restore_settings,
-                    restore_coordination,
-                    context_in_use,
-                    /* called_async= */ true);
+            restores_thread_pool->scheduleOrThrowOnError(
+                [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
+                {
+                    doRestore(
+                        restore_query,
+                        restore_id,
+                        backup_name_for_logging,
+                        backup_info,
+                        restore_settings,
+                        restore_coordination,
+                        context_in_use,
+                        /* called_async= */ true);
                 });
         }
         else
@@ -1051,8 +1009,6 @@ void BackupsWorker::shutdown()
 
     backups_thread_pool->wait();
     restores_thread_pool->wait();
-    backup_async_executor_pool->wait();
-    restore_async_executor_pool->wait();
 
     if (has_active_backups_and_restores)
         LOG_INFO(log, "All backup and restore tasks have finished");

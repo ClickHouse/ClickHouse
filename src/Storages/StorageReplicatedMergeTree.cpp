@@ -5134,6 +5134,15 @@ void StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const size_t num_streams)
 {
+    SCOPE_EXIT({
+        /// Now, copy of parts that is required for the query, stored in the processors,
+        /// while snapshot_data.parts includes all parts, even one that had been filtered out with partition pruning,
+        /// reset them to avoid holding them.
+        auto & snapshot_data = assert_cast<MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+        snapshot_data.parts = {};
+        snapshot_data.alter_conversions = {};
+    });
+
     const auto & settings = local_context->getSettingsRef();
 
     /// The `select_sequential_consistency` setting has two meanings:
@@ -8815,7 +8824,9 @@ void StorageReplicatedMergeTree::lockSharedData(
     LOG_DEBUG(log, "Trying to create zero-copy lock for part {}", part.name);
     auto zookeeper = tryGetZooKeeper();
     if (zookeeper)
-        lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), replace_existing_lock, hardlinked_files);
+        return lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), replace_existing_lock, hardlinked_files);
+    else
+        return lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(nullptr), replace_existing_lock, hardlinked_files);
 }
 
 void StorageReplicatedMergeTree::getLockSharedDataOps(

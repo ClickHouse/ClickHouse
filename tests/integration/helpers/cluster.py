@@ -31,6 +31,7 @@ try:
     import pymysql
     import nats
     import ssl
+    import meilisearch
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
@@ -238,69 +239,13 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id, cookie):
+def check_rabbitmq_is_available(rabbitmq_id):
     p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
-            rabbitmq_id,
-            "rabbitmqctl",
-            "await_startup",
-        ),
+        ("docker", "exec", "-i", rabbitmq_id, "rabbitmqctl", "await_startup"),
         stdout=subprocess.PIPE,
     )
     p.communicate()
     return p.returncode == 0
-
-
-def rabbitmq_debuginfo(rabbitmq_id, cookie):
-    p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "status",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
-
-    p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "listeners",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
-
-    p = subprocess.Popen(
-        (
-            "docker",
-            "exec",
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            "-i",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "environment",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
 
 
 async def check_nats_is_available(nats_port, ssl_ctx=None):
@@ -326,13 +271,11 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
     return nc
 
 
-def enable_consistent_hash_plugin(rabbitmq_id, cookie):
+def enable_consistent_hash_plugin(rabbitmq_id):
     p = subprocess.Popen(
         (
             "docker",
             "exec",
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
             "-i",
             rabbitmq_id,
             "rabbitmq-plugins",
@@ -488,6 +431,7 @@ class ClickHouseCluster:
         self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_mongo_secure = False
+        self.with_meili = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
@@ -566,6 +510,12 @@ class ClickHouseCluster:
         self.mongo_no_cred_host = "mongo2"
         self._mongo_no_cred_port = 0
 
+        # available when with_meili == True
+        self.meili_host = "meili1"
+        self._meili_port = 0
+        self.meili_secure_host = "meili_secure"
+        self._meili_secure_port = 0
+
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
         self.cassandra_port = 9042
@@ -584,9 +534,7 @@ class ClickHouseCluster:
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
-        self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
-        self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
 
         self.nats_host = "nats1"
         self.nats_port = 4444
@@ -747,6 +695,20 @@ class ClickHouseCluster:
             return self._mongo_no_cred_port
         self._mongo_no_cred_port = get_free_port()
         return self._mongo_no_cred_port
+
+    @property
+    def meili_port(self):
+        if self._meili_port:
+            return self._meili_port
+        self._meili_port = get_free_port()
+        return self._meili_port
+
+    @property
+    def meili_secure_port(self):
+        if self._meili_secure_port:
+            return self._meili_secure_port
+        self._meili_secure_port = get_free_port()
+        return self._meili_secure_port
 
     @property
     def redis_port(self):
@@ -1311,8 +1273,6 @@ class ClickHouseCluster:
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
-        env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
-        env_variables["RABBITMQ_COOKIE_FILE_FS"] = "bind"
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml")]
@@ -1411,6 +1371,30 @@ class ClickHouseCluster:
         ]
 
         return self.base_coredns_cmd
+
+    def setup_meili_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_meili = True
+        env_variables["MEILI_HOST"] = self.meili_host
+        env_variables["MEILI_EXTERNAL_PORT"] = str(self.meili_port)
+        env_variables["MEILI_INTERNAL_PORT"] = "7700"
+
+        env_variables["MEILI_SECURE_HOST"] = self.meili_secure_host
+        env_variables["MEILI_SECURE_EXTERNAL_PORT"] = str(self.meili_secure_port)
+        env_variables["MEILI_SECURE_INTERNAL_PORT"] = "7700"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_meili.yml")]
+        )
+        self.base_meili_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_meili.yml"),
+        ]
+        return self.base_meili_cmd
 
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_minio = True
@@ -1566,6 +1550,7 @@ class ClickHouseCluster:
         with_kerberized_hdfs=False,
         with_mongo=False,
         with_mongo_secure=False,
+        with_meili=False,
         with_nginx=False,
         with_redis=False,
         with_minio=False,
@@ -1578,7 +1563,6 @@ class ClickHouseCluster:
         allow_analyzer=True,
         hostname=None,
         env_variables=None,
-        instance_env_variables=False,
         image="clickhouse/integration-test",
         tag=None,
         stay_alive=False,
@@ -1621,6 +1605,7 @@ class ClickHouseCluster:
             tag = self.docker_base_tag
         if not env_variables:
             env_variables = {}
+
         self.use_keeper = use_keeper
 
         # Code coverage files will be placed in database directory
@@ -1665,6 +1650,7 @@ class ClickHouseCluster:
             or with_kerberos_kdc
             or with_kerberized_kafka,
             with_mongo=with_mongo or with_mongo_secure,
+            with_meili=with_meili,
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
@@ -1688,7 +1674,6 @@ class ClickHouseCluster:
             copy_common_configs=copy_common_configs,
             hostname=hostname,
             env_variables=env_variables,
-            instance_env_variables=instance_env_variables,
             image=image,
             tag=tag,
             stay_alive=stay_alive,
@@ -1856,6 +1841,11 @@ class ClickHouseCluster:
         if with_coredns and not self.with_coredns:
             cmds.append(
                 self.setup_coredns_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_meili and not self.with_meili:
+            cmds.append(
+                self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if self.with_net_trics:
@@ -2285,36 +2275,25 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=30):
-        self.print_all_docker_pieces()
+    def wait_rabbitmq_to_start(self, timeout=180, throw=True):
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
         start = time.time()
         while time.time() - start < timeout:
             try:
-                if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie
-                ):
+                if check_rabbitmq_is_available(self.rabbitmq_docker_id):
                     logging.debug("RabbitMQ is available")
-                    if enable_consistent_hash_plugin(
-                        self.rabbitmq_docker_id, self.rabbitmq_cookie
-                    ):
+                    if enable_consistent_hash_plugin(self.rabbitmq_docker_id):
                         logging.debug("RabbitMQ consistent hash plugin is available")
-                    return True
+                        return True
                 time.sleep(0.5)
             except Exception as ex:
                 logging.debug("Can't connect to RabbitMQ " + str(ex))
                 time.sleep(0.5)
 
-        try:
-            with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
-                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                    self.base_rabbitmq_cmd + ["logs"], stdout=f
-                )
-            rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
-        except Exception as e:
-            logging.debug("Unable to get logs from docker.")
-        raise Exception("Cannot wait RabbitMQ container")
+        if throw:
+            raise Exception("Cannot wait RabbitMQ container")
+        return False
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -2467,6 +2446,30 @@ class ClickHouseCluster:
                 return
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
+                time.sleep(1)
+
+    def wait_meili_to_start(self, timeout=30):
+        connection_str = "http://{host}:{port}".format(
+            host="localhost", port=self.meili_port
+        )
+        client = meilisearch.Client(connection_str)
+
+        connection_str_secure = "http://{host}:{port}".format(
+            host="localhost", port=self.meili_secure_port
+        )
+        client_secure = meilisearch.Client(connection_str_secure, "password")
+
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                client.get_all_stats()
+                client_secure.get_all_stats()
+                logging.debug(
+                    f"Connected to MeiliSearch dbs: {client.get_all_stats()}\n{client_secure.get_all_stats()}"
+                )
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to MeiliSearch " + str(ex))
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=180, secure=False):
@@ -2823,18 +2826,15 @@ class ClickHouseCluster:
                 os.makedirs(self.rabbitmq_logs_dir)
                 os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
-                with open(self.rabbitmq_cookie_file, "w") as f:
-                    f.write(self.rabbitmq_cookie)
-                os.chmod(self.rabbitmq_cookie_file, stat.S_IRUSR)
-
-                subprocess_check_call(
-                    self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
-                )
-                self.up_called = True
-                self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
-                time.sleep(2)
-                logging.debug(f"RabbitMQ checking container try")
-                self.wait_rabbitmq_to_start()
+                for i in range(5):
+                    subprocess_check_call(
+                        self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
+                    )
+                    self.up_called = True
+                    self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+                    logging.debug(f"RabbitMQ checking container try: {i}")
+                    if self.wait_rabbitmq_to_start(throw=(i == 4)):
+                        break
 
             if self.with_nats and self.base_nats_cmd:
                 logging.debug("Setup NATS")
@@ -2894,6 +2894,12 @@ class ClickHouseCluster:
                 run_and_check(self.base_coredns_cmd + common_opts)
                 self.up_called = True
                 time.sleep(10)
+
+            if self.with_meili and self.base_meili_cmd:
+                logging.debug("Setup MeiliSearch")
+                run_and_check(self.base_meili_cmd + common_opts)
+                self.up_called = True
+                self.wait_meili_to_start()
 
             if self.with_redis and self.base_redis_cmd:
                 logging.debug("Setup Redis")
@@ -3221,6 +3227,7 @@ class ClickHouseInstance:
         with_kerberized_hdfs,
         with_secrets,
         with_mongo,
+        with_meili,
         with_redis,
         with_minio,
         with_azurite,
@@ -3244,7 +3251,6 @@ class ClickHouseInstance:
         copy_common_configs=True,
         hostname=None,
         env_variables=None,
-        instance_env_variables=False,
         image="clickhouse/integration-test",
         tag="latest",
         stay_alive=False,
@@ -3309,6 +3315,7 @@ class ClickHouseInstance:
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_secrets = with_secrets
         self.with_mongo = with_mongo
+        self.with_meili = with_meili
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_azurite = with_azurite
@@ -3334,7 +3341,6 @@ class ClickHouseInstance:
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, "docker-compose.yml")
         self.env_variables = env_variables or {}
-        self.instance_env_variables = instance_env_variables
         self.env_file = self.cluster.env_file
         if with_odbc_drivers:
             self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
@@ -3978,11 +3984,7 @@ class ClickHouseInstance:
         return None
 
     def restart_with_original_version(
-        self,
-        stop_start_wait_sec=300,
-        callback_onstop=None,
-        signal=15,
-        clear_data_dir=False,
+        self, stop_start_wait_sec=300, callback_onstop=None, signal=15
     ):
         begin_time = time.time()
         if not self.stay_alive:
@@ -4010,17 +4012,6 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
-
-        if clear_data_dir:
-            self.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "rm -rf /var/lib/clickhouse/metadata && rm -rf /var/lib/clickhouse/data",
-                ],
-                user="root",
-            )
-
         self.exec_in_container(
             [
                 "bash",
@@ -4466,16 +4457,7 @@ class ClickHouseInstance:
         if self.with_azurite:
             depends_on.append("azurite1")
 
-        # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
-        # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.
-        if self.instance_env_variables is True:
-            # Create a dictionary containing cluster & instance env variables.
-            # Instance env variables will override cluster's.
-            temp_env_variables = self.cluster.env_variables.copy()
-            temp_env_variables.update(self.env_variables)
-            self.env_variables = temp_env_variables
-        else:
-            self.cluster.env_variables.update(self.env_variables)
+        self.cluster.env_variables.update(self.env_variables)
 
         odbc_ini_path = ""
         if self.odbc_ini_path:
@@ -4547,14 +4529,6 @@ class ClickHouseInstance:
                 external_dirs_volumes += (
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"
                 )
-
-        # The current implementation of `self.env_variables` is not exclusive. Meaning the variables
-        # are shared with all nodes within the same cluster, even if it is specified for a single node.
-        # In order not to break the existing tests, the `self.instance_env_variables` option was added as a workaround.
-        # IMHO, it would be better to make `self.env_variables` exclusive by default and remove the `self.instance_env_variables` option.
-        if self.instance_env_variables:
-            self.env_file = p.abspath(p.join(self.path, ".env"))
-            _create_env_file(self.env_file, self.env_variables)
 
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(

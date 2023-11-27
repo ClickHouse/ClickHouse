@@ -1,7 +1,5 @@
 import pytest
-import os
 from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance("instance", clickhouse_path_dir="clickhouse_path")
@@ -46,69 +44,3 @@ def test_protobuf_format_output(started_cluster):
         )
         == "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def"
     )
-
-
-def test_drop_cache_protobuf_format(started_cluster):
-    create_simple_table()
-    instance.query("INSERT INTO test.simple VALUES (1, 'abc'), (2, 'def')")
-
-    schema = """
-syntax = "proto3";
-
-message MessageTmp {
-  uint64 key = 1;
-  string value = 2;
-}
-"""
-
-    protobuf_schema_path_name = "message_tmp.proto"
-
-    database_path = os.path.abspath(os.path.join(instance.path, "database"))
-    with open(
-        os.path.join(database_path, "format_schemas", protobuf_schema_path_name), "w"
-    ) as file:
-        file.write(schema)
-    assert (
-        instance.http_query(
-            "SELECT * FROM test.simple FORMAT Protobuf SETTINGS format_schema='message_tmp:MessageTmp'"
-        )
-        == "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def"
-    )
-    # Replace simple.proto with a new Protobuf schema
-    new_schema = """
-syntax = "proto3";
-
-message MessageTmp {
-  uint64 key2 = 1;
-  string value2 = 2;
-}
-"""
-    with open(
-        os.path.join(database_path, "format_schemas", protobuf_schema_path_name), "w"
-    ) as file:
-        file.write(new_schema)
-
-    instance.query("DROP TABLE IF EXISTS test.new_simple")
-    instance.query(
-        """
-        CREATE TABLE test.new_simple (key2 UInt64, value2 String)
-            ENGINE = MergeTree ORDER BY tuple();
-        """
-    )
-    instance.query("INSERT INTO test.new_simple VALUES (1, 'abc'), (2, 'def')")
-
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf")
-
-    # Tets works with new scheme
-    assert (
-        instance.http_query(
-            "SELECT * FROM test.new_simple FORMAT Protobuf SETTINGS format_schema='message_tmp:MessageTmp'"
-        )
-        == "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def"
-    )
-    # Tests that stop working with old scheme
-    with pytest.raises(Exception) as exc:
-        instance.http_query(
-            "SELECT * FROM test.simple FORMAT Protobuf SETTINGS format_schema='message_tmp:MessageTmp'"
-        )
-    assert "NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS)" in str(exc.value)

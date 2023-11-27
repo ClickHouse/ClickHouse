@@ -58,6 +58,8 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
+void interruptSignalHandler(int signum);
+
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
@@ -182,9 +184,6 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    /// Adjust some settings after command line options and config had been processed.
-    void adjustSettings();
-
     void initTtyBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
@@ -212,8 +211,6 @@ protected:
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
-
-    String pager;
 
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.

@@ -226,7 +226,7 @@ struct StatisticsStringRef
 /// or [element of ColumnString] -> std::string_view.
 /// We do this conversion in small batches rather than all at once, just before encoding the batch,
 /// in hopes of getting better performance through cache locality.
-/// The Converter* structs below are responsible for that.
+/// The Coverter* structs below are responsible for that.
 /// When conversion is not needed, getBatch() will just return pointer into original data.
 
 template <typename Col, typename To, typename MinMaxType = typename std::conditional_t<

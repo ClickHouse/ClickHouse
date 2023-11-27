@@ -17,7 +17,6 @@
 #### Backward Incompatible Change
 * Remove the `status_info` configuration option and dictionaries status from the default Prometheus handler. [#54090](https://github.com/ClickHouse/ClickHouse/pull/54090) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * The experimental parts metadata cache is removed from the codebase. [#54215](https://github.com/ClickHouse/ClickHouse/pull/54215) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Disable setting `input_format_json_try_infer_numbers_from_strings` by default, so we don't try to infer numbers from strings in JSON formats by default to avoid possible parsing errors when sample data contains strings that looks like a number. [#55099](https://github.com/ClickHouse/ClickHouse/pull/55099) ([Kruglov Pavel](https://github.com/Avogar)).
 
 #### New Feature
 * Improve schema inference from JSON formats: 1) Now it's possible to infer named Tuples from JSON objects without experimantal JSON type under a setting `input_format_json_try_infer_named_tuples_from_objects` in JSON formats. Previously without experimantal type JSON we could only infer JSON objects as Strings or Maps, now we can infer named Tuple. Resulting Tuple type will conain all keys of objects that were read in data sample during schema inference. It can be useful for reading structured JSON data without sparse objects. The setting is enabled by default. 2) Allow parsing JSON array into a column with type String under setting `input_format_json_read_arrays_as_strings`. It can help reading arrays with values with different types. 3) Allow to use type String for JSON keys with unkown types (`null`/`[]`/`{}`) in sample data under setting `input_format_json_infer_incomplete_types_as_strings`. Now in JSON formats we can read any value into String column and we can avoid getting error `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference by using type String for unknown types, so the data will be read successfully. [#54427](https://github.com/ClickHouse/ClickHouse/pull/54427) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -38,8 +37,6 @@
 * Added functions `YYYYMMDDtoDate`, `YYYYMMDDtoDate32`, `YYYYMMDDhhmmssToDateTime` and `YYYYMMDDhhmmssToDateTime64`. They convert a date or date with time encoded as integer (e.g. 20230911) into a native date or date with time. As such, they provide the opposite functionality of existing functions `YYYYMMDDToDate`, `YYYYMMDDToDateTime`, `YYYYMMDDhhmmddToDateTime`, `YYYYMMDDhhmmddToDateTime64`. [#54509](https://github.com/ClickHouse/ClickHouse/pull/54509) ([Quanfa Fu](https://github.com/dentiscalprum)) ([Robert Schulze](https://github.com/rschu1ze)).
 * Add several string distance functions, including `byteHammingDistance`, `editDistance`. [#54935](https://github.com/ClickHouse/ClickHouse/pull/54935) ([flynn](https://github.com/ucasfl)).
 * Allow specifying the expiration date and, optionally, the time for user credentials with `VALID UNTIL datetime` clause. [#51261](https://github.com/ClickHouse/ClickHouse/pull/51261) ([Nikolay Degterinsky](https://github.com/evillique)).
-* Allow S3-style URLs for table functions `s3`, `gcs`, `oss`. URL is automatically converted to HTTP. Example: `'s3://clickhouse-public-datasets/hits.csv'` is converted to `'https://clickhouse-public-datasets.s3.amazonaws.com/hits.csv'`. [#54931](https://github.com/ClickHouse/ClickHouse/pull/54931) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-* Add new setting `print_pretty_type_names` to print pretty deep nested types like Tuple/Maps/Arrays. [#55095](https://github.com/ClickHouse/ClickHouse/pull/55095) ([Kruglov Pavel](https://github.com/Avogar)).
 
 #### Performance Improvement
 * Speed up reading from S3 by enabling prefetches by default. [#53709](https://github.com/ClickHouse/ClickHouse/pull/53709) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -90,6 +87,7 @@
 * Allow reading some unusual configuration of chunks from Arrow/Parquet formats. [#54370](https://github.com/ClickHouse/ClickHouse/pull/54370) ([Arthur Passos](https://github.com/arthurpassos)).
 * Add `STD` alias to `stddevPop` function for MySQL compatibility. Closes [#54274](https://github.com/ClickHouse/ClickHouse/issues/54274). [#54382](https://github.com/ClickHouse/ClickHouse/pull/54382) ([Nikolay Degterinsky](https://github.com/evillique)).
 * Add `addDate` function for compatibility with MySQL and `subDate` for consistency. Reference [#54275](https://github.com/ClickHouse/ClickHouse/issues/54275). [#54400](https://github.com/ClickHouse/ClickHouse/pull/54400) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Support `SAMPLE BY` for views. [#54477](https://github.com/ClickHouse/ClickHouse/pull/54477) ([Azat Khuzhin](https://github.com/azat)).
 * Add `modification_time` into `system.detached_parts`. [#54506](https://github.com/ClickHouse/ClickHouse/pull/54506) ([Azat Khuzhin](https://github.com/azat)).
 * Added a setting `splitby_max_substrings_includes_remaining_string` which controls if functions "splitBy*()" with argument "max_substring" > 0 include the remaining string (if any) in the result array (Python/Spark semantics) or not. The default behavior does not change. [#54518](https://github.com/ClickHouse/ClickHouse/pull/54518) ([Robert Schulze](https://github.com/rschu1ze)).
 * Better integer types inference for `Int64`/`UInt64` fields. Continuation of [#53003](https://github.com/ClickHouse/ClickHouse/pull/53003). Now it works also for nested types like Arrays of Arrays and for functions like `map/tuple`. Issue: [#51236](https://github.com/ClickHouse/ClickHouse/issues/51236). [#54553](https://github.com/ClickHouse/ClickHouse/pull/54553) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -109,8 +107,6 @@
 * Make the exception message exact in case of the maximum value of a settings is less than the minimum value. [#54925](https://github.com/ClickHouse/ClickHouse/pull/54925) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
 * `LIKE`, `match`, and other regular expressions matching functions now allow matching with patterns containing non-UTF-8 substrings by falling back to binary matching. Example: you can use `string LIKE '\xFE\xFF%'` to detect BOM. This closes [#54486](https://github.com/ClickHouse/ClickHouse/issues/54486). [#54942](https://github.com/ClickHouse/ClickHouse/pull/54942) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Added `ContextLockWaitMicroseconds` profile event. [#55029](https://github.com/ClickHouse/ClickHouse/pull/55029) ([Maksim Kita](https://github.com/kitaisreal)).
-* The Keeper dynamically adjusts log levels. [#50372](https://github.com/ClickHouse/ClickHouse/pull/50372) ([helifu](https://github.com/helifu)).
-* Added function `timestamp` for compatibility with MySQL. Closes [#54275](https://github.com/ClickHouse/ClickHouse/issues/54275). [#54639](https://github.com/ClickHouse/ClickHouse/pull/54639) ([Nikolay Degterinsky](https://github.com/evillique)).
 
 #### Build/Testing/Packaging Improvement
 * Bumped the compiler of official and continuous integration builds of ClickHouse from Clang 16 to 17. [#53831](https://github.com/ClickHouse/ClickHouse/pull/53831) ([Robert Schulze](https://github.com/rschu1ze)).
@@ -173,10 +169,6 @@
 * Rebuild `minmax_count_projection` when partition key gets modified [#54943](https://github.com/ClickHouse/ClickHouse/pull/54943) ([Amos Bird](https://github.com/amosbird)).
 * Fix bad cast to `ColumnVector<Int128>` in function `if` [#55019](https://github.com/ClickHouse/ClickHouse/pull/55019) ([Kruglov Pavel](https://github.com/Avogar)).
 * Prevent attaching parts from tables with different projections or indices [#55062](https://github.com/ClickHouse/ClickHouse/pull/55062) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
-* Store NULL in scalar result map for empty subquery result [#52240](https://github.com/ClickHouse/ClickHouse/pull/52240) ([vdimir](https://github.com/vdimir)).
-* Fix `FINAL` produces invalid read ranges in a rare case [#54934](https://github.com/ClickHouse/ClickHouse/pull/54934) ([Nikita Taranov](https://github.com/nickitat)).
-* Fix: insert quorum w/o keeper retries [#55026](https://github.com/ClickHouse/ClickHouse/pull/55026) ([Igor Nikonov](https://github.com/devcrafter)).
-* Fix simple state with nullable [#55030](https://github.com/ClickHouse/ClickHouse/pull/55030) ([Pedro Riera](https://github.com/priera)).
 
 
 ### <a id="238"></a> ClickHouse release 23.8 LTS, 2023-08-31
@@ -441,7 +433,7 @@
 * Add new setting `disable_url_encoding` that allows to disable decoding/encoding path in uri in URL engine. [#52337](https://github.com/ClickHouse/ClickHouse/pull/52337) ([Kruglov Pavel](https://github.com/Avogar)).
 
 #### Performance Improvement
-* Enable automatic selection of the sparse serialization format by default. It improves performance. The format is supported since version 22.1. After this change, downgrading to versions older than 22.1 might not be possible. A downgrade may require to set `ratio_of_defaults_for_sparse_serialization=0.9375` [55153](https://github.com/ClickHouse/ClickHouse/issues/55153). You can turn off the usage of the sparse serialization format by providing the `ratio_of_defaults_for_sparse_serialization = 1` setting for your MergeTree tables. [#49631](https://github.com/ClickHouse/ClickHouse/pull/49631) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Enable automatic selection of the sparse serialization format by default. It improves performance. The format is supported since version 22.1. After this change, downgrading to versions older than 22.1 might not be possible. You can turn off the usage of the sparse serialization format by providing the `ratio_of_defaults_for_sparse_serialization = 1` setting for your MergeTree tables. [#49631](https://github.com/ClickHouse/ClickHouse/pull/49631) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Enable `move_all_conditions_to_prewhere` and `enable_multiple_prewhere_read_steps` settings by default. [#46365](https://github.com/ClickHouse/ClickHouse/pull/46365) ([Alexander Gololobov](https://github.com/davenger)).
 * Improves performance of some queries by tuning allocator. [#46416](https://github.com/ClickHouse/ClickHouse/pull/46416) ([Azat Khuzhin](https://github.com/azat)).
 * Now we use fixed-size tasks in `MergeTreePrefetchedReadPool` as in `MergeTreeReadPool`. Also from now we use connection pool for S3 requests. [#49732](https://github.com/ClickHouse/ClickHouse/pull/49732) ([Nikita Taranov](https://github.com/nickitat)).
