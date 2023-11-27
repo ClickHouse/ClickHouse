@@ -458,12 +458,12 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
     {
-        auto clients_ = dest_s3->clients.get();
+        auto client_ = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
         auto size = S3::getObjectSize(*client_, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
         auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
         copyS3File(
-            client.get(),
+            client_,
             bucket,
             object_from.remote_path,
             0,
