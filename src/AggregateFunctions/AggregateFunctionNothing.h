@@ -24,8 +24,13 @@ namespace ErrorCodes
 class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
 {
 public:
-    AggregateFunctionNothing(const DataTypes & arguments, const Array & params, const DataTypePtr & result_type_)
-        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, result_type_) {}
+    AggregateFunctionNothing(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionHelper<AggregateFunctionNothing>(
+            arguments,
+            params,
+            arguments.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : arguments.front())
+    {
+    }
 
     String getName() const override
     {

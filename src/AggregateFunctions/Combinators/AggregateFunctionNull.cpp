@@ -101,10 +101,14 @@ public:
         if (has_null_types)
         {
             /// Currently the only functions that returns not-NULL on all NULL arguments are count and uniq, and they returns UInt64.
+            /// In that case we need to set type of first argument to UInt64 to have in as a result type.
             if (properties.returns_default_when_only_null)
-                return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeUInt64>());
-            else
-                return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()));
+            {
+                DataTypes new_arguments = {std::make_shared<DataTypeUInt64>()};
+                std::copy(arguments.begin(), arguments.end(), std::back_inserter(new_arguments));
+                return std::make_shared<AggregateFunctionNothing>(new_arguments, params);
+            }
+            return std::make_shared<AggregateFunctionNothing>(arguments, params);
         }
 
         assert(nested_function);
