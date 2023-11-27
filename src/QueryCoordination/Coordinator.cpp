@@ -50,7 +50,7 @@ PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardI
 {
     auto current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
-    auto try_results = shard_info.pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_ONE, table_name);
+    auto try_results = shard_info.pool->getManyChecked(timeouts, current_settings, PoolMode::GET_ONE, table_name);
     return try_results[0].entry;
 }
 
@@ -58,7 +58,7 @@ PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardI
 {
     auto current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
-    auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_ONE);
+    auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_ONE);
     return try_results[0];
 }
 

@@ -44,7 +44,7 @@ Pipelines PipelinesBuilder::build()
                 continue;
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings.max_execution_time);
-            auto connection = shards_info[i].pool->getOne(timeouts, &settings, target_host_port);
+            auto connection = shards_info[i].pool->getOne(timeouts, settings, target_host_port);
 
             LOG_DEBUG(log, "Fragment {} will actually send data to {}", fragment->getFragmentID(), connection->getHostPort());
             channels.emplace_back(ExchangeDataSink::Channel{.connection = connection, .is_local = (local_host == target_host_port)});

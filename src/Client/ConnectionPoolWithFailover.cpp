@@ -139,7 +139,7 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Co
 }
 
 IConnectionPool::Entry ConnectionPoolWithFailover::getOne(const ConnectionTimeouts & timeouts,
-                                  const Settings * settings, const String & host_port,
+                                  const Settings & settings, const String & host_port,
                                   AsyncCallback async_callback)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
@@ -148,14 +148,10 @@ IConnectionPool::Entry ConnectionPoolWithFailover::getOne(const ConnectionTimeou
     };
 
     std::vector<TryResult> results = getManyImpl(settings, PoolMode::GET_ONE, try_get_entry);
-
-    size_t max_tries = (settings ?
-                                 size_t{settings->connections_with_failover_max_tries} :
-                                 size_t{DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES});
-
     GetPriorityFunc get_priority = makeGetPriorityFunc(settings);
 
-    UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
+    size_t max_tries = settings.connections_with_failover_max_tries;
+    UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
 
     TryResult result = Base::getOne(max_tries,
                          max_ignored_errors,

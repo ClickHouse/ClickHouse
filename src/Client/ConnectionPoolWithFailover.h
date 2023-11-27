@@ -59,9 +59,11 @@ public:
                                AsyncCallback async_callback = {},
                                std::optional<bool> skip_unavailable_endpoints = std::nullopt);
 
+    /// Get one connection for the specified host_port.
+    /// Used for query coordination.
     Entry getOne(
         const ConnectionTimeouts & timeouts,
-        const Settings * settings,
+        const Settings & settings,
         const String & host_port,
         AsyncCallback async_callback = {});
 

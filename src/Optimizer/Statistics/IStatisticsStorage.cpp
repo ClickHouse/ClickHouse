@@ -257,7 +257,7 @@ std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, cons
 
     try
     {
-        auto block_io = executeQuery(sql, load_query_context, true).second;
+        auto block_io = executeQuery(sql, load_query_context, {.internal = true}).second;
         auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
 
         Block block;
@@ -293,7 +293,7 @@ std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_i
     if (!stats_table_meta)
         return nullptr;
 
-    auto block_io = executeQuery(sql, load_query_context, true).second;
+    auto block_io = executeQuery(sql, load_query_context, {.internal = true}).second;
 
     auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
     auto table_columns = DatabaseCatalog::instance().getTable(storage_id, load_query_context)->getInMemoryMetadata().columns;
@@ -333,7 +333,7 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
         storage_id.getDatabaseName(),
         storage_id.getTableName());
 
-    executeQuery(delete_sql, createQueryContext(context), true);
+    executeQuery(delete_sql, createQueryContext(context), {.internal = true});
 
     String insert_sql = fmt::format(
         "INSERT INTO {}.{} SELECT {}, '{}', '{}', count(*) FROM {}",
@@ -346,7 +346,7 @@ void collectTableStats(const StorageID & storage_id, ContextMutablePtr context)
 
     SettingsChanges setting_changes;
     setting_changes.setSetting("optimize_trivial_count_query", 1); /// always enable trivial count optimization
-    auto block_io = executeQuery(insert_sql, createQueryContext(context, setting_changes), true).second;
+    auto block_io = executeQuery(insert_sql, createQueryContext(context, setting_changes), {.internal = true}).second;
     auto executor = std::make_unique<CompletedPipelineExecutor>(block_io.pipeline);
     executor->execute();
 }
@@ -384,7 +384,7 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
             storage_id.getDatabaseName(),
             storage_id.getTableName(),
             joined_columns.str());
-        executeQuery(delete_sql, createQueryContext(context), true);
+        executeQuery(delete_sql, createQueryContext(context), {.internal = true});
 
         /// 2. build selecting query
         WriteBufferFromOwnString select_sql;
@@ -438,7 +438,7 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
             select_sql_str);
 
         /// 3. execute query
-        auto block_io = executeQuery(select_sql_str, createQueryContext(context), true).second;
+        auto block_io = executeQuery(select_sql_str, createQueryContext(context), {.internal = true}).second;
         auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
 
         /// 4. create inserting executor
