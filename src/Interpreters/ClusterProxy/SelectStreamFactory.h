@@ -60,7 +60,7 @@ public:
         /// (When there is a local replica with big delay).
         bool lazy = false;
         time_t local_delay = 0;
-        AdditionalShardFilterGenerator shard_filter_generator;
+        AdditionalShardFilterGenerator shard_filter_generator{};
     };
 
     using Shards = std::vector<Shard>;

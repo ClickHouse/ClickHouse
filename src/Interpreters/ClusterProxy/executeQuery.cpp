@@ -238,10 +238,17 @@ void executeQuery(
         const auto & addresses = cluster->getShardsAddresses().at(i);
         bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
 
-        stream_factory.createForShard(shard_info,
-            query_ast_for_shard, main_table, table_func_ptr,
-            new_context, plans, remote_shards, static_cast<UInt32>(shards),
-            parallel_replicas_enabled, shard_filter_generator);
+        stream_factory.createForShard(
+            shard_info,
+            query_ast_for_shard,
+            main_table,
+            table_func_ptr,
+            new_context,
+            plans,
+            remote_shards,
+            static_cast<UInt32>(shards),
+            parallel_replicas_enabled,
+            std::move(shard_filter_generator));
     }
 
     if (!remote_shards.empty())
@@ -265,7 +272,7 @@ void executeQuery(
             log,
             shards,
             query_info.storage_limits,
-            not_optimized_cluster);
+            not_optimized_cluster->getName());
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));

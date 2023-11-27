@@ -488,8 +488,14 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
             }
 
-            addShard(settings, std::move(replica_addresses), /* treat_local_as_remote = */ false, current_shard_num,
-                     std::move(insert_paths), weight, internal_replication);
+            addShard(
+                settings,
+                replica_addresses,
+                /* treat_local_as_remote = */ false,
+                current_shard_num,
+                std::move(insert_paths),
+                weight,
+                internal_replication);
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
@@ -572,32 +578,41 @@ void Cluster::addShard(const Settings & settings, Addresses addresses, bool trea
     {
         auto replica_pool = ConnectionPoolFactory::instance().get(
             static_cast<unsigned>(settings.distributed_connections_pool_size),
-            replica.host_name, replica.port,
-            replica.default_database, replica.user, replica.password, replica.quota_key,
-            replica.cluster, replica.cluster_secret,
-            "server", replica.compression,
-            replica.secure, replica.priority);
+            replica.host_name,
+            replica.port,
+            replica.default_database,
+            replica.user,
+            replica.password,
+            replica.quota_key,
+            replica.cluster,
+            replica.cluster_secret,
+            "server",
+            replica.compression,
+            replica.secure,
+            replica.priority);
 
         all_replicas_pools.emplace_back(replica_pool);
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
     }
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-        all_replicas_pools, settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+        all_replicas_pools,
+        settings.load_balancing,
+        settings.distributed_replica_error_half_life.totalSeconds(),
+        settings.distributed_replica_error_cap);
 
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
     shards_info.push_back({
-        std::move(insert_paths),
-        current_shard_num,
-        weight,
-        std::move(shard_local_addresses),
-        std::move(shard_pool),
-        std::move(all_replicas_pools),
-        internal_replication,
-        std::move(addresses),
+        .insert_path_for_internal_replication = std::move(insert_paths),
+        .shard_num = current_shard_num,
+        .weight = weight,
+        .local_addresses = std::move(shard_local_addresses),
+        .pool = std::move(shard_pool),
+        .per_replica_pools = std::move(all_replicas_pools),
+        .has_internal_replication = internal_replication,
+        .number_of_replicas = addresses.size(),
     });
 }
 

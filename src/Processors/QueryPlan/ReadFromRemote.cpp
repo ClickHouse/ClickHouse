@@ -105,7 +105,7 @@ ReadFromRemote::ReadFromRemote(
     Poco::Logger * log_,
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
-    ClusterPtr cluster_)
+    const String & cluster_name_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , shards(std::move(shards_))
     , stage(stage_)
@@ -118,7 +118,7 @@ ReadFromRemote::ReadFromRemote(
     , storage_limits(std::move(storage_limits_))
     , log(log_)
     , shard_count(shard_count_)
-    , cluster(cluster_)
+    , cluster_name(cluster_name_)
 {
 }
 
@@ -237,7 +237,6 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
     if (context->canUseParallelReplicas())
     {
-        const auto cluster_name = cluster->getName();
         if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
         {
             const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
@@ -257,12 +256,9 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
-        LOG_DEBUG(log, "Number of replicas {}", shard.shard_info.addresses.size());
-        for (size_t i = 0; i < shard.shard_info.addresses.size(); ++i)
+        LOG_DEBUG(log, "Number of replicas {}", shard.shard_info.number_of_replicas);
+        for (size_t i = 0; i < shard.shard_info.number_of_replicas; ++i)
         {
-            const auto & address = shard.shard_info.addresses[i];
-            LOG_DEBUG(log, "Creating pipe for replica {}", address.toString());
-
             auto query = shard.query->clone();
             auto & select_query = query->as<ASTSelectQuery &>();
             auto shard_filter = shard.shard_filter_generator(i + 1);

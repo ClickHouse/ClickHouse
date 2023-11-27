@@ -429,10 +429,9 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
     query_info.cluster = cluster;
+
     if (!query_info.use_custom_key)
     {
-        query_info.cluster = cluster;
-
         if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
@@ -895,7 +894,7 @@ void StorageDistributed::read(
                    column_description = this->getInMemoryMetadataPtr()->columns,
                    custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
                    context = local_context,
-                   replica_count = query_info.getCluster()->getShardsInfo().front().addresses.size()](uint64_t replica_num) -> ASTPtr
+                   replica_count = query_info.getCluster()->getShardsInfo().front().number_of_replicas](uint64_t replica_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
                     replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
@@ -904,12 +903,20 @@ void StorageDistributed::read(
     }
 
     ClusterProxy::executeQuery(
-        query_plan, header, processed_stage,
-        main_table, remote_table_function_ptr,
-        select_stream_factory, log, modified_query_ast,
-        local_context, query_info,
-        sharding_key_expr, sharding_key_column_name,
-        query_info.cluster, additional_shard_filter_generator);
+        query_plan,
+        header,
+        processed_stage,
+        main_table,
+        remote_table_function_ptr,
+        select_stream_factory,
+        log,
+        modified_query_ast,
+        local_context,
+        query_info,
+        sharding_key_expr,
+        sharding_key_column_name,
+        query_info.cluster,
+        std::move(additional_shard_filter_generator));
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
