@@ -73,8 +73,8 @@ protected:
     struct MessageMasked
     {
         std::string msg;
-        MessageMasked(const std::string & msg_);
-        MessageMasked(std::string && msg_);
+        explicit MessageMasked(const std::string & msg_);
+        explicit MessageMasked(std::string && msg_);
     };
 
     Exception(const MessageMasked & msg_masked, int code, bool remote_);
@@ -123,7 +123,7 @@ public:
     Exception(CreateFromSTDTag, const std::exception & exc);
 
     Exception * clone() const override { return new Exception(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } // NOLINT
     const char * name() const noexcept override { return "DB::Exception"; }
     const char * what() const noexcept override { return message().data(); }
 
@@ -181,7 +181,7 @@ public:
         : Exception(msg, code), saved_errno(saved_errno_), path(path_) {}
 
     ErrnoException * clone() const override { return new ErrnoException(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } // NOLINT
 
     int getErrno() const { return saved_errno; }
     std::optional<std::string> getPath() const { return path; }
@@ -219,7 +219,7 @@ public:
     void setFileName(const String & file_name_) { file_name = file_name_; }
 
     Exception * clone() const override { return new ParsingException(*this); }
-    void rethrow() const override { throw *this; }
+    void rethrow() const override { throw *this; } // NOLINT
 
 private:
     ssize_t line_number{-1};

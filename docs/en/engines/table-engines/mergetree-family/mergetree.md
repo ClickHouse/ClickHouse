@@ -6,7 +6,7 @@ sidebar_label:  MergeTree
 
 # MergeTree
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most commonly used and most robust ClickHouse table engines.
 
 Engines in the `MergeTree` family are designed for inserting a very large amount of data into a table. The data is quickly written to the table part by part, then rules are applied for merging the parts in the background. This method is much more efficient than continually rewriting the data in storage during insert.
 
@@ -31,6 +31,8 @@ Main features:
 :::info
 The [Merge](/docs/en/engines/table-engines/special/merge.md/#merge) engine does not belong to the `*MergeTree` family.
 :::
+
+If you need to update rows frequently, we recommend using the [`ReplacingMergeTree`](/docs/en/engines/table-engines/mergetree-family/replacingmergetree.md) table engine. Using `ALTER TABLE my_table UPDATE` to update rows triggers a mutation, which causes parts to be re-written and uses IO/resources. With `ReplacingMergeTree`, you can simply insert the updated rows and the old rows will be replaced according to the table sorting key.
 
 ## Creating a Table {#table_engine-mergetree-creating-a-table}
 
@@ -502,8 +504,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | inverted |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|----------|
-| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#equals)                | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
 | [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
 | [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
 | [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
@@ -511,10 +513,10 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            | ✔        |
 | [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
 | [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                        | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
 | [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
 | [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
 | [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |

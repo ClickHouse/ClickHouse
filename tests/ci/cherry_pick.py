@@ -67,15 +67,17 @@ The check results does not matter at this step - you can safely ignore them.
 ### Note
 
 This pull-request will be merged automatically as it reaches the mergeable state, \
-**do not merge it manually**.
+**do not merge it manually**. It's 100% safe, but completely meaningless.
 
 ### If the PR was closed and then reopened
 
-If it stuck, check {pr_url} for `{backport_created_label}` and delete it if \
-necessary. Manually merging will do nothing, since `{backport_created_label}` \
-prevents the original PR {pr_url} from being processed.
+If it stuck (e.g. for a day), check {pr_url} for `{backport_created_label}` *label* and \
+delete it if necessary. Manually merging will do nothing, since \
+`{backport_created_label}` *label* prevents the original PR {pr_url} from being \
+processed.
 
-If you want to recreate the PR: delete the `{label_cherrypick}` label and delete this branch.
+If the cherry-pick PR is completely screwed, and you want to recreate it: delete the \
+`{label_cherrypick}` label and delete this branch.
 You may also need to delete the `{backport_created_label}` label from the original PR.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
@@ -290,17 +292,18 @@ close it.
             self.cherrypick_pr.number,
         )
         # The `updated_at` is Optional[datetime]
-        cherrypick_updated_at = self.cherrypick_pr.updated_at or datetime.now()
-        since_updated = datetime.now() - cherrypick_updated_at
+        cherrypick_updated_ts = (
+            self.cherrypick_pr.updated_at or datetime.now()
+        ).timestamp()
+        since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
         since_updated_str = (
-            f"{since_updated.days}d{since_updated.seconds // 3600}"
-            f"h{since_updated.seconds // 60 % 60}m{since_updated.seconds % 60}s"
+            f"{since_updated // 86400}d{since_updated // 3600}"
+            f"h{since_updated // 60 % 60}m{since_updated % 60}s"
         )
-        if since_updated < timedelta(days=1):
+        if since_updated < 86400:
             logging.info(
-                "The cherry-pick PR was updated at %s %s ago, "
+                "The cherry-pick PR was updated %s ago, "
                 "waiting for the next running",
-                cherrypick_updated_at.isoformat(),
                 since_updated_str,
             )
             return

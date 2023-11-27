@@ -621,6 +621,7 @@ private:
       *  But if there are too many, throw an exception just in case - it's probably a configuration error.
       */
     void checkParts(bool skip_sanity_checks);
+    bool checkPartsImpl(bool skip_sanity_checks);
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.
@@ -697,7 +698,7 @@ private:
     /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
 
-    bool executeReplaceRange(const LogEntry & entry);
+    bool executeReplaceRange(LogEntry & entry);
     void executeClonePartFromShard(const LogEntry & entry);
 
     /** Updates the queue.
@@ -782,7 +783,8 @@ private:
       * If not found, returns empty string.
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
-    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
+    bool findReplicaHavingCoveringPart(const String & part_name, bool active);
+    String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
     static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.

@@ -924,8 +924,8 @@ void FileSegment::use()
     }
 }
 
-FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_)
-    : file_segments(std::move(file_segments_)), complete_on_dtor(complete_on_dtor_)
+FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
+    : file_segments(std::move(file_segments_))
 {
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments, file_segments.size());
     ProfileEvents::increment(ProfileEvents::FilesystemCacheHoldFileSegments, file_segments.size());
@@ -934,9 +934,6 @@ FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_, bool comp
 FileSegmentsHolder::~FileSegmentsHolder()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
-
-    if (!complete_on_dtor)
-        return;
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)

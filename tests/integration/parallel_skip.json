@@ -92,5 +92,9 @@
   "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_grpc",
   "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_tcp_and_others",
   "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_setting_in_query",
-  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_client_suggestions_load"
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_client_suggestions_load",
+
+  "test_ttl_move/test.py::TestCancelBackgroundMoving::test_cancel_background_moving_on_stop_moves_query",
+  "test_ttl_move/test.py::TestCancelBackgroundMoving::test_cancel_background_moving_on_table_detach",
+  "test_ttl_move/test.py::TestCancelBackgroundMoving::test_cancel_background_moving_on_zookeeper_disconnect"
 ]

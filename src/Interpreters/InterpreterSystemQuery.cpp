@@ -35,6 +35,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -57,6 +58,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ThreadFuzzer.h>
+#include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
 #include <unistd.h>
@@ -75,6 +77,7 @@ namespace CurrentMetrics
 {
     extern const Metric RestartReplicaThreads;
     extern const Metric RestartReplicaThreadsActive;
+    extern const Metric RestartReplicaThreadsScheduled;
 }
 
 namespace DB
@@ -687,6 +690,12 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::RESET_COVERAGE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM);
+            resetCoverage();
+            break;
+        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -802,7 +811,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
     LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
-    ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, threads);
+    ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, CurrentMetrics::RestartReplicaThreadsScheduled, threads);
 
     for (auto & replica : replica_names)
     {
@@ -1301,6 +1310,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
         case Type::END: break;
     }
