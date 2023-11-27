@@ -57,7 +57,7 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
     # Scaling down is quicker on the lack of running jobs than scaling up on
     # queue
     scale_down = 2
-    scale_up = 5
+    scale_up = 3
     if runner_type == "style-checker":
         # The ASG should deflate almost instantly
         scale_down = 1
@@ -65,8 +65,9 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
         # The 5 was too quick, there are complainings regarding too slow with
         # 10. I am trying 7 now.
         # 7 still looks a bit slow, so I try 6
+        # Let's have it the same as the other ASG
         # UPDATE THE COMMENT ON CHANGES
-        scale_up = 6
+        ## scale_down = 3
     elif runner_type == "limited-tester":
         # The limited runners should inflate and deflate faster
         scale_down = 1

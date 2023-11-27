@@ -9,11 +9,13 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/numLiteralChars.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -803,18 +805,7 @@ public:
         {
             if (arguments.size() == 1)
             {
-                if (!castType(arguments[0].type.get(), [&](const auto & type)
-                    {
-                        using FromDataType = std::decay_t<decltype(type)>;
-                        res = ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(arguments, result_type, input_rows_count);
-                        return true;
-                    }))
-                {
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                    "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime "
-                                    "or DateTime64 when arguments size is 1.",
-                                    arguments[0].column->getName(), getName());
-                }
+                return castColumn(arguments[0], result_type);
             }
             else
             {

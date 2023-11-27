@@ -55,29 +55,28 @@ function configure()
 
     function randomize_config_boolean_value {
         value=$(($RANDOM % 2))
-        sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+        sudo cat /etc/clickhouse-server/config.d/$2.xml \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
-        > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-        sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+        > /etc/clickhouse-server/config.d/$2.xml.tmp
+        sudo mv /etc/clickhouse-server/config.d/$2.xml.tmp /etc/clickhouse-server/config.d/$2.xml
     }
 
     if [[ -n "$RANDOMIZE_KEEPER_FEATURE_FLAGS" ]] && [[ "$RANDOMIZE_KEEPER_FEATURE_FLAGS" -eq 1 ]]; then
         # Randomize all Keeper feature flags
-        randomize_config_boolean_value filtered_list
-        randomize_config_boolean_value multi_read
-        randomize_config_boolean_value check_not_exists
-        randomize_config_boolean_value create_if_not_exists
+        randomize_config_boolean_value filtered_list keeper_port
+        randomize_config_boolean_value multi_read keeper_port
+        randomize_config_boolean_value check_not_exists keeper_port
+        randomize_config_boolean_value create_if_not_exists keeper_port
     fi
 
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
 
-    #Randomize merge tree setting allow_experimental_block_number_column
-    value=$(($RANDOM % 2))
-    sudo cat /etc/clickhouse-server/config.d/merge_tree_settings.xml \
-    | sed "s|<allow_experimental_block_number_column>[01]</allow_experimental_block_number_column>|<allow_experimental_block_number_column>$value</allow_experimental_block_number_column>|" \
-    > /etc/clickhouse-server/config.d/merge_tree_settings.xml.tmp
-    sudo mv /etc/clickhouse-server/config.d/merge_tree_settings.xml.tmp /etc/clickhouse-server/config.d/merge_tree_settings.xml
+    if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
+        randomize_config_boolean_value use_compression zookeeper_fault_injection
+    else
+        randomize_config_boolean_value use_compression zookeeper
+    fi
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
@@ -140,21 +139,6 @@ EOL
          since clickhouse is not started as daemon (via clickhouse start)
     -->
     <core_path>$PWD</core_path>
-</clickhouse>
-EOL
-
-    # Analyzer is not yet ready for testing
-    cat > /etc/clickhouse-server/users.d/no_analyzer.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <constraints>
-                <allow_experimental_analyzer>
-                    <readonly/>
-                </allow_experimental_analyzer>
-            </constraints>
-        </default>
-    </profiles>
 </clickhouse>
 EOL
 

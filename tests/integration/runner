@@ -428,6 +428,7 @@ if __name__ == "__main__":
         f"--volume={args.library_bridge_binary}:/clickhouse-library-bridge "
         f"--volume={args.base_configs_dir}:/clickhouse-config "
         f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
+        f"--volume={args.utils_dir}/backupview:/ClickHouse/utils/backupview "
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_analyzer} -e PYTHONUNBUFFERED=1 "

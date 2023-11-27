@@ -1824,7 +1824,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         chassert(!is_parallel_reading_from_replicas);
 
         if (output_each_partition_through_separate_port)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimization isn't supposed to be used for queries with final");
 
         /// Add columns needed to calculate the sorting expression and the sign.
         for (const auto & column : metadata_for_reading->getColumnsRequiredForSortingKey())
@@ -2258,10 +2258,7 @@ size_t MergeTreeDataSelectAnalysisResult::marks() const
     if (std::holds_alternative<std::exception_ptr>(result))
         std::rethrow_exception(std::get<std::exception_ptr>(result));
 
-    const auto & index_stats = std::get<ReadFromMergeTree::AnalysisResult>(result).index_stats;
-    if (index_stats.empty())
-        return 0;
-    return index_stats.back().num_granules_after;
+    return std::get<ReadFromMergeTree::AnalysisResult>(result).selected_marks;
 }
 
 UInt64 MergeTreeDataSelectAnalysisResult::rows() const
@@ -2269,9 +2266,15 @@ UInt64 MergeTreeDataSelectAnalysisResult::rows() const
     if (std::holds_alternative<std::exception_ptr>(result))
         std::rethrow_exception(std::get<std::exception_ptr>(result));
 
-    const auto & index_stats = std::get<ReadFromMergeTree::AnalysisResult>(result).index_stats;
-    if (index_stats.empty())
-        return 0;
     return std::get<ReadFromMergeTree::AnalysisResult>(result).selected_rows;
 }
+
+const RangesInDataParts & MergeTreeDataSelectAnalysisResult::partsWithRanges() const
+{
+    if (std::holds_alternative<std::exception_ptr>(result))
+        std::rethrow_exception(std::get<std::exception_ptr>(result));
+
+    return std::get<ReadFromMergeTree::AnalysisResult>(result).parts_with_ranges;
+}
+
 }

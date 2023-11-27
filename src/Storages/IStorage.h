@@ -564,10 +564,10 @@ public:
       * @see shutdown()
       * @see flushAndPrepareForShutdown()
       */
-    void flushAndShutdown()
+    void flushAndShutdown(bool is_drop = false)
     {
         flushAndPrepareForShutdown();
-        shutdown();
+        shutdown(is_drop);
     }
 
     /** If the table have to do some complicated work when destroying an object - do it in advance.
@@ -575,7 +575,7 @@ public:
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
-    virtual void shutdown() {}
+    virtual void shutdown(bool is_drop = false) { UNUSED(is_drop); } // NOLINT
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
@@ -593,6 +593,7 @@ public:
 
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
+    std::atomic<bool> is_being_restarted{false};
 
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }
@@ -715,6 +716,9 @@ public:
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
+
+    /// Re initialize disks in case the underlying storage policy changed
+    virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
 
     /// A helper to implement read()
     static void readFromPipe(
