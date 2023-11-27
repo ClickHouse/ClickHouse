@@ -181,6 +181,11 @@ def test_backup_to_disk(storage_policy, to_disk):
             "disk_s3_other_bucket",
             id="from_s3_to_s3",
         ),
+        pytest.param(
+            "policy_s3_other_bucket",
+            "disk_s3",
+            id="from_s3_to_s3_other_bucket",
+        ),
     ],
 )
 def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
