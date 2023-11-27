@@ -17,8 +17,10 @@ node = cluster.add_instance(
     with_zookeeper=True,
 )
 
+
 def random_string(length):
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
+
 
 def get_connection_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(
@@ -37,6 +39,7 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
 
 def test_soft_limit_create(started_cluster):
     keeper_utils.wait_until_connected(started_cluster, node)
