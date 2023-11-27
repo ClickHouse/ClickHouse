@@ -350,11 +350,12 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     }
 }
 
-NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_columns)
+NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns)
 {
     auto default_virtuals = NamesAndTypesList{
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())}};
 
     default_virtuals.sort();
     storage_columns.sort();
@@ -395,7 +396,10 @@ ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList 
 
     Block block;
     for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
+    {
+        if (column.name == "_file" || column.name == "_path")
+            block.insert({column.type->createColumn(), column.type, column.name});
+    }
     /// Create a block with one row to construct filter
     /// Append "idx" column as the filter result
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
@@ -409,7 +413,10 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 {
     Block block;
     for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
+    {
+        if (column.name == "_file" || column.name == "_path")
+            block.insert({column.type->createColumn(), column.type, column.name});
+    }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
@@ -420,8 +427,8 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     return block.getByName("_idx").column;
 }
 
-void addRequestedPathAndFileVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, const String * filename)
+void addRequestedPathFileAndSizeVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -441,6 +448,13 @@ void addRequestedPathAndFileVirtualsToChunk(
                 auto filename_from_path = path.substr(last_slash_pos + 1);
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
+        }
+        else if (virtual_column.name == "_size")
+        {
+            if (size)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *size)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
     }
 }
