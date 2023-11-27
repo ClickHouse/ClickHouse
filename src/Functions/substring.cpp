@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -20,10 +21,10 @@ using namespace GatherUtils;
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
 namespace
@@ -61,7 +62,7 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
                             "passed {}, should be 2 or 3", getName(), number_of_arguments);
 
-        if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
+        if ((is_utf8 && !isString(arguments[0])) || (!isStringOrFixedString(arguments[0]) && !isEnum(arguments[0])))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                             arguments[0]->getName(), getName());
 
@@ -124,7 +125,7 @@ public:
     {
         size_t number_of_arguments = arguments.size();
 
-        ColumnPtr column_string = arguments[0].column;
+        ColumnPtr column_arg0 = arguments[0].column;
         ColumnPtr column_start = arguments[1].column;
         ColumnPtr column_length;
 
@@ -147,33 +148,46 @@ public:
 
         if constexpr (is_utf8)
         {
-            if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
+            if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_arg0.get()))
                 return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
                                 length_value, UTF8StringSource(*col), input_rows_count);
-            else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+            if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_arg0.get()))
                 return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
                                 length_value, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    arguments[0].column->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), getName());
         }
         else
         {
-            if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
+            if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_arg0.get()))
                 return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, StringSource(*col), input_rows_count);
-            else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+                                        length_value, StringSource(*col), input_rows_count);
+            if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_arg0.get()))
                 return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, FixedStringSource(*col_fixed), input_rows_count);
-            else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+                                        length_value, FixedStringSource(*col_fixed), input_rows_count);
+            if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_arg0.get()))
                 return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, ConstSource<StringSource>(*col_const), input_rows_count);
-            else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
+                                        length_value, ConstSource<StringSource>(*col_const), input_rows_count);
+            if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_arg0.get()))
                 return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    arguments[0].column->getName(), getName());
+                                        length_value, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
+            if (isEnum8(arguments[0].type))
+                if (const ColumnVector<Int8> * col_enum8 = checkAndGetColumn<ColumnVector<Int8>>(column_arg0.get()))
+                {
+                    const auto * enum_type = typeid_cast<const DataTypeEnum<Int8> *>(arguments[0].type.get());
+                    return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                            length_value, EnumSource<Int8>(*col_enum8, *enum_type), input_rows_count);
+                }
+            if (isEnum16(arguments[0].type))
+                if (const ColumnVector<Int16> * col_enum16 = checkAndGetColumn<ColumnVector<Int16>>(column_arg0.get()))
+                {
+                    const auto * enum_type = typeid_cast<const DataTypeEnum<Int16> *>(arguments[0].type.get());
+                    return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                            length_value, EnumSource<Int16>(*col_enum16, *enum_type), input_rows_count);
+                }
+
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), getName());
         }
     }
 };

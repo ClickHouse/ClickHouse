@@ -11,6 +11,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 
+#include <DataTypes/EnumValues.h>
+
 #include "IArraySource.h"
 #include "IValueSource.h"
 #include "Slices.h"
@@ -310,6 +312,79 @@ struct StringSource
         if (offset > elem_size)
             return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
+    }
+};
+
+template <typename Type>
+struct EnumSource {
+    using Column = ColumnVector<Type>;
+    using Slice = NumericArraySlice<UInt8>;
+
+    using SinkType = StringSink;
+
+    const typename ColumnVector<Type>::Container & data;
+    const DataTypeEnum<Type> & data_type;
+
+    size_t row_num = 0;
+
+    explicit EnumSource(const Column & col, const DataTypeEnum<Type> & data_type_) : data(col.getData()), data_type(data_type_) { }
+
+    void next() { ++row_num; }
+
+    bool isEnd() const { return row_num == data.size(); }
+
+    size_t rowNum() const { return row_num; }
+
+    size_t getSizeForReserve() const { return data.size(); }
+
+    size_t getElementSize() const
+    {
+        StringRef name = data_type.getNameForValue(data[row_num]);
+        return name.size;
+    }
+
+    size_t getColumnSize() const { return data.size(); }
+
+    Slice getWhole() const {
+        StringRef name = data_type.getNameForValue(data[row_num]);
+        const UInt8 * name_data = reinterpret_cast<const UInt8 *>(name.data);
+        return {name_data, name.size};
+    }
+
+    Slice getSliceFromLeft(size_t offset) const
+    {
+        StringRef name = data_type.getNameForValue(data[row_num]);
+        if (offset >= name.size)
+            return {nullptr, 0};
+        const UInt8 * name_data = reinterpret_cast<const UInt8 *>(name.data);
+        return {name_data + offset, name.size - offset};
+    }
+
+    Slice getSliceFromLeft(size_t offset, size_t length) const
+    {
+        StringRef name = data_type.getNameForValue(data[row_num]);
+        if (offset >= name.size)
+            return {nullptr, 0};
+        const UInt8 * name_data = reinterpret_cast<const UInt8 *>(name.data);
+        return {name_data + offset, std::min(length, name.size - offset)};
+    }
+
+    Slice getSliceFromRight(size_t offset) const
+    {
+        StringRef name = data_type.getNameForValue(data[row_num]);
+        const UInt8 * name_data = reinterpret_cast<const UInt8 *>(name.data);
+        if (offset > name.size)
+            return {name_data, name.size};
+        return {name_data + name.size - offset, offset};
+    }
+
+    Slice getSliceFromRight(size_t offset, size_t length) const
+    {
+        StringRef name = data_type.getNameForValue(data[row_num]);
+        const UInt8 * name_data = reinterpret_cast<const UInt8 *>(name.data);
+        if (offset > name.size)
+            return {name_data, length + name.size > offset ? std::min(name.size, length + name.size - offset) : 0};
+        return {name_data + name.size - offset, std::min(length, offset)};
     }
 };
 
