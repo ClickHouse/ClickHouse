@@ -4,28 +4,31 @@ drop database if exists 02911_support_alias_column_in_indices;
 create database 02911_support_alias_column_in_indices;
 use 02911_support_alias_column_in_indices;
 
-create table test
-(
-    x UInt32,
-    y alias x + 1,
-    index i_y (y) type minmax
-) engine = MergeTree order by x;
-
-insert into test select * from numbers(10);
-insert into test select * from numbers(11, 20);
-
 create table test1
 (
-    x UInt32,
-    y1 alias x + 1,
-    y2 alias y1 + 1,
-    index i_y (y2) type minmax
-) engine = MergeTree order by tuple();
+    c UInt32,
+    a alias c + 1,
+    index i (a) type minmax
+) engine = MergeTree order by c;
 
 insert into test1 select * from numbers(10);
 insert into test1 select * from numbers(11, 20);
 
-explain indexes = 1 select * from test where y > 10;
-explain indexes = 1 select * from test1 where y2 > 15;
+explain indexes = 1 select * from test1 where a > 10 settings allow_experimental_analyzer = 0;
+explain indexes = 1 select * from test1 where a > 10 settings allow_experimental_analyzer = 1;
+
+create table test2
+(
+    c UInt32,
+    a1 alias c + 1,
+    a2 alias a1 + 1,
+    index i (a2) type minmax
+) engine = MergeTree order by c;
+
+insert into test2 select * from numbers(10);
+insert into test2 select * from numbers(11, 20);
+
+explain indexes = 1 select * from test2 where a2 > 15 settings allow_experimental_analyzer = 0;
+explain indexes = 1 select * from test2 where a2 > 15 settings allow_experimental_analyzer = 1; -- buggy, analyzer does not pick up index i
 
 drop database 02911_support_alias_column_in_indices;
