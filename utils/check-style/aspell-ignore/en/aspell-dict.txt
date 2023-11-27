@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2633 
+personal_ws-1.1 en 2646 
 AArch
 ACLs
 ALTERs
@@ -1556,6 +1556,7 @@ graphql
 greatCircleAngle
 greatCircleDistance
 greaterOrEquals
+greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
@@ -1741,6 +1742,7 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
+lessorequals
 levenshtein
 levenshteinDistance
 lexicographically
@@ -1919,6 +1921,7 @@ notEquals
 notILike
 notIn
 notLike
+notequals
 notretry
 nowInBlock
 ntile
