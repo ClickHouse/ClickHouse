@@ -10,7 +10,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
-#include <Storages/ReplaceAliasToExprVisitor.h>
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
 #include "Common/Exception.h"
@@ -22,6 +22,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
