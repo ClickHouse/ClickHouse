@@ -9,7 +9,6 @@
 #include <mutex>
 #include <vector>
 #include <string_view>
-#include <cstring>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -65,12 +64,12 @@
 #   include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
 
-#include "Core/Protocol.h"
-#include "Storages/MergeTree/RequestResponse.h"
+#include <Core/Protocol.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include "TCPHandler.h"
 #include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -503,7 +502,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, false, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, QueryFlags{}, state.stage);
 
             /// For query coordination
             /// SECONDARY_QUERY fragments_request parse fragments and add it to FragmentMgr, it's job finished.
@@ -620,6 +619,21 @@ void TCPHandler::runImpl()
         }
         catch (const Exception & e)
         {
+            /// Authentication failure with interserver secret
+            /// - early exit without trying to send the exception to the client.
+            /// Because the server should not try to skip (parse, decompress) the remaining packets sent by the client,
+            /// as it will lead to additional work and unneeded exposure to unauthenticated connections.
+
+            /// Note that the exception AUTHENTICATION_FAILED can be here in two cases:
+            /// 1. The authentication in receiveHello is skipped with "interserver secret",
+            /// postponed to receiving the query, and then failed.
+            /// 2. Receiving exception from a query using a table function to authenticate with another server.
+            /// In this case, the user is already authenticated with this server,
+            /// is_interserver_mode is false, and we can send the exception to the client normally.
+
+            if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+                throw;
+
             state.io.onException();
             exception.reset(e.clone());
 
@@ -707,6 +721,13 @@ void TCPHandler::runImpl()
             network_error = true;
             LOG_WARNING(log, "Client has gone away.");
         }
+
+        /// Interserver authentication is done only after we read the query.
+        /// This fact can be abused by producing exception before or while we read the query.
+        /// To avoid any potential exploits, we simply close connection on any exceptions
+        /// that happen before the first query is authenticated with the cluster secret.
+        if (is_interserver_mode && exception && !is_interserver_authenticated)
+            exception->rethrow();
 
         try
         {
@@ -1614,8 +1635,11 @@ void TCPHandler::receiveHello()
                     getClientAddress(client_info));
                 return;
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED)
+                    throw;
+
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }
@@ -1996,7 +2020,18 @@ void TCPHandler::receiveQuery()
     {
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
-        String cluster_secret = server.context()->getCluster(cluster)->getSecret();
+
+        String cluster_secret;
+        try
+        {
+            cluster_secret = server.context()->getCluster(cluster)->getSecret();
+        }
+        catch (const Exception & e)
+        {
+            auto exception = Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            throw exception; /// NOLINT
+        }
 
         if (salt.empty() || cluster_secret.empty())
         {
@@ -2048,6 +2083,8 @@ void TCPHandler::receiveQuery()
             /// address.
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
+
+        is_interserver_authenticated = true;
 #else
         auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library");

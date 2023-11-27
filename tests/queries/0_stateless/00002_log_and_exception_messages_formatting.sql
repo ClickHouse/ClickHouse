@@ -13,11 +13,11 @@ select 'runtime messages', greatest(coalesce(sum(length(message_format_string) =
     where message not like '% Received from %clickhouse-staging.com:9440%';
 
 -- Check the same for exceptions. The value was 0.03
-select 'runtime exceptions', max2(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.05) from logs
+select 'runtime exceptions', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.05) from logs
     where (message like '%DB::Exception%' or message like '%Coordination::Exception%')
     and message not like '% Received from %clickhouse-staging.com:9440%';
 
-select 'unknown runtime exceptions', max2(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.01) from logs where
+select 'unknown runtime exceptions', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.01) from logs where
     (message like '%DB::Exception%' or message like '%Coordination::Exception%')
     and message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%';
 
@@ -50,10 +50,15 @@ create temporary table known_short_messages (s String) as select * from (select
 ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
-select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_string), 1) from logs where length(message_format_string) < 10 and message_format_string not in known_short_messages;
+select 'messages shorter than 10',
+    greatest(uniqExact(message_format_string), 1)
+    from logs
+    where length(message_format_string) < 10 and message_format_string not in known_short_messages;
 
 -- Same as above. Feel free to update the threshold or remove this query if really necessary
-select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 3) from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
+select 'messages shorter than 16',
+    greatest(uniqExact(message_format_string), 3)
+    from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
 
 -- Unlike above, here we look at length of the formatted message, not format string. Most short format strings are fine because they end up decorated with context from outer or inner exceptions, e.g.:
 -- "Expected end of line" -> "Code: 117. DB::Exception: Expected end of line: (in file/uri /var/lib/clickhouse/user_files/data_02118): (at row 1)"
@@ -62,42 +67,53 @@ select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_st
 -- This table currently doesn't have enough information to do this reliably, so we just regex search for " (ERROR_NAME_IN_CAPS)" and hope that's good enough.
 -- For the "Code: 123. DB::Exception: " part, we just subtract 26 instead of searching for it. Because sometimes it's not at the start, e.g.:
 -- "Unexpected error, will try to restart main thread: Code: 341. DB::Exception: Unexpected error: Code: 57. DB::Exception:[...]"
-select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 3) from logs
-    where message ilike '%DB::Exception%' and if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) < 30 + 26 and message_format_string not in known_short_messages;
+select 'exceptions shorter than 30',
+    greatest(uniqExact(message_format_string), 3) AS c,
+    c = 3 ? [] : groupUniqArray(message_format_string)
+    from logs
+    where message ilike '%DB::Exception%' and if(length(extract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) < 30 + 26 and message_format_string not in known_short_messages;
 
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
-select 'noisy messages', max2((select count() from logs group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.30);
+select 'noisy messages',
+    greatest((select count() from logs group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.30);
 
 -- Same as above, but excluding Test level (actually finds top 1 Trace message)
 with ('Access granted: {}{}', '{} -> {}') as frequent_in_tests
-select 'noisy Trace messages', max2((select count() from logs where level!='Test' and message_format_string not in frequent_in_tests
-    group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.16);
+select 'noisy Trace messages',
+    greatest((select count() from logs where level!='Test' and message_format_string not in frequent_in_tests
+        group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.16);
 
 -- Same as above for Debug
-select 'noisy Debug messages', max2((select count() from logs where level <= 'Debug' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.09);
+select 'noisy Debug messages',
+    greatest((select count() from logs where level <= 'Debug' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.09);
 
 -- Same as above for Info
-select 'noisy Info messages', max2((select count() from logs where level <= 'Information' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.05);
+select 'noisy Info messages',
+    greatest((select count() from logs where level <= 'Information' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.05);
 
 -- Same as above for Warning
 with ('Not enabled four letter command {}') as frequent_in_tests
-select 'noisy Warning messages', max2(coalesce((select countOrDefault() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
+select 'noisy Warning messages',
+    greatest(coalesce((select count() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
     group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.01);
 
 -- Same as above for Error
-select 'noisy Error messages', max2(coalesce((select countOrDefault() from logs where level = 'Error' group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.02);
+select 'noisy Error messages',
+    greatest(coalesce((select count() from logs where level = 'Error' group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.02);
 
 select 'no Fatal messages', count() from logs where level = 'Fatal';
 
 
 -- Avoid too noisy messages: limit the number of messages with high frequency
-select 'number of too noisy messages', max2(count(), 3) from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.10);
-select 'number of noisy messages', max2(count(), 10) from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.05);
+select 'number of too noisy messages',
+    greatest(count(), 3) from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.10);
+select 'number of noisy messages',
+    greatest(count(), 10) from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.05);
 
 -- Each message matches its pattern (returns 0 rows)
--- FIXME maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
-select 'incorrect patterns', max2(countDistinct(message_format_string), 15) from (
+-- Note: maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
+select 'incorrect patterns', greatest(uniqExact(message_format_string), 15) from (
     select message_format_string, any(message) as any_message from logs
     where ((rand() % 8) = 0)
     and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)

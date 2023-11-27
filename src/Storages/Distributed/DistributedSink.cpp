@@ -31,8 +31,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
-#include <base/range.h>
-#include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
 
 #include <filesystem>
@@ -43,6 +41,7 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
     extern const Metric DistributedInsertThreads;
     extern const Metric DistributedInsertThreadsActive;
+    extern const Metric DistributedInsertThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -373,7 +372,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
+                    auto results = shard_info.pool->getManyChecked(timeouts, settings, PoolMode::GET_ONE, main_table.getQualifiedName());
                     if (results.empty() || results.front().entry.isNull())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}", toString(job.shard_index));
 
@@ -387,7 +386,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     if (!connection_pool)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
 
-                    job.connection_entry = connection_pool->get(timeouts, &settings);
+                    job.connection_entry = connection_pool->get(timeouts, settings);
                     if (job.connection_entry.isNull())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
                 }
@@ -465,6 +464,7 @@ void DistributedSink::writeSync(const Block & block)
         pool.emplace(
             CurrentMetrics::DistributedInsertThreads,
             CurrentMetrics::DistributedInsertThreadsActive,
+            CurrentMetrics::DistributedInsertThreadsScheduled,
             max_threads, max_threads, jobs_count);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))

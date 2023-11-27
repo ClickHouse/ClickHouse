@@ -35,6 +35,9 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
 void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast = {});
 void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
+/// Extract subset of filter_dag that can be evaluated using only columns from header
+ActionsDAGPtr splitFilterDagForAllowedInputs(const Block & header, const ActionsDAGPtr & filter_dag, ContextPtr context);
+
 /// Extract from the input stream a set of `name` column values
 template <typename T>
 auto extractSingleValueFromBlock(const Block & block, const String & name)

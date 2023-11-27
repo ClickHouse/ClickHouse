@@ -6,11 +6,9 @@ sidebar_label: Mathematical
 
 # Mathematical Functions
 
-All the functions return a Float64 number. Results are generally as close to the actual result as possible, but in some cases less precise than the machine-representable number.
-
 ## e
 
-Returns e.
+Returns e ([Euler's constant](https://en.wikipedia.org/wiki/Euler%27s_constant))
 
 **Syntax**
 
@@ -18,15 +16,22 @@ Returns e.
 e()
 ```
 
+**Returned value**
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
 ## pi
 
-Returns π.
+Returns π ([Pi](https://en.wikipedia.org/wiki/Pi)).
 
 **Syntax**
 
 ```sql
 pi()
 ```
+**Returned value**
+
+Type: [Float64](../../sql-reference/data-types/float.md).
 
 ## exp
 
@@ -37,6 +42,14 @@ Returns e to the power of the given argument.
 ```sql
 exp(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 ## log
 
@@ -50,6 +63,14 @@ log(x)
 
 Alias: `ln(x)`
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## exp2
 
 Returns 2 to the power of the given argument
@@ -59,6 +80,14 @@ Returns 2 to the power of the given argument
 ```sql
 exp2(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 ## intExp2
 
@@ -80,6 +109,14 @@ Returns the binary logarithm of the argument.
 log2(x)
 ```
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## exp10
 
 Returns 10 to the power of the given argument.
@@ -89,6 +126,14 @@ Returns 10 to the power of the given argument.
 ```sql
 exp10(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 ## intExp10
 
@@ -110,6 +155,14 @@ Returns the decimal logarithm of the argument.
 log10(x)
 ```
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## sqrt
 
 Returns the square root of the argument.
@@ -118,6 +171,14 @@ Returns the square root of the argument.
 sqrt(x)
 ```
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## cbrt
 
 Returns the cubic root of the argument.
@@ -125,6 +186,14 @@ Returns the cubic root of the argument.
 ```sql
 cbrt(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 ## erf
 
@@ -135,6 +204,14 @@ If `x` is non-negative, then `erf(x / σ√2)` is the probability that a random 
 ```sql
 erf(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -160,6 +237,14 @@ Returns a number close to `1 - erf(x)` without loss of precision for large ‘x�
 erfc(x)
 ```
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## lgamma
 
 Returns the logarithm of the gamma function.
@@ -169,6 +254,14 @@ Returns the logarithm of the gamma function.
 ```sql
 lgamma(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 ## tgamma
 
@@ -180,6 +273,14 @@ Returns the gamma function.
 gamma(x)
 ```
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## sin
 
 Returns the sine of the argument
@@ -189,6 +290,14 @@ Returns the sine of the argument
 ```sql
 sin(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 ## cos
 
@@ -200,6 +309,14 @@ Returns the cosine of the argument.
 cos(x)
 ```
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## tan
 
 Returns the tangent of the argument.
@@ -209,6 +326,14 @@ Returns the tangent of the argument.
 ```sql
 tan(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 ## asin
 
@@ -220,6 +345,14 @@ Returns the arc sine of the argument.
 asin(x)
 ```
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## acos
 
 Returns the arc cosine of the argument.
@@ -230,6 +363,14 @@ Returns the arc cosine of the argument.
 acos(x)
 ```
 
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
+
 ## atan
 
 Returns the arc tangent of the argument.
@@ -239,6 +380,14 @@ Returns the arc tangent of the argument.
 ```sql
 atan(x)
 ```
+
+**Arguments**
+
+- `x` - [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md)
+
+**Returned value**
+
+Type: [Float*](../../sql-reference/data-types/float.md).
 
 ## pow
 
@@ -251,6 +400,15 @@ pow(x, y)
 ```
 
 Alias: `power(x, y)`
+
+**Arguments**
+
+- `x` - [(U)Int8/16/32/64](../../sql-reference/data-types/int-uint.md) or [Float*](../../sql-reference/data-types/float.md)
+- `y` - [(U)Int8/16/32/64](../../sql-reference/data-types/int-uint.md) or [Float*](../../sql-reference/data-types/float.md)
+
+**Returned value**
+
+Type: [Float64](../../sql-reference/data-types/float.md).
 
 ## cosh
 

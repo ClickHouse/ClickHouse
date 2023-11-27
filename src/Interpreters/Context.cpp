@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
 #include <Common/Stopwatch.h>
@@ -138,10 +139,13 @@ namespace CurrentMetrics
     extern const Metric BackgroundCommonPoolSize;
     extern const Metric MarksLoaderThreads;
     extern const Metric MarksLoaderThreadsActive;
+    extern const Metric MarksLoaderThreadsScheduled;
     extern const Metric IOPrefetchThreads;
     extern const Metric IOPrefetchThreadsActive;
+    extern const Metric IOPrefetchThreadsScheduled;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
+    extern const Metric IOWriterThreadsScheduled;
 }
 
 
@@ -199,6 +203,8 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
+
+    ConfigurationPtr sensitive_data_masker_config;
 
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
@@ -860,7 +866,7 @@ Strings Context::getWarnings() const
         }
         res = res + "]" + (single_element ? " is" : " are")
             + " changed. "
-              "Please check 'select * from system.settings where changed and is_obsolete' and read the changelog.";
+              "Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
         common_warnings.emplace_back(res);
     }
 
@@ -1684,7 +1690,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             return res;
         }
     }
-    auto hash = table_expression->getTreeHash();
+    auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     auto key = toString(hash);
     StoragePtr & res = table_function_results[key];
     if (!res)
@@ -1844,7 +1850,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         ///
         ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
         ///
-        auto new_hash = table_expression->getTreeHash();
+        auto new_hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
         if (hash != new_hash)
         {
             key = toString(new_hash);
@@ -1856,7 +1862,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
 {
-    const auto hash = table_expression->getTreeHash();
+    const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     const auto key = toString(hash);
     StoragePtr & res = table_function_results[key];
 
@@ -2364,6 +2370,25 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
     shared->dictionaries_xmls = external_dictionaries_loader.addConfigRepository(std::move(repository));
 }
 
+void Context::waitForDictionariesLoad() const
+{
+    LOG_TRACE(shared->log, "Waiting for dictionaries to be loaded");
+    auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
+    bool all_dictionaries_loaded = true;
+    for (const auto & result : results)
+    {
+        if ((result.status != ExternalLoaderStatus::LOADED) && (result.status != ExternalLoaderStatus::LOADED_AND_RELOADING))
+        {
+            LOG_WARNING(shared->log, "Dictionary {} was not loaded ({})", result.name, result.status);
+            all_dictionaries_loaded = false;
+        }
+    }
+    if (all_dictionaries_loaded)
+        LOG_INFO(shared->log, "All dictionaries have been loaded");
+    else
+        LOG_INFO(shared->log, "Some dictionaries were not loaded");
+}
+
 void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
 {
     auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
@@ -2560,7 +2585,7 @@ ThreadPool & Context::getLoadMarksThreadpool() const
         auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
         auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, pool_size, pool_size, queue_size);
+            CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, CurrentMetrics::MarksLoaderThreadsScheduled, pool_size, pool_size, queue_size);
     });
 
     return *shared->load_marks_threadpool;
@@ -2743,7 +2768,7 @@ ThreadPool & Context::getPrefetchThreadpool() const
         auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 100);
         auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
         shared->prefetch_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, pool_size, pool_size, queue_size);
+            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, CurrentMetrics::IOPrefetchThreadsScheduled, pool_size, pool_size, queue_size);
     });
 
     return *shared->prefetch_threadpool;
@@ -3238,6 +3263,16 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
+void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
+{
+    const auto old_config = shared->sensitive_data_masker_config;
+    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
+        return;
+
+    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
+    shared->sensitive_data_masker_config = config;
+}
+
 InterserverCredentialsPtr Context::getInterserverCredentials() const
 {
     return shared->interserver_io_credentials.get();
@@ -3672,15 +3707,24 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
     return shared->system_logs->backup_log;
 }
 
+std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+    return shared->system_logs->blob_storage_log;
+}
+
 std::vector<ISystemLog *> Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-
     return shared->system_logs->logs;
 }
+
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
@@ -3827,6 +3871,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 {
     {
         std::lock_guard lock(shared->storage_policies_mutex);
+        Strings disks_to_reinit;
         if (shared->merge_tree_disk_selector)
             shared->merge_tree_disk_selector
                 = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
@@ -3836,13 +3881,19 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
             try
             {
                 shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
-                    config, "storage_configuration.policies", shared->merge_tree_disk_selector);
+                    config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
             }
             catch (Exception & e)
             {
                 LOG_ERROR(
                     shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
             }
+        }
+
+        if (!disks_to_reinit.empty())
+        {
+            LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
+            DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
         }
     }
 
@@ -3851,6 +3902,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         if (shared->storage_s3_settings)
             shared->storage_s3_settings->loadFromConfig("s3", config, getSettingsRef());
     }
+
 }
 
 
@@ -4784,7 +4836,7 @@ ThreadPool & Context::getThreadPoolWriter() const
         auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
 
         shared->threadpool_writer = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, pool_size, pool_size, queue_size);
+            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
     });
 
     return *shared->threadpool_writer;
@@ -4820,6 +4872,7 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.filesystem_cache_segments_batch_size = settings.filesystem_cache_segments_batch_size;
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;

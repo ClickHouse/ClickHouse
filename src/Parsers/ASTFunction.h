@@ -63,7 +63,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTSelectWithUnionQuery * tryGetQueryArgument() const;
 

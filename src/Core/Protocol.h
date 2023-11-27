@@ -97,7 +97,7 @@ namespace Protocol
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
-        /// would always be true because of compiler optimisation. That would lead to out-of-bounds error
+        /// would always be true because of compiler optimization. That would lead to out-of-bounds error
         /// if the packet is invalid.
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         inline const char * toString(UInt64 packet)

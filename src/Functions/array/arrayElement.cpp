@@ -31,6 +31,9 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
+namespace
+{
+
 namespace ArrayImpl
 {
     class NullMapBuilder;
@@ -130,7 +133,6 @@ class NullMapBuilder
 {
 public:
     explicit operator bool() const { return src_null_map; }
-    bool operator!() const { return !src_null_map; }
 
     void initSource(const UInt8 * src_null_map_)
     {
@@ -900,7 +902,7 @@ void FunctionArrayElement::executeMatchConstKeyToIndex(
 }
 
 template <typename F>
-static bool castColumnString(const IColumn * column, F && f)
+bool castColumnString(const IColumn * column, F && f)
 {
     return castTypeToEither<ColumnString, ColumnFixedString>(column, std::forward<F>(f));
 }
@@ -943,13 +945,13 @@ bool FunctionArrayElement::matchKeyToIndexString(
 }
 
 template <typename FromType, typename ToType>
-static constexpr bool areConvertibleTypes =
+constexpr bool areConvertibleTypes =
     std::is_same_v<FromType, ToType>
         || (is_integer<FromType> && is_integer<ToType>
             && std::is_convertible_v<FromType, ToType>);
 
 template <typename F>
-static bool castColumnNumeric(const IColumn * column, F && f)
+bool castColumnNumeric(const IColumn * column, F && f)
 {
     return castTypeToEither<
         ColumnVector<UInt8>,
@@ -1248,6 +1250,8 @@ ColumnPtr FunctionArrayElement::perform(const ColumnsWithTypeAndName & arguments
     }
 
     return res;
+}
+
 }
 
 

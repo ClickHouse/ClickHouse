@@ -137,7 +137,7 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void initializeFromDisk();
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
     void flushAndPrepareForShutdown() override;
     void drop() override;
 
@@ -159,13 +159,14 @@ public:
     /// Used by ClusterCopier
     size_t getShardCount() const;
 
+    bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
+
     ASTPtr getShardingKey() const { return sharding_key; }
 
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
-
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     const String & getRelativeDataPath() const { return relative_data_path; }
 

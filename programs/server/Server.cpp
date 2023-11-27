@@ -98,7 +98,7 @@
 #include <unordered_set>
 
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_LINUX)
 #    include <cstdlib>
@@ -676,6 +676,10 @@ try
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
+    global_context->addWarningMessage("Server was built with code coverage. It will work slowly.");
+#endif
+
     const size_t physical_server_memory = getMemoryAmount();
 
     LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
@@ -1165,6 +1169,8 @@ try
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    NamedCollectionUtils::loadIfNot();
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
@@ -1377,6 +1383,8 @@ try
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+
+                global_context->reloadQueryMaskingRulesIfChanged(config);
 
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
@@ -1697,7 +1705,7 @@ try
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
-        database_catalog.startupBackgroundCleanup();
+        database_catalog.startupBackgroundTasks();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
@@ -1822,6 +1830,9 @@ try
         try
         {
             global_context->loadOrReloadDictionaries(config());
+
+            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
+                global_context->waitForDictionariesLoad();
         }
         catch (...)
         {
@@ -1967,7 +1978,8 @@ catch (...)
 {
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
-    throw;
+    auto code = getCurrentExceptionCode();
+    return code ? code : -1;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
