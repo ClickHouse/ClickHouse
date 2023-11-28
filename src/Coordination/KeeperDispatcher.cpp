@@ -762,6 +762,7 @@ void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
 
 void KeeperDispatcher::clusterUpdateThread()
 {
+    using enum KeeperServer::ConfigUpdateState;
     bool last_command_was_leader_change = false;
 
     while (!shutdown_called)
