@@ -12,7 +12,7 @@ target_link_libraries(clickhouse_common_foundationdb
         clickhouse_common_io
         common
     PRIVATE
-        fdb_c
+        ch_contrib::fdb_c
         ch_contrib::fmt
 )
 if(SANITIZE STREQUAL "undefined")

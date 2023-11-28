@@ -427,30 +427,30 @@ bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
 
-// #if !defined(USE_MUSL)
-// extern "C"
-// {
-//     void * dlopen(const char *, int)
-//     {
-//         return nullptr;
-//     }
+#if !defined(USE_MUSL)
+extern "C"
+{
+    void * dlopen(const char *, int)
+    {
+        return nullptr;
+    }
 
-//     void * dlmopen(long, const char *, int) // NOLINT
-//     {
-//         return nullptr;
-//     }
+    void * dlmopen(long, const char *, int) // NOLINT
+    {
+        return nullptr;
+    }
 
-//     int dlclose(void *)
-//     {
-//         return 0;
-//     }
+    int dlclose(void *)
+    {
+        return 0;
+    }
 
-//     const char * dlerror()
-//     {
-//         return "ClickHouse does not allow dynamic library loading";
-//     }
-// }
-// #endif
+    const char * dlerror()
+    {
+        return "ClickHouse does not allow dynamic library loading";
+    }
+}
+#endif
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:

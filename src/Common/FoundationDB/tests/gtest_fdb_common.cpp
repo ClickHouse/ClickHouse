@@ -27,12 +27,8 @@ namespace DB
 void FDBFixture::SetUpTestSuite()
 {
     auto * cluster_file_env = std::getenv("CLICKHOUSE_UT_FDB_CLUSTER_FILE"); // NOLINT(concurrency-mt-unsafe)
-    auto * library_path_env = std::getenv("CLICKHOUSE_UT_FDB_LIBRARY_PATH"); // NOLINT(concurrency-mt-unsafe)
     if (!cluster_file_env || cluster_file_env[0] == 0)
         return;
-
-    if (library_path_env && library_path_env[0] != 0)
-        FoundationDBNetwork::setLibraryPath(library_path_env);
 
     cluster_file = cluster_file_env;
     key_prefix = "ch_ut_" + getRandomASCIIString(5) + "/";

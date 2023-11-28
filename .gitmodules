@@ -357,3 +357,6 @@
 [submodule "contrib/pocketfft"]
 	path = contrib/pocketfft
 	url = https://github.com/mreineck/pocketfft.git
+[submodule "contrib/fdb-c"]
+	path = contrib/fdb-c
+	url = https://github.com/myscale/libfdb_c.git

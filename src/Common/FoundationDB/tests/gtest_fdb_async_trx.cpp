@@ -551,8 +551,10 @@ TEST_F(FDBAsyncTrx, TrxCannotStartIfTrackerIsCanceled)
 
     tracker.gracefullyCancelAll();
 
-    ASSERT_ANY_THROW(trx.exec(
-        newTrx(), TRX_CALLBACK(&) { UNUSED(eptr); }, tracker.newToken()));
+    // FIXME: newTrx() may leak because tracker.newToken() is failed
+    // ASSERT_ANY_THROW(trx.exec(
+    //     newTrx(), TRX_CALLBACK(&) { UNUSED(eptr); }, tracker.newToken()));
+    ASSERT_ANY_THROW(tracker.newToken());
 }
 
 TEST_F(FDBAsyncTrx, CancelMultiTrx)

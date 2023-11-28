@@ -37,7 +37,7 @@ public:
 
     void wait_then_destroy(FDBFuture * future)
     {
-        fdb_future_block_until_ready(future);
+        throwIfFDBError(fdb_future_block_until_ready(future));
         fdb_future_destroy(future);
     }
 

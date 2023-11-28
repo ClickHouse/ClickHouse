@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 #include <Common/FoundationDB/FoundationDBCommon.h>
 #include <Common/FoundationDB/fdb_c_fwd.h>
+#include <Common/FoundationDB/internal/FDBExtended.h>
 
 #include "gtest_fdb_common.h"
 
@@ -38,14 +39,14 @@ public:
 
     void wait_then_destroy(FDBFuture * future)
     {
-        fdb_future_block_until_ready(future);
+        throwIfFDBError(fdb_future_block_until_ready(future));
         fdb_future_destroy(future);
     }
 
     template <typename CB>
     void callback(FDBFuture * future, CB callback)
     {
-        fdb_future_set_callback(future, fdb_callback, new std::function<void()>(callback));
+        throwIfFDBError(fdb_future_set_callback(future, fdb_callback, new std::function<void()>(callback)));
     }
 
     static void fdb_callback(FDBFuture *, void * payload)
@@ -68,7 +69,7 @@ TEST_F(FDBCExtensionTests, DelayShouldWork)
     auto before = std::chrono::system_clock::now();
 
     auto * future = fdb_delay(2);
-    fdb_future_block_until_ready(future);
+    throwIfFDBError(fdb_future_block_until_ready(future));
     fdb_future_destroy(future);
 
     auto after = std::chrono::system_clock::now();

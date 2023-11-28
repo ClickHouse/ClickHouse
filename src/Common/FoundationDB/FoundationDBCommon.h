@@ -30,9 +30,6 @@ class FoundationDBNetwork : public boost::noncopyable
 public:
     FoundationDBNetwork() = delete;
 
-    /// Set the target path for libfdb_c.so. Only valid before ensureStarted().
-    static void setLibraryPath(const std::string & path);
-
     /// ensureStarted() should be called before any fdb async api.
     /// It can be called multiple times, but only one network thread will be started.
     ///

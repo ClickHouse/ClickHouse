@@ -158,7 +158,7 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 
 if(ENABLE_FDB)
-    add_contrib (fdb-c-cmake)
+    add_contrib (fdb-c-cmake fdb-c)
 endif()
 
 

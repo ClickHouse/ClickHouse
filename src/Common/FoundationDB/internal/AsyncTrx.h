@@ -14,6 +14,7 @@
 #include <Common/logger_useful.h>
 
 #include "AsyncTrxTracker.h"
+#include "FDBExtended.h"
 
 // #define FDB_ASYNC_TRX_ENABLE_THREAD_POOL
 // #define ASYNC_TRX_DEBUG_LOG
@@ -493,7 +494,7 @@ public:
     AsyncTrxBuilder & commit(VarDesc<FDBVersionstamp> var_versionstamp)
     {
         using FDBFuturePtr = std::unique_ptr<FDBFuture, void (*)(FDBFuture *)>;
-        auto var_future = var<FDBFuturePtr>(nullptr, fdb_future_destroy);
+        auto var_future = var<FDBFuturePtr>(nullptr, &fdb_future_destroy);
 
         steps.emplace_back(
             [var_future](Context & ctx, FDBFuture *)

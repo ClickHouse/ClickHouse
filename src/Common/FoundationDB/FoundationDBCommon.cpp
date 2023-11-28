@@ -34,18 +34,6 @@ std::unique_ptr<ThreadFromGlobalPool> FoundationDBNetwork::network_thread;
 std::mutex FoundationDBNetwork::network_thread_mutex;
 std::atomic<int> FoundationDBNetwork::use_cnt = 1;
 
-void FoundationDBNetwork::setLibraryPath(const std::string & path)
-{
-    if (network_thread)
-    {
-        auto * log = &Poco::Logger::get("FoundationDBNetwork");
-        LOG_WARNING(log, "Cannot set library path after fdb network started");
-        return;
-    }
-
-    fdb_load_library(path);
-}
-
 void FoundationDBNetwork::ensureStarted(int64_t thread)
 {
     std::lock_guard lock(network_thread_mutex);
@@ -54,9 +42,6 @@ void FoundationDBNetwork::ensureStarted(int64_t thread)
     {
         return;
     }
-
-    // Ensure fdb library is loaded
-    fdb_load_library();
 
     auto * log = &Poco::Logger::get("FoundationDBNetwork");
     throwIfFDBError(fdb_select_api_version(FDB_API_VERSION));
@@ -69,30 +54,7 @@ void FoundationDBNetwork::ensureStarted(int64_t thread)
 #endif
 
     if (thread > 1)
-    {
-#ifdef FDB_C_EMBED
-        LOG_WARNING(log, "thread={} is ignored due to fdb_c is embedded", thread);
-#else
-        void * sym_ptr = dlsym(RTLD_DEFAULT, "fdb_setup_network");
-        Dl_info info;
-        int res = 0;
-
-        if (sym_ptr)
-            res = dladdr(sym_ptr, &info);
-
-        if (res == 0)
-        {
-            LOG_WARNING(log, "thread is ignored due to shared object libfdb_c is not found");
-        }
-        else
-        {
-            LOG_DEBUG(log, "using external fdb_c: {}", info.dli_fname);
-            throwIfFDBError(fdb_network_set_option(
-                FDB_NET_OPTION_EXTERNAL_CLIENT_LIBRARY, reinterpret_cast<const uint8_t *>(info.dli_fname), std::strlen(info.dli_fname)));
-            throwIfFDBError(fdb_network_set_option(FDB_NET_OPTION_CLIENT_THREADS_PER_VERSION, FDB_VALUE_FROM_POD(thread)));
-        }
-#endif
-    }
+        LOG_WARNING(log, "thread={} is not support", thread);
 
     throwIfFDBError(fdb_setup_network());
     network_thread = std::make_unique<ThreadFromGlobalPool>(
