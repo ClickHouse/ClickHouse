@@ -293,7 +293,7 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
 {
     for (const auto & command : commands)
     {
