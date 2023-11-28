@@ -448,17 +448,6 @@ private:
     NameToNodeIndex index;
 };
 
-class FindActionsRootNodes
-{
-public:
-    explicit FindActionsRootNodes(const ActionsDAGPtr & actions);
-    const ActionsDAG::NodeRawConstPtrs & get() const;
-
-private:
-    ActionsDAGPtr actions;
-    ActionsDAG::NodeRawConstPtrs root_nodes;
-};
-
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.
 struct ActionDAGNodes
 {

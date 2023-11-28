@@ -2744,26 +2744,4 @@ const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
     return it->second;
 }
 
-FindActionsRootNodes::FindActionsRootNodes(const ActionsDAGPtr & actions_)
-    :actions(actions_)
-{
-    std::unordered_set<const ActionsDAG::Node *> non_root_nodes;
-    for (const ActionsDAG::Node & node : actions->getNodes())
-    {
-        for (auto child : node.children)
-            non_root_nodes.insert(child);
-    }
-
-    for (const ActionsDAG::Node & node : actions->getNodes())
-    {
-        if (!non_root_nodes.contains(&node))
-            root_nodes.push_back(&node);
-    }
-}
-
-const ActionsDAG::NodeRawConstPtrs & FindActionsRootNodes::get() const
-{
-    return root_nodes;
-}
-
 }
