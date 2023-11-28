@@ -34,6 +34,7 @@ namespace CurrentMetrics
     extern const Metric RemoteRead;
     extern const Metric ThreadPoolRemoteFSReaderThreads;
     extern const Metric ThreadPoolRemoteFSReaderThreadsActive;
+    extern const Metric ThreadPoolRemoteFSReaderThreadsScheduled;
 }
 
 namespace DB
@@ -64,6 +65,7 @@ namespace
 ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
     : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolRemoteFSReaderThreads,
                                         CurrentMetrics::ThreadPoolRemoteFSReaderThreadsActive,
+                                        CurrentMetrics::ThreadPoolRemoteFSReaderThreadsScheduled,
                                         pool_size, pool_size, queue_size_))
 {
 }

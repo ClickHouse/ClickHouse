@@ -436,7 +436,7 @@ void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String
 {
     if (session_context)
     {
-        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer, http_headers);
+        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer);
     }
     else
     {

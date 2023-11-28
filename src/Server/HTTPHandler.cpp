@@ -42,10 +42,10 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/MemoryStream.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/NameValueCollection.h>
 
 #include <chrono>
 #include <sstream>
@@ -887,6 +887,7 @@ void HTTPHandler::processQuery(
         /* allow_into_outfile = */ false,
         context,
         set_query_result,
+        QueryFlags{},
         {},
         handle_exception_in_output_format);
 

@@ -183,14 +183,11 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         }
 
         /// Check other users running query with our query_id
-        for (const auto & user_process_list : user_to_queries)
+        if (auto query_user = queries_to_user.find(client_info.current_query_id); query_user != queries_to_user.end() && query_user->second != client_info.current_user)
         {
-            if (user_process_list.first == client_info.current_user)
-                continue;
-            if (auto running_query = user_process_list.second.queries.find(client_info.current_query_id); running_query != user_process_list.second.queries.end())
-                throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
-                                "Query with id = {} is already running by user {}",
-                                client_info.current_query_id, user_process_list.first);
+            throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                            "Query with id = {} is already running by user {}",
+                            client_info.current_query_id, query_user->second);
         }
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
@@ -259,6 +256,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         (*process_it)->setUserProcessList(&user_process_list);
 
         user_process_list.queries.emplace(client_info.current_query_id, res->getQueryStatus());
+        queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
@@ -315,6 +313,9 @@ ProcessListEntry::~ProcessListEntry()
 
     /// Wait for the query if it is in the cancellation right now.
     parent.cancelled_cv.wait(lock.lock, [&]() { return process_list_element_ptr->is_cancelling == false; });
+
+    if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
+        parent.queries_to_user.erase(query_user);
 
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);

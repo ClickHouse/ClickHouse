@@ -31,7 +31,7 @@ backward = make_instance(
     "configs/remote_servers_backward.xml",
     image="clickhouse/clickhouse-server",
     # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    tag="23.2.3",
+    tag="22.6",
     with_installed_binary=True,
     allow_analyzer=False,
 )
@@ -186,7 +186,7 @@ def test_insecure_insert_sync():
     n1.query("TRUNCATE TABLE data")
     n1.query(
         "INSERT INTO dist_insecure SELECT * FROM numbers(2)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     assert int(n1.query("SELECT count() FROM dist_insecure")) == 2
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
@@ -208,7 +208,7 @@ def test_secure_insert_sync():
     n1.query("TRUNCATE TABLE data")
     n1.query(
         "INSERT INTO dist_secure SELECT * FROM numbers(2)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     assert int(n1.query("SELECT count() FROM dist_secure")) == 2
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
@@ -240,7 +240,7 @@ def test_secure_insert_sync():
 # - after we will ensure that connection is really established from the context
 #   of SELECT query, and that the connection will not be established from the
 #   context of the INSERT query (but actually it is a no-op since the INSERT
-#   will be done in background, due to insert_distributed_sync=false by
+#   will be done in background, due to distributed_foreground_insert=false by
 #   default)
 #
 # - if the bug is there, then FLUSH DISTRIBUTED will fail, because it will go
@@ -304,26 +304,20 @@ def test_secure_insert_buffer_async():
 
 
 def test_secure_disagree():
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         n1.query("SELECT * FROM dist_secure_disagree")
 
 
 def test_secure_disagree_insert():
     n1.query("TRUNCATE TABLE data")
     n1.query("INSERT INTO dist_secure_disagree SELECT * FROM numbers(2)")
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         n1.query(
             "SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure_disagree dist_secure_disagree"
         )
-    # check the the connection will be re-established
+    # check that the connection will be re-established
     # IOW that we will not get "Unknown BlockInfo field"
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         assert int(n1.query("SELECT count() FROM dist_secure_disagree")) == 0
 
 

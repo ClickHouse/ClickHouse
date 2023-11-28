@@ -89,7 +89,7 @@ ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, 
     ///   can be functional indexes.
     /// Above SELECT tries to emulate that. Caveats:
     /// 1. The primary key index sub-SELECT assumes the primary key expression is non-functional. Non-functional primary key indexes in
-    ///    ClickHouse are possible but quiete obscure. In MySQL they are not possible at all.
+    ///    ClickHouse are possible but quite obscure. In MySQL they are not possible at all.
     /// 2. Related to 1.: Poor man's tuple parsing with splitByString() in the PK sub-SELECT messes up for functional primary key index
     ///    expressions where the comma is not only used as separator between tuple components, e.g. in 'col1 + 1, concat(col2, col3)'.
     /// 3. The data skipping index sub-SELECT assumes the index expression is functional. 3rd party tools that expect MySQL semantics from
@@ -101,9 +101,8 @@ ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, 
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 
 }
-
