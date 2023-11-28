@@ -23,6 +23,7 @@ public:
         size_t alignment = 0,
         bool compress_empty_ = true)
     : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+    , tmp_memory(buf_size)
     , compress_empty(compress_empty_)
     {
         initialize(compression_level);
