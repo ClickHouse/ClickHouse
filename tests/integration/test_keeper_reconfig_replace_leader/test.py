@@ -83,7 +83,8 @@ def test_reconfig_replace_leader(started_cluster):
     assert "node3" in config
     assert "node4" not in config
 
-    ku.wait_configs_equal(config, zk2)
+    # additional 20s wait before removing leader
+    ku.wait_configs_equal(config, zk2, timeout=50)
 
     with pytest.raises(Exception):
         zk1.stop()
