@@ -559,7 +559,8 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         static EnumType fromString(std::string_view str); \
     }; \
     \
-    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
+    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>; \
+    using NEW_NAME##List = typename SettingField##NEW_NAME::ValueType;
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_MULTI_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
