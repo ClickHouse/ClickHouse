@@ -331,7 +331,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::asio_service::options asio_opts{};
 
     /// If asio worker threads fail in any way, NuRaft will stop to make any progress
-    /// For that reason we need to supress out of memory exceptions in such threads
+    /// For that reason we need to suppress out of memory exceptions in such threads
     /// TODO: use `get_active_workers` to detect when we have no active workers to abort
     asio_opts.worker_start_ = [](uint32_t /*worker_id*/)
     {
