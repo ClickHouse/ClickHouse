@@ -64,6 +64,7 @@ void DatabaseLazy::createTable(
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     if (!endsWith(table->getName(), "Log"))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lazy engine can be used only with *Log tables.");
+    std::cout<<"======= Flag 1"<<std::endl;
     DatabaseOnDisk::createTable(local_context, table_name, table, query);
 
     /// DatabaseOnDisk::createTable renames file, so we need to get new metadata_modification_time.

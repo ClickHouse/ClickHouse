@@ -263,6 +263,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     try
     {
         /// Add a table to the map of known tables.
+        std::cout<<"===== flag 3"<<std::endl;
         attachTable(query_context, query.getTable(), table, getTableDataPath(query));
 
         /// If it was ATTACH query and file with table metadata already exist
