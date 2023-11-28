@@ -255,15 +255,20 @@ public:
         if (rhs_elems.value.empty())
             return;
 
-        UInt64 new_elems;
-        new_elems = std::min(rhs_elems.value.size(), static_cast<size_t>(max_elems) - cur_elems.value.size());
+        UInt64 new_elems = rhs_elems.value.size();
 
         for (UInt64 i = 0; i < new_elems; ++i)
             cur_elems.value.push_back(rhs_elems.value[i], arena);
 
-        std::sort(cur_elems.value.begin(), cur_elems.value.end());
+        checkArraySize(cur_elems.value.size(), AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE);
 
-        cur_elems.value.resize(max_elems, arena);
+        if (!cur_elems.value.empty())
+        {
+            std::sort(cur_elems.value.begin(), cur_elems.value.end());
+
+            if (cur_elems.value.size() > max_elems)
+                cur_elems.value.resize(max_elems, arena);
+        }
     }
 
     static void checkArraySize(size_t elems, size_t max_elems)
@@ -320,10 +325,13 @@ public:
         auto & column_array = assert_cast<ColumnArray &>(to);
         auto & value = data(place).value;
 
-        std::sort(value.begin(), value.end());
+        if (!value.empty())
+        {
+            std::sort(value.begin(), value.end());
 
-        if (value.size() > max_elems)
-            value.resize_exact(max_elems, arena);
+            if (value.size() > max_elems)
+                value.resize_exact(max_elems, arena);
+        }
         auto & offsets = column_array.getOffsets();
         offsets.push_back(offsets.back() + value.size());
 
