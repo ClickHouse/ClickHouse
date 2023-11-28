@@ -124,7 +124,19 @@ bool WebObjectStorage::exists(const StoredObject & object) const
 bool WebObjectStorage::exists(const std::string & path) const
 {
     LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
+    return tryGetFileInfo(path) != std::nullopt;
+}
 
+WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) const
+{
+    auto file_info = tryGetFileInfo(path);
+    if (!file_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No such file: {}", path);
+    return file_info.value();
+}
+
+std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const String & path) const
+{
     std::shared_lock shared_lock(metadata_mutex);
 
     if (files.find(path) == files.end())
@@ -145,10 +157,10 @@ bool WebObjectStorage::exists(const std::string & path) const
     }
 
     if (files.empty())
-        return false;
+        return std::nullopt;
 
-    if (files.contains(path))
-        return true;
+    if (auto it = files.find(path); it != files.end())
+        return it->second;
 
     /// `object_storage.files` contains files + directories only inside `metadata_path / uuid_3_digit / uuid /`
     /// (specific table files only), but we need to be able to also tell if `exists(<metadata_path>)`, for example.
@@ -158,7 +170,7 @@ bool WebObjectStorage::exists(const std::string & path) const
     );
 
     if (it == files.end())
-        return false;
+        return std::nullopt;
 
     if (startsWith(it->first, path)
         || (it != files.begin() && startsWith(std::prev(it)->first, path)))
@@ -176,10 +188,9 @@ bool WebObjectStorage::exists(const std::string & path) const
         unique_lock.unlock();
         shared_lock.lock();
 
-        return true;
+        return FileData{ .type = FileType::Directory };
     }
-
-    return false;
+    return std::nullopt;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLINT
