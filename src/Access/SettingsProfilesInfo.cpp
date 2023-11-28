@@ -66,7 +66,7 @@ Strings SettingsProfilesInfo::getProfileNames() const
 {
     Strings result;
     result.reserve(profiles.size());
-    for (const auto & profile_id : profiles_with_implicit)
+    for (const auto & profile_id : profiles)
     {
         const auto p = names_of_profiles.find(profile_id);
         if (p != names_of_profiles.end())
