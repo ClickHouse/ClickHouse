@@ -2540,7 +2540,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 |----------|---------------------------------------------------------|------------|
 | %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
 | %b       | abbreviated month name (Jan-Dec)                        | Jan        |
-| %c       | month as an integer number (01-12), see 'Note 3' below  | 01         |
+| %m       | month as an integer number (01-12), see 'Note 3' below  | 01         |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
