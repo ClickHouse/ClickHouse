@@ -193,7 +193,6 @@ private:
     Float64 zero_count;
     Float64 count;
     DDSketchEncoding enc;
-    Poco::Logger * log = &Poco::Logger::get("DDSketch");
 
 
     BaseQuantileDDSketch changeMapping(Float64 new_gamma) const
