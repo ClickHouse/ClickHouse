@@ -73,11 +73,8 @@ void ReplicatedMergeTreeAttachThread::run()
             storage.initialization_done = true;
         }
 
-        if (!storage.is_readonly_metric_set)
-        {
-            storage.is_readonly_metric_set = true;
+        if (!std::exchange(storage.is_readonly_metric_set, true))
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-        }
     }
 
     if (!first_try_done.exchange(true))
@@ -85,10 +82,10 @@ void ReplicatedMergeTreeAttachThread::run()
 
     if (shutdown_called)
     {
-        if (storage.is_readonly_metric_set)
+        if (std::exchange(storage.is_readonly_metric_set, false))
         {
-            storage.is_readonly_metric_set = false;
             CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+            chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
         }
 
         LOG_WARNING(log, "Shutdown called, cancelling initialization");

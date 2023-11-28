@@ -4991,11 +4991,8 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
     /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
     if (!has_metadata_in_zookeeper.has_value() || !*has_metadata_in_zookeeper)
     {
-        if (!is_readonly_metric_set)
-        {
-            is_readonly_metric_set = true;
+        if (!std::exchange(is_readonly_metric_set, true))
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-        }
 
         LOG_TRACE(log, "No connection to ZooKeeper or no metadata in ZooKeeper, will not startup");
         return;

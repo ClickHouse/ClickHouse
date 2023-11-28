@@ -79,12 +79,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 
     if (first_time)
     {
-        if (storage.is_readonly && !storage.is_readonly_metric_set)
-        {
-            storage.is_readonly_metric_set = true;
+        if (storage.is_readonly && !std::exchange(storage.is_readonly_metric_set, true))
             /// We failed to start replication, table is still readonly, so we should increment the metric. See also setNotReadonly().
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-        }
+
         /// It does not matter if replication is actually started or not, just notify after the first attempt.
         storage.startup_event.set();
         first_time = false;
@@ -362,6 +360,7 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
 
     if (became_readonly)
     {
+        chassert(!storage.is_readonly_metric_set);
         storage.is_readonly_metric_set = true;
         CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
         return;
@@ -369,10 +368,8 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
 
     /// Replica was already readonly, but we should decrement the metric if it was set because we are detaching/dropping table.
     /// the task should be deactivated if it's full shutdown so no race is present
-    chassert(on_shutdown);
-    if (storage.is_readonly_metric_set)
+    if (on_shutdown && std::exchange(storage.is_readonly_metric_set, false))
     {
-        storage.is_readonly_metric_set = false;
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
         chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
@@ -384,9 +381,8 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
     /// is_readonly is true on startup, but ReadonlyReplica metric is not incremented,
     /// because we don't want to change this metric if replication is started successfully.
     /// So we should not decrement it when replica stopped being readonly on startup.
-    if (storage.is_readonly.compare_exchange_strong(old_val, false) && storage.is_readonly_metric_set)
+    if (storage.is_readonly.compare_exchange_strong(old_val, false) && std::exchange(storage.is_readonly_metric_set, false))
     {
-        storage.is_readonly_metric_set = false;
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
         chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
