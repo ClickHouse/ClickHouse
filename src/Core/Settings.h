@@ -512,8 +512,10 @@ class IColumn;
     M(Bool, splitby_max_substrings_includes_remaining_string, false, "Functions 'splitBy*()' with 'max_substrings' argument > 0 include the remaining string as last element in the result", 0) \
     \
     M(Bool, allow_execute_multiif_columnar, true, "Allow execute multiIf function columnar", 0) \
-    M(Bool, formatdatetime_f_prints_single_zero, false, "Formatter '%f' in function 'formatDateTime()' produces a single zero instead of six zeros if the formatted value has no fractional seconds.", 0) \
-    M(Bool, formatdatetime_parsedatetime_m_is_month_name, true, "Formatter '%M' in functions 'formatDateTime()' and 'parseDateTime()' produces the month name instead of minutes.", 0) \
+    M(Bool, formatdatetime_f_prints_single_zero, false, "Formatter '%f' in function 'formatDateTime()' prints a single zero instead of six zeros if the formatted value has no fractional seconds.", 0) \
+    M(Bool, formatdatetime_parsedatetime_m_is_month_name, true, "Formatter '%M' in functions 'formatDateTime()' and 'parseDateTime()' print/parse the month name instead of minutes.", 0) \
+    M(Bool, parsedatetime_parse_without_leading_zeros, true, "Formatters '%c', '%l' and '%k' in function 'parseDateTime()' parse months and hours without leading zeros.", 0) \
+    M(Bool, formatdatetime_format_without_leading_zeros, false, "Formatters '%c', '%l' and '%k' in function 'formatDateTime()' print months and hours without leading zeros.", 0) \
     \
     M(UInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.", 0) \
     M(Bool, throw_on_max_partitions_per_insert_block, true, "Used with max_partitions_per_insert_block. If true (default), an exception will be thrown when max_partitions_per_insert_block is reached. If false, details of the insert query reaching this limit with the number of partitions will be logged. This can be useful if you're trying to understand the impact on users when changing max_partitions_per_insert_block.", 0) \
@@ -554,7 +556,6 @@ class IColumn;
     M(UInt64, mutations_sync, 0, "Wait for synchronous execution of ALTER TABLE UPDATE/DELETE queries (mutations). 0 - execute asynchronously. 1 - wait current server. 2 - wait all replicas if they exist.", 0) \
     M(Bool, enable_lightweight_delete, true, "Enable lightweight DELETE mutations for mergetree tables.", 0) ALIAS(allow_experimental_lightweight_delete) \
     M(Bool, apply_deleted_mask, true, "Enables filtering out rows deleted with lightweight DELETE. If disabled, a query will be able to read those rows. This is useful for debugging and \"undelete\" scenarios", 0) \
-    M(Bool, optimize_move_functions_out_of_any, false, "Move functions out of aggregate functions 'any', 'anyLast'.", 0) \
     M(Bool, optimize_normalize_count_variants, true, "Rewrite aggregate functions that semantically equals to count() as count().", 0) \
     M(Bool, optimize_injective_functions_inside_uniq, true, "Delete injective functions of one argument inside uniq*() functions.", 0) \
     M(Bool, rewrite_count_distinct_if_with_count_distinct_implementation, false, "Rewrite countDistinctIf with count_distinct_implementation configuration", 0) \
@@ -893,6 +894,7 @@ class IColumn;
     MAKE_OBSOLETE(M, UInt64, parallel_replicas_min_number_of_granules_to_enable, 0) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_projection, true) \
     MAKE_OBSOLETE(M, Bool, query_cache_store_results_of_queries_with_nondeterministic_functions, false) \
+    MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 
