@@ -108,7 +108,7 @@
             filter: blur(1px);
         }
 
-        .chart div { position: absolute; }
+        .chart > div { position: absolute; }
 
         .inputs {
             height: auto;
@@ -214,8 +214,6 @@
             background-color: var(--input-background);
             color: var(--text-color);
         }
-
-        .u-legend th { display: none; }
 
         .themes {
             float: right;
@@ -519,9 +517,53 @@ let queries = [];
 /// Query parameters with predefined default values.
 /// All other parameters will be automatically found in the queries.
 let params = {
-    "rounding": "60",
-    "seconds": "86400"
+    'rounding': '60',
+    'seconds': '86400'
 };
+
+/// Palette generation for charts
+function generatePalette(baseColor, numColors) {
+    const baseHSL = hexToHsl(baseColor);
+    const hueStep = 360 / numColors;
+    const palette = [];
+    for (let i = 0; i < numColors; i++) {
+        const hue = Math.round((baseHSL.h + i * hueStep) % 360);
+        const color = `hsl(${hue}, ${baseHSL.s}%, ${baseHSL.l}%)`;
+        palette.push(color);
+    }
+    return palette;
+}
+
+/// Helper function to convert hex color to HSL
+function hexToHsl(hex) {
+    hex = hex.replace(/^#/, '');
+    const bigint = parseInt(hex, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    const r_norm = r / 255;
+    const g_norm = g / 255;
+    const b_norm = b / 255;
+    const max = Math.max(r_norm, g_norm, b_norm);
+    const min = Math.min(r_norm, g_norm, b_norm);
+    const l = (max + min) / 2;
+    let s = 0;
+    if (max !== min) {
+        s = l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min);
+    }
+    let h = 0;
+    if (max !== min) {
+        if (max === r_norm) {
+            h = (g_norm - b_norm) / (max - min) + (g_norm < b_norm ? 6 : 0);
+        } else if (max === g_norm) {
+            h = (b_norm - r_norm) / (max - min) + 2;
+        } else {
+            h = (r_norm - g_norm) / (max - min) + 4;
+        }
+    }
+    h = Math.round(h * 60);
+    return { h, s: Math.round(s * 100), l: Math.round(l * 100) };
+}
 
 let theme = 'light';
 
@@ -912,6 +954,8 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
+    let showTop = false;
+    const showLimit = 5;
 
     function init(u, opts) {
         legendEl = u.root.querySelector(".u-legend");
@@ -931,13 +975,22 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
             ...style
         });
 
-        // hide series color markers
-        const idents = legendEl.querySelectorAll(".u-marker");
+        if (opts.series.length == 2) {
+            const nodes = legendEl.querySelectorAll("th");
+            for (let i = 0; i < nodes.length; i++)
+                nodes[i].style.display = "none";
+        } else {
+            legendEl.querySelector("th").remove();
+            legendEl.querySelector("td").setAttribute('colspan', '2');
+            legendEl.querySelector("td").style.textAlign = 'center';
+        }
 
-        for (let i = 0; i < idents.length; i++)
-            idents[i].style.display = "none";
+        if (opts.series.length - 1 > showLimit) {
+            showTop = true;
+        }
 
         const overEl = u.over;
+        overEl.style.overflow = "visible";
 
         overEl.appendChild(legendEl);
 
@@ -945,11 +998,26 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
     }
 
+    function nodeListToArray(nodeList) {
+        return Array.prototype.slice.call(nodeList);
+    }
+
     function update(u) {
         let { left, top } = u.cursor;
         left -= legendEl.clientWidth / 2;
         top -= legendEl.clientHeight / 2;
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
+        if (showTop) {
+            let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
+            let header = nodes.shift();
+            nodes.forEach(function (node) { node._sort_key = +node.querySelector("td").textContent; });
+            nodes.sort((a, b) => +b._sort_key - +a._sort_key);
+            nodes.forEach(function (node) { node.parentNode.appendChild(node); });
+            for (let i = 0; i < nodes.length; i++) {
+                nodes[i].style.display = i < showLimit ? null : "none";
+                delete nodes[i]._sort_key;
+            }
+        }
     }
 
     return {
@@ -959,6 +1027,7 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         }
     };
 }
+
 
 async function doFetch(query, url_params = '') {
     host = document.getElementById('url').value || host;
@@ -985,6 +1054,9 @@ async function doFetch(query, url_params = '') {
         reply = await response.text();
         if (response.ok) {
             reply = JSON.parse(reply);
+            if (reply.exception) {
+                error = reply.exception;
+            }
         } else {
             error = reply;
         }
@@ -1032,6 +1104,61 @@ async function draw(idx, chart, url_params, query) {
         }
     }
 
+    // Transform string-labeled data to multi-column data
+    function transformToColumns() {
+        const x = reply.meta[0].name; // time; must be ordered
+        const l = reply.meta[1].name; // string label column to distinguish series; must be ordered
+        const y = reply.meta[2].name; // values; must have single value for (x, l) pair
+        const labels = [...new Set(reply.data[l])].sort((a, b) => a - b);
+        if (labels.includes('__time__')) {
+            error = "The second column is not allowed to contain '__time__' values.";
+            return;
+        }
+        const times = [...new Set(reply.data[x])].sort((a, b) => a - b);
+        let new_meta = [{ name: '__time__', type: reply.meta[0].type }];
+        let new_data = { __time__: [] };
+        for (let label of labels) {
+            new_meta.push({ name: label, type: reply.meta[2].type });
+            new_data[label] = [];
+        }
+        let new_rows = 0;
+        function row_done(row_time) {
+            new_rows++;
+            new_data.__time__.push(row_time);
+            for (let label of labels) {
+                if (new_data[label].length < new_rows) {
+                    new_data[label].push(null);
+                }
+            }
+        }
+        let prev_time = reply.data[x][0];
+        const old_rows = reply.data[x].length;
+        for (let i = 0; i < old_rows; i++) {
+            const time = reply.data[x][i];
+            const label = reply.data[l][i];
+            const value = reply.data[y][i];
+            if (prev_time != time) {
+                row_done(prev_time);
+                prev_time = time;
+            }
+            new_data[label].push(value);
+        }
+        row_done(prev_time);
+        reply.meta = new_meta;
+        reply.data = new_data;
+        reply.rows = new_rows;
+    }
+
+    function isStringColumn(type) {
+        return type === 'String' || type === 'LowCardinality(String)';
+    }
+
+    if (!error) {
+        if (reply.meta.length == 3 && isStringColumn(reply.meta[1].type)) {
+            transformToColumns();
+        }
+    }
+
     let error_div = chart.querySelector('.query-error');
     let title_div = chart.querySelector('.title');
     if (error) {
@@ -1046,30 +1173,31 @@ async function draw(idx, chart, url_params, query) {
     }
 
     const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
-        ? ["#F88", "#FEE", "#EED", "#2c3235"]
-        : ["#864", "#045", "#2c3235", "#c7d0d9"];
+        ? ["#ff8888", "#ffeeee", "#eeeedd", "#2c3235"]
+        : ["#886644", "#004455", "#2c3235", "#c7d0d9"];
 
     let sync = uPlot.sync("sync");
 
-    let axes = [];
-    let series = [];
-    let data = [];
-    series.push({ label: "x" });
-    data.push(reply.data[reply.meta[0].name]);
+    let axis = {
+        stroke: axes_color,
+        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+        ticks: { width: 1 / devicePixelRatio, stroke: grid_color }
+    };
+
+    let axes = [axis, axis];
+    let series = [{ label: "x" }];
+    let data = [reply.data[reply.meta[0].name]];
+
+    // Treat every column as series
+    const series_count = reply.meta.length;
+    const fill = series_count == 2 ? fill_color : undefined;
+    const palette = generatePalette(line_color, series_count);
     let max_value = Number.NEGATIVE_INFINITY;
-    for (let i = 1; i < reply.meta.length; i++) {
+    for (let i = 1; i < series_count; i++) {
         let label = reply.meta[i].name;
-        axes.push({
-            stroke: axes_color,
-            grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-            ticks: { width: 1 / devicePixelRatio, stroke: grid_color }
-        });
-        series.push({ label, stroke: line_color, fill: fill_color });
+        series.push({ label, stroke: palette[i - 1], fill });
         data.push(reply.data[label]);
         max_value = Math.max(max_value, ...reply.data[label]);
-    }
-    if (reply.meta.length == 2) {
-        series[1].label = "y";
     }
 
     const opts = {
