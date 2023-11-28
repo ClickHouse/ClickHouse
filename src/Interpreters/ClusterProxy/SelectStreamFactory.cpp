@@ -140,7 +140,7 @@ void SelectStreamFactory::createForShard(
             .shard_info = shard_info,
             .lazy = lazy,
             .local_delay = local_delay,
-            .shard_filter_generator = std::move(shard_filter_generator),
+            .shard_filter_generator = shard_filter_generator,
         });
     };
 

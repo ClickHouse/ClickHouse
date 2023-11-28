@@ -94,24 +94,6 @@
                 </replica>
             </shard>
         </test_cluster_two_shards_different_databases_with_local>
-        <parallel_replicas_custom_key_unavailable_replica>
-            <shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <!-- Unavailable replica -->
-                <replica>
-                    <host>127.0.0.11</host>
-                    <port>1234</port>
-                </replica>
-            </shard>
-        </parallel_replicas_custom_key_unavailable_replica>
         <parallel_replicas>
             <shard>
                 <internal_replication>false</internal_replication>
@@ -162,6 +144,24 @@
                 </replica>
             </shard>
         </parallel_replicas>
+        <parallel_replicas_custom_key_unavailable_replica>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <!-- Unavailable replica -->
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>1234</port>
+                </replica>
+            </shard>
+        </parallel_replicas_custom_key_unavailable_replica>
         <test_cluster_one_shard_three_replicas_localhost>
             <shard>
                 <internal_replication>false</internal_replication>
