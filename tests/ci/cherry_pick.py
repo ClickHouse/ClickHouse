@@ -77,6 +77,8 @@ If this PR is stuck (i.e. not automatically merged after one day), check {pr_url
 Manually merging will do nothing. The `{backport_created_label}` *label* prevents the \
 original PR {pr_url} from being processed.
 
+### If the conflicts were resolved in a wrong way
+
 If this cherry-pick PR is completely screwed by a wrong conflicts resolution, and you \
 want to recreate it:
 
