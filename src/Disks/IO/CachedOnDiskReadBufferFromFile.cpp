@@ -1259,9 +1259,6 @@ bool CachedOnDiskReadBufferFromFile::isSeekCheap()
 
 static bool isRangeContainedInSegments(size_t left, size_t right, const FileSegmentsHolderPtr & file_segments)
 {
-    if (file_segments->empty())
-        return false;
-
     if (!FileSegment::Range{file_segments->front().range().left, file_segments->back().range().right}.contains({left, right}))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1295,6 +1292,13 @@ bool CachedOnDiskReadBufferFromFile::isContentCached(size_t offset, size_t size)
     if (!initialized)
         initialize();
 
-    return isRangeContainedInSegments(offset, std::min(offset + size, read_until_position) - 1, file_segments);
+    if (file_segments->empty())
+        return false;
+
+    /// We don't hold all the segments simultaneously, if there are more than `filesystem_cache_segments_batch_size` of them.
+    /// So we need to take minimum of the following two values to determine the intersection between [offset, offset + size - 1]
+    /// and the range covered by this segment currently.
+    const auto right_boundary = std::min(file_segments->back().range().right, read_until_position - 1);
+    return isRangeContainedInSegments(offset, std::min(offset + size - 1, right_boundary), file_segments);
 }
 }
