@@ -175,7 +175,9 @@ void DiskObjectStorage::copyFile( /// NOLINT
     IDisk & to_disk,
     const String & to_file_path,
     const ReadSettings & read_settings,
-    const WriteSettings & write_settings)
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook
+    )
 {
     if (this == &to_disk)
     {
@@ -187,7 +189,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     else
     {
         /// Copy through buffers
-        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings);
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
     }
 }
 

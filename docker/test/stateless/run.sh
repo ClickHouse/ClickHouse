@@ -217,6 +217,9 @@ ls -la /
 
 clickhouse-client -q "system flush logs" ||:
 
+# stop logs replication to make it possible to dump logs tables via clickhouse-local
+stop_logs_replication
+
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
 # Because it's the simplest way to read it when server has crashed.

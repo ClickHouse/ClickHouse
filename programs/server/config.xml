@@ -1291,10 +1291,10 @@
     <dictionaries_lazy_load>true</dictionaries_lazy_load>
 
     <!-- Wait at startup until all the dictionaries finish their loading (successfully or not)
-         before listening to connections. Setting this to 1 can make ClickHouse start slowly,
-         however some queries can be executed faster (because it won't have to wait for the used dictionaries to be load).
+         before receiving any connections. Affects dictionaries only if "dictionaries_lazy_load" is false.
+         Setting this to false can make ClickHouse start faster, however some queries can be executed slower.
     -->
-    <wait_dictionaries_load_at_startup>false</wait_dictionaries_load_at_startup>
+    <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>

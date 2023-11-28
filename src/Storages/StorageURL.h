@@ -225,6 +225,7 @@ private:
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
+    std::optional<size_t> current_file_size;
     String format;
     const std::optional<FormatSettings> & format_settings;
     HTTPHeaderEntries headers;

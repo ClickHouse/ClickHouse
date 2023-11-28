@@ -1168,6 +1168,8 @@ try
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    NamedCollectionUtils::loadIfNot();
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
@@ -1828,7 +1830,7 @@ try
         {
             global_context->loadOrReloadDictionaries(config());
 
-            if (config().getBool("wait_dictionaries_load_at_startup", false))
+            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
                 global_context->waitForDictionariesLoad();
         }
         catch (...)
