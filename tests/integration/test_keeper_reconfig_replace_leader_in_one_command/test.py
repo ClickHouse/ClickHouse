@@ -6,6 +6,7 @@ from os.path import join, dirname, realpath
 import time
 import helpers.keeper_utils as ku
 import typing as tp
+from kazoo.client import KazooClient, KazooState
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = join(dirname(realpath(__file__)), "configs")
@@ -38,7 +39,6 @@ def started_cluster():
                 conn.close()
 
         cluster.shutdown()
-
 
 # can't use create_client as clickhouse-keeper-client 's reconfig doesn't support
 # joining and adding in single reconfig command, thus duplication

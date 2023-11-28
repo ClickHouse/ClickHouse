@@ -34,8 +34,6 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Part hasn't reached removal time yet";
     case DB::DataPartRemovalState::HAS_SKIPPED_MUTATION_PARENT:
         return "Waiting mutation parent to be removed";
-    case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
-        return "Waiting for covered parts to be removed first";
     case DB::DataPartRemovalState::REMOVED:
         return "Part was selected to be removed";
     }

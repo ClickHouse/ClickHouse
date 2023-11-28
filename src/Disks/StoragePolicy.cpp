@@ -71,8 +71,7 @@ StoragePolicy::StoragePolicy(
             /* max_data_part_size_= */ 0,
             /* are_merges_avoided_= */ false,
             /* perform_ttl_move_on_insert_= */ true,
-            VolumeLoadBalancing::ROUND_ROBIN,
-            /* least_used_ttl_ms_= */ 60'000);
+            VolumeLoadBalancing::ROUND_ROBIN);
         volumes.emplace_back(std::move(default_volume));
     }
 

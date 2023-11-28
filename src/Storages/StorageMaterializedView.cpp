@@ -182,11 +182,6 @@ void StorageMaterializedView::read(
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
                                                                         ActionsDAG::MatchColumnsMode::Name);
-            /* Leave columns outside from materialized view structure as is.
-             * They may be added in case of distributed query with JOIN.
-             * In that case underlying table returns joined columns as well.
-             */
-            converting_actions->projectInput(false);
             auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
             converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
             query_plan.addStep(std::move(converting_step));
@@ -288,6 +283,8 @@ void StorageMaterializedView::alter(
         const auto & old_select = old_metadata.getSelectQuery();
 
         DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+
+        new_metadata.setSelectQuery(new_select);
     }
     /// end modify query
 
@@ -333,11 +330,10 @@ Pipe StorageMaterializedView::alterPartition(
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot,
-    const Settings & settings, ContextPtr local_context) const
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, local_context);
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
@@ -485,13 +481,6 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
             return target_table->getActionLock(type);
     }
     return ActionLock{};
-}
-
-bool StorageMaterializedView::isRemote() const
-{
-    if (auto table = tryGetTargetTable())
-        return table->isRemote();
-    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

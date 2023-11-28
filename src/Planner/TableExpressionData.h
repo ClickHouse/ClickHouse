@@ -245,16 +245,6 @@ public:
         return prewhere_filter_actions;
     }
 
-    void setRowLevelFilterActions(ActionsDAGPtr row_level_filter_actions_value)
-    {
-        row_level_filter_actions = std::move(row_level_filter_actions_value);
-    }
-
-    const ActionsDAGPtr & getRowLevelFilterActions() const
-    {
-        return row_level_filter_actions;
-    }
-
     void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
     {
         prewhere_filter_actions = std::move(prewhere_filter_actions_value);
@@ -299,9 +289,6 @@ private:
 
     /// Valid for table, table function
     ActionsDAGPtr prewhere_filter_actions;
-
-    /// Valid for table, table function
-    ActionsDAGPtr row_level_filter_actions;
 
     /// Is storage remote
     bool is_remote = false;

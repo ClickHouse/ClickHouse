@@ -41,8 +41,7 @@ CREATE TABLE wikistat
     project LowCardinality(String),
     subproject LowCardinality(String),
     path String CODEC(ZSTD(3)),
-    hits UInt64 CODEC(ZSTD(3)),
-    size UInt64 CODEC(ZSTD(3))
+    hits UInt64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (path, time);

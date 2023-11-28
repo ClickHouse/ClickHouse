@@ -11,7 +11,7 @@ from typing import Callable, Dict, List, Literal, Union
 class BuildConfig:
     name: str
     compiler: str
-    package_type: Literal["deb", "binary", "fuzzers"]
+    package_type: Literal["deb", "binary"]
     additional_pkgs: bool = False
     debug_build: bool = False
     sanitizer: str = ""
@@ -50,21 +50,27 @@ class CiConfig:
 
     def validate(self) -> None:
         errors = []
-        # All build configs must belong to build_report_config
-        for build_name in self.build_config.keys():
+        for name, build_config in self.build_config.items():
             build_in_reports = False
             for report_config in self.builds_report_config.values():
-                if build_name in report_config:
+                if name in report_config:
                     build_in_reports = True
                     break
+            # All build configs must belong to build_report_config
             if not build_in_reports:
+                logging.error("Build name %s does not belong to build reports", name)
+                errors.append(f"Build name {name} does not belong to build reports")
+            # The name should be the same as build_config.name
+            if not build_config.name == name:
                 logging.error(
-                    "Build name %s does not belong to build reports", build_name
+                    "Build name '%s' does not match the config 'name' value '%s'",
+                    name,
+                    build_config.name,
                 )
                 errors.append(
-                    f"Build name {build_name} does not belong to build reports"
+                    f"Build name {name} does not match 'name' value '{build_config.name}'"
                 )
-        # And otherwise
+        # All build_report_config values should be in build_config.keys()
         for build_report_name, build_names in self.builds_report_config.items():
             missed_names = [
                 name for name in build_names if name not in self.build_config.keys()
@@ -101,57 +107,57 @@ CI_CONFIG = CiConfig(
     build_config={
         "package_release": BuildConfig(
             name="package_release",
-            compiler="clang-17",
+            compiler="clang-16",
             package_type="deb",
             static_binary_name="amd64",
             additional_pkgs=True,
         ),
         "package_aarch64": BuildConfig(
             name="package_aarch64",
-            compiler="clang-17-aarch64",
+            compiler="clang-16-aarch64",
             package_type="deb",
             static_binary_name="aarch64",
             additional_pkgs=True,
         ),
         "package_asan": BuildConfig(
             name="package_asan",
-            compiler="clang-17",
+            compiler="clang-16",
             sanitizer="address",
             package_type="deb",
         ),
         "package_ubsan": BuildConfig(
             name="package_ubsan",
-            compiler="clang-17",
+            compiler="clang-16",
             sanitizer="undefined",
             package_type="deb",
         ),
         "package_tsan": BuildConfig(
             name="package_tsan",
-            compiler="clang-17",
+            compiler="clang-16",
             sanitizer="thread",
             package_type="deb",
         ),
         "package_msan": BuildConfig(
             name="package_msan",
-            compiler="clang-17",
+            compiler="clang-16",
             sanitizer="memory",
             package_type="deb",
         ),
         "package_debug": BuildConfig(
             name="package_debug",
-            compiler="clang-17",
+            compiler="clang-16",
             debug_build=True,
             package_type="deb",
             sparse_checkout=True,
         ),
         "binary_release": BuildConfig(
             name="binary_release",
-            compiler="clang-17",
+            compiler="clang-16",
             package_type="binary",
         ),
         "binary_tidy": BuildConfig(
             name="binary_tidy",
-            compiler="clang-17",
+            compiler="clang-16",
             debug_build=True,
             package_type="binary",
             static_binary_name="debug-amd64",
@@ -160,64 +166,59 @@ CI_CONFIG = CiConfig(
         ),
         "binary_darwin": BuildConfig(
             name="binary_darwin",
-            compiler="clang-17-darwin",
+            compiler="clang-16-darwin",
             package_type="binary",
             static_binary_name="macos",
             sparse_checkout=True,
         ),
         "binary_aarch64": BuildConfig(
             name="binary_aarch64",
-            compiler="clang-17-aarch64",
+            compiler="clang-16-aarch64",
             package_type="binary",
         ),
         "binary_aarch64_v80compat": BuildConfig(
             name="binary_aarch64_v80compat",
-            compiler="clang-17-aarch64-v80compat",
+            compiler="clang-16-aarch64-v80compat",
             package_type="binary",
             static_binary_name="aarch64v80compat",
             comment="For ARMv8.1 and older",
         ),
         "binary_freebsd": BuildConfig(
             name="binary_freebsd",
-            compiler="clang-17-freebsd",
+            compiler="clang-16-freebsd",
             package_type="binary",
             static_binary_name="freebsd",
         ),
         "binary_darwin_aarch64": BuildConfig(
             name="binary_darwin_aarch64",
-            compiler="clang-17-darwin-aarch64",
+            compiler="clang-16-darwin-aarch64",
             package_type="binary",
             static_binary_name="macos-aarch64",
         ),
         "binary_ppc64le": BuildConfig(
             name="binary_ppc64le",
-            compiler="clang-17-ppc64le",
+            compiler="clang-16-ppc64le",
             package_type="binary",
             static_binary_name="powerpc64le",
         ),
         "binary_amd64_compat": BuildConfig(
             name="binary_amd64_compat",
-            compiler="clang-17-amd64-compat",
+            compiler="clang-16-amd64-compat",
             package_type="binary",
             static_binary_name="amd64compat",
             comment="SSE2-only build",
         ),
         "binary_riscv64": BuildConfig(
             name="binary_riscv64",
-            compiler="clang-17-riscv64",
+            compiler="clang-16-riscv64",
             package_type="binary",
             static_binary_name="riscv64",
         ),
         "binary_s390x": BuildConfig(
             name="binary_s390x",
-            compiler="clang-17-s390x",
+            compiler="clang-16-s390x",
             package_type="binary",
             static_binary_name="s390x",
-        ),
-        "fuzzers": BuildConfig(
-            name="fuzzers",
-            compiler="clang-16",
-            package_type="fuzzers",
         ),
     },
     builds_report_config={
@@ -230,7 +231,6 @@ CI_CONFIG = CiConfig(
             "package_msan",
             "package_debug",
             "binary_release",
-            "fuzzers",
         ],
         "ClickHouse special build check": [
             "binary_tidy",
@@ -315,7 +315,6 @@ CI_CONFIG = CiConfig(
         "SQLancer (debug)": TestConfig("package_debug"),
         "Sqllogic test (release)": TestConfig("package_release"),
         "SQLTest": TestConfig("package_release"),
-        "libFuzzer tests": TestConfig("fuzzers"),
     },
 )
 CI_CONFIG.validate()

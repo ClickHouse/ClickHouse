@@ -78,7 +78,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
-    StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+    HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
     struct SafeConsumers
     {

@@ -18,8 +18,6 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-Also see: [HTTP response codes caveats](#http_response_codes_caveats).
-
 Sometimes, `curl` command is not available on user operating systems. On Ubuntu or Debian, run `sudo apt install curl`. Please refer this [documentation](https://curl.se/download.html) to install it before running the examples.
 
 Web UI can be accessed here: `http://localhost:8123/play`.
@@ -324,27 +322,6 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 ```
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client-side, the error can only be detected at the parsing stage.
-
-## HTTP response codes caveats {#http_response_codes_caveats}
-
-Because of limitation of HTTP protocol, HTTP 200 response code does not guarantee that a query was successful.
-
-Here is an example:
-
-```
-curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)"
-*   Trying 127.0.0.1:8123...
-...
-< HTTP/1.1 200 OK
-...
-Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(number, 2) :: 1) -> throwIf(equals(number, 2))
-```
-
-The reason for this behavior is the nature of the HTTP protocol. The HTTP header is sent first with an HTTP code of 200, followed by the HTTP body, and then the error is injected into the body as plain text.
-This behavior is independent of the format used, whether it's `Native`, `TSV`, or `JSON`; the error message will always be in the middle of the response stream.
-You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffering](#response-buffering)). In this case, the sending of the HTTP header is delayed until the entire query is resolved.
-However, this does not completely solve the problem because the result must still fit within the `http_response_buffer_size`, and other settings like `send_progress_in_http_headers` can interfere with the delay of the header.
-The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 
 ### Queries with Parameters {#cli-queries-with-parameters}
 

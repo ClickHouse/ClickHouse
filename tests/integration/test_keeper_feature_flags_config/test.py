@@ -84,20 +84,11 @@ def test_keeper_feature_flags(started_cluster):
         [("filtered_list", 1), ("multi_read", 1), ("check_not_exists", 0)]
     )
 
-    feature_flags = [
-        ("multi_read", 0),
-        ("check_not_exists", 1),
-        ("create_if_not_exists", 1),
-    ]
+    feature_flags = [("multi_read", 0), ("check_not_exists", 1)]
     restart_clickhouse(feature_flags)
     assert_feature_flags(feature_flags + [("filtered_list", 1)])
 
-    feature_flags = [
-        ("multi_read", 0),
-        ("check_not_exists", 0),
-        ("filtered_list", 0),
-        ("create_if_not_exists", 0),
-    ]
+    feature_flags = [("multi_read", 0), ("check_not_exists", 0), ("filtered_list", 0)]
     restart_clickhouse(feature_flags)
     assert_feature_flags(feature_flags)
 
