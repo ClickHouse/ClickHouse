@@ -43,6 +43,7 @@ fi
 
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
+./setup_fdb.sh
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 

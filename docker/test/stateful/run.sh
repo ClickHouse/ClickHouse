@@ -21,6 +21,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateful
+./setup_fdb.sh
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 

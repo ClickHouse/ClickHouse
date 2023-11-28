@@ -52,6 +52,7 @@ configure
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
+./setup_fdb.sh
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
