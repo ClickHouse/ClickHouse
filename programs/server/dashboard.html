@@ -431,6 +431,16 @@
             display: none;
         }
 
+        .u-series {
+            line-height: 0.8;
+        }
+
+        .u-series.footer {
+            font-size: 8px;
+            padding-top: 0;
+            margin-top: 0;
+        }
+
         /* Source: https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css
          * It is copy-pasted to lower the number of requests.
          */
@@ -987,6 +997,13 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
 
         if (opts.series.length - 1 > showLimit) {
             showTop = true;
+            let footer = legendEl.insertRow().insertCell();
+            footer.setAttribute('colspan', '2');
+            footer.style.textAlign = 'center';
+            footer.classList.add('u-value');
+            footer.parentNode.classList.add('u-series','footer');
+            footer.textContent = ". . .";
+            console.log(legendEl);
         }
 
         const overEl = u.over;
@@ -1010,6 +1027,7 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         if (showTop) {
             let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
             let header = nodes.shift();
+            let footer = nodes.pop();
             nodes.forEach(function (node) { node._sort_key = +node.querySelector("td").textContent; });
             nodes.sort((a, b) => +b._sort_key - +a._sort_key);
             nodes.forEach(function (node) { node.parentNode.appendChild(node); });
@@ -1017,6 +1035,7 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
                 nodes[i].style.display = i < showLimit ? null : "none";
                 delete nodes[i]._sort_key;
             }
+            footer.parentNode.appendChild(footer);
         }
     }
 
