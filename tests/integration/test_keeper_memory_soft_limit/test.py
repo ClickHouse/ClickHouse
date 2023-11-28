@@ -46,15 +46,18 @@ def test_soft_limit_create(started_cluster):
     try:
         node_zk = get_connection_zk("node")
         loop_time = 1000000
+        node_zk.create("/test_soft_limit", b"abc")
 
         for i in range(loop_time):
-            node_zk.create("/test_soft_limit/node_" + str(i), random_string(100))
+            node_zk.create(
+                "/test_soft_limit/node_" + str(i), random_string(100).encode()
+            )
     except ConnectionLoss:
         txn = node_zk.transaction()
         for i in range(10):
             txn.delete("/test_soft_limit/node_" + str(i))
 
-        txn.create("/test_soft_limit/node_1000001" + str(i), "abcde")
+        txn.create("/test_soft_limit/node_1000001" + str(i), b"abcde")
         txn.commit()
         return
 
