@@ -75,7 +75,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
@@ -114,7 +114,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
@@ -178,7 +178,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
@@ -543,7 +543,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
 
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;

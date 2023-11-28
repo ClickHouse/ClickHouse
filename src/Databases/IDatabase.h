@@ -220,7 +220,7 @@ public:
 
     /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
     /// NOTE: `no_throw` wait should be used during shutdown to (1) prevent race with startup and (2) avoid exceptions if startup failed
-    virtual void waitDatabaseStarted(bool /*no_throw*/ = false) const {}
+    virtual void waitDatabaseStarted(bool /*no_throw*/) const {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;

@@ -262,7 +262,7 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     String table_name = table_id.table_name;
 
