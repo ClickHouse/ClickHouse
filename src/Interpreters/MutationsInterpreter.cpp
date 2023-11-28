@@ -671,9 +671,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized)
                     {
+                        auto type_literal = std::make_shared<ASTLiteral>(column.type->getName());
+
+                        auto materialized_column = makeASTFunction("_CAST",
+                            column.default_desc.expression->clone(),
+                            type_literal);
+
                         stages.back().column_to_updated.emplace(
                             column.name,
-                            column.default_desc.expression->clone());
+                            materialized_column);
                     }
                 }
             }
