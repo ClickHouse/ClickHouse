@@ -1,5 +1,6 @@
 SELECT
-    *, * APPLY (toTypeName)
+    *,
+    * APPLY (toTypeName)
 FROM
 (
     SELECT
@@ -61,3 +62,16 @@ SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsS
 SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(dummy::Nullable(UInt8)) as t FROM system.one);
 SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(NULL) as t FROM system.one);
 SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(NULL::Nullable(UInt8)) as t FROM system.one);
+
+-- Assert sanitizer: passing NULL (not Nullable() with different values is accepted and ignored)
+SELECT
+    anyLastIf(n, cond) RESPECT NULLS,
+    anyLastIf(nullable_n, cond) RESPECT NULLS
+FROM
+(
+    SELECT
+        number AS n,
+        NULL as cond,
+        number::Nullable(Int64) as nullable_n
+    FROM numbers(10000)
+);
