@@ -271,7 +271,7 @@ GraceHashJoin::GraceHashJoin(
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(std::make_unique<TemporaryDataOnDisk>(tmp_data_, CurrentMetrics::TemporaryFilesForJoin))
-    , hash_join(makeInMemoryJoin())
+    , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
     if (!GraceHashJoin::isSupported(table_join))
@@ -636,7 +636,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
-        hash_join = makeInMemoryJoin(prev_keys_num);
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         while (Block block = right_reader.read())
@@ -657,10 +657,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     return nullptr;
 }
 
-GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(size_t reserve_num)
+GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
-    auto ret = std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row, reserve_num);
-    return std::move(ret);
+    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id);
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
@@ -686,7 +685,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
     {
         std::lock_guard lock(hash_join_mutex);
         if (!hash_join)
-            hash_join = makeInMemoryJoin();
+            hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index));
 
         // buckets size has been changed in other threads. Need to scatter current_block again.
         // rehash could only happen under hash_join_mutex's scope.
@@ -730,7 +729,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
                 current_block = concatenateBlocks(current_blocks);
         }
 
-        hash_join = makeInMemoryJoin(prev_keys_num);
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num);
 
         if (current_block.rows() > 0)
             hash_join->addBlockToJoin(current_block, /* check_limits = */ false);

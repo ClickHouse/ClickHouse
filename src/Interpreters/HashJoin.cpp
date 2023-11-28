@@ -233,7 +233,8 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
         JoinCommon::removeColumnNullability(column);
 }
 
-HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_, size_t reserve_num)
+HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_,
+                   bool any_take_last_row_, size_t reserve_num, const String & instance_id_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -241,10 +242,11 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
     , right_sample_block(right_sample_block_)
+    , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(&Poco::Logger::get("HashJoin"))
 {
-    LOG_DEBUG(log, "({}) Datatype: {}, kind: {}, strictness: {}, right header: {}", fmt::ptr(this), data->type, kind, strictness, right_sample_block.dumpStructure());
-    LOG_DEBUG(log, "({}) Keys: {}", fmt::ptr(this), TableJoin::formatClauses(table_join->getClauses(), true));
+    LOG_TRACE(log, "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
+        instance_log_id, TableJoin::formatClauses(table_join->getClauses(), true), data->type, kind, strictness, right_sample_block.dumpStructure());
 
     if (isCrossOrComma(kind))
     {
@@ -1958,10 +1960,10 @@ HashJoin::~HashJoin()
 {
     if (!data)
     {
-        LOG_TRACE(log, "({}) Join data has been already released", fmt::ptr(this));
+        LOG_TRACE(log, "{}Join data has been already released", instance_log_id);
         return;
     }
-    LOG_TRACE(log, "({}) Join data is being destroyed, {} bytes and {} rows in hash table", fmt::ptr(this), getTotalByteCount(), getTotalRowCount());
+    LOG_TRACE(log, "{}Join data is being destroyed, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 }
 
 template <typename Mapped>
@@ -2242,7 +2244,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
 {
-    LOG_TRACE(log, "({}) Join data is being released, {} bytes and {} rows in hash table", fmt::ptr(this), getTotalByteCount(), getTotalRowCount());
+    LOG_TRACE(log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
     BlocksList right_blocks = std::move(data->blocks);
     if (!restructure)
