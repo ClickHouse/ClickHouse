@@ -241,10 +241,10 @@ static std::vector<String> filterKeysForPartitionPruning(
 
         auto block = getBlockWithVirtuals(virtual_columns, bucket, result_keys);
 
-        auto filter_actions = VirtualColumnUtils::splitFilterDagForAllowedInputs(block, filter_dag, context);
+        auto filter_actions = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), block);
         if (!filter_actions)
             continue;
-        VirtualColumnUtils::filterBlockWithQuery(filter_actions, block, context);
+        VirtualColumnUtils::filterBlockWithDAG(filter_actions, block, context);
 
         result_keys = VirtualColumnUtils::extractSingleValueFromBlock<String>(block, "_key");
     }
