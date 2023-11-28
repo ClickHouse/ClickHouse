@@ -9,8 +9,9 @@ name will be `library/clickhouse`"""
 import argparse
 import logging
 from pathlib import Path
+from pprint import pformat
 from shutil import rmtree
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, Set
 
 from git_helper import git_runner
 from version_helper import (
@@ -34,16 +35,29 @@ def parse_args() -> argparse.Namespace:
         description="The script to handle tasks for docker-library/official-images",
     )
     parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="set the script verbosity, could be used multiple",
+    )
+    parser.add_argument(
         "--directory",
         type=_rel_path,
         default=_rel_path("docker/official"),
         help="a relative to the reporitory root directory",
     )
+    parser.add_argument(
+        "--image-type",
+        choices=["server", "keeper"],
+        default="server",
+        help="which image type to process",
+    )
     subparsers = parser.add_subparsers(
-        title="commands", dest="command", help="choose the command to run"
+        title="commands", dest="command", help="the command to run"
     )
     parser_tree = subparsers.add_parser(
-        "generate-tree", help="the command to generate directory `docker/official`"
+        "generate-tree", help="generates directory `docker/official`"
     )
     parser_tree.add_argument(
         "--min-version",
@@ -91,13 +105,14 @@ def get_versions_greater(minimal: ClickHouseVersion) -> Set[ClickHouseVersion]:
 
 
 def create_versions_dirs(
-    versions: Iterable[ClickHouseVersion], directory: Path, image_type: str = "server"
+    versions: Iterable[ClickHouseVersion], directory: Path
 ) -> Dict[ClickHouseVersion, Path]:
     assert directory.is_dir() or not directory.exists()
     dirs = {}
     for v in versions:
-        version_dir = directory / image_type / str(v)
+        version_dir = directory / str(v)
         version_dir.mkdir(parents=True, exist_ok=True)
+        logging.debug("Directory %s for version %s is created", version_dir, v)
         dirs[v] = version_dir
     return dirs
 
@@ -108,8 +123,15 @@ def generate_docker_directories(
     build_images: bool = False,
     image_type: str = "server",
 ) -> None:
+    arg_version = "ARG VERSION="
     for version, directory in version_dirs.items():
         branch = "origin/master" if use_master_docker else version.describe
+        logging.debug(
+            "Checkout directory content from '%s:docker/%s' to %s",
+            branch,
+            image_type,
+            directory,
+        )
         git_runner(
             f"git archive {branch}:docker/{image_type} | " f"tar x -C {directory}"
         )
@@ -117,8 +139,15 @@ def generate_docker_directories(
         for df in directory.glob("Dockerfile.*"):
             content = df.read_text().splitlines()
             for idx, line in enumerate(content):
-                if line.startswith("ARG VERSION="):
-                    content[idx] = f'ARG VERSION="{version}"'
+                if line.startswith(arg_version):
+                    logging.debug(
+                        "Found '%s' in line %s:%s, setting to version %s",
+                        arg_version,
+                        df.name,
+                        idx,
+                        version,
+                    )
+                    content[idx] = f'{arg_version}"{version}"'
             df.write_text("\n".join(content) + "\n")
             if build_images:
                 git_runner(
@@ -132,19 +161,28 @@ def generate_tree(args: argparse.Namespace) -> None:
         versions = get_versions_greater(args.min_version)
     else:
         versions = get_supported_versions()
-    directory = Path(git_runner.cwd) / args.directory
+    logging.info(
+        "The versions to generate:\n  %s",
+        "\n  ".join(v.string for v in sorted(versions)),
+    )
+    directory = Path(git_runner.cwd) / args.directory / args.image_type
     if args.clean:
         try:
+            logging.info("Removing directory %s before generating", directory)
             rmtree(directory)
         except FileNotFoundError:
             pass
     version_dirs = create_versions_dirs(versions, directory)
-    generate_docker_directories(version_dirs, args.use_master_docker, args.build_images)
+    generate_docker_directories(
+        version_dirs, args.use_master_docker, args.build_images, args.image_type
+    )
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
     args = parse_args()
+    log_levels = [logging.CRITICAL, logging.WARN, logging.INFO, logging.DEBUG]
+    logging.basicConfig(level=log_levels[min(args.verbose, 3)])
+    logging.debug("Arguments are %s", pformat(args.__dict__))
     if args.command == "generate-tree":
         generate_tree(args)
 
