@@ -92,7 +92,7 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    std::string generateBlobNameForPath(const std::string & path) override;
 
     bool isRemote() const override { return object_storage->isRemote(); }
 

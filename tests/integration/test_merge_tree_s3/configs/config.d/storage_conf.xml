@@ -78,6 +78,7 @@
                 <disk>s3_r</disk>
                 <path>/s3_cache_r/</path>
                 <max_size>1000000000</max_size>
+                <do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>
             </s3_cache_r>
         </disks>
         <policies>

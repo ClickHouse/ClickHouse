@@ -909,28 +909,15 @@ inline T parseFromString(std::string_view str)
 }
 
 
-template <typename ReturnType = void, bool dt64_mode = false>
+template <typename ReturnType = void>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
 /** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
-template <typename ReturnType = void, bool dt64_mode = false>
+template <typename ReturnType = void>
 inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    if constexpr (!dt64_mode)
-    {
-        if (!buf.eof() && !isNumericASCII(*buf.position()))
-        {
-            if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
-            else
-                return false;
-        }
-    }
-
     /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
 
@@ -978,41 +965,19 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
     else
-        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut);
+        return readDateTimeTextFallback<ReturnType>(datetime, buf, date_lut);
 }
 
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    time_t whole = 0;
-    bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
-    bool is_empty = buf.eof();
-
-    if (!is_empty)
+    time_t whole;
+    if (!readDateTimeTextImpl<bool>(whole, buf, date_lut))
     {
-        if constexpr (throw_exception)
-        {
-            try
-            {
-                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
-            }
-            catch (const DB::ParsingException &)
-            {
-                if (buf.eof() || *buf.position() != '.')
-                    throw;
-            }
-        }
-        else
-        {
-            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
-            if (!ok && (buf.eof() || *buf.position() != '.'))
-                return ReturnType(false);
-        }
+        return ReturnType(false);
     }
 
-    int negative_fraction_multiplier = 1;
+    int negative_multiplier = 1;
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
@@ -1040,18 +1005,18 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
 
-        /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
-        /// E.g. `1925-12-12 13:14:15.123` is represented internally as timestamp `-1390214744.877`.
-        /// Thus need to convert <negative_timestamp>.<fractional> to <negative_timestamp+1>.<1-0.<fractional>>
-        /// Also, setting fractional part to be negative when whole is 0 results in wrong value, in this case multiply result by -1.
-        if (!is_negative_timestamp && components.whole < 0 && components.fractional != 0)
+        /// Fractional part (subseconds) is treated as positive by users
+        /// (as DateTime64 itself is a positive, although underlying decimal is negative)
+        /// setting fractional part to be negative when whole is 0 results in wrong value,
+        /// so we multiply result by -1.
+        if (components.whole < 0 && components.fractional != 0)
         {
             const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
             ++components.whole;
             components.fractional = scale_multiplier - components.fractional;
             if (!components.whole)
             {
-                negative_fraction_multiplier = -1;
+                negative_multiplier = -1;
             }
         }
     }
@@ -1067,13 +1032,13 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     bool is_ok = true;
     if constexpr (std::is_same_v<ReturnType, void>)
     {
-        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_fraction_multiplier;
+        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_multiplier;
     }
     else
     {
         is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
         if (is_ok)
-            datetime64 *= negative_fraction_multiplier;
+            datetime64 *= negative_multiplier;
     }
 
     return ReturnType(is_ok);

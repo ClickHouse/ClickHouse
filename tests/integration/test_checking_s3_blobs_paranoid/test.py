@@ -19,18 +19,6 @@ def cluster():
             ],
             user_configs=[
                 "configs/setting.xml",
-                "configs/s3_retries.xml",
-            ],
-            with_minio=True,
-        )
-        cluster.add_instance(
-            "node_with_inf_s3_retries",
-            main_configs=[
-                "configs/storage_conf.xml",
-            ],
-            user_configs=[
-                "configs/setting.xml",
-                "configs/inf_s3_retries.xml",
             ],
             with_minio=True,
         )
@@ -480,7 +468,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
 
 
 def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
-    node = cluster.instances["node_with_inf_s3_retries"]
+    node = cluster.instances["node"]
 
     broken_s3.setup_at_part_upload(
         count=10000000,
@@ -502,6 +490,7 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         FROM system.numbers
         LIMIT 1000000
         SETTINGS
+            s3_retry_attempts=1000000,
             s3_max_single_part_upload_size=100,
             s3_min_upload_part_size=10000,
             s3_check_objects_after_upload=0

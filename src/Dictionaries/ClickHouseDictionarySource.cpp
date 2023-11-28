@@ -168,7 +168,8 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
 
     if (configuration.is_local)
     {
-        pipeline = executeQuery(query, context_copy, true).second.pipeline;
+        pipeline = executeQuery(query, context_copy, true).pipeline;
+
         pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
     }
     else
@@ -190,7 +191,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        return readInvalidateQuery(executeQuery(request, context_copy, true).second.pipeline);
+        return readInvalidateQuery(executeQuery(request, context_copy, true).pipeline);
     }
     else
     {

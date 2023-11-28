@@ -23,13 +23,6 @@ namespace ProfileEvents
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentUseMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
-    extern const Event FilesystemCacheHoldFileSegments;
-    extern const Event FilesystemCacheUnusedHoldFileSegments;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric FilesystemCacheHoldFileSegments;
 }
 
 namespace DB
@@ -515,8 +508,7 @@ bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
     if (is_unbound && is_file_segment_size_exceeded)
-        /// Note: segment_range.right is inclusive.
-        segment_range.right = range().left + expected_downloaded_size + size_to_reserve - 1;
+        segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
     /// if reserve_stat is not passed then use dummy stat and discard the result.
     FileCacheReserveStat dummy_stat;
@@ -924,11 +916,10 @@ void FileSegment::use()
     }
 }
 
-FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_)
-    : file_segments(std::move(file_segments_)), complete_on_dtor(complete_on_dtor_)
+FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 {
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments, file_segments.size());
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheHoldFileSegments, file_segments.size());
+    front().complete();
+    return file_segments.erase(file_segments.begin());
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()
@@ -938,24 +929,8 @@ FileSegmentsHolder::~FileSegmentsHolder()
     if (!complete_on_dtor)
         return;
 
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
         file_segment_it = completeAndPopFrontImpl();
-}
-
-FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
-{
-    front().complete();
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
-    return file_segments.erase(file_segments.begin());
-}
-
-FileSegment & FileSegmentsHolder::add(FileSegmentPtr && file_segment)
-{
-    file_segments.push_back(file_segment);
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments);
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheHoldFileSegments);
-    return *file_segments.back();
 }
 
 String FileSegmentsHolder::toString()

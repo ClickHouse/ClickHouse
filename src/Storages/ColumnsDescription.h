@@ -102,11 +102,6 @@ class ColumnsDescription : public IHints<>
 {
 public:
     ColumnsDescription() = default;
-
-    ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary);
-
-    explicit ColumnsDescription(NamesAndTypes ordinary);
-
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);

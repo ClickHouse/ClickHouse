@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Backups/BackupStatus.h>
-#include <Common/ProfileEvents.h>
 
 namespace DB
 {
@@ -47,9 +46,6 @@ struct BackupOperationInfo
     /// Set only if there was an error.
     std::exception_ptr exception;
     String error_message;
-
-    /// Profile events collected during the backup.
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
 
     std::chrono::system_clock::time_point start_time;
     std::chrono::system_clock::time_point end_time;

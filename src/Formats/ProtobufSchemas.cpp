@@ -21,12 +21,6 @@ ProtobufSchemas & ProtobufSchemas::instance()
     return instance;
 }
 
-void ProtobufSchemas::clear()
-{
-    std::lock_guard lock(mutex);
-    importers.clear();
-}
-
 class ProtobufSchemas::ImporterWithSourceTree : public google::protobuf::compiler::MultiFileErrorCollector
 {
 public:

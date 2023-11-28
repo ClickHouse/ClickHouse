@@ -391,7 +391,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
             auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
-                return zkutil::EphemeralNodeHolder::existing(current_worker_path, *zookeeper);
+                return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
 
             if (code == Coordination::Error::ZBADVERSION)
             {

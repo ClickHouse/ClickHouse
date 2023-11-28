@@ -899,11 +899,11 @@ Other types are not supported yet. The function returns the attribute for the pr
 
 Data must completely fit into RAM.
 
-## Refreshing dictionary data using LIFETIME {#lifetime}
+## Dictionary Updates {#dictionary-updates}
 
-ClickHouse periodically updates dictionaries based on the `LIFETIME` tag (defined in seconds). `LIFETIME` is the update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries.
+ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `lifetime` tag in seconds.
 
-During updates, the old version of a dictionary can still be queried. Dictionary updates (other than when loading the dictionary for first use) do not block queries. If an error occurs during an update, the error is written to the server log and queries can continue using the old version of the dictionary. If a dictionary update is successful, the old version of the dictionary is replaced atomically.
+Dictionary updates (other than loading for first use) do not block queries. During updates, the old version of a dictionary is used. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
 
 Example of settings:
 

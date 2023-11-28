@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <sys/types.h>
 
 
@@ -27,8 +28,6 @@ struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
 class RemoteQueryExecutorReadContext;
-
-class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<String()>;
@@ -165,7 +164,7 @@ public:
     Block getExtremes() { return std::move(extremes); }
 
     /// Set callback for progress. It will be called on Progress packet.
-    void setProgressCallback(ProgressCallback callback);
+    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
