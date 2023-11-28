@@ -2991,62 +2991,11 @@ void ClientBase::init(int argc, char ** argv)
     std::string max_client_memory_usage = config().getString("max_memory_usage_in_client", "0" /*default value*/);
     if (max_client_memory_usage != "0")
     {
-        UInt64 multiplier = 1;
-        size_t pos = max_client_memory_usage.size()-1;
-        if (!isdigit(max_client_memory_usage[pos]))
-        {
-            switch (std::tolower(max_client_memory_usage[pos]))
-            {
-                case 'k':
-                {
-                    multiplier = 1e3;
-                    break;
-                }
-                case 'm':
-                {
-                    multiplier = 1e6;
-                    break;
-                }
-                case 'g':
-                {
-                    multiplier = 1e9;
-                    break;
-                }
-                case 't':
-                {
-                    multiplier = 1e12;
-                    break;
-                }
-                case 'p':
-                {
-                    multiplier = 1e15;
-                    break;
-                }
-                case 'e':
-                {
-                    multiplier = 1e18;
-                    break;
-                }
-                default:
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid character '{}' in max_memory_usage_in_client", max_client_memory_usage[pos]);
-            }
-        }
-        long double mem_usage_float = std::stod((max_client_memory_usage.substr(0, pos+1))) * multiplier;
-        if (mem_usage_float < 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' for max_memory_usage_in_client cannot be negative.", mem_usage_float);
-        if (mem_usage_float > UInt64(mem_usage_float))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type of argument '{}' for max_memory_usage_in_client must be integer", mem_usage_float);
-        try
-        {
-            UInt64 max_client_memory_usage_int = UInt64(mem_usage_float);
-            total_memory_tracker.setHardLimit(max_client_memory_usage_int);
-            total_memory_tracker.setDescription("(total)");
-            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-        }
-        catch (...)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid input '{}' in max_memory_usage_in_client", max_client_memory_usage);
-        }
+        UInt64 max_client_memory_usage_int = parseWithSizeSuffix<UInt64>(max_client_memory_usage.c_str(), max_client_memory_usage.length());
+        
+        total_memory_tracker.setHardLimit(max_client_memory_usage_int);
+        total_memory_tracker.setDescription("(total)");
+        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
 }
 
