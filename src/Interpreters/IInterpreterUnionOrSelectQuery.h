@@ -9,8 +9,6 @@
 namespace DB
 {
 
-class PlanFragment;
-
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:

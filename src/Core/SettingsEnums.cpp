@@ -202,7 +202,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
                         {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 
 IMPLEMENT_SETTING_ENUM(CBOStepExecutionMode, ErrorCodes::BAD_ARGUMENTS,
-                       {{"one_stage",    CBOStepExecutionMode::ONE_STAGE},
+                       {{"one_stage", CBOStepExecutionMode::ONE_STAGE},
                         {"two_stage", CBOStepExecutionMode::TWO_STAGE},
                         {"determined_by_optimizer", CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER}})
 

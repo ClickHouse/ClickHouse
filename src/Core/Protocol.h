@@ -92,7 +92,7 @@ namespace Protocol
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
             SSHChallenge = 18,              /// Return challenge for SSH signature signing
-            PipelinesReady = 19,            /// Request from a MergeTree replica to a coordinator
+            PipelinesReady = 19,            /// Return I am ready to execute for query coordination
             MAX = PipelinesReady,
         };
 
@@ -164,10 +164,10 @@ namespace Protocol
             SSHChallengeRequest = 11,       /// Request for SSH signature challenge
             SSHChallengeResponse = 12,      /// Request for SSH signature challenge
 
-            PlanFragments = 12,             ///
-            BeginExecutePipelines = 13,     ///
-            ExchangeData = 14,
-            MAX = SSHChallengeResponse,
+            PlanFragments = 12,             /// Request for query plan fragments in query coordination
+            BeginExecutePipelines = 13,     /// Request for beginning to execute in query coordination
+            ExchangeData = 14,              /// Data exchanging in query coordination
+            MAX = ExchangeData,
         };
 
         inline const char * toString(UInt64 packet)

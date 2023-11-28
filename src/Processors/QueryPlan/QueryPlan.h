@@ -33,11 +33,6 @@ class Pipe;
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
 
-class PlanFragment;
-using PlanFragmentPtr = std::shared_ptr<PlanFragment>;
-using PlanFragmentPtrs = std::vector<PlanFragmentPtr>;
-
-
 namespace JSONBuilder
 {
     class IItem;
