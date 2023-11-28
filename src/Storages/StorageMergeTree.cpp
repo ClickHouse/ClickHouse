@@ -44,7 +44,6 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
-#include <Storages/MergeTree/MergeTreePartitionGlobalMinMaxIdxCalculator.h>
 #include <fmt/core.h>
 
 
@@ -2038,47 +2037,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
     const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
 
-
-    auto isExpressionDirectSubsetOf = [](const ASTPtr source, const ASTPtr destination)
+    if (is_partition_exp_different)
     {
-        auto source_expression_list = extractKeyExpressionList(source);
-        auto destination_expression_list = extractKeyExpressionList(destination);
-
-        std::unordered_set<std::string> source_columns;
-
-        for (auto i = 0u; i < source_expression_list->children.size(); ++i)
-        {
-            source_columns.insert(source_expression_list->children[i]->getColumnName());
-        }
-
-        for (auto i = 0u; i < destination_expression_list->children.size(); ++i)
-        {
-            if (!source_columns.contains(destination_expression_list->children[i]->getColumnName()))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    };
-
-    // If destination partition expression columns are a subset of source partition expression columns,
-    // there is no need to check for monotonicity.
-    if (is_partition_exp_different && !isExpressionDirectSubsetOf(src_partition_expression, my_partition_expression))
-    {
-        auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(src_data, src_parts);
-
-        assert(!src_global_min_max_indexes.empty());
-
-        auto [src_min_idx, src_max_idx] = src_global_min_max_indexes[0];
-
-        if (src_min_idx.isNull() || src_max_idx.isNull())
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "min_max_idx should never be null if a part exist");
-        }
-
-        auto source_table_info = MergeTreePartitionCompatibilityVerifier::SourceTableInfo {src_data, src_min_idx, src_max_idx};
-        MergeTreePartitionCompatibilityVerifier::verify(source_table_info, getStorageID(), my_metadata_snapshot, getContext());
+        MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_parts);
     }
 
     for (DataPartPtr & src_part : src_parts)
