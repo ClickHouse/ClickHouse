@@ -176,7 +176,10 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)
         "host;"
         "x-amz-api-version;"
         "x-amz-content-sha256;"
-        "x-amz-date, ...\n"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
         "x-amz-server-side-encryption-customer-algorithm: AES256\n"
         "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
         "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
@@ -197,7 +200,10 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
         "content-type;"
         "host;"
         "x-amz-content-sha256;"
-        "x-amz-date, ...\n"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
         "x-amz-server-side-encryption-customer-algorithm: AES256\n"
         "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
         "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");

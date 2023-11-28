@@ -3,6 +3,7 @@
 #include <optional>
 #include <memory>
 #include <Poco/UUID.h>
+#include <Poco/Net/NameValueCollection.h>
 #include <Poco/Util/Application.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
@@ -322,9 +323,12 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
+    std::unordered_set<String> get_client_http_header_forbidden_headers;
+    bool allow_get_client_http_header;
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
+    String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
@@ -3950,6 +3954,28 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 }
 
 
+void Context::setClientHTTPHeaderForbiddenHeaders(const String & forbidden_headers)
+{
+    std::unordered_set<String> forbidden_header_list;
+    boost::split(forbidden_header_list, forbidden_headers, [](char c) { return c == ','; });
+    shared->get_client_http_header_forbidden_headers = forbidden_header_list;
+}
+
+void Context::setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function)
+{
+    shared->allow_get_client_http_header= allow_get_http_header_function;
+}
+
+const std::unordered_set<String> & Context::getClientHTTPHeaderForbiddenHeaders() const
+{
+    return shared->get_client_http_header_forbidden_headers;
+}
+
+bool Context::allowGetHTTPHeaderFunction() const
+{
+    return shared->allow_get_client_http_header;
+}
+
 void Context::setMaxPartitionSizeToDrop(size_t max_size)
 {
     // Is initialized at server startup and updated at config reload
@@ -4116,6 +4142,16 @@ void Context::setFormatSchemaPath(const String & path)
     shared->format_schema_path = path;
 }
 
+String Context::getGoogleProtosPath() const
+{
+    return shared->google_protos_path;
+}
+
+void Context::setGoogleProtosPath(const String & path)
+{
+    shared->google_protos_path = path;
+}
+
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
     assert(hasQueryContext());
@@ -4270,12 +4306,15 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
     client_info.http_referer = http_referer;
     need_recalculate_access = true;
+
+    if (!http_headers.empty())
+        client_info.headers = http_headers;
 }
 
 void Context::setForwardedFor(const String & forwarded_for)

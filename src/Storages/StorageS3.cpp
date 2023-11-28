@@ -865,7 +865,7 @@ Chunk StorageS3Source::generate()
             if (const auto * input_format = reader.getInputFormat())
                 chunk_size = reader.getInputFormat()->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath());
+            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath(), reader.getFileSize());
             return chunk;
         }
 
@@ -1143,7 +1143,7 @@ StorageS3::StorageS3(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(

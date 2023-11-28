@@ -246,6 +246,8 @@ public:
         REMOVE_BLOBS,
         /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
         PRESERVE_BLOBS,
+        /// remove blobs even if the part is not temporary
+        REMOVE_BLOBS_OF_NOT_TEMPORARY,
     };
     BlobsRemovalPolicyForTemporaryParts remove_tmp_policy = BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
@@ -367,6 +369,7 @@ public:
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
 
     size_t getFileSizeOrZero(const String & file_name) const;
+    auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix);
