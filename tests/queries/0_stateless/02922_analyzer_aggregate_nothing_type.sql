@@ -16,5 +16,9 @@ SET
 ;
 
 SELECT count(NULL) FROM t1 WITH TOTALS;
-SELECT count(NULL as a), sum(a) FROM t1 WITH TOTALS;
+SELECT count(NULL as a), a FROM t1 WITH TOTALS;
+
+-- result differs in old and new analyzer:
+-- SELECT count(NULL as a), sum(a) FROM t1 WITH TOTALS;
+
 SELECT uniq(NULL) FROM t1 WITH TOTALS;
