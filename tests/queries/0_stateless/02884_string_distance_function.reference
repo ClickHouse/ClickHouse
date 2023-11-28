@@ -57,3 +57,9 @@ levenshteinDistance
 1
 1
 6
+jaroSimiliary
+0.8888888888888888
+dameerauLevenshteinDistance
+2
+jaroWinklerSimilarity
+0.9333333333333333

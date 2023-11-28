@@ -52,4 +52,13 @@ select levenshteinDistance(s1, s2) FROM t ORDER BY s1, s2;
 
 SELECT editDistance(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 
+select 'jaroSimiliary';
+select jaroSimilarity('duck', 'duckdb');
+
+select 'dameerauLevenshteinDistance';
+select damerauLevenshteinDistance('duckdb', 'udckbd');
+
+select 'jaroWinklerSimilarity';
+select jaroWinklerSimilarity('duck', 'duckdb');
+
 drop table t;
