@@ -2992,7 +2992,7 @@ void ClientBase::init(int argc, char ** argv)
     if (max_client_memory_usage != "0")
     {
         UInt64 max_client_memory_usage_int = parseWithSizeSuffix<UInt64>(max_client_memory_usage.c_str(), max_client_memory_usage.length());
-        
+
         total_memory_tracker.setHardLimit(max_client_memory_usage_int);
         total_memory_tracker.setDescription("(total)");
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
