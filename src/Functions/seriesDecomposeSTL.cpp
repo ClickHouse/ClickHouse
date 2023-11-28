@@ -23,6 +23,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/NaNUtils.h>
+
 
 namespace DB
 {
@@ -77,7 +79,8 @@ public:
             period = period_ptr->getUInt(0);
         else if (checkAndGetColumn<ColumnFloat32>(period_ptr.get()) || checkAndGetColumn<ColumnFloat64>(period_ptr.get()))
         {
-            if ((period = period_ptr->getFloat64(0)) < 0)
+            period = period_ptr->getFloat64(0);
+            if (isNaN(period) || !std::isfinite(period) || period < 0)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal value {} for second argument of function {}. Should be a positive number",
@@ -164,7 +167,7 @@ public:
 
         try
         {
-            auto res = stl::params().fit(src, static_cast<size_t>(period));
+            auto res = stl::params().fit(src, static_cast<size_t>(std::round(period)));
 
             if (res.seasonal.empty())
                 return false;
