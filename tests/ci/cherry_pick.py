@@ -58,8 +58,8 @@ class ReleaseBranch:
     CHERRYPICK_DESCRIPTION = """Original pull-request #{pr_number}
 
 This pull-request is a first step of an automated backporting.
-It contains changes similar to calling a local command `git cherry-pick`.
-If you intend to continue backporting this changes, then resolve all conflicts if any.
+It contains changes similar to calling `git cherry-pick` locally.
+If you intend to continue backporting the changes, then resolve all conflicts if any.
 Otherwise, if you do not want to backport them, then just close this pull-request.
 
 The check results does not matter at this step - you can safely ignore them.
@@ -69,7 +69,9 @@ The check results does not matter at this step - you can safely ignore them.
 This pull-request will be merged automatically. Please, **do not merge it manually** \
 (but if you accidentally did, nothing bad will happen).
 
-### If the PR was manually reopened after being closed
+### Troubleshooting
+
+#### If the PR was manually reopened after being closed
 
 If this PR is stuck (i.e. not automatically merged after one day), check {pr_url} for \
 `{backport_created_label}` *label* and delete it.
@@ -77,7 +79,7 @@ If this PR is stuck (i.e. not automatically merged after one day), check {pr_url
 Manually merging will do nothing. The `{backport_created_label}` *label* prevents the \
 original PR {pr_url} from being processed.
 
-### If the conflicts were resolved in a wrong way
+#### If the conflicts were resolved in a wrong way
 
 If this cherry-pick PR is completely screwed by a wrong conflicts resolution, and you \
 want to recreate it:
