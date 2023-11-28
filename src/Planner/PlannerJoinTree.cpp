@@ -1146,13 +1146,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             const auto & join_clause_right_key_nodes = join_clause.getRightKeyNodes();
 
             size_t join_clause_key_nodes_size = join_clause_left_key_nodes.size();
-            chassert(join_clause_key_nodes_size == join_clause_right_key_nodes.size());
+            assert(join_clause_key_nodes_size == join_clause_right_key_nodes.size());
 
             for (size_t i = 0; i < join_clause_key_nodes_size; ++i)
             {
-                table_join_clause.addKey(join_clause_left_key_nodes[i]->result_name,
-                                         join_clause_right_key_nodes[i]->result_name,
-                                         join_clause.isNullsafeCompareKey(i));
+                table_join_clause.key_names_left.push_back(join_clause_left_key_nodes[i]->result_name);
+                table_join_clause.key_names_right.push_back(join_clause_right_key_nodes[i]->result_name);
             }
 
             const auto & join_clause_get_left_filter_condition_nodes = join_clause.getLeftFilterConditionNodes();

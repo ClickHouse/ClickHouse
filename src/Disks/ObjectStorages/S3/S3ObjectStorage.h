@@ -59,10 +59,8 @@ private:
         String version_id_,
         const S3Capabilities & s3_capabilities_,
         String bucket_,
-        String connection_string,
-        String object_key_prefix_)
-        : bucket(std::move(bucket_))
-        , object_key_prefix(std::move(object_key_prefix_))
+        String connection_string)
+        : bucket(bucket_)
         , clients(std::make_unique<Clients>(std::move(client_), *s3_settings_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
@@ -172,17 +170,13 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
-
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
-private:
     std::string bucket;
-    String object_key_prefix;
 
     MultiVersion<Clients> clients;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
@@ -201,11 +195,7 @@ private:
 class S3PlainObjectStorage : public S3ObjectStorage
 {
 public:
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
-    {
-        return ObjectStorageKey::createAsRelative(object_key_prefix, path);
-    }
-
+    std::string generateBlobNameForPath(const std::string & path) override { return path; }
     std::string getName() const override { return "S3PlainObjectStorage"; }
 
     template <class ...Args>

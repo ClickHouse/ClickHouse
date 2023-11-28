@@ -2033,7 +2033,7 @@ static inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
     else if constexpr (std::is_same_v<Name, NameToDateTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
         || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
     {
-        return (arguments.size() == 2 && isUInt(arguments[1].type)) || arguments.size() == 3;
+        return (arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3;
     }
 
     return false;

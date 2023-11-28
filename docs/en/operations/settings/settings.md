@@ -3310,11 +3310,22 @@ Possible values:
 
 Default value: `0`.
 
+## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
+
+Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Possible values:
+
+- 0 - Show names of native ClickHouse data types.
+- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
+
+Default value: `0`.
+
 ## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
 
 When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has an effect only when the connection is made through the MySQL wire protocol.
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3325,7 +3336,7 @@ Default value: `0`.
 
 When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
-Has an effect only when the connection is made through the MySQL wire protocol.
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
 
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
@@ -3943,17 +3954,6 @@ Possible values:
 
 Default value: `''`.
 
-## preferred_optimize_projection_name {#preferred_optimize_projection_name}
-
-If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
-
-
-Possible values:
-
-- string: name of preferred projection
-
-Default value: `''`.
-
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -3965,10 +3965,6 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
-
-:::note
-`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
-:::
 
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
@@ -4812,10 +4808,3 @@ LIFETIME(MIN 0 MAX 3600)
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```
-
-## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
-
-When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
-
-Default value: `false`.

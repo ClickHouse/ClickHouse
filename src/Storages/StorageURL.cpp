@@ -170,11 +170,24 @@ namespace
         return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
     }
 
+    auto proxyConfigurationToPocoProxyConfiguration(const ProxyConfiguration & proxy_configuration)
+    {
+        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+        poco_proxy_config.host = proxy_configuration.host;
+        poco_proxy_config.port = proxy_configuration.port;
+        poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
+
+        return poco_proxy_config;
+    }
+
     auto getProxyConfiguration(const std::string & protocol_string)
     {
         auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
                                              : ProxyConfigurationResolver::Protocol::HTTP;
-        return ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+        auto proxy_config = ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+
+        return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }
 }
 

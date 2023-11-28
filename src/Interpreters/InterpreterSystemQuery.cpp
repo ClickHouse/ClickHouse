@@ -728,11 +728,6 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
 
-    SCOPE_EXIT({
-        if (table)
-            table->is_being_restarted = false;
-    });
-    table->is_being_restarted = true;
     table->flushAndShutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
@@ -750,7 +745,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true, false);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 

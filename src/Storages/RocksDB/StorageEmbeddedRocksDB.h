@@ -26,7 +26,6 @@ class Context;
 class StorageEmbeddedRocksDB final : public IStorage, public IKeyValueEntity, WithContext
 {
     friend class EmbeddedRocksDBSink;
-    friend class ReadFromEmbeddedRocksDB;
 public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
@@ -40,8 +39,7 @@ public:
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

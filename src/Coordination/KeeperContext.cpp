@@ -32,17 +32,9 @@ KeeperContext::KeeperContext(bool standalone_keeper_)
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
-void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_, const std::string & environment_az)
+void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
 {
     dispatcher = dispatcher_;
-
-    /// We only use the environment availability zone when configuration option is missing.
-    auto keeper_az = config.getString("keeper_server.availability_zone", environment_az);
-    if (!keeper_az.empty())
-        system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
-    LOG_INFO(&Poco::Logger::get("KeeperContext"),
-        "Initialize the KeeperContext with availability zone: '{}', environment availability zone '{}'. ", keeper_az, environment_az);
-
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 

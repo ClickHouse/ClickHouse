@@ -17,7 +17,6 @@
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
-#include <Common/getRandomASCIIString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -128,10 +127,7 @@ private:
             result = !objects.empty();
 
             for (const auto & object : objects)
-                batch.emplace_back(
-                    object.GetKey(),
-                    ObjectMetadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}}
-                );
+                batch.emplace_back(object.GetKey(), ObjectMetadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}});
 
             if (result)
                 request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
@@ -297,12 +293,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
             break;
 
         for (const auto & object : objects)
-            children.emplace_back(
-                object.GetKey(),
-                ObjectMetadata{
-                    static_cast<uint64_t>(object.GetSize()),
-                    Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    {}});
+            children.emplace_back(object.GetKey(), ObjectMetadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}});
 
         if (max_keys)
         {
@@ -533,32 +524,11 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,
-        endpoint, object_key_prefix);
+        endpoint);
 }
 
 S3ObjectStorage::Clients::Clients(std::shared_ptr<S3::Client> client_, const S3ObjectStorageSettings & settings)
     : client(std::move(client_)), client_with_long_timeout(client->clone(std::nullopt, settings.request_settings.long_request_timeout_ms)) {}
-
-ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string &) const
-{
-    /// Path to store the new S3 object.
-
-    /// Total length is 32 a-z characters for enough randomness.
-    /// First 3 characters are used as a prefix for
-    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-
-    constexpr size_t key_name_total_size = 32;
-    constexpr size_t key_name_prefix_size = 3;
-
-    /// Path to store new S3 object.
-    String key = fmt::format("{}/{}",
-                             getRandomASCIIString(key_name_prefix_size),
-                             getRandomASCIIString(key_name_total_size - key_name_prefix_size));
-
-    /// what ever key_prefix value is, consider that key as relative
-    return ObjectStorageKey::createAsRelative(object_key_prefix, key);
-}
-
 
 }
 

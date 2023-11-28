@@ -7,8 +7,6 @@
 namespace DB
 {
 
-class FunctionNode;
-
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 
@@ -85,10 +83,6 @@ void replaceColumns(QueryTreeNodePtr & node,
     const QueryTreeNodePtr & table_expression_node,
     const std::unordered_map<std::string, QueryTreeNodePtr> & column_name_to_node);
 
-/** Resolve function node again using it's content.
-  * This function should be called when arguments or parameters are changed.
-  */
-void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 
 /// Just collect all identifiers from query tree
 NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);

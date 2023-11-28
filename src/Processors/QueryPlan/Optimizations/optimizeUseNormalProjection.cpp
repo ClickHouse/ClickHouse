@@ -7,8 +7,6 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
-#include <Storages/ProjectionsDescription.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <stack>
 
@@ -133,21 +131,6 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
-    // Here we iterate over the projections and check if we have the same projections as we specified in preferred_projection_name
-    bool is_projection_found = false;
-    const auto & proj_name_from_settings = context->getSettings().preferred_optimize_projection_name.value;
-    if (!proj_name_from_settings.empty())
-    {
-        for (const auto * projection : normal_projections)
-        {
-            if (projection->name == proj_name_from_settings)
-            {
-                is_projection_found = true;
-                break;
-            }
-        }
-    }
-
     for (const auto * projection : normal_projections)
     {
         if (!hasAllRequiredColumns(projection, required_columns))
@@ -170,9 +153,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         if (candidate.sum_marks >= ordinary_reading_marks)
             continue;
 
-        if (!is_projection_found && (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks))
-            best_candidate = &candidate;
-        else if (is_projection_found && projection->name == proj_name_from_settings)
+        if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
             best_candidate = &candidate;
     }
 
@@ -255,7 +236,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     }
     else
     {
-        const auto & main_stream = iter->node->children.front()->step->getOutputStream();
+        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputStream();
         const auto * proj_stream = &next_node->step->getOutputStream();
 
         if (auto materializing = makeMaterializingDAG(proj_stream->header, main_stream.header))
@@ -271,7 +252,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         auto & union_node = nodes.emplace_back();
         DataStreams input_streams = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
-        union_node.children = {iter->node->children.front(), next_node};
+        union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;
     }
 

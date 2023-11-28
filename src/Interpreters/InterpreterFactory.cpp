@@ -288,7 +288,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterAlterNamedCollectionQuery>(query, context);
     }
-    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>())
+    else if (query->as<ASTCheckQuery>())
     {
         return std::make_unique<InterpreterCheckQuery>(query, context);
     }

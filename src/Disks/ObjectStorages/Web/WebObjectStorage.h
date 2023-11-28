@@ -89,10 +89,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
-    {
-        return ObjectStorageKey::createAsRelative(path);
-    }
+    std::string generateBlobNameForPath(const std::string & path) override { return path; }
 
     bool isRemote() const override { return true; }
 

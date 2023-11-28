@@ -1557,10 +1557,10 @@ Returns for a given date, the number of days passed since [1 January 0000](https
 toDaysSinceYearZero(date[, time_zone])
 ```
 
-Alias: `TO_DAYS`
+Aliases: `TO_DAYS`
+
 
 **Arguments**
-
 - `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
@@ -1583,56 +1583,6 @@ Result:
 │                                     713569 │
 └────────────────────────────────────────────┘
 ```
-
-**See Also**
-
-- [fromDaysSinceYearZero](#fromDaysSinceYearZero)
-
-## fromDaysSinceYearZero
-
-Returns for a given number of days passed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero) the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar). The calculation is the same as in MySQL's [`FROM_DAYS()`](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_from-days) function.
-
-The result is undefined if it cannot be represented within the bounds of the [Date](../../sql-reference/data-types/date.md) type.
-
-**Syntax**
-
-``` sql
-fromDaysSinceYearZero(days)
-```
-
-Alias: `FROM_DAYS`
-
-**Arguments**
-
-- `days` — The number of days passed since year zero.
-
-**Returned value**
-
-The date corresponding to the number of days passed since year zero.
-
-Type: [Date](../../sql-reference/data-types/date.md).
-
-**Example**
-
-``` sql
-SELECT fromDaysSinceYearZero(739136), fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')));
-```
-
-Result:
-
-``` text
-┌─fromDaysSinceYearZero(739136)─┬─fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')))─┐
-│                    2023-09-08 │                                                       2023-09-08 │
-└───────────────────────────────┴──────────────────────────────────────────────────────────────────┘
-```
-
-**See Also**
-
-- [toDaysSinceYearZero](#toDaysSinceYearZero)
-
-## fromDaysSinceYearZero32
-
-Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../../sql-reference/data-types/date32.md).
 
 ## age
 

@@ -288,6 +288,8 @@ void StorageMaterializedView::alter(
         const auto & old_select = old_metadata.getSelectQuery();
 
         DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+
+        new_metadata.setSelectQuery(new_select);
     }
     /// end modify query
 
