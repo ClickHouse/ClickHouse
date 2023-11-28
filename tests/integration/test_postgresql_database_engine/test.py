@@ -436,7 +436,9 @@ def test_postgresql_password_leak(started_cluster):
 # PostgreSQL database engine is created async in ClickHouse (first create the object then another thread
 # do the connection), causing a created database object with an inaccessible URI, and access of system.tables
 # timed out when touching the inaccessible database. We add the filter engine ability so we add a test here.
-def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(started_cluster):
+def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
+    started_cluster
+):
     # This query takes some time depending on the trial times and conn timeout setting.
     node1.query(
         "CREATE DATABASE postgres_database ENGINE = PostgreSQL('google.com:5432', 'dummy', 'dummy', 'dummy')"

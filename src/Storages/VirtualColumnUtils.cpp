@@ -272,7 +272,6 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 {
     auto actions = std::make_shared<ExpressionActions>(dag);
-    // std::cerr << actions->dumpActions() << std::endl;
     makeSets(actions, context);
     Block block_with_filter = block;
     actions->execute(block_with_filter);

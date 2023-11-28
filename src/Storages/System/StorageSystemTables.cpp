@@ -704,10 +704,7 @@ void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, c
     auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
-    {
-        // std::cerr << filter_actions_dag->dumpDAG() << std::endl;
         predicate = filter_actions_dag->getOutputs().at(0);
-    }
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(predicate, context);
     ColumnPtr filtered_tables_column = getFilteredTables(predicate, filtered_databases_column, context);
