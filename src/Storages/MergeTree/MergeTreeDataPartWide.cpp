@@ -198,8 +198,10 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     if (!stream_name)
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No {}.{} file checksum for column {} in part {}",
-                            *stream_name, DATA_FILE_EXTENSION, name_type.name, getDataPartStorage().getFullPath());
+                            "No stream ({}) file checksum for column {} in part {}",
+                            DATA_FILE_EXTENSION,
+                            name_type.name,
+                            getDataPartStorage().getFullPath());
 
                     auto mrk_file_name = *stream_name + marks_file_extension;
                     if (!checksums.files.contains(mrk_file_name))
