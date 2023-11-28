@@ -74,55 +74,20 @@ namespace
 
 ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
 {
-    /** Engine in ststem.tables actually represents storage name. Some types of databases have their
-      * engine name same as their storage name, and it is time-consuming to connect to these kind of
-      * databases without a valid URL. So we use the engine name (storgae name) to avoid access to
-      * these kind of databases as much as possible. For example, when engine != 'PostgreSQL', we
-      * don't need to connect to the corresponding postgres database.
-      */
-    MutableColumnPtr database_column = ColumnString::create();
-    MutableColumnPtr engine_column = ColumnString::create();
+    MutableColumnPtr column = ColumnString::create();
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & [database_name, database] : databases)
+    for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// We don't want to show the internal database for temporary tables in system.tables
 
-        database_column->insert(database_name);
-        engine_column->insert(database->getEngineName());
+        column->insert(database_name);
     }
 
-    Block block
-    {
-        ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "database"),
-        ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine")
-    };
+    Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
-
-    /** All the hassle below is to make sure the special kind of database has been indeed filtered
-      * out when requested by user, but not incorrectly filter out other databases, because queries
-      * like engine = 'View', whose storage might be 'atomic' would be filtered out as well as its
-      * engine name != storage name. Filter for other databases happens at the execution stage.
-      */
-    const ColumnPtr & filtered_databases_column = block.getByPosition(0).column;
-    std::unordered_set<String> filtered_databases_set;
-    for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
-        filtered_databases_set.insert(filtered_databases_column->getDataAt(database_idx).toString());
-
-    MutableColumnPtr final_database_column = ColumnString::create();
-    for (const auto & [database_name, database] : databases)
-    {
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue; /// We don't want to show the internal database for temporary tables in system.tables
-
-        if (database->getEngineName() != "PostgreSQL" && database->getEngineName() != "MySQL")
-            final_database_column->insert(database_name);
-        else
-            if (filtered_databases_set.find(database_name) != filtered_databases_set.end())
-                final_database_column->insert(database_name);
-    }
-    return final_database_column;
+    return block.getByPosition(0).column;
 }
 
 ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
