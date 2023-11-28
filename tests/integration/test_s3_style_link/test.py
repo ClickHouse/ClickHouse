@@ -56,6 +56,7 @@ def test_s3_table_functions(started_cluster):
         == "1000000\n"
     )
 
+
 def test_s3_table_functions_line_as_string(started_cluster):
     node.query(
         """
@@ -84,5 +85,4 @@ def test_s3_table_functions_line_as_string(started_cluster):
             ) LIMIT 1;
         """
         )
-        
     )
