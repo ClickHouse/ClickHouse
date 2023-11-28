@@ -15,7 +15,7 @@ namespace ErrorCodes
 namespace
 {
     bool isDestinationPartitionExpressionMonotonicallyIncreasing(
-        const Range & range,
+        const std::vector<Range> & hyperrectangle,
         const MergeTreeData & destination_storage
     )
     {
@@ -32,7 +32,8 @@ namespace
 
         MonotonicityCheckVisitor::Data data {{table_with_columns}, destination_storage.getContext(), {}};
 
-        data.range = range;
+        // fix this, I still do not know how to proceed from here
+        data.range = hyperrectangle[0];
 
         MonotonicityCheckVisitor(data).visit(definition_ast);
 
@@ -42,13 +43,12 @@ namespace
     void validatePartitionIds(
         const MergeTreeData & source_storage,
         const MergeTreeData & destination_storage,
-        const Range & range
+        const std::vector<Range> & hyperrectangle
     )
     {
-        // hyperrectangle, fix
         auto block_with_min_and_max_idx = IMergeTreeDataPart::MinMaxIndex::buildBlockWithMinAndMaxIndexes(
             source_storage,
-            {range}
+            hyperrectangle
         );
 
         MergeTreePartition()
@@ -104,22 +104,12 @@ void MergeTreePartitionCompatibilityVerifier::verify(
 
     assert(!src_global_min_max_indexes.empty());
 
-    // fix this
-    auto [src_min_idx, src_max_idx] = src_global_min_max_indexes[0];
-
-    if (src_min_idx.isNull() || src_max_idx.isNull())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "min_max_idx should never be null if a part exist");
-    }
-
-    auto range = Range(src_min_idx, true, src_max_idx, true);
-
-    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(range, destination_storage))
+    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(src_global_min_max_indexes, destination_storage))
     {
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
     }
 
-    validatePartitionIds(source_storage, destination_storage, range);
+    validatePartitionIds(source_storage, destination_storage, src_global_min_max_indexes);
 }
 
 }
