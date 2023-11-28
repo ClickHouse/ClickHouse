@@ -322,8 +322,8 @@ public:
 
         std::sort(value.begin(), value.end());
 
-        checkArraySize(value.size(), max_elems);
-        value.resize_exact(max_elems, arena);
+        if (value.size() > max_elems)
+            value.resize_exact(max_elems, arena);
         auto & offsets = column_array.getOffsets();
         offsets.push_back(offsets.back() + value.size());
 
