@@ -22,18 +22,6 @@ set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/stdlib_typeinfo.cpp"
 )
 
-CHECK_CXX_SOURCE_COMPILES("
-  static thread_local int foo;
-  int main() {
-    return 0;
-  }
-" HAS_THREAD_LOCAL)
-
-set(COMPILE_DEFINITIONS "-D_LIBCPP_BUILDING_LIBRARY")
-if (HAS_THREAD_LOCAL)
-    set(COMPILE_DEFINITIONS "${COMPILE_DEFINITIONS} -DHAS_THREAD_LOCAL")
-endif()
-
 add_library(cxxabi ${SRCS})
 set_target_properties(cxxabi PROPERTIES FOLDER "contrib/libcxxabi-cmake")
 
@@ -45,7 +33,7 @@ target_include_directories(cxxabi SYSTEM BEFORE
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/include>
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/src>
 )
-target_compile_definitions(cxxabi PRIVATE ${COMPILE_DEFINITIONS})
+target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DHAS_THREAD_LOCAL)
 target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
 target_link_libraries(cxxabi PUBLIC unwind)
 

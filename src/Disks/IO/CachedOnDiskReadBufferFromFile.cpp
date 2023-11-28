@@ -1087,12 +1087,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         first_offset,
         file_segments->toString());
 
-    if (file_offset_of_buffer_end > current_read_range.right)
-        completeFileSegmentAndGetNext();
-
     /// Release buffer a little bit earlier.
     if (read_until_position == file_offset_of_buffer_end)
         implementation_buffer.reset();
+    else if (file_offset_of_buffer_end > current_read_range.right)
+        completeFileSegmentAndGetNext();
 
     return result;
 }
@@ -1294,7 +1293,7 @@ static bool isRangeContainedInSegments(size_t left, size_t right, const FileSegm
 bool CachedOnDiskReadBufferFromFile::isContentCached(size_t offset, size_t size)
 {
     if (!initialized)
-        initialize(file_offset_of_buffer_end, getTotalSizeToRead());
+        initialize();
 
     return isRangeContainedInSegments(offset, std::min(offset + size, read_until_position) - 1, file_segments);
 }

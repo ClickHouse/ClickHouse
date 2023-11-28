@@ -140,8 +140,6 @@ public:
         bool contains(const Range & other) const { return contains(other.left) && contains(other.right); }
 
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
-
-        bool contains(size_t offset) const { return left <= offset && offset <= right; }
     };
 
     static String getCallerId();
