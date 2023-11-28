@@ -649,7 +649,7 @@ public:
         //SelectQueryInfo query_info_,
         ContextPtr context_,
         std::vector<UInt8> columns_mask_,
-        Block res_block_,
+        // Block res_block_,
         size_t max_block_size_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         //, storage_snapshot(std::move(storage_snapshot_))
@@ -657,7 +657,7 @@ public:
         //, query_info(std::move(query_info_))
         , context(std::move(context_))
         , columns_mask(std::move(columns_mask_))
-        , res_block(std::move(res_block_))
+        // , res_block(std::move(res_block_))
         , max_block_size(max_block_size_)
     {
     }
@@ -667,7 +667,7 @@ private:
     // SelectQueryInfo query_info;
     ContextPtr context;
     std::vector<UInt8> columns_mask;
-    Block res_block;
+    // Block res_block;
     size_t max_block_size;
 };
 
@@ -687,13 +687,13 @@ void StorageSystemTables::read(
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
     auto reading = std::make_unique<ReadFromSystemTables>(
-        std::move(sample_block),
+        std::move(res_block),
         //storage_snapshot,
         //*this,
         //query_info,
         context,
         std::move(columns_mask),
-        std::move(res_block),
+        // std::move(res_block),
         max_block_size);
 
     query_plan.addStep(std::move(reading));
@@ -704,13 +704,16 @@ void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, c
     auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
+    {
+        // std::cerr << filter_actions_dag->dumpDAG() << std::endl;
         predicate = filter_actions_dag->getOutputs().at(0);
+    }
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(predicate, context);
     ColumnPtr filtered_tables_column = getFilteredTables(predicate, filtered_databases_column, context);
 
     Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
+        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
     pipeline.init(std::move(pipe));
 }
 

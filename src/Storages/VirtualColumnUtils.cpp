@@ -272,7 +272,7 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 {
     auto actions = std::make_shared<ExpressionActions>(dag);
-    //std::cerr << actions->dumpActions() << std::endl;
+    // std::cerr << actions->dumpActions() << std::endl;
     makeSets(actions, context);
     Block block_with_filter = block;
     actions->execute(block_with_filter);
@@ -492,8 +492,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             auto & node_copy = additional_nodes.emplace_back(*node);
             node_copy.children.clear();
             for (const auto * child : node->children)
-                if (splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes))
-                    node_copy.children.push_back(child);
+                if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes))
+                    node_copy.children.push_back(child_copy);
 
             if (node_copy.children.empty())
                 return nullptr;
