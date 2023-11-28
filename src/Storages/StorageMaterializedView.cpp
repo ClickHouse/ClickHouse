@@ -295,7 +295,6 @@ void StorageMaterializedView::alter(
 
 void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    const auto & settings = local_context->getSettingsRef();
     for (const auto & command : commands)
     {
         if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
