@@ -11,6 +11,7 @@
             <operation_timeout_ms>5000</operation_timeout_ms>
             <session_timeout_ms>10000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
+            <max_memory_usage_soft_limit>10000000</max_memory_usage_soft_limit>
 
             <!-- For instant start in single node configuration -->
             <heart_beat_interval_ms>0</heart_beat_interval_ms>

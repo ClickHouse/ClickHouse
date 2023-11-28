@@ -45,12 +45,12 @@ def test_soft_limit_create(started_cluster):
     keeper_utils.wait_until_connected(started_cluster, node)
     try:
         node_zk = get_connection_zk("node")
-        loop_time = 1000000
+        loop_time = 10000
         node_zk.create("/test_soft_limit", b"abc")
 
         for i in range(loop_time):
             node_zk.create(
-                "/test_soft_limit/node_" + str(i), random_string(100).encode()
+                "/test_soft_limit/node_" + str(i), random_string(1000).encode()
             )
     except ConnectionLoss:
         txn = node_zk.transaction()

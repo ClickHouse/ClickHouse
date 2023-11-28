@@ -60,7 +60,6 @@ bool ColumnDescription::identical(const ColumnDescription & other) const
     return name == other.name
         && type->identical(*other.type)
         && default_desc == other.default_desc
-        && comment == other.comment
         && ast_to_str(codec) == ast_to_str(other.codec)
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -72,7 +71,6 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && comment == other.comment
         && ast_to_str(codec) == ast_to_str(other.codec)
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
