@@ -1826,6 +1826,11 @@ NamesAndTypesList StorageS3::getVirtuals() const
     return virtual_columns;
 }
 
+Names StorageS3::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
+}
+
 bool StorageS3::supportsPartitionBy() const
 {
     return true;
