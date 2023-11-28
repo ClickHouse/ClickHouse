@@ -1244,6 +1244,9 @@ bool CachedOnDiskReadBufferFromFile::isSeekCheap()
 
 static bool isRangeContainedInSegments(size_t left, size_t right, const FileSegmentsHolderPtr & file_segments)
 {
+    if (file_segments->empty())
+        return false;
+
     if (!FileSegment::Range{file_segments->front().range().left, file_segments->back().range().right}.contains({left, right}))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
