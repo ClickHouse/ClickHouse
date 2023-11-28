@@ -23,6 +23,7 @@ void registerTableFunctions()
     registerTableFunctionGenerate(factory);
     registerTableFunctionMongoDB(factory);
     registerTableFunctionRedis(factory);
+    registerTableFunctionFuzzJSON(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);

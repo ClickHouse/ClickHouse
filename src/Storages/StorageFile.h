@@ -280,6 +280,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     FilesIteratorPtr files_iterator;
     String current_path;
+    std::optional<size_t> current_file_size;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;

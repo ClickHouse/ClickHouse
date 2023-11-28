@@ -35,6 +35,9 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
 void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast = {});
 void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
+/// Extract subset of filter_dag that can be evaluated using only columns from header
+ActionsDAGPtr splitFilterDagForAllowedInputs(const Block & header, const ActionsDAGPtr & filter_dag, ContextPtr context);
+
 /// Extract from the input stream a set of `name` column values
 template <typename T>
 auto extractSingleValueFromBlock(const Block & block, const String & name)
@@ -47,7 +50,7 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     return res;
 }
 
-NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_columns);
+NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns);
 
 ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context);
 
@@ -68,8 +71,8 @@ void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & pa
     sources = std::move(filtered_sources);
 }
 
-void addRequestedPathAndFileVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, const String * filename = nullptr);
+void addRequestedPathFileAndSizeVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename = nullptr);
 }
 
 }

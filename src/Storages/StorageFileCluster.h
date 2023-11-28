@@ -29,7 +29,7 @@ public:
 
     std::string getName() const override { return "FileCluster"; }
 
-    NamesAndTypesList getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
 

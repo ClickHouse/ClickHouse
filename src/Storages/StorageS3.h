@@ -103,9 +103,6 @@ public:
             const std::vector<String> & keys_,
             const String & bucket_,
             const S3Settings::RequestSettings & request_settings_,
-            ASTPtr query,
-            const NamesAndTypesList & virtual_columns,
-            ContextPtr context,
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
 
@@ -232,6 +229,7 @@ private:
         String getPath() const { return fs::path(bucket) / key_with_info->key; }
         const String & getFile() const { return key_with_info->key; }
         const KeyWithInfo & getKeyWithInfo() const { return *key_with_info; }
+        std::optional<size_t> getFileSize() const { return key_with_info->info ? std::optional(key_with_info->info->size) : std::nullopt; }
 
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
@@ -331,7 +329,8 @@ public:
         return name;
     }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -391,6 +390,7 @@ private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
     friend class StorageS3Queue;
+    friend class ReadFromStorageS3Step;
 
     Configuration configuration;
     std::mutex configuration_update_mutex;
@@ -400,15 +400,6 @@ private:
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
-
-    static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
-        const Configuration & configuration,
-        bool distributed_processing,
-        ContextPtr local_context,
-        ASTPtr query,
-        const NamesAndTypesList & virtual_columns,
-        KeysWithInfo * read_keys = nullptr,
-        std::function<void(FileProgress)> progress_callback = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const Configuration & configuration,
