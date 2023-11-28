@@ -110,6 +110,7 @@ public:
         size_t size_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings = {},
+        bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
         Priority::Iterator queue_iterator_ = Priority::Iterator{});
@@ -135,6 +136,8 @@ public:
         size_t size() const { return right - left + 1; }
 
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
+
+        bool contains(size_t offset) const { return left <= offset && offset <= right; }
     };
 
     static String getCallerId();
@@ -262,6 +265,8 @@ public:
 
     void setDownloadedSize(size_t delta);
 
+    void setDownloadFailed();
+
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -290,6 +295,7 @@ private:
     /// Size of the segment is not known until it is downloaded and
     /// can be bigger than max_file_segment_size.
     const bool is_unbound = false;
+    const bool background_download_enabled;
 
     std::atomic<State> download_state;
     DownloaderId downloader_id; /// The one who prepares the download
@@ -320,8 +326,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 {
     FileSegmentsHolder() = default;
 
-    explicit FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_ = true)
-        : file_segments(std::move(file_segments_)), complete_on_dtor(complete_on_dtor_) {}
+    explicit FileSegmentsHolder(FileSegments && file_segments_);
 
     ~FileSegmentsHolder();
 
@@ -337,11 +342,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegment & back() { return *file_segments.back(); }
 
-    FileSegment & add(FileSegmentPtr && file_segment)
-    {
-        file_segments.push_back(file_segment);
-        return *file_segments.back();
-    }
+    FileSegment & add(FileSegmentPtr && file_segment);
 
     FileSegments::iterator begin() { return file_segments.begin(); }
     FileSegments::iterator end() { return file_segments.end(); }
@@ -351,7 +352,6 @@ struct FileSegmentsHolder : private boost::noncopyable
 
 private:
     FileSegments file_segments{};
-    const bool complete_on_dtor = true;
 
     FileSegments::iterator completeAndPopFrontImpl();
 };

@@ -66,4 +66,3 @@ SELECT uniq(t.alias_of_a) FROM (SELECT a as alias_of_a, sum(b) FROM test_rewrite
 EXPLAIN QUERY TREE SELECT uniq(t.alias_of_a) FROM (SELECT a as alias_of_a, sum(b) FROM test_rewrite_uniq_to_count GROUP BY alias_of_a) t  settings allow_experimental_analyzer=1;
 
 drop table if exists test_rewrite_uniq_to_count;
-

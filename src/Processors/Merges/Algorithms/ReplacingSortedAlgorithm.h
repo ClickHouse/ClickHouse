@@ -30,6 +30,7 @@ public:
         bool cleanup = false,
         size_t * cleanedup_rows_count = nullptr);
 
+    const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     Status merge() override;
 
 private:

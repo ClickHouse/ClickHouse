@@ -46,7 +46,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
             path = 'paralel_loading_test',
             disk = 'hdd_blob',
             max_file_segment_size = '1Ki',
-            boundary_alignemt = '1Ki',
+            boundary_alignment = '1Ki',
             max_size = '1Gi',
             max_elements = 10000000,
             load_metadata_threads = 30);

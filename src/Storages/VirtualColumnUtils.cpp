@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <memory>
 #include <Core/NamesAndTypes.h>
+#include <Core/TypeId.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
@@ -80,14 +82,33 @@ bool extractFunctions(const ASTPtr & expression, const std::function<bool(const 
         }
         else if (function->name == "or")
         {
-            bool ret = true;
+            bool ret = false;
             ASTs or_args;
             for (const auto & child : function->arguments->children)
-                ret &= extractFunctions(child, is_constant, or_args);
-            /// We can keep condition only if it still OR condition (i.e. we
-            /// have dependent conditions for columns at both sides)
-            if (or_args.size() == 2)
+                ret |= extractFunctions(child, is_constant, or_args);
+
+            if (!or_args.empty())
+            {
+                /// In case of there are less number of arguments for which
+                /// is_constant() == true, we need to add always-true
+                /// implicitly to avoid breaking AND invariant.
+                ///
+                /// Consider the following:
+                ///
+                ///     ((value = 10) OR (_table = 'v2')) AND ((_table = 'v1') OR (value = 20))
+                ///
+                /// Without implicit always-true:
+                ///
+                ///     (_table = 'v2') AND (_table = 'v1')
+                ///
+                /// With:
+                ///
+                ///     (_table = 'v2' OR 1) AND (_table = 'v1' OR 1) -> (_table = 'v2') OR (_table = 'v1')
+                ///
+                if (or_args.size() != function->arguments->children.size())
+                    or_args.push_back(std::make_shared<ASTLiteral>(Field(1)));
                 result.push_back(makeASTForLogicalOr(std::move(or_args)));
+            }
             return ret;
         }
     }
@@ -164,8 +185,10 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     if (!select.where() && !select.prewhere())
         return unmodified;
 
-    // Provide input columns as constant columns to check if an expression is constant.
-    std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & node)
+    // Provide input columns as constant columns to check if an expression is
+    // constant and depends on the columns from provided block (the last is
+    // required to allow skipping some conditions for handling OR).
+    std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & expr)
     {
         auto actions = std::make_shared<ActionsDAG>(block.getColumnsWithTypeAndName());
         PreparedSetsPtr prepared_sets = std::make_shared<PreparedSets>();
@@ -177,13 +200,26 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
             context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true,
             { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
 
-        ActionsVisitor(visitor_data).visit(node);
+        ActionsVisitor(visitor_data).visit(expr);
         actions = visitor_data.getActions();
+        auto expr_column_name = expr->getColumnName();
+
+        const auto * expr_const_node = actions->tryFindInOutputs(expr_column_name);
+        if (!expr_const_node)
+            return false;
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node}, {}, context);
+        const auto & nodes = filter_actions->getNodes();
+        bool has_dependent_columns = std::any_of(nodes.begin(), nodes.end(), [&](const auto & node)
+        {
+            return block.has(node.result_name);
+        });
+        if (!has_dependent_columns)
+            return false;
+
         auto expression_actions = std::make_shared<ExpressionActions>(actions);
         auto block_with_constants = block;
         expression_actions->execute(block_with_constants);
-        auto column_name = node->getColumnName();
-        return block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column);
+        return block_with_constants.has(expr_column_name) && isColumnConst(*block_with_constants.getByName(expr_column_name).column);
     };
 
     /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
@@ -288,7 +324,9 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullIfNeeded();
+    if (filter_column->getDataType() != TypeIndex::UInt8)
+        return;
 
     ConstantFilterDescription constant_filter(*filter_column);
 
@@ -312,11 +350,12 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     }
 }
 
-NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_columns)
+NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns)
 {
     auto default_virtuals = NamesAndTypesList{
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())}};
 
     default_virtuals.sort();
     storage_columns.sort();
@@ -357,7 +396,10 @@ ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList 
 
     Block block;
     for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
+    {
+        if (column.name == "_file" || column.name == "_path")
+            block.insert({column.type->createColumn(), column.type, column.name});
+    }
     /// Create a block with one row to construct filter
     /// Append "idx" column as the filter result
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
@@ -371,7 +413,10 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 {
     Block block;
     for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
+    {
+        if (column.name == "_file" || column.name == "_path")
+            block.insert({column.type->createColumn(), column.type, column.name});
+    }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
@@ -382,29 +427,54 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     return block.getByName("_idx").column;
 }
 
-void addRequestedPathAndFileVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, const String * filename)
+void addRequestedPathFileAndSizeVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
         {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path));
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path)->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_file")
         {
             if (filename)
             {
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename));
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename)->convertToFullColumnIfConst());
             }
             else
             {
                 size_t last_slash_pos = path.find_last_of('/');
                 auto filename_from_path = path.substr(last_slash_pos + 1);
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path));
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
         }
+        else if (virtual_column.name == "_size")
+        {
+            if (size)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *size)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
     }
+}
+
+ActionsDAGPtr splitFilterDagForAllowedInputs(const Block & header, const ActionsDAGPtr & filter_dag, ContextPtr context)
+{
+    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
+    for (const auto * input : filter_dag->getInputs())
+        if (header.has(input->result_name))
+            allowed_inputs.insert(input);
+
+    if (allowed_inputs.empty())
+        return {};
+
+    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
+    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
+    if (atoms.empty())
+        return {};
+
+    return ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
 }
 
 }

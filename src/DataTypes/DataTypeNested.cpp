@@ -72,4 +72,19 @@ DataTypePtr createNested(const DataTypes & types, const Names & names)
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
 }
 
+bool DataTypeNestedCustomName::identical(const IDataTypeCustomName & rhs_) const
+{
+    if (const auto * rhs = typeid_cast<decltype(this)>(&rhs_))
+    {
+        if (names != rhs->names)
+            return false;
+        if (elems.size() != rhs->elems.size())
+            return false;
+        for (size_t i = 0; i < elems.size(); ++i)
+            if (!elems[i]->identical(*rhs->elems[i]))
+                return false;
+        return true;
+    }
+    return false;
+}
 }

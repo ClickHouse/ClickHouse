@@ -48,7 +48,7 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 
 FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
-const DataTypes & FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
+DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
 
 SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 {
@@ -73,7 +73,7 @@ FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
     set->finishInsert();
 }
 
-const DataTypes & FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
+DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
@@ -138,7 +138,7 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
     set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
 }
 
-const DataTypes & FutureSetFromSubquery::getTypes() const
+DataTypes FutureSetFromSubquery::getTypes() const
 {
     return set_and_key->set->getElementsTypes();
 }
@@ -183,7 +183,10 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     {
         auto set = external_table_set->buildOrderedSetInplace(context);
         if (set)
-            return set_and_key->set = set;
+        {
+            set_and_key->set = set;
+            return set_and_key->set;
+        }
     }
 
     auto plan = build(context);

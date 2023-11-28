@@ -76,6 +76,7 @@ VolumeJBOD::VolumeJBOD(
     perform_ttl_move_on_insert = config.getBool(config_prefix + ".perform_ttl_move_on_insert", true);
 
     are_merges_avoided = config.getBool(config_prefix + ".prefer_not_to_merge", false);
+    least_used_ttl_ms = config.getUInt64(config_prefix + ".least_used_ttl_ms", 60'000);
 }
 
 VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
@@ -101,6 +102,11 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
         case VolumeLoadBalancing::LEAST_USED:
         {
             std::lock_guard lock(mutex);
+            if (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms)
+            {
+                disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
+                least_used_update_watch.restart();
+            }
             return disks_by_size.top().disk;
         }
     }
@@ -135,11 +141,23 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
         {
             std::lock_guard lock(mutex);
 
-            DiskWithSize disk = disks_by_size.top();
-            disks_by_size.pop();
+            ReservationPtr reservation;
+            if (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms)
+            {
+                disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
+                least_used_update_watch.restart();
 
-            ReservationPtr reservation = disk.reserve(bytes);
-            disks_by_size.push(disk);
+                DiskWithSize disk = disks_by_size.top();
+                reservation = disk.reserve(bytes);
+            }
+            else
+            {
+                DiskWithSize disk = disks_by_size.top();
+                disks_by_size.pop();
+
+                reservation = disk.reserve(bytes);
+                disks_by_size.push(disk);
+            }
 
             return reservation;
         }

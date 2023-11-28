@@ -58,7 +58,7 @@ Connection: Close
 Content-Type: text/tab-separated-values; charset=UTF-8
 X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
 X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
-X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 
 1
 ```
@@ -288,9 +288,9 @@ Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you
 You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
 
 ``` text
-X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128","peak_memory_usage":"4371480"}
-X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128","peak_memory_usage":"13621616"}
-X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128","peak_memory_usage":"23155600"}
+X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128","elapsed_ns":"662334"}
+X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128","elapsed_ns":"992334"}
+X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128","elapsed_ns":"1232334"}
 ```
 
 Possible header fields:
@@ -438,8 +438,8 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 # HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
@@ -603,8 +603,8 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 Say Hi!%
@@ -643,8 +643,8 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
@@ -695,8 +695,8 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Absolute Path File</body></html>
 * Connection #0 to host localhost left intact
@@ -714,9 +714,89 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
+```
+
+## Valid JSON/XML response on exception during HTTP streaming {valid-output-on-exception-http-streaming} 
+
+While query execution over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text
+even if some specific data format was used to output data and the output may become invalid in terms of specified data format.
+To prevent it, you can use setting `http_write_exception_in_output_format` (enabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
+
+Examples:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>3)+from+system.numbers+format+JSON+settings+max_block_size=1&http_write_exception_in_output_format=1'
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "throwIf(greater(number, 2))",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		{
+			"number": "0",
+			"throwIf(greater(number, 2))": 0
+		},
+		{
+			"number": "1",
+			"throwIf(greater(number, 2))": 0
+		},
+		{
+			"number": "2",
+			"throwIf(greater(number, 2))": 0
+		}
+	],
+
+	"rows": 3,
+
+	"exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)"
+}
+```
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>2)+from+system.numbers+format+XML+settings+max_block_size=1&http_write_exception_in_output_format=1'
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>throwIf(greater(number, 2))</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<number>0</number>
+			<field>0</field>
+		</row>
+		<row>
+			<number>1</number>
+			<field>0</field>
+		</row>
+		<row>
+			<number>2</number>
+			<field>0</field>
+		</row>
+	</data>
+	<rows>3</rows>
+	<exception>Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)</exception>
+</result>
 ```

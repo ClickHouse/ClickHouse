@@ -32,6 +32,8 @@
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -422,7 +424,7 @@ void LocalServer::setupUsers()
 
 void LocalServer::connect()
 {
-    connection_parameters = ConnectionParameters(config());
+    connection_parameters = ConnectionParameters(config(), "localhost");
     connection = LocalConnection::createConnection(
         connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
@@ -492,7 +494,8 @@ try
     registerFormats();
 
     processConfig();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    adjustSettings();
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
 
     applyCmdSettings(global_context);
 
@@ -560,9 +563,6 @@ catch (...)
 
 void LocalServer::updateLoggerLevel(const String & logs_level)
 {
-    if (!logging_initialized)
-        return;
-
     config().setString("logger.level", logs_level);
     updateLevels(config(), logger());
 }
@@ -572,17 +572,16 @@ void LocalServer::processConfig()
     if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
+    if (config().has("multiquery"))
+        is_multiquery = true;
+
+    pager = config().getString("pager", "");
+
     delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
-    if (is_interactive && !delayed_interactive)
-    {
-        if (config().has("multiquery"))
-            is_multiquery = true;
-    }
-    else
+    if (!is_interactive || delayed_interactive)
     {
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
-        is_multiquery = true;
     }
 
     print_stack_trace = config().getBool("stacktrace", false);
@@ -602,22 +601,16 @@ void LocalServer::processConfig()
     {
         auto poco_logs_level = Poco::Logger::parseLevel(level);
         Poco::Logger::root().setLevel(poco_logs_level);
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
-        logging_initialized = true;
-    }
-    else if (logging || is_interactive)
-    {
-        config().setString("logger", "logger");
-        auto log_level_default = is_interactive && !logging ? "none" : level;
-        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
-        buildLoggers(config(), logger(), "clickhouse-local");
-        logging_initialized = true;
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
+        Poco::Logger::root().setChannel(log);
     }
     else
     {
-        Poco::Logger::root().setLevel("none");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-        logging_initialized = false;
+        config().setString("logger", "logger");
+        auto log_level_default = logging ? level : "fatal";
+        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
 
     shared_context = Context::createShared();
@@ -759,7 +752,7 @@ void LocalServer::processConfig()
         {
             DatabaseCatalog::instance().createBackgroundTasks();
             loadMetadata(global_context);
-            DatabaseCatalog::instance().startupBackgroundCleanup();
+            DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
@@ -881,6 +874,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         config().setBool("only-system-tables", true);
+    if (options.count("database"))
+        config().setString("default_database", options["database"].as<std::string>());
 
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());

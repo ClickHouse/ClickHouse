@@ -1096,6 +1096,7 @@ def test_stop_other_host_during_backup(kill):
     if status == "BACKUP_CREATED":
         node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+        node1.query("SYSTEM SYNC REPLICA tbl")
         assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
     elif status == "BACKUP_FAILED":
         assert not os.path.exists(

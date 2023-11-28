@@ -176,7 +176,7 @@ REGISTER_FUNCTION(PositiveModulo)
 {
     factory.registerFunction<FunctionPositiveModulo>(FunctionDocumentation
         {
-            .description=R"(
+            .description = R"(
 Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
 Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
 In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.

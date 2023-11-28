@@ -19,16 +19,15 @@ using Aliases = std::unordered_map<String, ASTPtr>;
 namespace
 {
 
-bool matchFnUniq(String func_name)
+bool matchFnUniq(String name)
 {
-    auto name = Poco::toLower(func_name);
     return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined"
         || name == "uniqCombined64";
 }
 
 bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & alias)
 {
-    if (lhs->getTreeHash() == rhs->getTreeHash())
+    if (lhs->getTreeHash(/*ignore_aliases=*/ true) == rhs->getTreeHash(/*ignore_aliases=*/ true))
     {
         return true;
     }
@@ -49,7 +48,7 @@ bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & al
             if (alias.find(rhs_idf->shortName()) != alias.end())
                 rhs_idf = alias.find(rhs_idf->shortName())->second->as<ASTIdentifier>();
 
-            if (lhs_idf->shortName() == rhs_idf->shortName())
+            if (lhs_idf && rhs_idf && lhs_idf->shortName() == rhs_idf->shortName())
                 return true;
         }
     }

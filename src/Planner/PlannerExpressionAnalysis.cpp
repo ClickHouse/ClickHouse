@@ -546,6 +546,20 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
+
+    /** For distributed query `isToAggregationState`, we do not project names on shards/replicas.
+      * However, constant columns from project_names_actions still can be required on the initiator.
+      * For example, for query:
+      *   SELECT hostName(), number from clusterAllReplicas(default, numbers_mt(3)) ORDER BY number;
+      * executed to stage `WithMergeableStateAfterAggregationAndLimit` on replicas
+      * we must send hostName() column to initiator.
+      */
+    if (planner_query_processing_info.isToAggregationState())
+    {
+        for (auto & column : project_names_input)
+            column.column = nullptr;
+    }
+
     bool has_with_fill = sort_analysis_result_optional.has_value() && sort_analysis_result_optional->has_with_fill;
 
     /** If there is WITH FILL we must use non constant projection columns.

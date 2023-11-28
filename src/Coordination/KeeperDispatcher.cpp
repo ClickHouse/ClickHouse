@@ -12,6 +12,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <atomic>
 #include <future>
 #include <chrono>
 #include <filesystem>
@@ -67,13 +68,14 @@ void KeeperDispatcher::requestThread()
     /// to send errors to the client.
     KeeperStorage::RequestsForSessions prev_batch;
 
+    auto & shutdown_called = keeper_context->shutdown_called;
+
     while (!shutdown_called)
     {
         KeeperStorage::RequestForSession request;
 
         auto coordination_settings = configuration_and_settings->coordination_settings;
         uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
-        uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
         uint64_t max_batch_bytes_size = coordination_settings->max_requests_batch_bytes_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
@@ -136,12 +138,9 @@ void KeeperDispatcher::requestThread()
                         return false;
                     };
 
-                    /// TODO: Deprecate max_requests_quick_batch_size and use only max_requests_batch_size and max_requests_batch_bytes_size
-                    size_t max_quick_batch_size = coordination_settings->max_requests_quick_batch_size;
-                    while (!shutdown_called && !has_read_request &&
-                        !has_reconfig_request &&
-                        current_batch.size() < max_quick_batch_size && current_batch_bytes_size < max_batch_bytes_size &&
-                        try_get_request())
+                    size_t max_batch_size = coordination_settings->max_requests_batch_size;
+                    while (!shutdown_called && current_batch.size() < max_batch_size && !has_reconfig_request
+                           && current_batch_bytes_size < max_batch_bytes_size && try_get_request())
                         ;
 
                     const auto prev_result_done = [&]
@@ -152,10 +151,9 @@ void KeeperDispatcher::requestThread()
                     };
 
                     /// Waiting until previous append will be successful, or batch is big enough
-                    while (!shutdown_called && !has_read_request &&
-                        !has_reconfig_request && !prev_result_done() &&
-                        current_batch.size() <= max_batch_size
-                        && current_batch_bytes_size < max_batch_bytes_size)
+                    while (!shutdown_called && !has_reconfig_request &&
+                           !prev_result_done() && current_batch.size() <= max_batch_size
+                           && current_batch_bytes_size < max_batch_bytes_size)
                     {
                         try_get_request();
                     }
@@ -166,9 +164,10 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
+                nuraft::ptr<nuraft::buffer> result_buf = nullptr;
                 /// Forcefully process all previous pending requests
                 if (prev_result)
-                    forceWaitAndProcessResult(prev_result, prev_batch);
+                    result_buf = forceWaitAndProcessResult(prev_result, prev_batch);
 
                 /// Process collected write requests batch
                 if (!current_batch.empty())
@@ -177,13 +176,7 @@ void KeeperDispatcher::requestThread()
 
                     auto result = server->putRequestBatch(current_batch);
 
-                    if (result)
-                    {
-                        /// If we will execute read or reconfig next, we have to process result now
-                        if (has_read_request || has_reconfig_request)
-                            forceWaitAndProcessResult(result, current_batch);
-                    }
-                    else
+                    if (!result)
                     {
                         addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
                         current_batch.clear();
@@ -192,6 +185,37 @@ void KeeperDispatcher::requestThread()
 
                     prev_batch = std::move(current_batch);
                     prev_result = result;
+                }
+
+                /// If we will execute read or reconfig next, we have to process result now
+                if (has_read_request || has_reconfig_request)
+                {
+                    if (prev_result)
+                        result_buf = forceWaitAndProcessResult(prev_result, current_batch);
+
+                    /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
+                    /// which always returns nullptr
+                    /// in that case we don't have to do manual wait because are already sure that the batch was committed when we get
+                    /// the result back
+                    /// otherwise, we need to manually wait until the batch is committed
+                    if (result_buf)
+                    {
+                        nuraft::buffer_serializer bs(result_buf);
+                        auto log_idx = bs.get_u64();
+
+                        /// we will wake up this thread on each commit so we need to run it in loop until the last request of batch is committed
+                        while (true)
+                        {
+                            if (shutdown_called)
+                                return;
+
+                            auto current_last_committed_idx = our_last_committed_log_idx.load(std::memory_order_relaxed);
+                            if (current_last_committed_idx >= log_idx)
+                                break;
+
+                            our_last_committed_log_idx.wait(current_last_committed_idx);
+                        }
+                    }
                 }
 
                 if (has_reconfig_request)
@@ -217,6 +241,7 @@ void KeeperDispatcher::requestThread()
 void KeeperDispatcher::responseThread()
 {
     setThreadName("KeeperRspT");
+    auto & shutdown_called = keeper_context->shutdown_called;
     while (!shutdown_called)
     {
         KeeperStorage::ResponseForSession response_for_session;
@@ -243,6 +268,7 @@ void KeeperDispatcher::responseThread()
 void KeeperDispatcher::snapshotThread()
 {
     setThreadName("KeeperSnpT");
+    auto & shutdown_called = keeper_context->shutdown_called;
     while (!shutdown_called)
     {
         CreateSnapshotTask task;
@@ -320,7 +346,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
 
-    if (shutdown_called)
+    if (keeper_context->shutdown_called)
         return false;
 
     /// Put close requests without timeouts
@@ -341,17 +367,17 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_request_queue_size);
 
+    keeper_context->initialize(config, this);
+
+    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_request_queue_size);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
     snapshot_s3.startup(config, macros);
-
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
-    keeper_context->initialize(config, this);
 
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,
@@ -360,28 +386,33 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](const KeeperStorage::RequestForSession & request_for_session)
+        [this](uint64_t log_idx, const KeeperStorage::RequestForSession & request_for_session)
         {
-            /// check if we have queue of read requests depending on this request to be committed
-            std::lock_guard lock(read_request_queue_mutex);
-            if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
             {
-                auto & xid_to_request_queue = it->second;
-
-                if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
-                    request_queue_it != xid_to_request_queue.end())
+                /// check if we have queue of read requests depending on this request to be committed
+                std::lock_guard lock(read_request_queue_mutex);
+                if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
                 {
-                    for (const auto & read_request : request_queue_it->second)
-                    {
-                        if (server->isLeaderAlive())
-                            server->putLocalReadRequest(read_request);
-                        else
-                            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-                    }
+                    auto & xid_to_request_queue = it->second;
 
-                    xid_to_request_queue.erase(request_queue_it);
+                    if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
+                        request_queue_it != xid_to_request_queue.end())
+                    {
+                        for (const auto & read_request : request_queue_it->second)
+                        {
+                            if (server->isLeaderAlive())
+                                server->putLocalReadRequest(read_request);
+                            else
+                                addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+                        }
+
+                        xid_to_request_queue.erase(request_queue_it);
+                    }
                 }
             }
+
+            our_last_committed_log_idx.store(log_idx, std::memory_order_relaxed);
+            our_last_committed_log_idx.notify_all();
         });
 
     try
@@ -421,10 +452,15 @@ void KeeperDispatcher::shutdown()
     try
     {
         {
-            if (shutdown_called.exchange(true))
+            if (!keeper_context || keeper_context->shutdown_called.exchange(true))
                 return;
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
+
+            our_last_committed_log_idx = std::numeric_limits<uint64_t>::max();
+            our_last_committed_log_idx.notify_all();
+
+            keeper_context->local_logs_preprocessed = true;
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
@@ -552,6 +588,7 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
 
 void KeeperDispatcher::sessionCleanerTask()
 {
+    auto & shutdown_called = keeper_context->shutdown_called;
     while (true)
     {
         if (shutdown_called)
@@ -602,7 +639,7 @@ void KeeperDispatcher::sessionCleanerTask()
 void KeeperDispatcher::finishSession(int64_t session_id)
 {
     /// shutdown() method will cleanup sessions if needed
-    if (shutdown_called)
+    if (keeper_context->shutdown_called)
         return;
 
     {
@@ -638,7 +675,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
     }
 }
 
-void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions)
+nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     if (!result->has_result())
         result->get();
@@ -649,8 +686,11 @@ void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, Keep
     else if (result->get_result_code() != nuraft::cmd_result_code::OK)
         addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
 
+    auto result_buf = result->get();
+
     result = nullptr;
     requests_for_sessions.clear();
+    return result_buf;
 }
 
 int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
@@ -710,6 +750,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 
 void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
 {
+    auto & shutdown_called = keeper_context->shutdown_called;
     while (!shutdown_called)
     {
         try
@@ -762,26 +803,34 @@ void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
 
 void KeeperDispatcher::clusterUpdateThread()
 {
+    using enum KeeperServer::ConfigUpdateState;
+    bool last_command_was_leader_change = false;
+    auto & shutdown_called = keeper_context->shutdown_called;
     while (!shutdown_called)
     {
         ClusterUpdateAction action;
         if (!cluster_update_queue.pop(action))
             return;
 
-        if (server->applyConfigUpdate(action))
+        if (const auto res = server->applyConfigUpdate(action, last_command_was_leader_change); res == Accepted)
             LOG_DEBUG(log, "Processing config update {}: accepted", action);
-        else // TODO (myrrc) sleep a random amount? sleep less?
+        else
         {
+            last_command_was_leader_change = res == WaitBeforeChangingLeader;
+
             (void)cluster_update_queue.pushFront(action);
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
-            std::this_thread::sleep_for(50ms);
+
+            std::this_thread::sleep_for(last_command_was_leader_change
+                ? configuration_and_settings->coordination_settings->sleep_before_leader_change_ms
+                : 50ms);
         }
     }
 }
 
 void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions)
 {
-    if (shutdown_called) return;
+    if (keeper_context->shutdown_called) return;
     for (auto && action : actions)
     {
         if (!cluster_update_queue.push(std::move(action)))

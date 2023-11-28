@@ -58,12 +58,10 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
-void interruptSignalHandler(int signum);
-
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
+class ClientBase : public Poco::Util::Application, public IHints<2>
 {
 
 public:
@@ -184,7 +182,10 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    void initTtyBuffer(ProgressOption progress);
+    /// Adjust some settings after command line options and config had been processed.
+    void adjustSettings();
+
+    void initTTYBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -211,6 +212,8 @@ protected:
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
+
+    String pager;
 
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
@@ -318,8 +321,6 @@ protected:
     bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
-
-    bool logging_initialized = false;
 };
 
 }

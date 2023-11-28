@@ -13,8 +13,6 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include "TransformEndianness.hpp"
-
 #include <bit>
 #include <string>
 #include <type_traits>
@@ -22,9 +20,12 @@
 #include <base/extended_types.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/hex.h>
 #include <Common/Exception.h>
+#include <Common/transformEndianness.h>
 
 #include <city.h>
+
 
 namespace DB::ErrorCodes
 {
@@ -255,6 +256,16 @@ inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, cons
 inline UInt128 sipHash128(const char * data, const size_t size)
 {
     return sipHash128Keyed(0, 0, data, size);
+}
+
+inline String sipHash128String(const char * data, const size_t size)
+{
+    return getHexUIntLowercase(sipHash128(data, size));
+}
+
+inline String sipHash128String(const String & str)
+{
+    return sipHash128String(str.data(), str.size());
 }
 
 inline UInt128 sipHash128ReferenceKeyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)

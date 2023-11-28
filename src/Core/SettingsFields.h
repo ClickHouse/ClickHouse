@@ -429,7 +429,7 @@ constexpr auto getEnumValues()
         if (it != map.end()) \
             return it->second; \
         throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, \
-            "Unexpected value of " #NEW_NAME ":{}", std::to_string(std::underlying_type<EnumType>::type(value))); \
+            "Unexpected value of " #NEW_NAME ":{}", std::to_string(std::underlying_type_t<EnumType>(value))); \
     } \
     \
     typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \

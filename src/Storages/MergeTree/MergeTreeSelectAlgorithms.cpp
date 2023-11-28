@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
-#include <Storages/MergeTree/IMergeTreeReadPool.h>
 
 namespace DB
 {
@@ -9,57 +8,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeThreadSelectAlgorithm::TaskResult MergeTreeThreadSelectAlgorithm::getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task)
-{
-    TaskResult res;
-    res.first = pool.getTask(thread_idx, previous_task);
-    res.second = !!res.first;
-    return res;
-}
-
-MergeTreeReadTask::BlockAndProgress MergeTreeThreadSelectAlgorithm::readFromTask(MergeTreeReadTask * task, const MergeTreeReadTask::BlockSizeParams & params)
-{
-    if (!task)
-        return {};
-
-    return task->read(params);
-}
-
-IMergeTreeSelectAlgorithm::TaskResult MergeTreeInOrderSelectAlgorithm::getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task)
+MergeTreeReadTaskPtr MergeTreeInOrderSelectAlgorithm::getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task)
 {
     if (!pool.preservesOrderOfRanges())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "MergeTreeInOrderSelectAlgorithm requires read pool that preserves order of ranges, got: {}", pool.getName());
 
-    TaskResult res;
-    res.first = pool.getTask(part_idx, previous_task);
-    res.second = !!res.first;
-    return res;
+    return pool.getTask(part_idx, previous_task);
 }
 
-MergeTreeReadTask::BlockAndProgress MergeTreeInOrderSelectAlgorithm::readFromTask(MergeTreeReadTask * task, const BlockSizeParams & params)
-{
-    if (!task)
-        return {};
-
-    return task->read(params);
-}
-
-IMergeTreeSelectAlgorithm::TaskResult MergeTreeInReverseOrderSelectAlgorithm::getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task)
+MergeTreeReadTaskPtr MergeTreeInReverseOrderSelectAlgorithm::getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * previous_task)
 {
     if (!pool.preservesOrderOfRanges())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "MergeTreeInReverseOrderSelectAlgorithm requires read pool that preserves order of ranges, got: {}", pool.getName());
 
-    TaskResult res;
-    res.first = pool.getTask(part_idx, previous_task);
-    /// We may have some chunks to return in buffer.
-    /// Set continue_reading to true but actually don't create a new task.
-    res.second = !!res.first || !chunks.empty();
-    return res;
+    if (!chunks.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot get new task for reading in reverse order because there are {} buffered chunks", chunks.size());
+
+    return pool.getTask(part_idx, previous_task);
 }
 
-MergeTreeReadTask::BlockAndProgress MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask * task, const BlockSizeParams & params)
+MergeTreeReadTask::BlockAndProgress MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task, const BlockSizeParams & params)
 {
     MergeTreeReadTask::BlockAndProgress res;
 
@@ -70,11 +41,8 @@ MergeTreeReadTask::BlockAndProgress MergeTreeInReverseOrderSelectAlgorithm::read
         return res;
     }
 
-    if (!task)
-        return {};
-
-    while (!task->isFinished())
-        chunks.push_back(task->read(params));
+    while (!task.isFinished())
+        chunks.push_back(task.read(params));
 
     if (chunks.empty())
         return {};

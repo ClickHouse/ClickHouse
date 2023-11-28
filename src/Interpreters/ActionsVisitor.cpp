@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/checkStackSize.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -412,7 +413,7 @@ FutureSetPtr makeExplicitSet(
 
     auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
 
-    auto set_key = right_arg->getTreeHash();
+    auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 
@@ -691,6 +692,8 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 
 void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 {
+    checkStackSize();
+
     if (const auto * identifier = ast->as<ASTIdentifier>())
         visit(*identifier, ast, data);
     else if (const auto * table = ast->as<ASTTableIdentifier>())
@@ -758,8 +761,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
-    auto func_alias = function->tryGetAlias();
-    for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
+    auto untuple_alias = function->tryGetAlias();
+    for (const auto & element_name : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
 
@@ -773,8 +776,12 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-        if (!func_alias.empty())
-            func->setAlias(func_alias + "." + toString(tid));
+        if (!untuple_alias.empty())
+        {
+            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
+            func->setAlias(untuple_alias + "." + element_alias);
+        }
+
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 
@@ -1384,7 +1391,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             set_key = query_tree->getTreeHash();
         }
         else
-            set_key = right_in_operand->getTreeHash();
+            set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);
 
         if (auto set = data.prepared_sets->findSubquery(set_key))
             return set;

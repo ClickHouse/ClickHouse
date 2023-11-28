@@ -40,14 +40,6 @@
 [[maybe_unused]] static Poco::Util::ServerApplication app;
 
 
-class NoRetryStrategy : public Aws::Client::StandardRetryStrategy
-{
-    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long /* NOLINT */) const override { return false; }
-
-public:
-    ~NoRetryStrategy() override = default;
-};
-
 String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
 {
     String content;
@@ -100,11 +92,11 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
     request_settings.max_unexpected_write_error_retries = max_unexpected_write_error_retries;
     DB::WriteBufferFromS3 write_buffer(
         client,
-        client,
         uri.bucket,
         uri.key,
         DBMS_DEFAULT_BUFFER_SIZE,
-        request_settings
+        request_settings,
+        {}
     );
 
     write_buffer.write('\0'); // doesn't matter what we write here, just needs to be something
@@ -123,6 +115,7 @@ void testServerSideEncryption(
 
     DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
+    unsigned int s3_retry_attempts = 0;
     DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
@@ -132,6 +125,7 @@ void testServerSideEncryption(
         region,
         remote_host_filter,
         s3_max_redirects,
+        s3_retry_attempts,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
@@ -140,7 +134,6 @@ void testServerSideEncryption(
     );
 
     client_configuration.endpointOverride = uri.endpoint;
-    client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
 
     DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
@@ -178,11 +171,15 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)
         "authorization: ... SignedHeaders="
         "amz-sdk-invocation-id;"
         "amz-sdk-request;"
+        "clickhouse-request;"
         "content-type;"
         "host;"
         "x-amz-api-version;"
         "x-amz-content-sha256;"
-        "x-amz-date, ...\n"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
         "x-amz-server-side-encryption-customer-algorithm: AES256\n"
         "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
         "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
@@ -203,7 +200,10 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
         "content-type;"
         "host;"
         "x-amz-content-sha256;"
-        "x-amz-date, ...\n"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
         "x-amz-server-side-encryption-customer-algorithm: AES256\n"
         "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
         "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
@@ -223,6 +223,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersRead)
         "authorization: ... SignedHeaders="
         "amz-sdk-invocation-id;"
         "amz-sdk-request;"
+        "clickhouse-request;"
         "content-type;"
         "host;"
         "x-amz-api-version;"

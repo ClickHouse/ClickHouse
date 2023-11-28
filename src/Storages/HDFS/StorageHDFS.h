@@ -76,7 +76,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context_) const;
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -181,6 +181,7 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;
+    std::optional<size_t> current_file_size;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.
     bool initialize();

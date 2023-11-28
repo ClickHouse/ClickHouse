@@ -54,6 +54,7 @@ enum class DataPartRemovalState
     NON_UNIQUE_OWNERSHIP,
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
+    EMPTY_PART_COVERS_OTHER_PARTS,
     REMOVED,
 };
 
@@ -131,7 +132,7 @@ public:
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
-    virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
+    virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
     virtual ~IMergeTreeDataPart();
 
@@ -209,6 +210,8 @@ public:
 
 private:
     String mutable_name;
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
+
 public:
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
@@ -243,6 +246,8 @@ public:
         REMOVE_BLOBS,
         /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
         PRESERVE_BLOBS,
+        /// remove blobs even if the part is not temporary
+        REMOVE_BLOBS_OF_NOT_TEMPORARY,
     };
     BlobsRemovalPolicyForTemporaryParts remove_tmp_policy = BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
@@ -273,7 +278,7 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    MergeTreeDataPartState getState() const;
+    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
     static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
     constexpr std::string_view stateString() const { return stateString(state); }
@@ -364,6 +369,7 @@ public:
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
 
     size_t getFileSizeOrZero(const String & file_name) const;
+    auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix);
@@ -377,7 +383,12 @@ public:
                                                    const DiskTransactionPtr & disk_transaction) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name, const WriteSettings & write_settings) const;
+    MutableDataPartStoragePtr makeCloneOnDisk(
+        const DiskPtr & disk,
+        const String & directory_name,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
@@ -477,10 +488,6 @@ public:
     /// Moar hardening: this method is supposed to be used for debug assertions
     bool assertHasValidVersionMetadata() const;
 
-    /// Return hardlink count for part.
-    /// Required for keep data on remote FS when part has shadow copies.
-    UInt32 getNumberOfRefereneces() const;
-
     /// True if the part supports lightweight delete mutate.
     bool supportLightweightDeleteMutate() const;
 
@@ -504,6 +511,37 @@ public:
     void removeVersionMetadata();
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
+
+    static std::optional<String> getStreamNameOrHash(
+        const String & name,
+        const IMergeTreeDataPart::Checksums & checksums);
+
+    static std::optional<String> getStreamNameOrHash(
+        const String & name,
+        const String & extension,
+        const IDataPartStorage & storage_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const String & column_name,
+        const ISerialization::SubstreamPath & substream_path,
+        const Checksums & checksums_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const NameAndTypePair & column,
+        const ISerialization::SubstreamPath & substream_path,
+        const Checksums & checksums_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const String & column_name,
+        const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
+        const IDataPartStorage & storage_);
+
+    static std::optional<String> getStreamNameForColumn(
+        const NameAndTypePair & column,
+        const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
+        const IDataPartStorage & storage_);
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
@@ -647,8 +685,6 @@ private:
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
-
-    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

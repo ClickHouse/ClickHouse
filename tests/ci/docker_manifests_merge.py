@@ -6,7 +6,9 @@ import logging
 import os
 import subprocess
 
+from pathlib import Path
 from typing import List, Dict, Tuple
+
 from github import Github
 
 from clickhouse_helper import (
@@ -16,7 +18,7 @@ from clickhouse_helper import (
 )
 from commit_status_helper import format_description, get_commit, post_commit_status
 from docker_images_helper import IMAGES_FILE_PATH, get_image_names
-from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
+from env_helper import RUNNER_TEMP, REPO_COPY
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from git_helper import Runner
 from pr_info import PRInfo
@@ -47,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--path",
-        type=str,
+        type=Path,
         default=RUNNER_TEMP,
         help="path to changed_images_*.json files",
     )
@@ -75,8 +77,8 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def load_images(path: str, suffix: str) -> Images:
-    with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
+def load_images(path: Path, suffix: str) -> Images:
+    with open(path / CHANGED_IMAGES.format(suffix), "rb") as images:
         return json.load(images)  # type: ignore
 
 
@@ -174,7 +176,7 @@ def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
 
 
 def enrich_images(changed_images: Dict[str, str]) -> None:
-    all_image_names = get_image_names(GITHUB_WORKSPACE, IMAGES_FILE_PATH)
+    all_image_names = get_image_names(Path(REPO_COPY), IMAGES_FILE_PATH)
 
     images_to_find_tags_for = [
         image for image in all_image_names if image not in changed_images
@@ -195,8 +197,8 @@ def enrich_images(changed_images: Dict[str, str]) -> None:
         WITH {commit_shas:Array(String)} AS commit_shas,
              {images:Array(String)} AS images
         SELECT
-            substring(test_name, 1, position(test_name, ':') -1) AS image_name,
-            argMax(commit_sha, check_start_time) AS commit_sha
+            splitByChar(':', test_name)[1] AS image_name,
+            argMax(splitByChar(':', test_name)[2], check_start_time) AS tag
         FROM checks
             WHERE
                 check_name == 'Push multi-arch images to Dockerhub'
@@ -207,7 +209,10 @@ def enrich_images(changed_images: Dict[str, str]) -> None:
         """
 
     batch_count = 0
-    ch_helper = ClickHouseHelper()
+    # We use always publicly available DB here intentionally
+    ch_helper = ClickHouseHelper(
+        "https://play.clickhouse.com", {"X-ClickHouse-User": "play"}
+    )
 
     while (
         batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0
@@ -227,15 +232,12 @@ def enrich_images(changed_images: Dict[str, str]) -> None:
             "Found images for commits %s..%s:\n %s",
             commit_shas[0],
             commit_shas[-1],
-            "\n ".join(f"{im['image_name']}:{im['commit_sha']}" for im in result),
+            "\n ".join(f"{im['image_name']}:{im['tag']}" for im in result),
         )
 
         for row in result:
             image_name = row["image_name"]
-            commit_sha = row["commit_sha"]
-            # As we only get the SHAs of merge commits from master, the PR number will be always 0
-            tag = f"0-{commit_sha}"
-            changed_images[image_name] = tag
+            changed_images[image_name] = row["tag"]
             images_to_find_tags_for.remove(image_name)
 
         batch_count += 1
@@ -272,16 +274,15 @@ def main():
             if test_result != "OK":
                 status = "failure"
 
+    enriched_images = changed_images.copy()
     try:
         # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
-        enrich_images(changed_images)
+        enrich_images(enriched_images)
     except CHException as ex:
         logging.warning("Couldn't get proper tags for not changed images: %s", ex)
 
-    with open(
-        os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
-    ) as ci:
-        json.dump(changed_images, ci)
+    with open(args.path / "changed_images.json", "w", encoding="utf-8") as ci:
+        json.dump(enriched_images, ci)
 
     pr_info = PRInfo()
     s3_helper = S3Helper()

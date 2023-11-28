@@ -46,13 +46,14 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
 {
     extern const Metric MergeTreeDataSelectExecutorThreads;
     extern const Metric MergeTreeDataSelectExecutorThreadsActive;
+    extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -69,7 +70,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int PROJECTION_NOT_USED;
 }
 
 
@@ -178,11 +178,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read,
             query_info.merge_tree_select_result_ptr,
             enable_parallel_reading);
-
-        if (!step && settings.optimize_use_projections && settings.force_optimize_projection
-            && !metadata_for_reading->projections.empty() && !settings.query_plan_optimize_projection)
-            throw Exception(ErrorCodes::PROJECTION_NOT_USED,
-                            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 
         auto plan = std::make_unique<QueryPlan>();
         if (step)
@@ -329,7 +324,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 settings.min_count_to_compile_aggregate_expression,
                 settings.max_block_size,
                 settings.enable_software_prefetch_in_aggregation,
-                only_merge);
+                only_merge,
+                settings.optimize_group_by_constant_keys);
 
             return std::make_pair(params, only_merge);
         };
@@ -479,7 +475,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto step = std::make_unique<ReadFromStorageStep>(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
-        query_info.storage_limits);
+        query_info,
+        context);
     plan->addStep(std::move(step));
     plan->addInterpreterContext(query_info.projection->context);
     return plan;
@@ -628,7 +625,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         RelativeSize size_of_universum = 0;
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
-        DataTypePtr sampling_column_type = sampling_key.data_types[0];
+        DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)
         {
@@ -781,22 +778,10 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 {
     if (!filter_dag)
         return {};
-
     auto sample = data.getSampleBlockWithVirtualColumns();
-    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
-    for (const auto * input : filter_dag->getInputs())
-        if (sample.has(input->result_name))
-            allowed_inputs.insert(input);
-
-    if (allowed_inputs.empty())
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(sample, filter_dag, context);
+    if (!dag)
         return {};
-
-    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
-    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
-    if (atoms.empty())
-        return {};
-
-    auto dag = ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
 
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
     VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
@@ -814,6 +799,9 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     ASTPtr expression_ast;
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
+    if (virtual_columns_block.rows() == 0)
+        return {};
+
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);
 
@@ -829,8 +817,8 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByPartition(
-    std::optional<PartitionPruner> & partition_pruner,
-    std::optional<KeyCondition> & minmax_idx_condition,
+    const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<KeyCondition> & minmax_idx_condition,
     MergeTreeData::DataPartsVector & parts,
     std::vector<AlterConversionsPtr> & alter_conversions,
     const std::optional<std::unordered_set<String>> & part_values,
@@ -1076,6 +1064,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+                CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
@@ -1231,6 +1220,10 @@ static void selectColumnNames(
         {
             virt_column_names.push_back(name);
         }
+        else if (name == BlockNumberColumn::name)
+        {
+            virt_column_names.push_back(name);
+        }
         else if (name == "_part_uuid")
         {
             virt_column_names.push_back(name);
@@ -1285,6 +1278,8 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
     std::optional<ReadFromMergeTree::Indexes> indexes;
+    /// NOTE: We don't need alter_conversions because the returned analysis_result is only used for:
+    /// 1. estimate the number of rows to read; 2. projection reading, which doesn't have alter_conversions.
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         /*alter_conversions=*/ {},
@@ -1333,6 +1328,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
+    /// Do not keep data parts in snapshot.
+    /// They are stored separately, and some could be released after PK analysis.
+    auto storage_snapshot_copy = storage_snapshot->clone(std::make_unique<MergeTreeData::SnapshotData>());
+
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
         std::move(alter_conversions),
@@ -1340,7 +1339,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         virt_column_names,
         data,
         query_info,
-        storage_snapshot,
+        storage_snapshot_copy,
         context,
         max_block_size,
         num_streams,
@@ -1669,7 +1668,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                granule = reader.read();
+                reader.read(granule);
 
             auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
             if (ann_condition != nullptr)
@@ -1787,7 +1786,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    granules[i] = readers[i]->read();
+                    readers[i]->read(granules[i]);
                     granules_filled = true;
                 }
             }
@@ -1817,7 +1816,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
-    std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     PartFilterCounters & counters)
 {
@@ -1879,7 +1878,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
-    std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context,
     PartFilterCounters & counters,

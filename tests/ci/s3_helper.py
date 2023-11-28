@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-import hashlib
 import logging
-import os
 import re
 import shutil
 import time
@@ -23,15 +21,6 @@ from env_helper import (
 from compress_files import compress_file_fast
 
 
-def _md5(fname):
-    hash_md5 = hashlib.md5()
-    with open(fname, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_md5.update(chunk)
-    logging.debug("MD5 for %s is %s", fname, hash_md5.hexdigest())
-    return hash_md5.hexdigest()
-
-
 def _flatten_list(lst):
     result = []
     for elem in lst:
@@ -50,7 +39,6 @@ class S3Helper:
         self.session = boto3.session.Session(region_name="us-east-1")
         self.client = self.session.client("s3", endpoint_url=S3_URL, config=config)
         self.host = S3_URL
-        self.download_host = S3_DOWNLOAD
 
     def _upload_file_to_s3(
         self, bucket_name: str, file_path: Path, s3_path: str
@@ -113,10 +101,7 @@ class S3Helper:
             logging.info("File is too large, do not provide content type")
 
         self.client.upload_file(file_path, bucket_name, s3_path, ExtraArgs=metadata)
-        # last two replacements are specifics of AWS urls:
-        # https://jamesd3142.wordpress.com/2018/02/28/amazon-s3-and-the-plus-symbol/
-        url = f"{self.download_host}/{bucket_name}/{s3_path}"
-        url = url.replace("+", "%2B").replace(" ", "%20")
+        url = self.s3_url(bucket_name, s3_path)
         logging.info("Upload %s to %s. Meta: %s", file_path, url, metadata)
         return url
 
@@ -135,11 +120,7 @@ class S3Helper:
     def fast_parallel_upload_dir(
         self, dir_path: Path, s3_dir_path: str, bucket_name: str
     ) -> List[str]:
-        all_files = []
-
-        for root, _, files in os.walk(dir_path):
-            for file in files:
-                all_files.append(os.path.join(root, file))
+        all_files = [file for file in dir_path.rglob("*") if file.is_file()]
 
         logging.info("Files found %s", len(all_files))
 
@@ -147,12 +128,13 @@ class S3Helper:
         t = time.time()
         sum_time = 0
 
-        def upload_task(file_path: str) -> str:
+        def upload_task(file_path: Path) -> str:
             nonlocal counter
             nonlocal t
             nonlocal sum_time
+            file_str = file_path.as_posix()
             try:
-                s3_path = file_path.replace(str(dir_path), s3_dir_path)
+                s3_path = file_str.replace(str(dir_path), s3_dir_path)
                 metadata = {}
                 if s3_path.endswith("html"):
                     metadata["ContentType"] = "text/html; charset=utf-8"
@@ -183,7 +165,7 @@ class S3Helper:
                     t = time.time()
             except Exception as ex:
                 logging.critical("Failed to upload file, expcetion %s", ex)
-            return f"{self.download_host}/{bucket_name}/{s3_path}"
+            return self.s3_url(bucket_name, s3_path)
 
         p = Pool(self.max_pool_size)
 
@@ -218,11 +200,11 @@ class S3Helper:
         def task(file_path: Path) -> Union[str, List[str]]:
             full_fs_path = file_path.absolute()
             if keep_dirs_in_s3_path:
-                full_s3_path = os.path.join(s3_directory_path, directory_path.name)
+                full_s3_path = "/".join((s3_directory_path, directory_path.name))
             else:
                 full_s3_path = s3_directory_path
 
-            if os.path.isdir(full_fs_path):
+            if full_fs_path.is_dir():
                 return self._upload_directory_to_s3(
                     full_fs_path,
                     full_s3_path,
@@ -296,21 +278,43 @@ class S3Helper:
 
         return result
 
-    def exists(self, key: str, bucket: str = S3_BUILDS_BUCKET) -> bool:
+    def url_if_exists(self, key: str, bucket: str = S3_BUILDS_BUCKET) -> str:
+        if not CI:
+            local_path = self.local_path(bucket, key)
+            if local_path.exists():
+                return local_path.as_uri()
+            return ""
+
         try:
             self.client.head_object(Bucket=bucket, Key=key)
-            return True
+            return self.s3_url(bucket, key)
         except Exception:
-            return False
+            return ""
+
+    @staticmethod
+    def get_url(bucket: str, key: str) -> str:
+        if CI:
+            return S3Helper.s3_url(bucket, key)
+        return S3Helper.local_path(bucket, key).as_uri()
+
+    @staticmethod
+    def s3_url(bucket: str, key: str) -> str:
+        url = f"{S3_DOWNLOAD}/{bucket}/{key}"
+        # last two replacements are specifics of AWS urls:
+        # https://jamesd3142.wordpress.com/2018/02/28/amazon-s3-and-the-plus-symbol/
+        url = url.replace("+", "%2B").replace(" ", "%20")
+        return url
+
+    @staticmethod
+    def local_path(bucket: str, key: str) -> Path:
+        return (Path(RUNNER_TEMP) / "s3" / bucket / key).absolute()
 
     @staticmethod
     def copy_file_to_local(bucket_name: str, file_path: Path, s3_path: str) -> str:
-        local_path = (
-            Path(RUNNER_TEMP) / "s3" / os.path.join(bucket_name, s3_path)
-        ).absolute()
+        local_path = S3Helper.local_path(bucket_name, s3_path)
         local_dir = local_path.parent
         local_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(file_path, local_path)
 
         logging.info("Copied %s to %s", file_path, local_path)
-        return f"file://{local_path}"
+        return local_path.as_uri()

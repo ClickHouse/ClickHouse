@@ -128,16 +128,16 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , path(fs::path(disk->getPath()) / relative_path / "")
     , broken_relative_path(fs::path(relative_path) / "broken")
     , broken_path(fs::path(path) / "broken" / "")
-    , should_batch_inserts(storage.getDistributedSettingsRef().monitor_batch_inserts)
-    , split_batch_on_failure(storage.getDistributedSettingsRef().monitor_split_batch_on_failure)
+    , should_batch_inserts(storage.getDistributedSettingsRef().background_insert_batch)
+    , split_batch_on_failure(storage.getDistributedSettingsRef().background_insert_split_batch_on_failure)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
     , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path(path + "current_batch.txt")
     , pending_files(std::numeric_limits<size_t>::max())
-    , default_sleep_time(storage.getDistributedSettingsRef().monitor_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.getDistributedSettingsRef().background_insert_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.getDistributedSettingsRef().monitor_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.getDistributedSettingsRef().background_insert_max_sleep_time_ms.totalMilliseconds())
     , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_bytes(CurrentMetrics::DistributedBytesToInsert, 0)
@@ -234,7 +234,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
             }
         }
         else
-            LOG_TEST(log, "Skipping send data over distributed table.");
+            LOG_TEST(LogFrequencyLimiter(log, 30), "Skipping send data over distributed table.");
 
         const auto now = std::chrono::system_clock::now();
         if (now - last_decrease_time > decrease_error_count_period)
@@ -444,7 +444,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
             storage.getContext()->getOpenTelemetrySpanLog());
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+        auto connection = pool->get(timeouts, distributed_header.insert_settings);
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
             connection->getDescription(),
@@ -726,7 +726,7 @@ SyncGuardPtr DistributedAsyncInsertDirectoryQueue::getDirectorySyncGuard(const s
 
 std::string DistributedAsyncInsertDirectoryQueue::getLoggerName() const
 {
-    return storage.getStorageID().getFullTableName() + ".DirectoryMonitor." + disk->getName();
+    return storage.getStorageID().getFullTableName() + ".DistributedInsertQueue." + disk->getName();
 }
 
 void DistributedAsyncInsertDirectoryQueue::updatePath(const std::string & new_relative_path)

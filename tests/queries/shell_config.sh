@@ -79,6 +79,11 @@ export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:="9005"}
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=keeper_server.tcp_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 
+# keeper-client
+[ -x "${CLICKHOUSE_BINARY}-keeper-client" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY} keeper-client"}
+export CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client --port $CLICKHOUSE_PORT_KEEPER"}
+
 export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --accept-invalid-certificate --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
 
 # Add database and log comment to url params

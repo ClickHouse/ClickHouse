@@ -190,20 +190,16 @@ public:
     bool isQueryWithFinal() const;
     bool isQueryWithSampling() const;
 
-    /// Returns true if the optimisation is applicable (and applies it then).
+    /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
     bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
     void setAnalyzedResult(MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    void resetParts(MergeTreeData::DataPartsVector parts)
-    {
-        prepared_parts = std::move(parts);
-        alter_conversions_for_parts = {};
-    }
-
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
+    const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
+
     const MergeTreeData & getMergeTreeData() const { return data; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
@@ -259,7 +255,7 @@ private:
     size_t output_streams_limit = 0;
     const bool sample_factor_column_queried;
 
-    /// Used for aggregation optimisation (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
+    /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
 
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
@@ -293,7 +289,7 @@ private:
         const InputOrderInfoPtr & input_order_info);
 
     Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection);
+        RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
@@ -309,6 +305,8 @@ struct MergeTreeDataSelectAnalysisResult
 
     bool error() const;
     size_t marks() const;
+    UInt64 rows() const;
+    const RangesInDataParts & partsWithRanges() const;
 };
 
 }

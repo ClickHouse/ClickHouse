@@ -14,9 +14,8 @@ namespace DB
 namespace
 {
 
-bool matchFnUniq(String func_name)
+bool matchFnUniq(String name)
 {
-    auto name = Poco::toLower(func_name);
     return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined"
         || name == "uniqCombined64";
 }
