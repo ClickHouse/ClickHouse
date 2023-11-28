@@ -1145,7 +1145,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
 
         bool noop;
-        checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */{}, /* throw_on_broken_projection */false);
+        checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
         writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
