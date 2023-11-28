@@ -65,7 +65,7 @@ public:
     /// RET_ERROR stands for hardware codec fail, needs fallback to software codec.
     static constexpr Int32 RET_ERROR = -1;
 
-    HardwareCodecDeflateQpl();
+    HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl& codec);
     ~HardwareCodecDeflateQpl();
 
     Int32 doCompressData(const char * source, UInt32 source_size, char * dest, UInt32 dest_size) const;
@@ -86,6 +86,7 @@ private:
     /// For flush, pop out job ID && job object from this map. Use job ID to release job lock and use job object to check job status till complete.
     std::map<UInt32, qpl_job *> decomp_async_job_map;
     Poco::Logger * log;
+    SoftwareCodecDeflateQpl &sw_codec;
 };
 
 class CompressionCodecDeflateQpl final : public ICompressionCodec
