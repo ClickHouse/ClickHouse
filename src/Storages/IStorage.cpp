@@ -12,7 +12,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/Statistic/Estimator.h>
+#include <Storages/Statistics/Estimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 

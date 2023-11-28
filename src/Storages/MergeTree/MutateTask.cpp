@@ -3,7 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/Statistic/Statistic.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
@@ -458,7 +458,7 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
 
 static std::set<StatisticPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
 {
-    const auto & stats_factory = MergeTreeStatisticFactory::instance();
+    const auto & stats_factory = MergeTreeStatisticsFactory::instance();
     std::set<StatisticPtr> stats_to_recalc;
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & col_desc : columns)
@@ -1411,7 +1411,7 @@ private:
 
             if (ctx->materialized_statistics.contains(col.name))
             {
-                stats_to_rewrite.push_back(MergeTreeStatisticFactory::instance().get(*col.stat));
+                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(*col.stat));
             }
             else
             {

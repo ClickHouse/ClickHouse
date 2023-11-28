@@ -1,4 +1,4 @@
-#include <Storages/Statistic/Estimator.h>
+#include <Storages/Statistics/Estimator.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB

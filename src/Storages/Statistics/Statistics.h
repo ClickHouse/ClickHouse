@@ -63,10 +63,10 @@ protected:
 
 class ColumnsDescription;
 
-class MergeTreeStatisticFactory : private boost::noncopyable
+class MergeTreeStatisticsFactory : private boost::noncopyable
 {
 public:
-    static MergeTreeStatisticFactory & instance();
+    static MergeTreeStatisticsFactory & instance();
 
     void validate(const StatisticDescription & stat, DataTypePtr data_type) const;
 
@@ -82,7 +82,7 @@ public:
     void registerValidator(StatisticType type, Validator validator);
 
 protected:
-    MergeTreeStatisticFactory();
+    MergeTreeStatisticsFactory();
 
 private:
     using Creators = std::unordered_map<StatisticType, Creator>;

@@ -10,7 +10,7 @@
 #include <Disks/IDisk.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/Statistic/Statistic.h>
+#include <Storages/Statistics/Statistics.h>
 
 namespace DB
 {

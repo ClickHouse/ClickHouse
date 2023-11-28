@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/Statistic/TDigestStatistic.h>
+#include <Storages/Statistics/TDigestStatistic.h>
 
 namespace DB
 {

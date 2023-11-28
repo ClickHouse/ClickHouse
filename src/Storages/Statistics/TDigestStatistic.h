@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/Statistic/Statistic.h>
+#include <Storages/Statistics/Statistics.h>
 
 namespace DB
 {

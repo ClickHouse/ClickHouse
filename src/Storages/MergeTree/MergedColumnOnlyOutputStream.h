@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Storages/Statistic/Statistic.h>
+#include <Storages/Statistics/Statistics.h>
 
 namespace DB
 {

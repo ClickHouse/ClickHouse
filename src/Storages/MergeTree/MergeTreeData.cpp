@@ -76,7 +76,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
-#include <Storages/Statistic/Estimator.h>
+#include <Storages/Statistics/Estimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
@@ -659,7 +659,7 @@ void MergeTreeData::checkProperties(
     for (const auto & col : new_metadata.columns)
     {
         if (col.stat)
-            MergeTreeStatisticFactory::instance().validate(*col.stat, col.type);
+            MergeTreeStatisticsFactory::instance().validate(*col.stat, col.type);
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);

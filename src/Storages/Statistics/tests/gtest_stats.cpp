@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <Storages/Statistic/Statistic.h>
+#include <Storages/Statistics/Statistics.h>
 
-TEST(Statistic, TDigestLessThan)
+TEST(Statistics, TDigestLessThan)
 {
     /// this is the simplest data which is continuous integeters.
     /// so the estimated errors should be low.

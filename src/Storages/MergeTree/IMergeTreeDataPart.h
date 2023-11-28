@@ -17,7 +17,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/Statistic/Statistic.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/ColumnsDescription.h>
