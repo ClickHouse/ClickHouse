@@ -4,8 +4,6 @@
 #include <Access/SettingsProfilesInfo.h>
 #include <Common/quoteString.h>
 
-#include <boost/range/algorithm_ext/erase.hpp>
-
 
 namespace DB
 {
@@ -188,7 +186,7 @@ void SettingsProfilesCache::substituteProfiles(
     }
     std::reverse(substituted_profiles.begin(), substituted_profiles.end());
 
-    boost::range::remove_erase_if(profiles, [&substituted_profiles_set](const UUID & profile_id)
+    std::erase_if(profiles, [&substituted_profiles_set](const UUID & profile_id)
     {
         return !substituted_profiles_set.contains(profile_id);
     });
