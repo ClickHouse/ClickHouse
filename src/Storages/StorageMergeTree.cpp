@@ -2038,9 +2038,33 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
     const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
 
-    // In case the destination partition expression is not defined, `my_partition_expression` will be null,
-    // but it is still a valid case.
-    if (my_partition_expression && is_partition_exp_different)
+
+    auto isExpressionDirectSubsetOf = [](const ASTPtr source, const ASTPtr destination)
+    {
+        auto source_expression_list = extractKeyExpressionList(source);
+        auto destination_expression_list = extractKeyExpressionList(destination);
+
+        std::unordered_set<std::string> source_columns;
+
+        for (auto i = 0u; i < source_expression_list->children.size(); ++i)
+        {
+            source_columns.insert(source_expression_list->children[i]->getColumnName());
+        }
+
+        for (auto i = 0u; i < destination_expression_list->children.size(); ++i)
+        {
+            if (!source_columns.contains(destination_expression_list->children[i]->getColumnName()))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    // If destination partition expression columns are a subset of source partition expression columns,
+    // there is no need to check for monotonicity.
+    if (is_partition_exp_different && !isExpressionDirectSubsetOf(src_partition_expression, my_partition_expression))
     {
         auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(src_data, src_parts);
 

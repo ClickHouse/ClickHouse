@@ -13,18 +13,6 @@ namespace ErrorCodes
 
 namespace
 {
-    bool isASTEmptyTupleFunction(const ASTPtr & ast)
-    {
-        const auto * ast_function = ast->as<ASTFunction>();
-
-        if (!ast_function)
-        {
-            return false;
-        }
-
-        return ast_function->name == "tuple" && ast_function->arguments && ast_function->arguments->children.empty();
-    }
-
     bool isDestinationPartitionExpressionMonotonicallyIncreasing(
         const MergeTreePartitionCompatibilityVerifier::SourceTableInfo & source_table_info,
         const StorageID & destination_table_id,
@@ -34,13 +22,6 @@ namespace
     {
         auto key_description = destination_table_metadata->getPartitionKey();
         auto definition_ast = key_description.definition_ast->clone();
-
-        // Short circuit for empty tuple partition key. It is a single partition, so it should be considered monotonic.
-        // `FunctionTuple` requires at least one argument, but `PARTITION BY tuple()` is allowed.
-        if (isASTEmptyTupleFunction(definition_ast))
-        {
-            return true;
-        }
 
         auto range = Range(source_table_info.min_idx, true, source_table_info.max_idx, true);
 

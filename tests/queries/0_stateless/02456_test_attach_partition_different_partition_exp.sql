@@ -112,7 +112,6 @@ SELECT partition_id FROM system.parts where table='destination' AND database = c
 
 -- Same as above, but destination partition by expression is explicitly defined. Test case required to validate that
 -- partition by tuple() is accepted.
-
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
@@ -124,6 +123,36 @@ ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
+-- Should be allowed because the destination partition expression columns are a subset of the source partition expression columns
+-- Columns in this case refer to the expression elements, not to the actual table columns
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+CREATE TABLE source (a Int, b Int, c Int) engine=MergeTree ORDER BY tuple() PARTITION BY (a, b, c);
+CREATE TABLE destination (a Int, b Int, c Int) engine=MergeTree ORDER BY tuple() PARTITION BY (a, b);
+
+INSERT INTO TABLE source VALUES (1, 2, 3), (1, 2, 4);
+
+ALTER TABLE destination ATTACH PARTITION ID '1-2-3' FROM source;
+
+SELECT * FROM source ORDER BY (a, b, c);
+SELECT * FROM destination ORDER BY (a, b, c);
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
+-- Should be allowed because the destination partition expression columns are a subset of the source partition expression columns
+-- Columns in this case refer to the expression elements, not to the actual table columns
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+CREATE TABLE source (a Int, b Int, c Int) engine=MergeTree ORDER BY tuple() PARTITION BY (a, b, c);
+CREATE TABLE destination (a Int, b Int, c Int) engine=MergeTree ORDER BY tuple() PARTITION BY a;
+
+INSERT INTO TABLE source VALUES (1, 2, 3), (1, 2, 4);
+
+ALTER TABLE destination ATTACH PARTITION ID '1-2-3' FROM source;
+
+SELECT * FROM source ORDER BY (a, b, c);
+SELECT * FROM destination ORDER BY (a, b, c);
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
 -- Should not be allowed because data would be split into two different partitions
