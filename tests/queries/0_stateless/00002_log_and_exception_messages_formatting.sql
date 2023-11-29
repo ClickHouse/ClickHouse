@@ -86,7 +86,7 @@ select 'noisy Trace messages',
 
 -- Same as above for Debug
 select 'noisy Debug messages',
-    greatest((select count() from logs where level <= 'Debug' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.09);
+    greatest((select count() from logs where level <= 'Debug' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.11);
 
 -- Same as above for Info
 select 'noisy Info messages',

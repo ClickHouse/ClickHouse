@@ -22,27 +22,27 @@ class PartitionManager:
         self._netem_delayed_instances = []
         _NetworkManager.get()
 
-    def drop_instance_zk_connections(self, instance, action="DROP"):
+    def drop_instance_zk_connections(self, instance, action="DROP", port=2181):
         self._check_instance(instance)
 
         self._add_rule(
-            {"source": instance.ip_address, "destination_port": 2181, "action": action}
+            {"source": instance.ip_address, "destination_port": port, "action": action}
         )
         self._add_rule(
-            {"destination": instance.ip_address, "source_port": 2181, "action": action}
+            {"destination": instance.ip_address, "source_port": port, "action": action}
         )
 
     def dump_rules(self):
         return _NetworkManager.get().dump_rules()
 
-    def restore_instance_zk_connections(self, instance, action="DROP"):
+    def restore_instance_zk_connections(self, instance, action="DROP", port=2181):
         self._check_instance(instance)
 
         self._delete_rule(
-            {"source": instance.ip_address, "destination_port": 2181, "action": action}
+            {"source": instance.ip_address, "destination_port": port, "action": action}
         )
         self._delete_rule(
-            {"destination": instance.ip_address, "source_port": 2181, "action": action}
+            {"destination": instance.ip_address, "source_port": port, "action": action}
         )
 
     def partition_instances(self, left, right, port=None, action="DROP"):
