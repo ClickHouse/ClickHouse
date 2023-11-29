@@ -575,7 +575,7 @@ Block Block::cloneWithCutColumns(size_t start, size_t length) const
     return copy;
 }
 
-Block Block::cloneWithOnlyColumns(const Names & column_names) const
+Block Block::cloneWithSpecificColumns(const Names & column_names) const
 {
     Block res;
 

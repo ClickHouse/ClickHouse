@@ -28,7 +28,7 @@ namespace
     {
         if (global_min_max_block.columns() == 0)
         {
-            global_min_max_block = local_min_max_block.cloneWithOnlyColumns(columns_of_interest);
+            global_min_max_block = local_min_max_block.cloneWithSpecificColumns(columns_of_interest);
             return;
         }
 
