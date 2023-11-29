@@ -144,10 +144,17 @@ public:
             }
             else
             {
+                return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+#if 0
                 if (serialize_flag)
                     return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
                 else
+                    /// This should be <false, false> (no serialize flag) but it was initially added incorrectly and
+                    /// changing it would break the binary compatibility of aggregation states using this method
+                    // (such as AggregateFunction(argMaxOrNull, Nullable(Int64), UInt64)). The extra flag is harmless
                     return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+            }
+#endif
             }
         }
     }
