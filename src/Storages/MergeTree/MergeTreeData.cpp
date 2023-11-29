@@ -7787,8 +7787,17 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
+                const String path = fs::path(getTableSharedID()) / moving_part.part->name;
+                if (!disk->lock(path, wait_for_move_if_zero_copy))
+                {
+                    LOG_DEBUG(log, "Move of {} postponed as other replica is altering this path", moving_part.part->name);
+                    write_part_log({});
+                    return MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
+                }
+
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
                 parts_mover.swapClonedPart(cloned_part);
+                disk->unlock(path);
             }
             write_part_log({});
         }

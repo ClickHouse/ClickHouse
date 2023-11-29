@@ -36,6 +36,16 @@ public:
     bool lock(std::string_view path, bool block) override;
     void unlock(std::string_view path) override;
 
+    // Used only while moving parts from a local disk to VFS. Performs deduplication -- if target file
+    // is present on disk, copies its metadata to local filesystem
+    void copyFileReverse(
+        const String & from_file_path,
+        IDisk & from_disk,
+        const String & to_file_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) override;
+
 private:
     // TODO myrrc not sure we should couple object storage and garbage collector this way
     // This has a downside that e.g. clickhouse-disks usage spins up a GC each time we issue

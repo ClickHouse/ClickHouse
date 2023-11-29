@@ -46,6 +46,13 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
 
 ObjectStorageVFSGCThread::~ObjectStorageVFSGCThread() = default;
 
+String ObjectStorageVFSGCThread::findInLog(std::string_view path) const
+{
+    // TODO myrrc
+    (void)path;
+    return "";
+}
+
 void ObjectStorageVFSGCThread::run()
 {
     if (!zookeeper_lock->tryLock())

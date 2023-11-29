@@ -24,8 +24,12 @@ public:
     ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context);
     ~ObjectStorageVFSGCThread();
 
-    void start() { task->activateAndSchedule(); }
-    void stop() { task->deactivate(); }
+    inline void start() { task->activateAndSchedule(); }
+    inline void stop() { task->deactivate(); }
+
+    // Tries to find a CreateInode entry where local_path=path. If found, returns this entry's serialized
+    // metadata, returns empty string otherwise
+    String findInLog(std::string_view path) const;
 
 private:
     DiskObjectStorageVFS & storage;

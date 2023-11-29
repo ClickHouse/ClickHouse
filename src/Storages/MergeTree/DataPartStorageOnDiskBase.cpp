@@ -482,7 +482,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
 
     try
     {
-        dst_disk->createDirectories(to);
         src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone, read_settings, write_settings, cancellation_hook);
     }
     catch (...)

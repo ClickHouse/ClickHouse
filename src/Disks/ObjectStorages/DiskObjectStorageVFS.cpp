@@ -1,5 +1,6 @@
 #include "DiskObjectStorageVFS.h"
 #include "DiskObjectStorageVFSTransaction.h"
+#include "IO/WriteBufferFromFile.h"
 #include "Interpreters/Context.h"
 #include "ObjectStorageVFSGCThread.h"
 
@@ -79,7 +80,8 @@ bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
 
     if (block)
     {
-        // TODO myrrc this isn't working
+        // TODO myrrc what if wait returns but create() fails?
+        zookeeper->waitForDisappear(lock_path_full);
         zookeeper->create(lock_path_full, "", mode);
         return true;
     }
@@ -97,6 +99,25 @@ void DiskObjectStorageVFS::unlock(std::string_view path)
     const String lock_path_full = lockPathToFullPath(path);
     LOG_DEBUG(log, "Removing lock {} (zk path {})", path, lock_path_full);
     zookeeper->remove(lock_path_full);
+}
+
+void DiskObjectStorageVFS::copyFileReverse(
+    const String & from_file_path,
+    IDisk & from_disk,
+    const String & to_file_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
+{
+    if (const String & metadata = gc_thread->findInLog(to_file_path); !metadata.empty())
+    {
+        LOG_DEBUG(log, "Found metadata for {} in log, propagating to local filesystem", to_file_path);
+        auto buf = WriteBufferFromFile{to_file_path};
+        writeString(metadata, buf);
+    }
+
+    LOG_DEBUG(log, "No metadata found for {}, copying", to_file_path);
+    IDisk::copyFileReverse(from_file_path, from_disk, to_file_path, read_settings, write_settings, cancellation_hook);
 }
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()

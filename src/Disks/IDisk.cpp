@@ -42,6 +42,17 @@ void IDisk::copyFile( /// NOLINT
     out->finalize();
 }
 
+void IDisk::copyFileReverse(
+    const String & from_file_path,
+    IDisk & from_disk,
+    const String & to_file_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
+{
+    from_disk.copyFile(from_file_path, *this, to_file_path, read_settings, write_settings, cancellation_hook);
+}
+
 DiskTransactionPtr IDisk::createTransaction()
 {
     return std::make_shared<FakeDiskTransaction>(*this);
@@ -114,7 +125,7 @@ void asyncCopy(
                     if (thread_group)
                         CurrentThread::attachToGroup(thread_group);
 
-                    from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), read_settings, write_settings, cancellation_hook);
+                    to_disk.copyFileReverse(from_path, from_disk, fs::path(to_path) / fileName(from_path), read_settings, write_settings, cancellation_hook);
                     promise->set_value();
                 }
                 catch (...)
@@ -183,7 +194,7 @@ void IDisk::truncateFile(const String &, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-bool IDisk::lock(std::string_view, bool) { return false; }
+bool IDisk::lock(std::string_view, bool) { return true; }
 void IDisk::unlock(std::string_view) {}
 
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
