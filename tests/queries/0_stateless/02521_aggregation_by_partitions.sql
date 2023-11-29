@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-s3-storage
 
 set max_threads = 16;
 set allow_aggregate_partitions_independently = 1;
