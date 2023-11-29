@@ -1994,6 +1994,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
 bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region)
 {
+    /// Only enforce region constraints if region controller is valid
+    /// Some callers may not be aware of this.
+    only_fetch_within_region = only_fetch_within_region && geo_replication_controller.isValid();
     auto zookeeper = getZooKeeper();
     const auto & storage_settings_ptr = getSettings();
     bool fetch_cover_part_from_same_region
