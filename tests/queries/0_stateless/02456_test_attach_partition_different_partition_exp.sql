@@ -188,6 +188,21 @@ SELECT * FROM source ORDER BY A;
 SELECT * FROM destination ORDER BY A;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
+-- Should be allowed. The same scenario as above, but partition expressions inverted.
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(intDiv(A, 2), intDiv(B, 2)) ORDER BY tuple();
+CREATE TABLE destination (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(A, B) ORDER BY tuple();
+
+INSERT INTO TABLE source VALUES (6, 12);
+
+ALTER TABLE destination ATTACH PARTITION ID '3-6' FROM source;
+
+SELECT * FROM source ORDER BY A;
+SELECT * FROM destination ORDER BY A;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;

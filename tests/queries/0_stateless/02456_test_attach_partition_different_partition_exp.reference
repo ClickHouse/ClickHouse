@@ -172,6 +172,33 @@ SELECT * FROM destination ORDER BY timestamp;
 2010-03-02 02:01:01	5
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 5
+-- Should be allowed. Destination partition expression contains multiple expressions, but all of them are monotonically
+-- increasing in the source partition min max indexes.
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+CREATE TABLE source (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(A, B) ORDER BY tuple();
+CREATE TABLE destination (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(intDiv(A, 2), intDiv(B, 2)) ORDER BY tuple();
+INSERT INTO TABLE source VALUES (6, 12);
+ALTER TABLE destination ATTACH PARTITION ID '6-12' FROM source;
+SELECT * FROM source ORDER BY A;
+6	12
+SELECT * FROM destination ORDER BY A;
+6	12
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+3-6
+-- Should be allowed. The same scenario as above, but partition expressions inverted.
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+CREATE TABLE source (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(intDiv(A, 2), intDiv(B, 2)) ORDER BY tuple();
+CREATE TABLE destination (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(A, B) ORDER BY tuple();
+INSERT INTO TABLE source VALUES (6, 12);
+ALTER TABLE destination ATTACH PARTITION ID '3-6' FROM source;
+SELECT * FROM source ORDER BY A;
+6	12
+SELECT * FROM destination ORDER BY A;
+6	12
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+6-12
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
