@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 void WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> & lock) const
@@ -131,7 +132,7 @@ WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) co
 {
     auto file_info = tryGetFileInfo(path);
     if (!file_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No such file: {}", path);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
     return file_info.value();
 }
 
