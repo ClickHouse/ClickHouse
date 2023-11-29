@@ -3223,7 +3223,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 }
 
 
-void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper)
+void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_replica, const String & source_path, const zkutil::ZooKeeperPtr & zookeeper)
 {
     String source_metadata_version_str;
     bool metadata_version_exists = zookeeper->tryGet(source_path + "/metadata_version", source_metadata_version_str);

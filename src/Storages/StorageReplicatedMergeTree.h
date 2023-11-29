@@ -733,7 +733,7 @@ private:
     void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
 
     /// Repairs metadata of staled replica. Called from cloneReplica(...)
-    void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
+    void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, const zkutil::ZooKeeperPtr & zookeeper);
 
     Strings getSourceQueueEntries(const String & source_replica, Coordination::Stat source_is_lost_stat, const zkutil::ZooKeeperPtr & zookeeper, bool update_source_replica_log_pointer);
 
