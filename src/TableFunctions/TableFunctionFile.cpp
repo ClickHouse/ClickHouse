@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
@@ -42,7 +43,8 @@ public:
 
     std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
     {
-        return {"_path", "_file"};
+        auto virtual_column_names = StorageFile::getVirtualColumnNames();
+        return {virtual_column_names.begin(), virtual_column_names.end()};
     }
 
 protected:
