@@ -676,6 +676,10 @@ try
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
+    global_context->addWarningMessage("Server was built with code coverage. It will work slowly.");
+#endif
+
     const size_t physical_server_memory = getMemoryAmount();
 
     LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
@@ -1159,6 +1163,8 @@ try
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    NamedCollectionUtils::loadIfNot();
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
@@ -1273,6 +1279,8 @@ try
             global_context->setHTTPHeaderFilter(*config);
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
+            global_context->setClientHTTPHeaderForbiddenHeaders(server_settings_.get_client_http_header_forbidden_headers);
+            global_context->setAllowGetHTTPHeaderFunction(server_settings_.allow_get_client_http_header);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
 
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
@@ -1371,6 +1379,8 @@ try
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+
+                global_context->reloadQueryMaskingRulesIfChanged(config);
 
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
@@ -1566,6 +1576,10 @@ try
     fs::path format_schema_path(config().getString("format_schema_path", path / "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
+
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 
     /// Set path for filesystem caches
     fs::path filesystem_caches_path(config().getString("filesystem_caches_path", ""));
@@ -1816,6 +1830,9 @@ try
         try
         {
             global_context->loadOrReloadDictionaries(config());
+
+            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
+                global_context->waitForDictionariesLoad();
         }
         catch (...)
         {
@@ -1961,7 +1978,8 @@ catch (...)
 {
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
-    throw;
+    auto code = getCurrentExceptionCode();
+    return code ? code : -1;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
