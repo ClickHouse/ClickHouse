@@ -865,6 +865,7 @@ SystemReplicasThreadsActive
 TABLUM
 TCPConnection
 TCPThreads
+TDigest
 TINYINT
 TKSV
 TLSv
