@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2646 
+personal_ws-1.1 en 2646
 AArch
 ACLs
 ALTERs
@@ -865,6 +865,7 @@ SystemReplicasThreadsActive
 TABLUM
 TCPConnection
 TCPThreads
+TDigest
 TINYINT
 TKSV
 TLSv
@@ -1502,6 +1503,7 @@ formatRowNoNewline
 formated
 formatschema
 formatter
+formatters
 freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1512,6 +1514,7 @@ fromUnixTimestampInJodaSyntax
 fsync
 func
 fuzzBits
+fuzzJSON
 fuzzer
 fuzzers
 gRPC
@@ -1533,6 +1536,7 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
+getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1563,6 +1567,7 @@ groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
+groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1577,6 +1582,7 @@ grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
+grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
