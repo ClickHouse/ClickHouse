@@ -2062,8 +2062,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         !context->hasQueryContext() ||
         !nearest_query_scope)
     {
-        auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), scalar_type);
-        auto constant_node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+        auto constant_node = std::make_shared<ConstantNode>(scalar_value, scalar_type, node);
 
         if (constant_node->getValue().isNull())
             node = buildCastFunction(constant_node, constant_node->getResultType(), context);
@@ -2084,9 +2083,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     mutable_context->addScalar(scalar_query_hash_string, scalar_block);
 
     std::string get_scalar_function_name = "__getScalar";
-
-    auto scalar_query_hash_constant_value = std::make_shared<ConstantValue>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
-    auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_constant_value));
+    auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(scalar_query_hash_string, std::make_shared<DataTypeString>());
 
     auto get_scalar_function_node = std::make_shared<FunctionNode>(get_scalar_function_name);
     get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
@@ -2199,8 +2196,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             "{} numeric constant expression is not representable as UInt64",
             expression_description);
 
-    auto constant_value = std::make_shared<ConstantValue>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
-    auto result_constant_node = std::make_shared<ConstantNode>(std::move(constant_value));
+    auto result_constant_node = std::make_shared<ConstantNode>(converted_value, std::make_shared<DataTypeUInt64>());
     result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
 
     expression_node = std::move(result_constant_node);
@@ -3227,28 +3223,28 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
-    if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
-        && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-    {
-        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
-        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
-        if (left_resolved_column.getValueStringRepresentation() == "NULL" && right_resolved_column.getValueStringRepresentation() == "NULL")
-            return left_resolved_identifier;
-    }
-    else if (left_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-    {
-        resolved_side = JoinTableSide::Left;
-        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
-        if (left_resolved_column.getValueStringRepresentation() == "NULL")
-            return left_resolved_identifier;
-    }
-    else if (right_resolved_identifier && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-    {
-        resolved_side = JoinTableSide::Right;
-        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
-        if (right_resolved_column.getValueStringRepresentation() == "NULL")
-            return right_resolved_identifier;
-    }
+    // if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
+    //     && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    // {
+    //     auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
+    //     auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
+    //     if (left_resolved_column.left_resolved_column == "NULL" && right_resolved_column.getValueStringRepresentation() == "NULL")
+    //         return left_resolved_identifier;
+    // }
+    // else if (left_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    // {
+    //     resolved_side = JoinTableSide::Left;
+    //     auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
+    //     if (left_resolved_column.getValueStringRepresentation() == "NULL")
+    //         return left_resolved_identifier;
+    // }
+    // else if (right_resolved_identifier && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    // {
+    //     resolved_side = JoinTableSide::Right;
+    //     auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
+    //     if (right_resolved_column.getValueStringRepresentation() == "NULL")
+    //         return right_resolved_identifier;
+    // }
 
     if (left_resolved_identifier && right_resolved_identifier)
     {
@@ -5137,7 +5133,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            argument_column.column = constant_node->getResultType()->createColumnConst(1, constant_node->getValue());
+            argument_column.column = constant_node->getConstantColumn();
             argument_column.type = constant_node->getResultType();
         }
         else
@@ -5510,7 +5506,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (first_argument_constant_node && second_argument_constant_node)
         {
             const auto & first_argument_constant_type = first_argument_constant_node->getResultType();
-            const auto & second_argument_constant_literal = second_argument_constant_node->getValue();
+            auto second_argument_constant_literal = second_argument_constant_node->getValue();
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
             const auto & settings = scope.context->getSettingsRef();
@@ -5539,7 +5535,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         argument_columns[1].type = std::make_shared<DataTypeSet>();
     }
 
-    std::shared_ptr<ConstantValue> constant_value;
+    ConstantNodePtr constant_node;
 
     try
     {
@@ -5577,9 +5573,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 (!hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin")))
             {
                 /// Replace function node with result constant node
-                Field column_constant_value;
-                column->get(0, column_constant_value);
-                constant_value = std::make_shared<ConstantValue>(std::move(column_constant_value), result_type);
+                constant_node = std::make_shared<ConstantNode>(std::move(column), std::move(result_type));
             }
         }
 
@@ -5591,8 +5585,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         throw;
     }
 
-    if (constant_value)
-        node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+    if (constant_node)
+        node = std::move(constant_node);
 
     return result_projection_names;
 }
@@ -5837,7 +5831,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             if (result_projection_names.empty())
             {
                 const auto & constant_node = node->as<ConstantNode &>();
-                result_projection_names.push_back(constant_node.getValueStringRepresentation());
+                result_projection_names.push_back(applyVisitor(FieldVisitorToString(), constant_node.getValue()));
             }
 
             /// Already resolved
