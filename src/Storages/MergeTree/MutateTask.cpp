@@ -1535,7 +1535,8 @@ private:
             ctx->txn,
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings());
+            ctx->context->getWriteSettings(),
+            ctx->source_part->index_granularity);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
