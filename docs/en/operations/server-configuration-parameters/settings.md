@@ -74,7 +74,7 @@ The maximum number of threads that will be used for fetching data parts from ano
 
 Type: UInt64
 
-Default: 8
+Default: 16
 
 ## background_merges_mutations_concurrency_ratio
 
@@ -136,7 +136,7 @@ The maximum number of threads that will be used for constantly executing some li
 
 Type: UInt64
 
-Default: 128
+Default: 512
 
 ## backup_threads
 
@@ -214,7 +214,7 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 1024
+Default: 10
 
 
 ## index_mark_cache_policy
@@ -961,9 +961,11 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 
 Lazy loading of dictionaries.
 
-If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
+If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 
-If `false`, all dictionaries are created when the server starts, if the dictionary or dictionaries are created too long or are created with errors, then the server boots without of these dictionaries and continues to try to create these dictionaries.
+If `false`, then the server loads all dictionaries at startup.
+The server will wait at startup until all the dictionaries finish their loading before receiving any connections
+(exception: if `wait_dictionaries_load_at_startup` is set to `false` - see below).
 
 The default is `true`.
 
@@ -1833,9 +1835,10 @@ Settings:
 
 - `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
 - `port` – Port for `endpoint`.
-- `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
 
 **Example**
 
@@ -1851,6 +1854,7 @@ Settings:
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
     </prometheus>
     <!-- highlight-end -->
 </clickhouse>
@@ -2391,6 +2395,28 @@ Path to the file that contains:
 <users_config>users.xml</users_config>
 ```
 
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
+
+This setting allows to specify behavior if `dictionaries_lazy_load` is `false`.
+(If `dictionaries_lazy_load` is `true` this setting doesn't affect anything.)
+
+If `wait_dictionaries_load_at_startup` is `false`, then the server
+will start loading all the dictionaries at startup and it will receive connections in parallel with that loading.
+When a dictionary is used in a query for the first time then the query will wait until the dictionary is loaded if it's not loaded yet.
+Setting `wait_dictionaries_load_at_startup` to `false` can make ClickHouse start faster, however some queries can be executed slower
+(because they will have to wait for some dictionaries to be loaded).
+
+If `wait_dictionaries_load_at_startup` is `true`, then the server will wait at startup
+until all the dictionaries finish their loading (successfully or not) before receiving any connections.
+
+The default is `true`.
+
+**Example**
+
+``` xml
+<wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
+```
+
 ## zookeeper {#server-settings_zookeeper}
 
 Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
@@ -2718,7 +2744,7 @@ ClickHouse will use it to form the proxy URI using the following template: `{pro
             <proxy_cache_time>10</proxy_cache_time>
         </resolver>
     </http>
-    
+
     <https>
         <resolver>
             <endpoint>http://resolver:8080/hostname</endpoint>

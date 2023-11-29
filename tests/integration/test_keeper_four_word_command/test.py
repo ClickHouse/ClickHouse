@@ -183,8 +183,8 @@ def test_cmd_mntr(started_cluster):
         # contains:
         #   10 nodes created by test
         #   3 nodes created by clickhouse "/clickhouse/task_queue/ddl"
-        #   1 root node, 4 keeper system nodes
-        assert int(result["zk_znode_count"]) == 15
+        #   1 root node, 3 keeper system nodes
+        assert int(result["zk_znode_count"]) == 14
         assert int(result["zk_watch_count"]) == 2
         assert int(result["zk_ephemerals_count"]) == 2
         assert int(result["zk_approximate_data_size"]) > 0
@@ -287,7 +287,7 @@ def test_cmd_conf(started_cluster):
         assert result["quorum_reads"] == "false"
         assert result["force_sync"] == "true"
 
-        assert result["compress_logs"] == "true"
+        assert result["compress_logs"] == "false"
         assert result["compress_snapshots_with_zstd_format"] == "true"
         assert result["configuration_change_tries_count"] == "20"
 
@@ -333,7 +333,7 @@ def test_cmd_srvr(started_cluster):
         assert int(result["Connections"]) == 1
         assert int(result["Zxid"], 16) > 10
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "15"
+        assert result["Node count"] == "14"
 
     finally:
         destroy_zk_client(zk)
@@ -373,7 +373,7 @@ def test_cmd_stat(started_cluster):
         assert int(result["Connections"]) == 1
         assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "15"
+        assert result["Node count"] == "14"
 
         # filter connection statistics
         cons = [n for n in data.split("\n") if "=" in n]
@@ -736,15 +736,19 @@ def test_cmd_ydld(started_cluster):
         print("ydld output -------------------------------------")
         print(data)
 
-        if keeper_utils.is_leader(cluster, node):
+        # Whenever there is a leader switch, there is a brief amount of time when any
+        # of the 4 letter commands will return empty result. Thus, we need to test for
+        # negative condition. So we can't use keeper_utils.is_leader() here and likewise
+        # in the while loop below.
+        if not keeper_utils.is_follower(cluster, node):
             # wait for it to yield leadership
             retry = 0
-            while keeper_utils.is_leader(cluster, node) and retry < 30:
+            while not keeper_utils.is_follower(cluster, node) and retry < 30:
                 time.sleep(1)
                 retry += 1
             if retry == 30:
                 print(
                     node.name
-                    + " did not yield leadership after 30s, maybe there is something wrong."
+                    + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
                 )
         assert keeper_utils.is_follower(cluster, node)

@@ -121,6 +121,7 @@ private:
     mutable std::mutex configuration_wrapper_mutex;
     KeeperConfigurationWrapper configuration_wrapper TSA_GUARDED_BY(configuration_wrapper_mutex);
 
+    bool log_store_initialized = false;
     nuraft::ptr<KeeperLogStore> log_store;
 
     const String server_state_file_name;

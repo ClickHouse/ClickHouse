@@ -4,7 +4,7 @@
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>

@@ -184,19 +184,19 @@ Example:
 
 ## Virtual Columns {#virtual-columns}
 
-- `_exchange_name` - RabbitMQ exchange name.
-- `_channel_id` - ChannelID, on which consumer, who received the message, was declared.
-- `_delivery_tag` - DeliveryTag of the received message. Scoped per channel.
-- `_redelivered` - `redelivered` flag of the message.
-- `_message_id` - messageID of the received message; non-empty if was set, when message was published.
-- `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
+- `_exchange_name` - RabbitMQ exchange name. Data type: `String`.
+- `_channel_id` - ChannelID, on which consumer, who received the message, was declared. Data type: `String`.
+- `_delivery_tag` - DeliveryTag of the received message. Scoped per channel. Data type: `UInt64`.
+- `_redelivered` - `redelivered` flag of the message. Data type: `UInt8`.
+- `_message_id` - messageID of the received message; non-empty if was set, when message was published. Data type: `String`.
+- `_timestamp` - timestamp of the received message; non-empty if was set, when message was published. Data type: `UInt64`.
 
 Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
-- `_raw_message` - Raw message that couldn't be parsed successfully.
-- `_error` - Exception message happened during failed parsing.
+- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
+- `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
 
-Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
+Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
 
 ## Data formats support {#data-formats-support}
 

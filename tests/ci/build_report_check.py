@@ -37,7 +37,10 @@ from commit_status_helper import (
 from ci_config import CI_CONFIG
 
 
+# Old way to read the neads_data
 NEEDS_DATA_PATH = os.getenv("NEEDS_DATA_PATH", "")
+# Now it's set here. Two-steps migration for backward compatibility
+NEEDS_DATA = os.getenv("NEEDS_DATA", "")
 
 
 def main():
@@ -58,7 +61,11 @@ def main():
     if os.path.exists(NEEDS_DATA_PATH):
         with open(NEEDS_DATA_PATH, "rb") as file_handler:
             needs_data = json.load(file_handler)
-            required_builds = len(needs_data)
+
+    if NEEDS_DATA:
+        needs_data = json.loads(NEEDS_DATA)
+
+    required_builds = len(needs_data)
 
     if needs_data:
         logging.info("The next builds are required: %s", ", ".join(needs_data))
