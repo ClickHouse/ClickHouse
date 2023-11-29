@@ -27,6 +27,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <QueryCoordination/QueryCoordinationMetaInfo.h>
+#include <Poco/Net/NameValueCollection.h>
+#include <Core/Types.h>
 
 #include "config.h"
 
@@ -205,9 +207,6 @@ class SessionTracker;
 
 struct ServerSettings;
 
-class IStatisticsStorage;
-using IStatisticsStoragePtr = std::shared_ptr<IStatisticsStorage>;
-
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -282,8 +281,6 @@ protected:
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
-    bool is_distributed_for_query_coordination = false;  /// Whether the current context it used for distributed query for query coordination
-
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
 
@@ -305,12 +302,6 @@ protected:
 
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
-
-    /// for query coordination
-    Int32 fragment_id_counter = 0;
-
-    /// for query coordination secondary query
-    QueryCoordinationMetaInfo query_coordination_meta;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -586,19 +577,8 @@ public:
     void setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_ = {});
     UserPtr getUser() const;
 
-
     std::optional<UUID> getUserID() const;
     String getUserName() const;
-
-    Int32 getFragmentID()
-    {
-        return ++fragment_id_counter;
-    }
-
-    bool addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
-    const QueryCoordinationMetaInfo & getQueryCoordinationMetaInfo() const;
-
-    void setQuotaKey(String quota_key_);
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
@@ -663,7 +643,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers = {});
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
@@ -776,9 +756,6 @@ public:
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
-
-    void setDistributedForQueryCoord(bool is_distributed_for_query_coord) { is_distributed_for_query_coordination = is_distributed_for_query_coord; }
-    bool isDistributedForQueryCoord() const { return is_distributed_for_query_coordination; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
@@ -1099,6 +1076,11 @@ public:
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
     size_t getMaxTableSizeToDrop() const;
+    void setClientHTTPHeaderForbiddenHeaders(const String & forbidden_headers);
+    /// Return the forbiddent headers that users can't get via getClientHTTPHeader function
+    const std::unordered_set<String> & getClientHTTPHeaderForbiddenHeaders() const;
+    void setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function);
+    bool allowGetHTTPHeaderFunction() const;
     void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const;
 
     /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
@@ -1123,9 +1105,6 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
-
-    IStatisticsStoragePtr & getStatisticsStorage() const;
-    void initializeStatisticsStorage(UInt64 refresh_interval);
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
@@ -1168,6 +1147,10 @@ public:
     /// Base path for format schemas
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);
+
+    /// Path to the folder containing the proto files for the well-known Protobuf types
+    String getGoogleProtosPath() const;
+    void setGoogleProtosPath(const String & path);
 
     SampleBlockCache & getSampleBlockCache() const;
 
