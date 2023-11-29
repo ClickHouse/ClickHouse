@@ -1,4 +1,5 @@
 #include <Databases/DDLLoadingDependencyVisitor.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
@@ -7,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
 
 
@@ -22,6 +24,7 @@ TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, c
     data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
     data.global_context = global_context;
+    data.table_name = table;
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(table);
@@ -113,6 +116,12 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
 
 void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
+    if (storage.ttl_table)
+    {
+        auto ttl_dependensies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr());
+        data.dependencies.merge(ttl_dependensies);
+    }
+
     if (!storage.engine)
         return;
 
@@ -135,22 +144,22 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
     const auto * arg = function.arguments->as<ASTExpressionList>()->children[arg_idx].get();
 
-    if (const auto * dict_function = arg->as<ASTFunction>())
+    if (const auto * function_arg = arg->as<ASTFunction>())
     {
-        if (!functionIsDictGet(dict_function->name))
+        if (!functionIsJoinGet(function_arg->name) && !functionIsDictGet(function_arg->name))
             return;
 
-        /// Get the dictionary name from `dict*` function.
-        const auto * literal_arg = dict_function->arguments->as<ASTExpressionList>()->children[0].get();
-        const auto * dictionary_name = literal_arg->as<ASTLiteral>();
+        /// Get the dictionary name from `dict*` function or the table name from 'joinGet' function.
+        const auto * literal_arg = function_arg->arguments->as<ASTExpressionList>()->children[0].get();
+        const auto * name = literal_arg->as<ASTLiteral>();
 
-        if (!dictionary_name)
+        if (!name)
             return;
 
-        if (dictionary_name->value.getType() != Field::Types::String)
+        if (name->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(dictionary_name->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.get<String>());
         if (!maybe_qualified_name)
             return;
 

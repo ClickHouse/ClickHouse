@@ -24,7 +24,7 @@ from commit_status_helper import (
     format_description,
 )
 from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResult, TestResults, read_test_results
@@ -117,8 +117,9 @@ def main():
     args = parse_args()
 
     temp_path = Path(TEMP_PATH)
-
     temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
+    reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -135,7 +136,7 @@ def main():
             sys.exit(1)
         sys.exit(0)
 
-    docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
+    docker_image = get_image_with_version(reports_path, "clickhouse/fasttest")
 
     s3_helper = S3Helper()
 

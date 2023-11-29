@@ -68,6 +68,8 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
+class ConditionEstimator;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -134,6 +136,8 @@ public:
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
+
+    virtual ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -716,6 +720,9 @@ public:
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
+
+    /// Re initialize disks in case the underlying storage policy changed
+    virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
 
     /// A helper to implement read()
     static void readFromPipe(

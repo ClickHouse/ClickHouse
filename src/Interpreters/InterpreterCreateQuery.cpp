@@ -437,6 +437,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
+        if (column.stat)
+        {
+            column_declaration->stat_type = column.stat->ast;
+            column_declaration->children.push_back(column_declaration->stat_type);
+        }
+
         if (column.ttl)
         {
             column_declaration->ttl = column.ttl;
@@ -637,6 +643,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
+        }
+
+        if (col_decl.stat_type)
+        {
+            if (!attach && !context_->getSettingsRef().allow_experimental_statistic)
+                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
+            column.stat = StatisticDescription::getStatisticFromColumnDeclaration(col_decl);
         }
 
         if (col_decl.ttl)
@@ -1224,9 +1237,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
-        database = DatabaseCatalog::instance().getDatabase(database_name);
+        database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    if (need_add_to_database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
@@ -1240,6 +1253,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         chassert(!ddl_guard);
         return executeQueryOnCluster(create);
     }
+
+    if (need_add_to_database && !database)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
     if (create.replace_table)
     {
@@ -1444,6 +1460,21 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
+
+    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+    if (replicated_storage)
+    {
+        const auto probability = getContext()->getSettingsRef().create_replicated_merge_tree_fault_injection_probability;
+        std::bernoulli_distribution fault(probability);
+        if (fault(thread_local_rng))
+        {
+            /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
+            if (!create.attach)
+                replicated_storage->dropIfEmpty();
+
+            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
+        }
+    }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 

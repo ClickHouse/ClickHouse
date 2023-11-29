@@ -78,6 +78,7 @@ remove_keeper_config "create_if_not_exists" "[01]"
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
+rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
 
 start
@@ -115,6 +116,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
+rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
 
 start
