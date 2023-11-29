@@ -859,7 +859,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -1149,6 +1149,7 @@ public:
 
                             chassert(file_enumerator);
                             current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                            current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                             if (need_only_count && tryGetCountFromCache(current_archive_stat))
                                 continue;
 
@@ -1177,6 +1178,7 @@ public:
                 {
                     struct stat file_stat;
                     file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    current_file_size = file_stat.st_size;
 
                     if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                         continue;
@@ -1243,8 +1245,8 @@ public:
                 progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
                 /// Enrich with virtual columns.
-                VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(
-                    chunk, requested_virtual_columns, current_path, filename_override.has_value() ? &filename_override.value() : nullptr);
+                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
+                    chunk, requested_virtual_columns, current_path, current_file_size, filename_override.has_value() ? &filename_override.value() : nullptr);
                 return chunk;
             }
 
@@ -1305,6 +1307,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     FilesIteratorPtr files_iterator;
     String current_path;
+    std::optional<size_t> current_file_size;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;
@@ -2029,6 +2032,11 @@ StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
     archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
 
     return archive_info;
+}
+
+Names StorageFile::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 }

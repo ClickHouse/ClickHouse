@@ -67,7 +67,45 @@ WHERE macro = 'test';
 │ test  │ Value        │
 └───────┴──────────────┘
 ```
+  
+## getClientHTTPHeader  
+Returns the value of specified http header.If there is no such header or the request method is not http, it will throw an exception.  
 
+**Syntax**  
+
+```sql
+getClientHTTPHeader(name);
+``` 
+
+**Arguments**  
+
+- `name` — HTTP header name .[String](../../sql-reference/data-types/string.md#string)  
+
+**Returned value**
+
+Value of the specified header.  
+Type:[String](../../sql-reference/data-types/string.md#string).
+
+
+When we use `clickhouse-client` to execute this function, we'll always get empty string, because client doesn't use http protocol.
+```sql
+SELECT getCientHTTPHeader('test')
+```
+result:  
+
+```text
+┌─getClientHTTPHeader('test')─┐
+│                             │
+└────────────------───────────┘
+```  
+Try to use http request:  
+```shell 
+echo "select getClientHTTPHeader('X-Clickhouse-User')" | curl -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: ' 'http://localhost:8123/' -d @-
+
+#result
+default
+```
+  
 ## FQDN
 
 Returns the fully qualified domain name of the ClickHouse server.
@@ -1556,7 +1594,7 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 
 - Result of aggregation for every row passed to the function.
 
-The return type is the same as the return type of function, that `initializeAgregation` takes as first argument.
+The return type is the same as the return type of function, that `initializeAggregation` takes as first argument.
 
 **Example**
 
