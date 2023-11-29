@@ -641,33 +641,22 @@ class ReadFromSystemTables : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromSystemTables"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    //void applyFilters() override;
 
     ReadFromSystemTables(
         Block sample_block,
-        //StorageSnapshotPtr storage_snapshot_,
-        //SelectQueryInfo query_info_,
         ContextPtr context_,
         std::vector<UInt8> columns_mask_,
-        // Block res_block_,
         size_t max_block_size_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
-        //, storage_snapshot(std::move(storage_snapshot_))
-        //, storage(storage_)
-        //, query_info(std::move(query_info_))
         , context(std::move(context_))
         , columns_mask(std::move(columns_mask_))
-        // , res_block(std::move(res_block_))
         , max_block_size(max_block_size_)
     {
     }
 
 private:
-    // StorageSnapshotPtr storage_snapshot;
-    // SelectQueryInfo query_info;
     ContextPtr context;
     std::vector<UInt8> columns_mask;
-    // Block res_block;
     size_t max_block_size;
 };
 
@@ -688,12 +677,8 @@ void StorageSystemTables::read(
 
     auto reading = std::make_unique<ReadFromSystemTables>(
         std::move(res_block),
-        //storage_snapshot,
-        //*this,
-        //query_info,
         context,
         std::move(columns_mask),
-        // std::move(res_block),
         max_block_size);
 
     query_plan.addStep(std::move(reading));
