@@ -640,7 +640,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if(storage
            && query.where() && !query.prewhere()
            && context->getSettings().optimize_project_query
-           && !options.is_projection_optimized 
+           && !options.is_projection_optimized
            && !query.hasJoin()
         )
         {
