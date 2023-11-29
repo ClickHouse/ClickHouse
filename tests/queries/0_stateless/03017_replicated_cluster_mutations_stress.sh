@@ -38,7 +38,8 @@ function backup_replicas_thread()
 {
     for i in $(seq 1 $replicas_re_create_iterations); do
         if [[ $i -gt 1 ]]; then
-            $CLICKHOUSE_CLIENT -nm -q "
+            # Ignore error "Cannot process partition ... will restart"
+            $CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal -nm -q "
                 system drop cluster replica data_r3;
                 system drop cluster replica data_r4;
             "
