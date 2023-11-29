@@ -89,6 +89,7 @@ struct ColumnDescription
     ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
 
+    bool identical(const ColumnDescription & other) const;
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
@@ -98,10 +99,15 @@ struct ColumnDescription
 
 
 /// Description of multiple table columns (in CREATE TABLE for example).
-class ColumnsDescription : public IHints<1, ColumnsDescription>
+class ColumnsDescription : public IHints<>
 {
 public:
     ColumnsDescription() = default;
+
+    ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary);
+
+    explicit ColumnsDescription(NamesAndTypes ordinary);
+
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
@@ -118,6 +124,7 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
+    bool identical(const ColumnsDescription & other) const;
     bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
@@ -178,6 +185,8 @@ public:
     bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
+
+    bool hasOnlyOrdinary() const;
 
     NameAndTypePair getPhysical(const String & column_name) const;
     NameAndTypePair getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;

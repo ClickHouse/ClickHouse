@@ -77,7 +77,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilter(flags);
+            data(place).count += countBytesInFilter(flags.data(), row_begin, row_end);
         }
         else
         {

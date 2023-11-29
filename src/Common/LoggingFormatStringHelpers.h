@@ -106,8 +106,8 @@ template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x
             /// Most likely it was a string literal.
             /// Unfortunately, there's no good way to check if something is a string literal.
             /// But fmtlib requires a format string to be compile-time constant unless fmt::runtime is used.
-            static_assert(std::is_nothrow_convertible<T, const char * const>::value);
-            static_assert(!std::is_pointer<T>::value);
+            static_assert(std::is_nothrow_convertible_v<T, const char * const>);
+            static_assert(!std::is_pointer_v<T>);
             return std::string_view(x);
         }
     }
@@ -127,8 +127,8 @@ template<> struct ConstexprIfsAreNotIfdefs<true>
     {
         /// See tryGetStaticFormatString(...)
         static_assert(!std::is_same_v<std::string, std::decay_t<T>>);
-        static_assert(std::is_nothrow_convertible<T, const char * const>::value);
-        static_assert(!std::is_pointer<T>::value);
+        static_assert(std::is_nothrow_convertible_v<T, const char * const>);
+        static_assert(!std::is_pointer_v<T>);
         return std::string_view(x);
     }
 

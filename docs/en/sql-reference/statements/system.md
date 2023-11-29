@@ -66,13 +66,13 @@ RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 
 ## DROP DNS CACHE
 
-Resets ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
+Clears ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
 For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_update_period parameters.
 
 ## DROP MARK CACHE
 
-Resets the mark cache.
+Clears the mark cache.
 
 ## DROP REPLICA
 
@@ -106,21 +106,29 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 
 ## DROP UNCOMPRESSED CACHE
 
-Reset the uncompressed data cache.
+Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
 Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
-Reset the compiled expression cache.
+Clears the compiled expression cache.
 The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
 
 ## DROP QUERY CACHE
 
-Resets the [query cache](../../operations/query-cache.md).
+Clears the [query cache](../../operations/query-cache.md).
+
+## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
+
+Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path).
+
+Supported formats:
+
+- Protobuf
 
 ```sql
-SYSTEM DROP QUERY CACHE [ON CLUSTER cluster_name]
+SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]
 ```
 
 ## FLUSH LOGS
@@ -158,7 +166,7 @@ Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
 ## Managing Distributed Tables
 
-ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the [insert_distributed_sync](../../operations/settings/settings.md#insert_distributed_sync) setting.
+ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert) setting.
 
 ### STOP DISTRIBUTED SENDS
 
@@ -344,6 +352,15 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
  - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
  - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
+### SYNC DATABASE REPLICA
+
+Waits until the specified [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database. 
+
+**Syntax**
+```sql
+SYSTEM SYNC DATABASE REPLICA replicated_database_name;
+```
+
 ### RESTART REPLICA
 
 Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of truth and add tasks to Zookeeper queue if needed.
@@ -443,9 +460,9 @@ SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QU
 ```
 
 - If `CUSTOM 'protocol'` modifier is specified, the custom protocol with the specified name defined in the protocols section of the server configuration will be stopped.
-- If `QUERIES ALL` modifier is specified, all protocols are stopped.
-- If `QUERIES DEFAULT` modifier is specified, all default protocols are stopped.
-- If `QUERIES CUSTOM` modifier is specified, all custom protocols are stopped.
+- If `QUERIES ALL [EXCEPT .. [,..]]` modifier is specified, all protocols are stopped, unless specified with `EXCEPT` clause.
+- If `QUERIES DEFAULT [EXCEPT .. [,..]]` modifier is specified, all default protocols are stopped, unless specified with `EXCEPT` clause.
+- If `QUERIES CUSTOM [EXCEPT .. [,..]]` modifier is specified, all custom protocols are stopped, unless specified with `EXCEPT` clause.
 
 ### SYSTEM START LISTEN
 

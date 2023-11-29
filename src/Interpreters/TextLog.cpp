@@ -36,7 +36,6 @@ NamesAndTypesList TextLogElement::getNamesAndTypes()
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
-        {"microseconds", std::make_shared<DataTypeUInt32>()},
 
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
@@ -62,7 +61,6 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
-    columns[i++]->insert(microseconds);
 
     columns[i++]->insertData(thread_name.data(), thread_name.size());
     columns[i++]->insert(thread_id);

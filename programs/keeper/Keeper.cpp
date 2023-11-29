@@ -35,7 +35,7 @@
 
 #include "Core/Defines.h"
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config_tools.h"
 
 
@@ -50,6 +50,9 @@
 
 #include <Disks/registerDisks.h>
 
+#include <incbin.h>
+/// A minimal file used when the keeper is run without installation
+INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
@@ -67,7 +70,7 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
     }
 }
 
-#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 // Weak symbols don't work correctly on Darwin
 // so we have a stub implementation to avoid linker errors
@@ -158,6 +161,8 @@ int Keeper::run()
 
 void Keeper::initialize(Poco::Util::Application & self)
 {
+    ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(gkeeper_resource_embedded_xmlData), gkeeper_resource_embedded_xmlSize));
+
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -290,12 +295,6 @@ try
     {
         path = config().getString("keeper_server.storage_path");
     }
-    else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
-    {
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                        "By default 'keeper.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper.storage_path' in the keeper configuration explicitly",
-                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
-    }
     else if (config().has("keeper_server.log_storage_path"))
     {
         path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
@@ -303,6 +302,12 @@ try
     else if (config().has("keeper_server.snapshot_storage_path"))
     {
         path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
+    }
+    else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
+    {
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                        "By default 'keeper.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper.storage_path' in the keeper configuration explicitly",
+                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
     }
     else
     {
@@ -485,6 +490,8 @@ try
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
+            updateLevels(*config, logger());
+
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
 
@@ -549,17 +556,20 @@ catch (...)
 {
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
-    throw;
+    auto code = getCurrentExceptionCode();
+    return code ? code : -1;
 }
 
 
 void Keeper::logRevision() const
 {
-    Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
-        + "(revision : " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
-        + ", PID " + std::to_string(getpid()));
+    LOG_INFO(&Poco::Logger::get("Application"),
+        "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
+        VERSION_STRING,
+        ClickHouseRevision::getVersionRevision(),
+        git_hash.empty() ? "<unknown>" : git_hash,
+        build_id.empty() ? "<unknown>" : build_id,
+        getpid());
 }
 
 

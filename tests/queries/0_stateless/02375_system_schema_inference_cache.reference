@@ -3,7 +3,8 @@ source	String
 format	String					
 additional_format_info	String					
 registration_time	DateTime					
-schema	String					
+schema	Nullable(String)					
+number_of_rows	Nullable(UInt64)					
 x	Nullable(Int64)					
 s	Nullable(String)					
 x	Nullable(Int64)					

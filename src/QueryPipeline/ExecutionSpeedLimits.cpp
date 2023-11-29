@@ -45,7 +45,8 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
 
 void ExecutionSpeedLimits::throttle(
     size_t read_rows, size_t read_bytes,
-    size_t total_rows_to_read, UInt64 total_elapsed_microseconds) const
+    size_t total_rows_to_read, UInt64 total_elapsed_microseconds,
+    OverflowMode timeout_overflow_mode) const
 {
     if ((min_execution_rps != 0 || max_execution_rps != 0
          || min_execution_bps != 0 || max_execution_bps != 0
@@ -82,7 +83,7 @@ void ExecutionSpeedLimits::throttle(
             {
                 double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows_to_read) / read_rows);
 
-                if (estimated_execution_time_seconds > max_execution_time.totalSeconds())
+                if (timeout_overflow_mode == OverflowMode::THROW && estimated_execution_time_seconds > max_execution_time.totalSeconds())
                     throw Exception(
                         ErrorCodes::TOO_SLOW,
                         "Estimated query execution time ({} seconds) is too long. Maximum: {}. Estimated rows to process: {}",

@@ -169,6 +169,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
     }
 
+    /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
+    /// then destroy states (on which src places points to).
+    virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, Arena * arena) const = 0;
+
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
@@ -284,15 +288,6 @@ public:
         const UInt8 * null_map,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
-
-    virtual void addBatchSinglePlaceFromInterval( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1)
-        const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
@@ -506,6 +501,15 @@ public:
                 static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
     }
 
+    void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, Arena * arena) const override
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+        }
+    }
+
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -570,31 +574,6 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 if (!null_map[i])
                     static_cast<const Derived *>(this)->add(place, columns, i, arena);
-        }
-    }
-
-    void addBatchSinglePlaceFromInterval( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1)
-        const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if (flags[i])
-                    static_cast<const Derived *>(this)->add(place, columns, i, arena);
-            }
-        }
-        else
-        {
-            for (size_t i = row_begin; i < row_end; ++i)
-                static_cast<const Derived *>(this)->add(place, columns, i, arena);
         }
     }
 

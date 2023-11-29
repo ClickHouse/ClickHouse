@@ -79,9 +79,9 @@ static bool isBetweenZeroAndOne(Float64 v)
     return v >= 0.0 && v <= 1.0 && fabs(v - 0.0) >= DBL_EPSILON && fabs(v - 1.0) >= DBL_EPSILON;
 }
 
-struct ContinousImpl
+struct ContinuousImpl
 {
-    static constexpr auto name = "minSampleSizeContinous";
+    static constexpr auto name = "minSampleSizeContinuous";
     static constexpr size_t num_args = 5;
     static constexpr size_t const_args[] = {2, 3, 4};
 
@@ -284,7 +284,9 @@ struct ConversionImpl
 
 REGISTER_FUNCTION(MinSampleSize)
 {
-    factory.registerFunction<FunctionMinSampleSize<ContinousImpl>>();
+    factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>();
+    /// Needed for backward compatibility
+    factory.registerAlias("minSampleSizeContinous", FunctionMinSampleSize<ContinuousImpl>::name);
     factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>();
 }
 

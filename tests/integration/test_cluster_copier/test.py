@@ -128,7 +128,7 @@ class Task1:
         )
         instance.query(
             "INSERT INTO hits_all SELECT * FROM system.numbers LIMIT 1002",
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
 
     def check(self):
@@ -218,7 +218,7 @@ class Task2:
 
         instance.query(
             "INSERT INTO a_all SELECT toDate(17581 + number) AS date, number AS d FROM system.numbers LIMIT 85",
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
 
     def check(self):

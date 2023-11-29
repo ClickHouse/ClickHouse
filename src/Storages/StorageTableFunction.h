@@ -72,11 +72,11 @@ public:
     }
 
     void startup() override { }
-    void shutdown() override
+    void shutdown(bool is_drop) override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->shutdown();
+            nested->shutdown(is_drop);
     }
 
     void flushAndPrepareForShutdown() override
@@ -153,7 +153,7 @@ public:
     }
 
     bool isView() const override { return false; }
-    void checkTableCanBeDropped() const override {}
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override {}
 
 private:
     mutable std::recursive_mutex nested_mutex;

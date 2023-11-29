@@ -15,6 +15,7 @@
 #include <Interpreters/Cluster.h>
 
 #include <magic_enum.hpp>
+#include <Poco/Net/NameValueCollection.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -302,7 +303,6 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
-            /// TODO: We have to ensure that the same info is added to the session log on a LoginSuccess event and on the corresponding Logout event.
             session_log->addLogOut(auth_id, user, getClientInfo());
         }
     }
@@ -351,7 +351,10 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
+        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
+        user_id = auth_result.user_id;
+        settings_from_auth_server = auth_result.settings;
+
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -429,7 +432,7 @@ void Session::setClientConnectionId(uint32_t connection_id)
         prepared_client_info->connection_id = connection_id;
 }
 
-void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
 {
     if (session_context)
     {
@@ -440,6 +443,7 @@ void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String
         prepared_client_info->http_method = http_method;
         prepared_client_info->http_user_agent = http_user_agent;
         prepared_client_info->http_referer = http_referer;
+        prepared_client_info->headers = http_headers;
     }
 }
 
@@ -521,6 +525,10 @@ ContextMutablePtr Session::makeSessionContext()
         *user_id,
         {},
         session_context->getSettingsRef().max_sessions_for_user);
+
+    // Use QUERY source as for SET query for a session
+    session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+    session_context->applySettingsChanges(settings_from_auth_server);
 
     recordLoginSucess(session_context);
 

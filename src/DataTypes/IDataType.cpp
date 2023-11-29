@@ -5,6 +5,7 @@
 
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -249,6 +250,19 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column)
     }
 
     return column.type->getDefaultSerialization();
+}
+
+bool IDataType::identical(const IDataType & rhs) const
+{
+    const auto * rhs_custom_name = rhs.getCustomName();
+    if (custom_name && rhs_custom_name)
+    {
+        return custom_name->identical(*rhs_custom_name);
+    }
+    else if (custom_name || rhs_custom_name)
+        return false;
+    else
+        return equals(rhs);
 }
 
 }

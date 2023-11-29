@@ -4,6 +4,8 @@ import logging
 import subprocess
 import os
 import sys
+from pathlib import Path
+from typing import Dict
 
 from github import Github
 
@@ -47,13 +49,12 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    reports_path = REPORTS_PATH
+    temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORTS_PATH)
 
     check_name = sys.argv[1]
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -82,7 +83,7 @@ def main():
 
     logging.info("Got build url %s", build_url)
 
-    workspace_path = os.path.join(temp_path, "workspace")
+    workspace_path = temp_path / "workspace"
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)
 
@@ -91,7 +92,7 @@ def main():
     )
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = temp_path / "run.log"
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
@@ -110,23 +111,24 @@ def main():
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/sqltest_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
-        "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
-        "server.err.log.zst": os.path.join(workspace_path, "server.err.log.zst"),
-        "report.html": os.path.join(workspace_path, "report.html"),
-        "test.log": os.path.join(workspace_path, "test.log"),
+        "server.log.zst": workspace_path / "server.log.zst",
+        "server.err.log.zst": workspace_path / "server.err.log.zst",
+        "report.html": workspace_path / "report.html",
+        "test.log": workspace_path / "test.log",
     }
+    path_urls = {}  # type: Dict[str, str]
 
     s3_helper = S3Helper()
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
+            path_urls[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
-            paths[f] = ""
+            path_urls[f] = ""
 
     report_url = GITHUB_RUN_URL
-    if paths["report.html"]:
-        report_url = paths["report.html"]
+    if path_urls["report.html"]:
+        report_url = path_urls["report.html"]
 
     status = "success"
     description = "See the report"

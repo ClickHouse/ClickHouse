@@ -37,6 +37,8 @@ When creating a new replica of the database, this replica creates tables by itse
 
 [`ALTER TABLE FREEZE|ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](../../sql-reference/statements/alter/partition.md) queries are allowed but not replicated. The database engine will only add/fetch/remove the partition/part to the current replica. However, if the table itself uses a Replicated table engine, then the data will be replicated after using `ATTACH`.
 
+In case you need only configure a cluster without maintaining table replication, refer to [Cluster Discovery](../../operations/cluster-discovery.md) feature.
+
 ## Usage Example {#usage-example}
 
 Creating a cluster with three hosts:

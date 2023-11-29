@@ -2,6 +2,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
@@ -72,7 +73,7 @@ void Chunk::checkNumRowsIsConsistent()
         auto & column = columns[i];
         if (column->size() != num_rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}: expected {}, got {}",
-                            column->getName()+ " position " + toString(i), toString(num_rows), toString(column->size()));
+                            column->getName() + " position " + toString(i), toString(num_rows), toString(column->size()));
     }
 }
 
@@ -219,6 +220,18 @@ void convertToFullIfSparse(Chunk & chunk)
     for (auto & column : columns)
         column = recursiveRemoveSparse(column);
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows)
+{
+    auto columns = chunk.cloneEmptyColumns();
+    for (auto & column : columns)
+    {
+        column->insertDefault();
+        column = ColumnConst::create(std::move(column), num_rows);
+    }
+
+    return Chunk(std::move(columns), num_rows);
 }
 
 }

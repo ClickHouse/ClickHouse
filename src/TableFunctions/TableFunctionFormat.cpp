@@ -18,7 +18,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
-#include <TableFunctions/TableFunctionFormat.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -30,6 +29,32 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+namespace
+{
+
+/* format(format_name, data) - ...
+ */
+class TableFunctionFormat : public ITableFunction
+{
+public:
+    static constexpr auto name = "format";
+    std::string getName() const override { return name; }
+    bool hasStaticStructure() const override { return false; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    const char * getStorageTypeName() const override { return "Values"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    Block parseData(ColumnsDescription columns, ContextPtr context) const;
+
+    String format;
+    String data;
+    String structure = "auto";
+};
 
 void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
@@ -56,10 +81,7 @@ ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr conte
 {
     if (structure == "auto")
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            return std::make_unique<ReadBufferFromString>(data);
-        };
+        SingleReadBufferIterator read_buffer_iterator(std::make_unique<ReadBufferFromString>(data));
         return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
     }
     return parseColumnsListFromString(structure, context);
@@ -107,7 +129,7 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-static const FunctionDocumentation format_table_function_documentation =
+const FunctionDocumentation format_table_function_documentation =
 {
     .description=R"(
 Extracts table structure from data and parses it according to specified input format.
@@ -171,8 +193,12 @@ Result:
     .categories{"format", "table-functions"}
 };
 
+}
+
+
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::CaseInsensitive);
 }
+
 }

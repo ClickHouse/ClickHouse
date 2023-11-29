@@ -40,13 +40,15 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     {
         path = user_files_path / path;
     }
-    else if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+
+    path = fs::absolute(path).lexically_normal();
+
+    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path: {}", user_files_path.string());
     }
 
-    path = fs::absolute(path).lexically_normal();
     if (!fs::exists(path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
 }
@@ -81,22 +83,24 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
     }
 
-    /// Check if the corresponding file exists.
-    if (!fs::exists(table_path))
+    if (!containsGlobs(table_path))
     {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
-        else
-            return false;
-    }
+        /// Check if the corresponding file exists.
+        if (!fs::exists(table_path))
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
+            else
+                return false;
+        }
 
-    if (!fs::is_regular_file(table_path))
-    {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-                            "File is directory, but expected a file: {}", table_path);
-        else
-            return false;
+        if (!fs::is_regular_file(table_path))
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
+            else
+                return false;
+        }
     }
 
     return true;
@@ -141,19 +145,18 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    String format = FormatFactory::instance().getFormatFromFileName(table_path, throw_on_error);
+    auto format = FormatFactory::instance().getFormatFromFileName(table_path, throw_on_error);
     if (format.empty())
         return {};
 
-    /// If the file exists, create a new table using TableFunctionFile and return it.
-    auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path), std::make_shared<ASTLiteral>(format));
+    auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path), std::make_shared<ASTLiteral>(format));
 
-    auto table_function = TableFunctionFactory::instance().get(args, context_);
+    auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
     if (!table_function)
         return nullptr;
 
     /// TableFunctionFile throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(args, context_, name);
+    auto table_storage = table_function->execute(ast_function_ptr, context_, name);
     if (table_storage)
         addTable(name, table_storage);
 

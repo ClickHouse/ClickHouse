@@ -36,18 +36,3 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM t_json_inference FORMAT JSONEachRow" --ou
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_inference"
 
-echo '{"map": {"k1": 1, "k2": 2}, "obj": {"k1": 1, "k2": {"k3": 2}}}' > $filename
-
-${CLICKHOUSE_CLIENT} -q "SELECT map, obj, toTypeName(map) AS map_type, toTypeName(obj) AS obj_type \
-    FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}/data.json', 'JSONEachRow') FORMAT JSONEachRow" --output_format_json_named_tuples_as_objects 1 --allow_experimental_object_type 1
-
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_json_inference (obj JSON, map Map(String, UInt64)) \
-    ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
-
-echo '{"map": {"k1": 1, "k2": 2}, "obj": {"k1": 1, "k2": 2}}' > $filename
-
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_json_inference SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}/data.json', 'JSONEachRow')" --allow_experimental_object_type 1 --use_structure_from_insertion_table_in_table_functions 0
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM t_json_inference FORMAT JSONEachRow" --output_format_json_named_tuples_as_objects 1
-${CLICKHOUSE_CLIENT} -q "SELECT toTypeName(obj) FROM t_json_inference LIMIT 1"
-
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_inference"

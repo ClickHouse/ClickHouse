@@ -614,6 +614,9 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
     }
     else if (func->name == "and" || func->name == "indexHint")
     {
+        if (args.size() < 2)
+            return false;
+
         auto last_arg = args.back();
         args.pop_back();
 
@@ -633,6 +636,9 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
     }
     else if (func->name == "or")
     {
+        if (args.size() < 2)
+            return false;
+
         auto last_arg = args.back();
         args.pop_back();
 
@@ -692,7 +698,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexSet::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleSet>(index.name, index.sample_block, max_rows);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorSet>(index.name, index.sample_block, max_rows);
 }

@@ -393,6 +393,8 @@ public:
 
     void debugKeys() const;
 
+    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
+
 private:
     template<bool> friend class NotJoinedHash;
 
@@ -429,6 +431,10 @@ private:
     Block required_right_keys;
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
+
+    /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
+    bool shrink_blocks = false;
+    Int64 memory_usage_before_adding_blocks = 0;
 
     Poco::Logger * log;
 

@@ -230,6 +230,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.max_block_size,
                     transform_params->params.enable_prefetch,
                     /* only_merge */ false,
+                    transform_params->params.optimize_group_by_constant_keys,
                     transform_params->params.stats_collecting_params};
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
 

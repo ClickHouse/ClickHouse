@@ -4,6 +4,7 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/Cache/Guards.h"
 
 namespace CurrentMetrics
 {
@@ -39,6 +40,8 @@ public:
     void removeAll(const CacheGuard::Lock &) override;
 
     void iterate(IterateFunc && func, const CacheGuard::Lock &) override;
+
+    void shuffle(const CacheGuard::Lock &) override;
 
 private:
     void updateElementsCount(int64_t num);

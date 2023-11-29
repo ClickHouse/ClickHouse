@@ -33,6 +33,10 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
 /// Only elements of the outer conjunction are considered, depending only on the columns present in the block.
 /// If `expression_ast` is passed, use it to filter block.
 void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast = {});
+void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context);
+
+/// Extract subset of filter_dag that can be evaluated using only columns from header
+ActionsDAGPtr splitFilterDagForAllowedInputs(const Block & header, const ActionsDAGPtr & filter_dag, ContextPtr context);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
@@ -46,6 +50,29 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     return res;
 }
 
+NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns);
+
+ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context);
+
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast);
+
+template <typename T>
+void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast)
+{
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, query, virtual_columns, context, filter_ast);
+    const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
+    if (indexes.size() == sources.size())
+        return;
+
+    std::vector<T> filtered_sources;
+    filtered_sources.reserve(indexes.size());
+    for (auto index : indexes)
+        filtered_sources.emplace_back(std::move(sources[index]));
+    sources = std::move(filtered_sources);
+}
+
+void addRequestedPathFileAndSizeVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename = nullptr);
 }
 
 }

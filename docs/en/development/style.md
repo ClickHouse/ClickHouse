@@ -345,7 +345,7 @@ struct ExtractDomain
 **7.** For abstract classes (interfaces) you can add the `I` prefix.
 
 ``` cpp
-class IBlockInputStream
+class IProcessor
 ```
 
 **8.** If you use a variable locally, you can use the short name.

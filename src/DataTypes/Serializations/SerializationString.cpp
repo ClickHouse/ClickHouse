@@ -323,10 +323,11 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 {
     if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
     {
-        String field;
-        readJSONObjectPossiblyInvalid(field, istr);
-        ReadBufferFromString buf(field);
-        read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+        read(column, [&](ColumnString::Chars & data) { readJSONObjectPossiblyInvalid(data, istr); });
+    }
+    else if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
+    {
+        read(column, [&](ColumnString::Chars & data) { readJSONArrayInto(data, istr); });
     }
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
@@ -361,5 +362,13 @@ void SerializationString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
     read(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
 }
 
+void SerializationString::serializeTextMarkdown(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (settings.markdown.escape_special_characters)
+        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+    else
+        serializeTextEscaped(column, row_num, ostr, settings);
+}
 
 }

@@ -13,8 +13,6 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include "TransformEndianness.hpp"
-
 #include <bit>
 #include <string>
 #include <type_traits>
@@ -22,9 +20,12 @@
 #include <base/extended_types.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/hex.h>
 #include <Common/Exception.h>
+#include <Common/transformEndianness.h>
 
 #include <city.h>
+
 
 namespace DB::ErrorCodes
 {
@@ -200,11 +201,7 @@ public:
     ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        get128(res.items[1], res.items[0]);
-#else
-        get128(res.items[0], res.items[1]);
-#endif
+        get128(res.items[UInt128::_impl::little(0)], res.items[UInt128::_impl::little(1)]);
         return res;
     }
 
@@ -214,20 +211,13 @@ public:
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR, "Logical error: can't call get128Reference when is_reference_128 is not set");
         finalize();
-        auto lo = v0 ^ v1 ^ v2 ^ v3;
+        const auto lo = v0 ^ v1 ^ v2 ^ v3;
         v1 ^= 0xdd;
         SIPROUND;
         SIPROUND;
         SIPROUND;
         SIPROUND;
-        auto hi = v0 ^ v1 ^ v2 ^ v3;
-
-        if constexpr (std::endian::native == std::endian::big)
-        {
-            lo = std::byteswap(lo);
-            hi = std::byteswap(hi);
-            std::swap(lo, hi);
-        }
+        const auto hi = v0 ^ v1 ^ v2 ^ v3;
 
         UInt128 res = hi;
         res <<= 64;
@@ -266,6 +256,16 @@ inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, cons
 inline UInt128 sipHash128(const char * data, const size_t size)
 {
     return sipHash128Keyed(0, 0, data, size);
+}
+
+inline String sipHash128String(const char * data, const size_t size)
+{
+    return getHexUIntLowercase(sipHash128(data, size));
+}
+
+inline String sipHash128String(const String & str)
+{
+    return sipHash128String(str.data(), str.size());
 }
 
 inline UInt128 sipHash128ReferenceKeyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)

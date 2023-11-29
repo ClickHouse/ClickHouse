@@ -24,8 +24,9 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
 }
 
-LocalObjectStorage::LocalObjectStorage()
-    : log(&Poco::Logger::get("LocalObjectStorage"))
+LocalObjectStorage::LocalObjectStorage(String key_prefix_)
+    : key_prefix(std::move(key_prefix_))
+    , log(&Poco::Logger::get("LocalObjectStorage"))
 {
     data_source_description.type = DataSourceType::Local;
     if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
@@ -167,10 +168,14 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path
 }
 
 void LocalObjectStorage::copyObject( // NOLINT
-    const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    auto in = readObject(object_from);
-    auto out = writeObject(object_to, WriteMode::Rewrite);
+    auto in = readObject(object_from, read_settings);
+    auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
 }
@@ -196,10 +201,10 @@ void LocalObjectStorage::applyNewSettings(
 {
 }
 
-std::string LocalObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+ObjectStorageKey LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
     constexpr size_t key_name_total_size = 32;
-    return getRandomASCIIString(key_name_total_size);
+    return ObjectStorageKey::createAsRelative(key_prefix, getRandomASCIIString(key_name_total_size));
 }
 
 }

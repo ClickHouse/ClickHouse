@@ -26,6 +26,10 @@ def started_cluster():
         cluster.start()
         node1.query("CREATE DATABASE test")
         node2.query("CREATE DATABASE test")
+        # Wait for the PostgreSQL handler to start.
+        # cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        node1.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
 
     finally:

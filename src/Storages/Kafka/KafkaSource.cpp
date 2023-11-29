@@ -46,7 +46,7 @@ KafkaSource::KafkaSource(
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
-    , handle_error_mode(storage.getHandleKafkaErrorMode())
+    , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
 }
 
@@ -98,7 +98,7 @@ Chunk KafkaSource::generateImpl()
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = handle_error_mode == HandleKafkaErrorMode::STREAM;
+    auto put_error_to_stream = handle_error_mode == StreamingHandleErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
@@ -133,6 +133,7 @@ Chunk KafkaSource::generateImpl()
         {
             e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
                 consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
+            consumer->setExceptionInfo(e.message());
             throw std::move(e);
         }
     };
@@ -206,9 +207,9 @@ Chunk KafkaSource::generateImpl()
                 {
                     if (exception_message)
                     {
-                        auto payload = consumer->currentPayload();
-                        virtual_columns[8]->insert(payload);
-                        virtual_columns[9]->insert(*exception_message);
+                        const auto & payload = consumer->currentPayload();
+                        virtual_columns[8]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
+                        virtual_columns[9]->insertData(exception_message->data(), exception_message->size());
                     }
                     else
                     {
