@@ -323,7 +323,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
     else
     {
         ShuffledPool & shuffled_pool = shuffled_pools[index];
-        LOG_WARNING(
+        LOG_INFO(
             log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
