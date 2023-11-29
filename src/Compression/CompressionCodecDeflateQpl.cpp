@@ -139,8 +139,9 @@ void DeflateQplJobHWPool::unLockJob(UInt32 index)
 }
 
 //HardwareCodecDeflateQpl
-HardwareCodecDeflateQpl::HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl& codec)
-    :log(&Poco::Logger::get("HardwareCodecDeflateQpl")), sw_codec(codec)
+HardwareCodecDeflateQpl::HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_)
+    : log(&Poco::Logger::get("HardwareCodecDeflateQpl"))
+    , sw_codec(sw_codec_)
 {
 }
 
@@ -226,8 +227,8 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataSynchronous(const char * source, 
     {
         _tpause(1, __rdtsc() + 1000);
         status = qpl_check_job(job_ptr);
-        check_time++;
-    }while (status == QPL_STS_BEING_PROCESSED && check_time < UINT16_MAX);
+        ++check_time;
+    } while (status == QPL_STS_BEING_PROCESSED && check_time < MAX_CHECKS);
 
     if (status != QPL_STS_OK)
     {
@@ -286,7 +287,7 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
         job_ptr = it->second;
 
         auto status = qpl_check_job(job_ptr);
-        if ((status == QPL_STS_BEING_PROCESSED) && (check_time < UINT16_MAX))
+        if ((status == QPL_STS_BEING_PROCESSED) && (check_time < MAX_CHECKS))
         {
             it++;
         }
@@ -312,7 +313,7 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
         {
             it = decomp_async_job_map.begin();
             _tpause(1, __rdtsc() + 1000);
-            check_time++;
+            ++check_time;
         }
     }
 }
