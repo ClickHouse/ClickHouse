@@ -262,7 +262,6 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
 
     if (!host_in_hostlist && first_exception)
     {
-        String reason;
         if (zookeeper->exists(getFinishedNodePath()))
         {
             LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because {} exists. Skipping the task. Error: {}",
