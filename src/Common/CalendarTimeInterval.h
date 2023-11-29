@@ -40,8 +40,6 @@ struct CalendarTimeInterval
 
     /// Add this interval to the timestamp. First months, then seconds.
     /// Gets weird near month boundaries: October 31 + 1 month = December 1.
-    /// Gets weird with leap years: 2004-03-15 + 1 year = 2005-03-16,
-    ///                             2004-12-31 + 1 year = 2006-01-01,
     std::chrono::sys_seconds advance(std::chrono::system_clock::time_point t) const;
 
     /// Rounds the timestamp down to the nearest timestamp "aligned" with this interval.
@@ -51,7 +49,7 @@ struct CalendarTimeInterval
     ///    E.g. if the interval is 1 month, rounds down to the start of the month.
     ///  * For seconds, rounds to a timestamp x such that (x - December 29 1969 (Monday)) is divisible
     ///    by this interval.
-    ///    E.g. if the interval is 1 week, rounds down to the start of the week.
+    ///    E.g. if the interval is 1 week, rounds down to the start of the week (Monday).
     ///
     /// Guarantees:
     ///  * advance(floor(x)) > x

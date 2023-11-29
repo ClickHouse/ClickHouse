@@ -98,6 +98,7 @@ public:
         CANCEL_VIEW,
         PAUSE_VIEW,
         RESUME_VIEW,
+        TEST_VIEW,
         END
     };
 
@@ -140,6 +141,10 @@ public:
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     ServerType server_type;
+
+    /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
+    /// Unix time.
+    std::optional<Int64> fake_time_for_view;
 
     String getID(char) const override { return "SYSTEM query"; }
 
