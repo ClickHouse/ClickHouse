@@ -153,6 +153,9 @@ def test_string_functions(start_cluster):
         # mandatory or optional). The former lib produces a value based on implicit padding, the latter lib throws an error.
         "FROM_BASE64",
         "base64Decode",
+        # PR #56913 (in v23.11) corrected the way tryBase64Decode() behaved with invalid inputs. Old versions return garbage, new versions
+        # return an empty string (as it was always documented).
+        "tryBase64Decode",
         # Removed in 23.9
         "meiliMatch",
     ]

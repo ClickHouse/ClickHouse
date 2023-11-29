@@ -75,6 +75,33 @@ public:
     }
 };
 
+struct ReplaceLiteralToExprVisitorData
+{
+    using TypeToVisit = ASTFunction;
+
+    void visit(ASTFunction & func, ASTPtr &) const
+    {
+        if (func.name == "and" || func.name == "or")
+        {
+            for (auto & argument : func.arguments->children)
+            {
+                auto * literal_expr = typeid_cast<ASTLiteral *>(argument.get());
+                UInt64 value;
+                if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
+                {
+                    /// 1 -> 1=1, 0 -> 1=0.
+                    if (value)
+                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
+                    else
+                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
+                }
+            }
+        }
+    }
+};
+
+using ReplaceLiteralToExprVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceLiteralToExprVisitorData>, true>;
+
 class DropAliasesMatcher
 {
 public:
@@ -287,6 +314,10 @@ String transformQueryForExternalDatabaseImpl(
     if (original_where && where_has_known_columns)
     {
         replaceConstantExpressions(original_where, context, available_columns);
+
+        /// Replace like WHERE 1 AND 1 to WHERE 1 = 1 AND 1 = 1
+        ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
+        ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
         if (isCompatible(original_where))
         {

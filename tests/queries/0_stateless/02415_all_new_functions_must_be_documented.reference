@@ -320,7 +320,7 @@ geoDistance
 geohashDecode
 geohashEncode
 geohashesInBox
-getHttpHeader
+getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -434,7 +434,7 @@ materialize
 max2
 metroHash64
 min2
-minSampleSizeContinous
+minSampleSizeContinuous
 minSampleSizeConversion
 minus
 modulo

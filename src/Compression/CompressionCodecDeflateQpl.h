@@ -3,6 +3,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <map>
 #include <random>
+#include <pcg_random.hpp>
 #include <qpl/qpl.h>
 
 namespace Poco
@@ -41,7 +42,7 @@ private:
     std::unique_ptr<std::atomic_bool[]> hw_job_ptr_locks;
 
     bool job_pool_ready;
-    std::mt19937 random_engine;
+    pcg64_fast random_engine;
     std::uniform_int_distribution<int> distribution;
 };
 

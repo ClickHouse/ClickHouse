@@ -19,8 +19,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value, bool _> using FuncQuantileExactLow = AggregateFunctionQuantile<Value, QuantileExactLow<Value>, NameQuantileExactLow, false, void, false>;
-template <typename Value, bool _> using FuncQuantilesExactLow = AggregateFunctionQuantile<Value, QuantileExactLow<Value>, NameQuantilesExactLow, false, void, true>;
+template <typename Value, bool _> using FuncQuantileExactLow = AggregateFunctionQuantile<Value, QuantileExactLow<Value>, NameQuantileExactLow, false, void, false, false>;
+template <typename Value, bool _> using FuncQuantilesExactLow = AggregateFunctionQuantile<Value, QuantileExactLow<Value>, NameQuantilesExactLow, false, void, true, false>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(

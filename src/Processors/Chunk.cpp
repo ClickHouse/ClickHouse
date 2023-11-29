@@ -14,8 +14,7 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
 }
 
-Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_)
-    : columns(std::move(columns_)), num_rows(num_rows_)
+Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns_)), num_rows(num_rows_)
 {
     checkNumRowsIsConsistent();
 }
@@ -74,7 +73,7 @@ void Chunk::checkNumRowsIsConsistent()
         auto & column = columns[i];
         if (column->size() != num_rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}: expected {}, got {}",
-                            column->getName()+ " position " + toString(i), toString(num_rows), toString(column->size()));
+                            column->getName() + " position " + toString(i), toString(num_rows), toString(column->size()));
     }
 }
 

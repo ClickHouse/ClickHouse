@@ -6,7 +6,7 @@ SET allow_prefetched_read_pool_for_remote_filesystem=0;
 
 DROP TABLE IF EXISTS adaptive_table;
 
--- If granularity of consequent blocks differs a lot, then adaptive
+-- If the granularity of consequent blocks differs a lot, then adaptive
 -- granularity will adjust the amount of marks correctly.
 -- Data for test was empirically derived, it's quite hard to get good parameters.
 

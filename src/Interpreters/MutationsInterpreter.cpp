@@ -690,9 +690,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized)
                     {
+                        auto type_literal = std::make_shared<ASTLiteral>(column.type->getName());
+
+                        auto materialized_column = makeASTFunction("_CAST",
+                            column.default_desc.expression->clone(),
+                            type_literal);
+
                         stages.back().column_to_updated.emplace(
                             column.name,
-                            column.default_desc.expression->clone());
+                            materialized_column);
                     }
                 }
             }
@@ -1007,10 +1013,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         auto syntax_result = TreeRewriter(context).analyze(
             all_asts, all_columns, source.getStorage(), storage_snapshot,
             false, true, execute_scalar_subqueries);
-
-        if (execute_scalar_subqueries && context->hasQueryContext())
-            for (const auto & it : syntax_result->getScalars())
-                context->getQueryContext()->addScalar(it.first, it.second);
 
         stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
 

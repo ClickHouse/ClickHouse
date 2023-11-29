@@ -69,11 +69,12 @@ void MergeTreeIndexReader::seek(size_t mark)
     stream->seekToMark(mark);
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexReader::read()
+void MergeTreeIndexReader::read(MergeTreeIndexGranulePtr & granule)
 {
-    auto granule = index->createIndexGranule();
+    if (granule == nullptr)
+        granule = index->createIndexGranule();
+
     granule->deserializeBinary(*stream->getDataBuffer(), version);
-    return granule;
 }
 
 }
