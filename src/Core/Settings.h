@@ -682,6 +682,7 @@ class IColumn;
     M(Bool, query_plan_remove_redundant_sorting, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries", 0) \
     M(Bool, query_plan_remove_redundant_distinct, true, "Remove redundant Distinct step in query plan", 0) \
     M(Bool, query_plan_optimize_lazy_materialization, true, "Use query plan for lazy materialization optimisation", 0) \
+    M(UInt64, query_plan_max_limit_for_lazy_materialization, 10, "The maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit", 0) \
     M(Bool, query_plan_enable_multithreading_after_window_functions, true, "Enable multithreading after evaluating window functions to allow parallel stream processing", 0) \
     M(UInt64, regexp_max_matches_per_row, 1000, "Max matches of any single regexp per row, used to safeguard 'extractAllGroupsHorizontal' against consuming too much memory with greedy RE.", 0) \
     \

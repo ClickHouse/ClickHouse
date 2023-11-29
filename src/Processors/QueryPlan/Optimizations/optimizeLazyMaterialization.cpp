@@ -5,24 +5,22 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/MergeTreeLazilyReader.h>
+#include <memory>
 #include "Storages/SelectQueryInfo.h"
 
 namespace DB::QueryPlanOptimizations
 {
 
-constexpr size_t MAX_LIMIT_FOR_LAZY_MATERIALIZATION = 10;
 using StepStack = std::vector<IQueryPlanStep *>;
 
-static bool canUseLazyProjectionForReadingStep(ReadFromMergeTree * reading)
+static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 {
     if (reading->getLazilyReadInfo())
        return false;
 
     if (reading->hasAnalyzedResult())
        return false;
-
-    if (reading->readsInOrder())
-        return false;
 
     if (reading->isQueryWithFinal())
         return false;
@@ -208,7 +206,7 @@ static void updateStepsDataStreams(StepStack & steps_to_update)
     }
 }
 
-void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes)
+void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization)
 {
     const auto & frame = stack.back();
 
@@ -223,7 +221,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes)
         return;
 
     const auto limit = sorting->getLimit();
-    if (limit == 0 || limit > MAX_LIMIT_FOR_LAZY_MATERIALIZATION)
+    if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return;
 
     StepStack steps_to_update;
@@ -231,8 +229,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes)
     auto * reading_step = findReadingStep(*frame.node->children.front(), steps_to_update);
     if (!reading_step)
         return;
-
-    if (!canUseLazyProjectionForReadingStep(reading_step))
+    if (!canUseLazyMaterializationForReadingStep(reading_step))
         return;
 
     LazilyReadInfoPtr lazily_read_info = std::make_shared<LazilyReadInfo>();
@@ -241,6 +238,14 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes)
 
     if (lazily_read_info->lazily_read_columns_names.empty())
         return;
+
+    lazily_read_info->column_lazy_helper = std::make_shared<MergeTreeLazilyReader>(
+        sorting->getOutputStream().header,
+        reading_step->getMergeTreeData(),
+        reading_step->getStorageSnapshot(),
+        lazily_read_info,
+        reading_step->getContext(),
+        alias_index);
 
     reading_step->updateLazilyReadInfo(lazily_read_info);
 
@@ -263,11 +268,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes)
 
     auto lazily_read_step = std::make_unique<LazilyReadStep>(
         sorting->getOutputStream(),
-        reading_step->getMergeTreeData(),
-        reading_step->getStorageSnapshot(),
-        lazily_read_info,
-        reading_step->getContext(),
-        alias_index);
+        lazily_read_info);
     lazily_read_step->setStepDescription("Lazily Read");
     replace_node.step = std::move(lazily_read_step);
 }

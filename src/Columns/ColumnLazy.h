@@ -7,11 +7,15 @@
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 
 
 namespace DB
 {
+
+class IColumnLazyHelper;
+using ColumnLazyHelperPtr = std::shared_ptr<IColumnLazyHelper>;
 
 /** Column for lazy materialization.
   */
@@ -20,33 +24,39 @@ class ColumnLazy final : public COWHelper<IColumn, ColumnLazy>
 private:
     friend class COWHelper<IColumn, ColumnLazy>;
 
-    WrappedPtr part_nums;
-    WrappedPtr row_nums;
+    using CapturedColumns = std::vector<WrappedPtr>;
+    CapturedColumns captured_columns;
+    ColumnLazyHelperPtr column_lazy_helper;
+    size_t s = 0;
 
-    explicit ColumnLazy(MutableColumnPtr && part_nums_, MutableColumnPtr && row_nums_);
+    explicit ColumnLazy(MutableColumns && mutable_columns_);
     ColumnLazy(const ColumnLazy &) = default;
 
 public:
     using Base = COWHelper<IColumn, ColumnLazy>;
 
-    static Ptr create(const ColumnPtr & part_nums_, const ColumnPtr & row_nums_);
-    static Ptr create();
+    static Ptr create(const Columns & columns, ColumnLazyHelperPtr column_lazy_helper);
+    static Ptr create(const CapturedColumns & columns, ColumnLazyHelperPtr column_lazy_helper);
+    static Ptr create(const size_t s = 0);
+    static Ptr create(Columns && arg, ColumnLazyHelperPtr column_lazy_helper)
+    {
+        return create(arg, column_lazy_helper);
+    }
 
-    template <typename ... Args>
-    requires (IsMutableColumns<Args ...>::value)
-    static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
+    template <typename Arg>
+    requires std::is_rvalue_reference_v<Arg &&>
+    static MutablePtr create(Arg && arg) { return Base::create(std::forward<Arg>(arg)); }
 
     const char * getFamilyName() const override { return "Lazy"; }
     TypeIndex getDataType() const override { return TypeIndex::Nothing; }
 
-    MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneResized(size_t size) const override;
 
     size_t size() const override
     {
-        if (!part_nums)
-            return 0;
-        return part_nums->size();
+        if (column_lazy_helper)
+            return captured_columns[0]->size();
+        return s;
     }
 
     Field operator[](size_t n) const override;
@@ -104,8 +114,9 @@ public:
     void finalize() override;
     bool isFinalized() const override;
 
-    const IColumn & getPartNumsColumn() const { return *part_nums; }
-    const IColumn & getRowNumsColumn() const { return *row_nums; }
+    const CapturedColumns & getColumns() const { return captured_columns; }
+
+    void transform(ColumnsWithTypeAndName & res_columns) const;
 };
 
 }

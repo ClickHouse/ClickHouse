@@ -245,8 +245,6 @@ private:
 
     Names real_column_names;
     Names virt_column_names;
-    Names real_column_names_to_read;
-    Names virt_column_names_to_read;
 
     const MergeTreeData & data;
     SelectQueryInfo query_info;

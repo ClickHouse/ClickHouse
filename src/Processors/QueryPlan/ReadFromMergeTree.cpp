@@ -264,8 +264,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     , alter_conversions_for_parts(std::move(alter_conversions_))
     , real_column_names(std::move(real_column_names_))
     , virt_column_names(std::move(virt_column_names_))
-    , real_column_names_to_read(real_column_names)
-    , virt_column_names_to_read(virt_column_names)
     , data(data_)
     , query_info(query_info_)
     , prewhere_info(getPrewhereInfoFromQueryInfo(query_info))
@@ -357,7 +355,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         actions_settings,
         reader_settings,
         required_columns,
-        virt_column_names_to_read,
+        virt_column_names,
         pool_settings,
         context);
 
@@ -372,7 +370,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), data, storage_snapshot, prewhere_info, lazily_read_info,
-            actions_settings, block_size_copy, reader_settings, virt_column_names_to_read);
+            actions_settings, block_size_copy, reader_settings, virt_column_names);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
 
@@ -440,7 +438,7 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             required_columns,
-            virt_column_names_to_read,
+            virt_column_names,
             pool_settings,
             context);
     }
@@ -453,7 +451,7 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             required_columns,
-            virt_column_names_to_read,
+            virt_column_names,
             pool_settings,
             context);
     }
@@ -473,7 +471,7 @@ Pipe ReadFromMergeTree::readFromPool(
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), data, storage_snapshot, prewhere_info, lazily_read_info,
-            actions_settings, block_size_copy, reader_settings, virt_column_names_to_read);
+            actions_settings, block_size_copy, reader_settings, virt_column_names);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
 
@@ -529,7 +527,7 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             required_columns,
-            virt_column_names_to_read,
+            virt_column_names,
             pool_settings,
             context);
     }
@@ -544,7 +542,7 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             required_columns,
-            virt_column_names_to_read,
+            virt_column_names,
             pool_settings,
             context);
     }
@@ -579,7 +577,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), data, storage_snapshot, prewhere_info, lazily_read_info,
-            actions_settings, block_size, reader_settings, virt_column_names_to_read);
+            actions_settings, block_size, reader_settings, virt_column_names);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
         if (set_rows_approx)
@@ -1277,7 +1275,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         requested_num_streams,
         max_block_numbers_to_read,
         data,
-        real_column_names_to_read,
+        real_column_names,
         sample_factor_column_queried,
         log,
         indexes);
@@ -1716,12 +1714,12 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         lazily_read_header = storage_snapshot->getSampleBlockForColumns(lazily_read_info->lazily_read_columns_names);
 
     output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(real_column_names_to_read),
+        storage_snapshot->getSampleBlockForColumns(real_column_names),
         lazily_read_header,
         lazily_read_info,
         prewhere_info_value,
         data.getPartitionValueType(),
-        virt_column_names_to_read)};
+        virt_column_names)};
 
     updateSortDescriptionForOutputStream(
         *output_stream,
@@ -1737,7 +1735,7 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
 
     NameSet names_set(lazily_read_info->lazily_read_columns_names.begin(),
                       lazily_read_info->lazily_read_columns_names.end());
-    std::erase_if(real_column_names_to_read, [&names_set] (const String & column_name)
+    std::erase_if(real_column_names, [&names_set] (const String & column_name)
     {
         return names_set.contains(column_name);
     });
@@ -1746,16 +1744,16 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
         { return column_name == "_part_offset"; }) == virt_column_names.end())
     {
         lazily_read_info->do_remove_column = true;
-        virt_column_names_to_read.emplace_back("_part_offset");
+        virt_column_names.emplace_back("_part_offset");
     }
 
     output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(real_column_names_to_read),
+        storage_snapshot->getSampleBlockForColumns(real_column_names),
         storage_snapshot->getSampleBlockForColumns(lazily_read_info->lazily_read_columns_names),
         lazily_read_info,
         prewhere_info,
         data.getPartitionValueType(),
-        virt_column_names_to_read)};
+        virt_column_names)};
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -1993,8 +1991,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 ranges_in_data_part.part_index_in_query,
                 DataPartInfo
                 {
-                .data_part = ranges_in_data_part.data_part,
-                .alter_conversions = ranges_in_data_part.alter_conversions
+                    .data_part = ranges_in_data_part.data_part,
+                    .alter_conversions = ranges_in_data_part.alter_conversions
                 });
         }
     }

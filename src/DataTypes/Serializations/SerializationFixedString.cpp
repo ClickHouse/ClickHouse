@@ -220,4 +220,22 @@ void SerializationFixedString::serializeTextMarkdown(
         serializeTextEscaped(column, row_num, ostr, settings);
 }
 
+void SerializationFixedString::deserializeBinaryBulkWithMultipleStreamsSilently(
+    ColumnPtr & /* column */,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /* state */) const
+{
+    if (ReadBuffer * istr = settings.getter(settings.path))
+    {
+        size_t max_bytes;
+
+        if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+        if (unlikely(max_bytes > MAX_STRINGS_SIZE))
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large sizes of FixedString to deserialize: {}", max_bytes);
+        istr->ignore(max_bytes);
+    }
+}
+
 }

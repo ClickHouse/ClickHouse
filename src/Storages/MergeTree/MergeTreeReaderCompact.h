@@ -34,7 +34,8 @@ public:
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                    bool continue_reading, size_t max_rows_to_read, Columns & res_columns) override;
+                    bool continue_reading, size_t max_rows_to_read,
+                    size_t offset, Columns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return false; }
 
@@ -76,7 +77,7 @@ private:
 
     void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t from_mark,
         size_t current_task_last_mark, size_t column_position,
-        size_t rows_to_read, ColumnNameLevel name_level_for_offsets);
+        size_t rows_to_read, size_t offset, ColumnNameLevel name_level_for_offsets);
 
     /// Returns maximal value of granule size in compressed file from @mark_ranges.
     /// This value is used as size of read buffer.

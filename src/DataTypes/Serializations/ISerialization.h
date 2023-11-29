@@ -286,6 +286,13 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
 
+    /// Read limit values silently.
+    virtual void deserializeBinaryBulkWithMultipleStreamsSilently(
+        ColumnPtr & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const;
+
     /** Override these methods for data types that require just single stream (most of data types).
       */
     virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;

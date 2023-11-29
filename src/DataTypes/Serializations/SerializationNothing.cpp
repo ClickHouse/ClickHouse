@@ -22,4 +22,16 @@ void SerializationNothing::deserializeBinaryBulk(IColumn & column, ReadBuffer & 
     typeid_cast<ColumnNothing &>(column).addSize(istr.tryIgnore(limit));
 }
 
+void SerializationNothing::deserializeBinaryBulkWithMultipleStreamsSilently(
+    ColumnPtr & /* column */,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /*state */) const
+{
+    if (ReadBuffer * istr = settings.getter(settings.path))
+    {
+        istr->ignore(limit);
+    }
+}
+
 }

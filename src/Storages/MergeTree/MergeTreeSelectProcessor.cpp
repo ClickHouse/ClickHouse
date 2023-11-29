@@ -421,20 +421,41 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
     {
         ColumnPtr row_num_column =  block.getByName("_part_offset").column;
         ColumnPtr part_num_column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
+        Columns columns(2);
+        columns[0] = row_num_column;
+        columns[1] = part_num_column;
+        bool create_empty_column_lazy = false;
         for (const auto & column_name : lazily_read_columns)
         {
-            ColumnPtr lazy_column = ColumnLazy::create(part_num_column, row_num_column);
             auto column_with_type_and_name = lazily_read_block.getByName(column_name);
-            column_with_type_and_name.column = lazy_column;
+            if (create_empty_column_lazy)
+                column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
+            else
+            {
+                column_with_type_and_name.column = ColumnLazy::create(columns, lazily_read_info->column_lazy_helper);
+                create_empty_column_lazy = true;
+            }
             block.insert(column_with_type_and_name);
         }
     }
     else
     {
+        bool create_empty_column_lazy = false;
+        ColumnPtr row_num_column =  DataTypeUInt64().createColumn();
+        ColumnPtr part_num_column = DataTypeUInt64().createColumn();
+        Columns columns(2);
+        columns[0] = row_num_column;
+        columns[1] = part_num_column;
         for (const auto & column_name : lazily_read_columns)
         {
             auto column_with_type_and_name = lazily_read_block.getByName(column_name);
-            column_with_type_and_name.column = ColumnLazy::create();
+            if (create_empty_column_lazy)
+                column_with_type_and_name.column = ColumnLazy::create();
+            else
+            {
+                column_with_type_and_name.column = ColumnLazy::create(columns, lazily_read_info->column_lazy_helper);
+                create_empty_column_lazy = true;
+            }
             block.insert(column_with_type_and_name);
         }
     }

@@ -1,7 +1,8 @@
 #include <Columns/ColumnLazy.h>
 
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumnImpl.h>
+#include <Columns/IColumnLazyHelper.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -12,66 +13,60 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
-ColumnLazy::ColumnLazy(MutableColumnPtr && part_nums_, MutableColumnPtr && row_nums_)
-    : part_nums(std::move(part_nums_)), row_nums(std::move(row_nums_))
+ColumnLazy::ColumnLazy(MutableColumns && mutable_columns)
 {
-    if (!part_nums && !row_nums)
-        return;
-
-    const ColumnUInt64 * part_num_column = typeid_cast<const ColumnUInt64 *>(part_nums.get());
-    const ColumnUInt64 * row_num_column = typeid_cast<const ColumnUInt64 *>(row_nums.get());
-
-    if (!part_num_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "'part_nums' column must be a ColumnUInt64, got: {}", part_nums->getName());
-
-    if (!row_num_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "'row_nums' column must be a ColumnUInt64, got: {}", row_nums->getName());
-
-    if (part_nums->size() != row_nums->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "part_nums size ({}) is inconsistent with row_nums size ({})", part_nums->size(), row_nums->size());
+    captured_columns.reserve(mutable_columns.size());
+    for (auto & column : mutable_columns)
+        captured_columns.push_back(std::move(column));
 }
 
-ColumnLazy::Ptr ColumnLazy::create(const ColumnPtr & part_nums_, const ColumnPtr & row_nums_)
+ColumnLazy::Ptr ColumnLazy::create(const Columns & columns, ColumnLazyHelperPtr column_lazy_helper)
 {
-    auto column_lazy = ColumnLazy::create(MutableColumnPtr(), MutableColumnPtr());
-    column_lazy->part_nums = part_nums_;
-    column_lazy->row_nums = row_nums_;
+    auto column_lazy = ColumnLazy::create(MutableColumns());
+    column_lazy->captured_columns.assign(columns.begin(), columns.end());
+    column_lazy->column_lazy_helper = column_lazy_helper;
 
     return column_lazy;
 }
 
-ColumnLazy::Ptr ColumnLazy::create()
+ColumnLazy::Ptr ColumnLazy::create(const CapturedColumns & columns, ColumnLazyHelperPtr column_lazy_helper)
 {
-    MutableColumnPtr part_nums_ = ColumnUInt64::create();
-    MutableColumnPtr row_nums_ = ColumnUInt64::create();
+    auto column_lazy = ColumnLazy::create(MutableColumns());
+    column_lazy->captured_columns = columns;
+    column_lazy->column_lazy_helper = column_lazy_helper;
 
-    return ColumnLazy::create(std::move(part_nums_), std::move(row_nums_));
+    return column_lazy;
 }
 
-MutableColumnPtr ColumnLazy::cloneEmpty() const
+ColumnLazy::Ptr ColumnLazy::create(size_t s)
 {
-    return ColumnLazy::create()->assumeMutable();
+    auto column_lazy = ColumnLazy::create(MutableColumns());
+    column_lazy->s = s;
+    return column_lazy;
 }
 
 MutableColumnPtr ColumnLazy::cloneResized(size_t new_size) const
 {
-    MutableColumnPtr part_nums_ = part_nums->cloneResized(new_size);
-    MutableColumnPtr row_nums_ = row_nums->cloneResized(new_size);
-    return ColumnLazy::create(std::move(part_nums_), std::move(row_nums_));
+    if (!column_lazy_helper)
+        return ColumnLazy::create(new_size)->assumeMutable();
+
+    const size_t column_size = captured_columns.size();
+    MutableColumns new_columns(column_size);
+    for (size_t i = 0; i < column_size; ++i)
+        new_columns[i] = captured_columns[i]->cloneResized(new_size);
+
+    auto column_lazy = ColumnLazy::create(std::move(new_columns));
+    column_lazy->column_lazy_helper = column_lazy_helper;
+    return column_lazy;
 }
 
-Field ColumnLazy::operator[](size_t n) const
+Field ColumnLazy::operator[](size_t) const
 {
-    Field res;
-    get(n, res);
-    return res;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method operator[] is not supported for {}", getName());
 }
 
 void ColumnLazy::get(size_t, Field &) const
@@ -101,10 +96,19 @@ void ColumnLazy::insert(const Field &)
 
 void ColumnLazy::insertFrom(const IColumn & src_, size_t n)
 {
-    const ColumnLazy & src = assert_cast<const ColumnLazy &>(src_);
+    if (!column_lazy_helper)
+    {
+        ++s;
+        return;
+    }
 
-    part_nums->insertFrom(src.getPartNumsColumn(), n);
-    row_nums->insertFrom(src.getRowNumsColumn(), n);
+    const size_t column_size = captured_columns.size();
+    const ColumnLazy & src = assert_cast<const ColumnLazy &>(src_);
+    if (src.captured_columns.size() != column_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert value of different size into ColumnLazy");
+
+    for (size_t i = 0; i < column_size; ++i)
+        captured_columns[i]->insertFrom(*src.captured_columns[i], n);
 }
 
 void ColumnLazy::insertDefault()
@@ -149,18 +153,34 @@ void ColumnLazy::updateHashFast(SipHash &) const
 
 void ColumnLazy::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnLazy & src_column_lazy = assert_cast<const ColumnLazy &>(src);
+    if (!column_lazy_helper)
+    {
+        s += length;
+        return;
+    }
 
-    part_nums->insertRangeFrom(src_column_lazy.getPartNumsColumn(), start, length);
-    row_nums->insertRangeFrom(src_column_lazy.getRowNumsColumn(), start, length);
+    const size_t column_size = captured_columns.size();
+    for (size_t i = 0; i < column_size; ++i)
+        captured_columns[i]->insertRangeFrom(
+            *assert_cast<const ColumnLazy &>(src).captured_columns[i],
+            start, length);
 }
 
 ColumnPtr ColumnLazy::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    ColumnPtr part_nums_ = part_nums->filter(filt, result_size_hint);
-    ColumnPtr row_nums_ = row_nums->filter(filt, result_size_hint);
+    if (!column_lazy_helper)
+    {
+        size_t new_size = countBytesInFilter(filt);
+        return ColumnLazy::create(new_size);
+    }
 
-    return ColumnLazy::create(part_nums_, row_nums_);
+    const size_t column_size = captured_columns.size();
+    Columns new_columns(column_size);
+
+    for (size_t i = 0; i < column_size; ++i)
+        new_columns[i] = captured_columns[i]->filter(filt, result_size_hint);
+
+    return ColumnLazy::create(new_columns, column_lazy_helper);
 }
 
 void ColumnLazy::expand(const Filter &, bool)
@@ -170,18 +190,37 @@ void ColumnLazy::expand(const Filter &, bool)
 
 ColumnPtr ColumnLazy::permute(const Permutation & perm, size_t limit) const
 {
-    ColumnPtr part_nums_ = part_nums->permute(perm, limit);
-    ColumnPtr row_nums_ = row_nums->permute(perm, limit);
+    if (!column_lazy_helper)
+    {
+        limit = getLimitForPermutation(size(), perm.size(), limit);
+        return ColumnLazy::create(limit);
+    }
 
-    return ColumnLazy::create(part_nums_, row_nums_);
+    const size_t column_size = captured_columns.size();
+    Columns new_columns(column_size);
+
+    for (size_t i = 0; i < column_size; ++i)
+        new_columns[i] = captured_columns[i]->permute(perm, limit);
+
+    return ColumnLazy::create(new_columns, column_lazy_helper);
 }
 
 ColumnPtr ColumnLazy::index(const IColumn & indexes, size_t limit) const
 {
-    ColumnPtr part_nums_ = part_nums->index(indexes, limit);
-    ColumnPtr row_nums_ = row_nums->index(indexes, limit);
+    if (!column_lazy_helper)
+    {
+        if (limit == 0)
+            limit = indexes.size();
+        return ColumnLazy::create(limit);
+    }
 
-    return ColumnLazy::create(part_nums_, row_nums_);
+    const size_t column_size = captured_columns.size();
+    Columns new_columns(column_size);
+
+    for (size_t i = 0; i < column_size; ++i)
+        new_columns[i] = captured_columns[i]->index(indexes, limit);
+
+    return ColumnLazy::create(new_columns, column_lazy_helper);
 }
 
 ColumnPtr ColumnLazy::replicate(const Offsets &) const
@@ -245,8 +284,12 @@ void ColumnLazy::gather(ColumnGathererStream &)
 
 void ColumnLazy::reserve(size_t n)
 {
-    part_nums->reserve(n);
-    row_nums->reserve(n);
+    if (!column_lazy_helper)
+        return;
+
+    const size_t column_size = captured_columns.size();
+    for (size_t i = 0; i < column_size; ++i)
+        captured_columns[i]->reserve(n);
 }
 
 void ColumnLazy::ensureOwnership()
@@ -256,7 +299,10 @@ void ColumnLazy::ensureOwnership()
 
 size_t ColumnLazy::byteSize() const
 {
-    return part_nums->byteSize() + row_nums->byteSize();
+    size_t res = 0;
+    for (const auto & column : captured_columns)
+        res += column->byteSize();
+    return res;
 }
 
 size_t ColumnLazy::byteSizeAt(size_t) const
@@ -266,7 +312,10 @@ size_t ColumnLazy::byteSizeAt(size_t) const
 
 size_t ColumnLazy::allocatedBytes() const
 {
-    return part_nums->allocatedBytes() + row_nums->allocatedBytes();
+    size_t res = 0;
+    for (const auto & column : captured_columns)
+        res += column->allocatedBytes();
+    return res;
 }
 
 void ColumnLazy::protect()
@@ -323,6 +372,12 @@ void ColumnLazy::finalize()
 bool ColumnLazy::isFinalized() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isFinalized is not supported for {}", getName());
+}
+
+void ColumnLazy::transform(ColumnsWithTypeAndName & res_columns) const
+{
+    if (column_lazy_helper)
+        column_lazy_helper->transformLazyColumns(*this, res_columns);
 }
 
 }

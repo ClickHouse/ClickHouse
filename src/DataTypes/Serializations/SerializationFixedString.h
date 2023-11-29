@@ -43,6 +43,12 @@ public:
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    void deserializeBinaryBulkWithMultipleStreamsSilently(
+        ColumnPtr & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const override;
+
     /// Makes sure that the length of a newly inserted string to `chars` is equal to getN().
     /// If the length is less than getN() the function will add zero characters up to getN().
     /// If the length is greater than getN() the function will throw an exception.

@@ -124,6 +124,17 @@ public:
         size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit);
         x.resize(initial_size + size / sizeof(IPv));
     }
+    void deserializeBinaryBulkWithMultipleStreamsSilently(
+        ColumnPtr & /* column */,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & /*state */) const override
+    {
+        if (ReadBuffer * istr = settings.getter(settings.path))
+        {
+            istr->ignore(sizeof(IPv) * limit);
+        }
+    }
 };
 
 using SerializationIPv4 = SerializationIP<IPv4>;

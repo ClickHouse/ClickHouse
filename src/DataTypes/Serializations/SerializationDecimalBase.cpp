@@ -68,6 +68,19 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
 }
 
+template <typename T>
+void SerializationDecimalBase<T>::deserializeBinaryBulkWithMultipleStreamsSilently(
+    ColumnPtr & /* column */,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /* state */) const
+{
+    if (ReadBuffer * istr = settings.getter(settings.path))
+    {
+        istr->ignore(sizeof(FieldType) * limit);
+    }
+}
+
 template class SerializationDecimalBase<Decimal32>;
 template class SerializationDecimalBase<Decimal64>;
 template class SerializationDecimalBase<Decimal128>;

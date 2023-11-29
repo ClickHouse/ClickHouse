@@ -168,4 +168,17 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
 #pragma clang diagnostic pop
 }
+
+void SerializationUUID::deserializeBinaryBulkWithMultipleStreamsSilently(
+    ColumnPtr & /* column */,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /* state */) const
+{
+    if (ReadBuffer * istr = settings.getter(settings.path))
+    {
+        istr->ignore(sizeof(UUID) * limit);
+    }
+}
+
 }

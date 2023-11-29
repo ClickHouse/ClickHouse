@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/LazilyReadStep.h>
 
 #include <Common/JSONBuilder.h>
+#include <Processors/Transforms/ColumnLazyTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -23,28 +24,19 @@ static ITransformingStep::Traits getTraits()
 
 LazilyReadStep::LazilyReadStep(
     const DataStream & input_stream_,
-    const MergeTreeData & storage_,
-    const StorageSnapshotPtr & storage_snapshot_,
-    const LazilyReadInfoPtr & lazily_read_info_,
-    const ContextPtr & context_,
-    const AliasToNamePtr & alias_index_)
+    const LazilyReadInfoPtr & lazily_read_info_)
     : ITransformingStep(
-        input_stream_,
-        MergeTreeTransform::transformHeader(input_stream_.header),
-        getTraits())
-    , storage(storage_)
-    , storage_snapshot(storage_snapshot_)
+    input_stream_,
+    ColumnLazyTransform::transformHeader(input_stream_.header),
+    getTraits())
     , lazily_read_info(lazily_read_info_)
-    , context(context_)
-    , alias_index(alias_index_)
-{
-}
+{}
 
 void LazilyReadStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<MergeTreeTransform>(header, storage, storage_snapshot, lazily_read_info, context, alias_index);
+        return std::make_shared<ColumnLazyTransform>(header);
     });
 }
 
@@ -81,7 +73,7 @@ void LazilyReadStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
-        MergeTreeTransform::transformHeader(input_streams.front().header),
+        ColumnLazyTransform::transformHeader(input_streams.front().header),
         getDataStreamTraits());
 }
 

@@ -164,6 +164,19 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
 }
 
+template <typename T>
+void SerializationNumber<T>::deserializeBinaryBulkWithMultipleStreamsSilently(
+    ColumnPtr & /* column */,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /*state */) const
+{
+    if (ReadBuffer * istr = settings.getter(settings.path))
+    {
+        istr->ignore(sizeof(typename ColumnVector<T>::ValueType) * limit);
+    }
+}
+
 template class SerializationNumber<UInt8>;
 template class SerializationNumber<UInt16>;
 template class SerializationNumber<UInt32>;

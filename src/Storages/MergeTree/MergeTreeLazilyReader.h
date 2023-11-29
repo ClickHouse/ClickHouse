@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
+#include <Columns/IColumnLazyHelper.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -8,10 +8,10 @@ namespace DB
 using AliasToName = std::unordered_map<std::string, std::string>;
 using AliasToNamePtr = std::shared_ptr<AliasToName>;
 
-class MergeTreeTransform : public ISimpleTransform
+class MergeTreeLazilyReader : public IColumnLazyHelper
 {
 public:
-    MergeTreeTransform(
+    MergeTreeLazilyReader(
         const Block & header_,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
@@ -19,19 +19,17 @@ public:
         const ContextPtr & context_,
         const AliasToNamePtr & alias_index_);
 
-    static Block transformHeader(Block header);
-
-    String getName() const override { return "MergeTreeTransform"; }
-
-    void transform(Chunk & chunk) override;
+    void transformLazyColumns(
+        const ColumnLazy & column_lazy,
+        ColumnsWithTypeAndName & res_columns) override;
 
 private:
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
     bool use_uncompressed_cache;
-    DataPartsInfoPtr data_parts_info;
+    LazilyReadInfoPtr lazily_read_info;
     Names requested_column_names;
-    Names alias_column_names;
+    ColumnsWithTypeAndName lazy_columns;
 };
 
 }

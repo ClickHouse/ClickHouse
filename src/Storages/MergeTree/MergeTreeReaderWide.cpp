@@ -112,7 +112,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 }
 
 size_t MergeTreeReaderWide::readRows(
-    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, size_t offset, Columns & res_columns)
 {
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
@@ -149,7 +149,7 @@ size_t MergeTreeReaderWide::readRows(
                 readData(
                     column_to_read, serializations[pos], column,
                     from_mark, continue_reading, current_task_last_mark,
-                    max_rows_to_read, cache, /* was_prefetched =*/ !prefetched_streams.empty());
+                    max_rows_to_read, offset, cache, /* was_prefetched =*/ !prefetched_streams.empty());
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -186,7 +186,7 @@ size_t MergeTreeReaderWide::readRows(
         }
         catch (Exception & e)
         {
-            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, offset));
         }
 
         throw;
@@ -326,7 +326,7 @@ void MergeTreeReaderWide::prefetchForColumn(
 void MergeTreeReaderWide::readData(
     const NameAndTypePair & name_and_type, const SerializationPtr & serialization, ColumnPtr & column,
     size_t from_mark, bool continue_reading, size_t current_task_last_mark,
-    size_t max_rows_to_read, ISerialization::SubstreamsCache & cache, bool was_prefetched)
+    size_t max_rows_to_read, size_t offset, ISerialization::SubstreamsCache & cache, bool was_prefetched)
 {
     double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
@@ -334,10 +334,9 @@ void MergeTreeReaderWide::readData(
 
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
+    bool seek_to_mark = !was_prefetched && !continue_reading;
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        bool seek_to_mark = !was_prefetched && !continue_reading;
-
         return getStream(
             /* seek_to_start = */false, substream_path,
             data_part_info_for_read->getChecksums(), streams,
@@ -346,6 +345,12 @@ void MergeTreeReaderWide::readData(
 
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
+
+    if (offset > 0)
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, deserialize_state);
+        seek_to_mark = false;
+    }
 
     serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);

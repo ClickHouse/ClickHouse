@@ -34,7 +34,8 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
     /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
     virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                            bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
+                            bool continue_reading, size_t max_rows_to_read,
+                            size_t offset, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -73,7 +74,7 @@ protected:
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
+    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
