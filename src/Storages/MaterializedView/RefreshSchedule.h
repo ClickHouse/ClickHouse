@@ -17,6 +17,7 @@ struct RefreshSchedule
     CalendarTimeInterval spread;
 
     explicit RefreshSchedule(const ASTRefreshStrategy & strategy);
+    bool operator!=(const RefreshSchedule & rhs) const;
 
     /// Tells when to do the next refresh (without random spread).
     std::chrono::sys_seconds prescribeNext(

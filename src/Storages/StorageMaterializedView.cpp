@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
 }
 
 namespace ActionLocks
@@ -87,13 +86,12 @@ StorageMaterializedView::StorageMaterializedView(
                         "You must specify where to save results of a MaterializedView query: "
                         "either ENGINE or an existing table in a TO clause");
 
-    if (query.select->list_of_selects->children.size() != 1)
-        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "UNION is not supported for MATERIALIZED VIEW");
-
-    auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
+    auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, local_context);
     storage_metadata.setSelectQuery(select);
     if (!comment.empty())
         storage_metadata.setComment(comment);
+    if (query.refresh_strategy)
+        storage_metadata.setRefresh(query.refresh_strategy->clone());
 
     setInMemoryMetadata(storage_metadata);
 
@@ -351,6 +349,9 @@ void StorageMaterializedView::alter(
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
+
+    if (refresher)
+        refresher->alterRefreshParams(new_metadata.refresh->as<const ASTRefreshStrategy &>());
 }
 
 
@@ -358,9 +359,14 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
 {
     for (const auto & command : commands)
     {
-        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
+        if (command.isCommentAlter())
+            continue;
+        if (command.type == AlterCommand::MODIFY_QUERY)
+            continue;
+        if (command.type == AlterCommand::MODIFY_REFRESH && refresher)
+            continue;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+            command.type, getName());
     }
 }
 
@@ -433,6 +439,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+
+    if (refresher)
+        refresher->rename(new_table_id);
 }
 
 void StorageMaterializedView::startup()
@@ -563,7 +572,6 @@ void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_t
 {
     if (action_type == ActionLocks::ViewRefresh && refresher)
         refresher->start();
-    /// TODO: Do we need to release action lock on inner table?
 }
 
 DB::StorageID StorageMaterializedView::getTargetTableId() const

@@ -238,8 +238,9 @@ private:
 
     void visit(ASTRefreshStrategy & refresh, ASTPtr &) const
     {
-        for (auto & table : refresh.children)
-            tryVisit<ASTTableIdentifier>(table);
+        if (refresh.dependencies)
+            for (auto & table : refresh.dependencies->children)
+                tryVisit<ASTTableIdentifier>(table);
     }
 
     void visitChildren(IAST & ast) const

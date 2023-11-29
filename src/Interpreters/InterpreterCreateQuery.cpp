@@ -1089,6 +1089,11 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
         }
 
+        if (create.refresh_strategy && !internal)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Refreshable materialized view requires Atomic database engine");
+                /// ... because it needs to atomically replace the inner table after refresh
+
         /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
@@ -1212,11 +1217,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.refresh_strategy)
     {
-        /// TODO: This doesn't work for some reason.
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.refresh_strategy);
-
-        /// TODO: For DEPENDS ON, check that the specified tables exist.
     }
 
     if (create.columns_list)

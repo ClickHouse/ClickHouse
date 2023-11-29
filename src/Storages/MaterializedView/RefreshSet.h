@@ -11,98 +11,76 @@ namespace DB
 
 using DatabaseAndTableNameSet = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
-struct RefreshInfo
+enum class RefreshState : RefreshTaskStateUnderlying
 {
-    String database;
-    String view_name;
-    String refresh_status;
-    String last_refresh_result;
-    UInt32 last_refresh_time;
-    UInt32 next_refresh_time;
-    Float64 progress;
-    Float64 elapsed_ns;
-    UInt64 read_rows;
-    UInt64 read_bytes;
-    UInt64 total_rows_to_read;
-    UInt64 total_bytes_to_read;
-    UInt64 written_rows;
-    UInt64 written_bytes;
-    UInt64 result_rows;
-    UInt64 result_bytes;
+    Disabled = 0,
+    Scheduled,
+    WaitingForDependencies,
+    Running,
+    Paused
 };
 
-class RefreshSetElement
+enum class LastRefreshResult : RefreshTaskStateUnderlying
 {
-    friend class RefreshTask;
-public:
-    RefreshSetElement(StorageID id, std::vector<StorageID> deps, RefreshTaskHolder task);
+    Unknown = 0,
+    Canceled,
+    Exception,
+    Finished
+};
 
-    RefreshSetElement(const RefreshSetElement &) = delete;
-    RefreshSetElement & operator=(const RefreshSetElement &) = delete;
-
-    RefreshInfo getInfo() const;
-
-    RefreshTaskHolder getTask() const;
-    const StorageID & getID() const;
-    const std::vector<StorageID> & getDependencies() const;
-
-private:
-    RefreshTaskObserver corresponding_task;
-    StorageID view_id;
-    std::vector<StorageID> dependencies;
-
-    std::atomic<UInt64> read_rows{0};
-    std::atomic<UInt64> read_bytes{0};
-    std::atomic<UInt64> total_rows_to_read{0};
-    std::atomic<UInt64> total_bytes_to_read{0};
-    std::atomic<UInt64> written_rows{0};
-    std::atomic<UInt64> written_bytes{0};
-    std::atomic<UInt64> result_rows{0};
-    std::atomic<UInt64> result_bytes{0};
-    std::atomic<UInt64> elapsed_ns{0};
-    std::atomic<Int64> last_s{0};
-    std::atomic<Int64> next_s{0};
-    std::atomic<RefreshTaskStateUnderlying> state{0};
-    std::atomic<RefreshTaskStateUnderlying> last_result{0};
+struct RefreshInfo
+{
+    StorageID view_id = StorageID::createEmpty();
+    RefreshState state;
+    LastRefreshResult last_refresh_result;
+    std::optional<UInt32> last_refresh_time;
+    UInt32 next_refresh_time;
+    String exception_message; // if last_refresh_result is Exception
+    std::vector<StorageID> remaining_dependencies;
+    ProgressValues progress;
 };
 
 /// Set of refreshable views
 class RefreshSet
 {
-private:
-    using ElementMap = std::unordered_map<StorageID, RefreshSetElement, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
-    using ElementMapIter = typename ElementMap::iterator;
-
 public:
-    class Entry
+    /// RAII thing that unregisters a task and its dependencies in destructor.
+    /// Storage IDs must be unique. Not thread safe.
+    class Handle
     {
         friend class RefreshSet;
     public:
-        Entry() = default;
+        Handle() = default;
 
-        Entry(Entry &&) noexcept;
-        Entry & operator=(Entry &&) noexcept;
+        Handle(Handle &&) noexcept;
+        Handle & operator=(Handle &&) noexcept;
 
-        ~Entry();
+        ~Handle();
 
-        explicit operator bool() const { return parent_set != nullptr; }
-        RefreshSetElement * operator->() { chassert(parent_set); return &iter->second; }
+        void rename(StorageID new_id);
+        void changeDependencies(std::vector<StorageID> deps);
 
         void reset();
 
+        explicit operator bool() const { return parent_set != nullptr; }
+
+        const StorageID & getID() const { return id; }
+        const std::vector<StorageID> & getDependencies() const { return dependencies; }
+
     private:
         RefreshSet * parent_set = nullptr;
-        ElementMapIter iter;
+        StorageID id = StorageID::createEmpty();
+        std::vector<StorageID> dependencies;
         std::optional<CurrentMetrics::Increment> metric_increment;
 
-        Entry(RefreshSet & set, ElementMapIter it);
+        Handle(RefreshSet * parent_set_, StorageID id_, std::vector<StorageID> dependencies_);
     };
 
     using InfoContainer = std::vector<RefreshInfo>;
 
     RefreshSet();
 
-    Entry emplace(StorageID id, std::vector<StorageID> dependencies, RefreshTaskHolder task);
+    Handle emplace(StorageID id, std::vector<StorageID> dependencies, RefreshTaskHolder task);
 
     RefreshTaskHolder getTask(const StorageID & id) const;
 
@@ -112,18 +90,20 @@ public:
     std::vector<RefreshTaskHolder> getDependents(const StorageID & id) const;
 
 private:
+    using TaskMap = std::unordered_map<StorageID, RefreshTaskHolder, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using DependentsMap = std::unordered_map<StorageID, DatabaseAndTableNameSet, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
     /// Protects the two maps below, not locked for any nontrivial operations (e.g. operations that
     /// block or lock other mutexes).
     mutable std::mutex mutex;
 
-    ElementMap elements;
+    TaskMap tasks;
     DependentsMap dependents;
 
-    void erase(ElementMapIter it);
+    void addDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies);
+    void removeDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies);
 };
 
-using RefreshSetEntry = RefreshSet::Entry;
+using RefreshSetHandle = RefreshSet::Handle;
 
 }

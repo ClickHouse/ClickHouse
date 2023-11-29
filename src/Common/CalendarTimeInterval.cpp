@@ -64,12 +64,12 @@ CalendarTimeInterval::Intervals CalendarTimeInterval::toIntervals() const
 
 UInt64 CalendarTimeInterval::minSeconds() const
 {
-    return 3600*24 * (365 * months/12 + 28 * months%12) + seconds;
+    return 3600*24 * (months/12 * 365 + months%12 * 28) + seconds;
 }
 
 UInt64 CalendarTimeInterval::maxSeconds() const
 {
-    return 3600*24 * (366 * months/12 + 31 * months%12) + seconds;
+    return 3600*24 * (months/12 * 366 + months%12 * 31) + seconds;
 }
 
 void CalendarTimeInterval::assertSingleUnit() const

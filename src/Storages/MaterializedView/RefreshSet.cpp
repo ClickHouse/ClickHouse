@@ -9,117 +9,110 @@ namespace CurrentMetrics
 namespace DB
 {
 
-RefreshSetElement::RefreshSetElement(StorageID id, std::vector<StorageID> deps, RefreshTaskHolder task)
-    : corresponding_task(task)
-    , view_id(std::move(id))
-    , dependencies(std::move(deps))
-{}
-
-RefreshInfo RefreshSetElement::getInfo() const
+RefreshSet::Handle::Handle(Handle && other) noexcept
 {
-    return {
-        .database = view_id.getDatabaseName(),
-        .view_name = view_id.getTableName(),
-        .refresh_status = toString(RefreshTask::RefreshState{state.load()}),
-        .last_refresh_result = toString(RefreshTask::LastTaskResult{last_result.load()}),
-        .last_refresh_time = static_cast<UInt32>(last_s.load(std::memory_order_relaxed)),
-        .next_refresh_time = static_cast<UInt32>(next_s.load(std::memory_order_relaxed)),
-        .progress = static_cast<Float64>(written_rows) / total_rows_to_read,
-        .elapsed_ns = elapsed_ns / 1e9,
-        .read_rows = read_rows.load(std::memory_order_relaxed),
-        .read_bytes = read_bytes.load(std::memory_order_relaxed),
-        .total_rows_to_read = total_rows_to_read.load(std::memory_order_relaxed),
-        .total_bytes_to_read = total_bytes_to_read.load(std::memory_order_relaxed),
-        .written_rows = written_rows.load(std::memory_order_relaxed),
-        .written_bytes = written_bytes.load(std::memory_order_relaxed),
-        .result_rows = result_rows.load(std::memory_order_relaxed),
-        .result_bytes = result_bytes.load(std::memory_order_relaxed)
-    };
+    *this = std::move(other);
 }
 
-RefreshTaskHolder RefreshSetElement::getTask() const
-{
-    return corresponding_task.lock();
-}
-
-const StorageID & RefreshSetElement::getID() const
-{
-    return view_id;
-}
-
-const std::vector<StorageID> & RefreshSetElement::getDependencies() const
-{
-    return dependencies;
-}
-
-RefreshSet::Entry::Entry(Entry && other) noexcept
-    : parent_set{std::exchange(other.parent_set, nullptr)}
-    , iter(std::move(other.iter))
-    , metric_increment(std::move(other.metric_increment))
-{}
-
-RefreshSet::Entry & RefreshSet::Entry::operator=(Entry && other) noexcept
+RefreshSet::Handle & RefreshSet::Handle::operator=(Handle && other) noexcept
 {
     if (this == &other)
         return *this;
     reset();
     parent_set = std::exchange(other.parent_set, nullptr);
-    iter = std::move(other.iter);
+    id = std::move(other.id);
+    dependencies = std::move(other.dependencies);
     metric_increment = std::move(other.metric_increment);
     return *this;
 }
 
-RefreshSet::Entry::~Entry()
+RefreshSet::Handle::~Handle()
 {
     reset();
 }
 
-RefreshSet::Entry::Entry(RefreshSet & set, ElementMapIter it)
-    : parent_set{&set}, iter(std::move(it)), metric_increment(CurrentMetrics::RefreshableViews)
-{}
+void RefreshSet::Handle::rename(StorageID new_id)
+{
+    std::lock_guard lock(parent_set->mutex);
+    parent_set->removeDependenciesLocked(id, dependencies);
+    auto it = parent_set->tasks.find(id);
+    auto task = it->second;
+    parent_set->tasks.erase(it);
+    id = new_id;
+    parent_set->tasks.emplace(id, task);
+    parent_set->addDependenciesLocked(id, dependencies);
+}
 
-void RefreshSet::Entry::reset()
+void RefreshSet::Handle::changeDependencies(std::vector<StorageID> deps)
+{
+    std::lock_guard lock(parent_set->mutex);
+    parent_set->removeDependenciesLocked(id, dependencies);
+    dependencies = std::move(deps);
+    parent_set->addDependenciesLocked(id, dependencies);
+}
+
+void RefreshSet::Handle::reset()
 {
     if (!parent_set)
         return;
-    std::exchange(parent_set, nullptr)->erase(iter);
+
+    {
+        std::lock_guard lock(parent_set->mutex);
+        parent_set->removeDependenciesLocked(id, dependencies);
+        parent_set->tasks.erase(id);
+    }
+
+    parent_set = nullptr;
     metric_increment.reset();
 }
 
-RefreshSet::RefreshSet() {}
+RefreshSet::RefreshSet() = default;
 
-RefreshSet::Entry RefreshSet::emplace(StorageID id, std::vector<StorageID> dependencies, RefreshTaskHolder task)
+RefreshSet::Handle RefreshSet::emplace(StorageID id, std::vector<StorageID> dependencies, RefreshTaskHolder task)
 {
     std::lock_guard guard(mutex);
-    auto [it, is_inserted] = elements.emplace(std::piecewise_construct, std::forward_as_tuple(id), std::forward_as_tuple(id, dependencies, std::move(task)));
+    auto [it, is_inserted] = tasks.emplace(id, task);
     if (!is_inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Refresh set entry already exists for table {}", id.getFullTableName());
+    addDependenciesLocked(id, dependencies);
 
+    return Handle(this, id, dependencies);
+}
+
+void RefreshSet::addDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies)
+{
+    for (const StorageID & dep : dependencies)
+        dependents[dep].insert(id);
+}
+
+void RefreshSet::removeDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies)
+{
     for (const StorageID & dep : dependencies)
     {
-        auto [unused, dep_inserted] = dependents[dep].insert(id);
-        if (!dep_inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Refresh set entry already contains dependency of {} on {}", id.getFullTableName(), dep.getFullTableName());
+        auto & set = dependents[dep];
+        set.erase(id);
+        if (set.empty())
+            dependents.erase(dep);
     }
-
-    return Entry(*this, std::move(it));
 }
 
 RefreshTaskHolder RefreshSet::getTask(const StorageID & id) const
 {
     std::lock_guard lock(mutex);
-    if (auto element = elements.find(id); element != elements.end())
-        return element->second.getTask();
+    if (auto task = tasks.find(id); task != tasks.end())
+        return task->second;
     return nullptr;
 }
 
 RefreshSet::InfoContainer RefreshSet::getInfo() const
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
+    auto tasks_copy = tasks;
+    lock.unlock();
+
     InfoContainer res;
-    res.reserve(elements.size());
-    for (auto && element : elements)
-        res.emplace_back(element.second.getInfo());
+    for (auto [id, task] : tasks_copy)
+        res.push_back(task->getInfo());
     return res;
 }
 
@@ -131,22 +124,13 @@ std::vector<RefreshTaskHolder> RefreshSet::getDependents(const StorageID & id) c
     if (it == dependents.end())
         return {};
     for (auto & dep_id : it->second)
-        if (auto element = elements.find(dep_id); element != elements.end())
-            res.push_back(element->second.getTask());
+        if (auto task = tasks.find(dep_id); task != tasks.end())
+            res.push_back(task->second);
     return res;
 }
 
-void RefreshSet::erase(ElementMapIter it)
-{
-    std::lock_guard lock(mutex);
-    for (const StorageID & dep : it->second.getDependencies())
-    {
-        auto & set = dependents[dep];
-        set.erase(it->second.getID());
-        if (set.empty())
-            dependents.erase(dep);
-    }
-    elements.erase(it);
-}
+RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::vector<StorageID> dependencies_)
+    : parent_set(parent_set_), id(std::move(id_)), dependencies(std::move(dependencies_))
+    , metric_increment(CurrentMetrics::Increment(CurrentMetrics::RefreshableViews)) {}
 
 }

@@ -20,25 +20,6 @@ class ASTRefreshStrategy;
 class RefreshTask : public std::enable_shared_from_this<RefreshTask>
 {
 public:
-    /// Just for observability.
-    enum class RefreshState : RefreshTaskStateUnderlying
-    {
-        Disabled = 0,
-        Scheduled,
-        WaitingForDependencies,
-        Running,
-        Paused
-    };
-
-    /// Just for observability.
-    enum class LastTaskResult : RefreshTaskStateUnderlying
-    {
-        Unknown = 0,
-        Canceled,
-        Exception,
-        Finished
-    };
-
     /// Never call it manual, public for shared_ptr construction only
     explicit RefreshTask(const ASTRefreshStrategy & strategy);
 
@@ -49,6 +30,14 @@ public:
         const DB::ASTRefreshStrategy & strategy);
 
     void initializeAndStart(std::shared_ptr<StorageMaterializedView> view);
+
+    /// Call when renaming the materialized view.
+    void rename(StorageID new_id);
+
+    /// Call when changing refresh params (ALTER MODIFY REFRESH).
+    void alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy);
+
+    RefreshInfo getInfo() const;
 
     /// Enable task scheduling
     void start();
@@ -74,26 +63,28 @@ public:
     /// Notify dependent task
     void notify(const StorageID & parent_id, std::chrono::sys_seconds prescribed_time, const RefreshSchedule & parent_schedule);
 
+    void setFakeTime(std::optional<Int64> t);
+
 private:
     Poco::Logger * log = nullptr;
     std::weak_ptr<IStorage> view_to_refresh;
-    RefreshSet::Entry set_entry;
 
-    RefreshSchedule refresh_schedule;
+    /// Protects all fields below (they're accessed by both refreshTask() and public methods).
+    /// Never locked for blocking operations (e.g. creating or dropping the internal table).
+    mutable std::mutex mutex;
 
     /// Task execution. Non-empty iff a refresh is in progress (possibly paused).
-    /// Whoever unsets these should also call storeLastState().
+    /// Whoever unsets these should also assign info.last_refresh_result.
     std::optional<ManualPipelineExecutor> refresh_executor;
     std::optional<BlockIO> refresh_block;
     std::shared_ptr<ASTInsertQuery> refresh_query;
 
+    RefreshSchedule refresh_schedule;
+    RefreshSet::Handle set_handle;
+
     /// StorageIDs of our dependencies that we're waiting for.
     DatabaseAndTableNameSet remaining_dependencies;
     bool time_arrived = false;
-
-    /// Protects all fields below (they're accessed by both refreshTask() and public methods).
-    /// Never locked for blocking operations (e.g. creating or dropping the internal table).
-    std::mutex mutex;
 
     /// Refreshes are stopped (e.g. by SYSTEM STOP VIEW).
     bool stop_requested = false;
@@ -129,6 +120,13 @@ private:
     /// Calls refreshTask() from background thread.
     BackgroundSchedulePool::TaskHolder refresh_task;
 
+    /// Used in tests. If not INT64_MIN, we pretend that this is the current time, instead of calling system_clock::now().
+    std::atomic<Int64> fake_clock {INT64_MIN};
+
+    /// Just for observability.
+    RefreshInfo info;
+    Progress progress;
+
     /// The main loop of the refresh task. It examines the state, sees what needs to be
     /// done and does it. If there's nothing to do at the moment, returns; it's then scheduled again,
     /// when needed, by public methods or by timer.
@@ -141,11 +139,12 @@ private:
     void refreshTask();
 
     /// Methods that do the actual work: creating/dropping internal table, executing the query.
-    void initializeRefresh(std::shared_ptr<const StorageMaterializedView> view);
-    bool executeRefresh();
-    void completeRefresh(std::shared_ptr<StorageMaterializedView> view, LastTaskResult result, std::chrono::sys_seconds prescribed_time);
-    void cancelRefresh(LastTaskResult result);
-    void cleanState();
+    /// Mutex must be unlocked. Called only from refresh_task.
+    void initializeRefreshUnlocked(std::shared_ptr<const StorageMaterializedView> view);
+    bool executeRefreshUnlocked();
+    void completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view, LastRefreshResult result, std::chrono::sys_seconds prescribed_time);
+    void cancelRefreshUnlocked(LastRefreshResult result);
+    void cleanStateUnlocked();
 
     /// Assigns next_refresh_*
     void advanceNextRefreshTime(std::chrono::system_clock::time_point now);
@@ -157,12 +156,7 @@ private:
 
     std::shared_ptr<StorageMaterializedView> lockView();
 
-    /// Methods that push information to RefreshSet, for observability.
-    void progressCallback(const Progress & progress);
-    void reportState(RefreshState s);
-    void reportLastResult(LastTaskResult r);
-    void reportLastRefreshTime(std::chrono::system_clock::time_point last);
-    void reportNextRefreshTime(std::chrono::system_clock::time_point next);
+    std::chrono::system_clock::time_point currentTime() const;
 };
 
 }

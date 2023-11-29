@@ -5,6 +5,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 #include <magic_enum.hpp>
 
@@ -401,6 +403,28 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
             break;
+
+        case Type::TEST_VIEW:
+        {
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+
+            if (ParserKeyword{"UNSET FAKE TIME"}.ignore(pos, expected))
+                break;
+
+            if (!ParserKeyword{"SET FAKE TIME"}.ignore(pos, expected))
+                return false;
+            ASTPtr ast;
+            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                return false;
+            String time_str = ast->as<ASTLiteral &>().value.get<const String &>();
+            ReadBufferFromString buf(time_str);
+            time_t time;
+            readDateTimeText(time, buf);
+            res->fake_time_for_view = Int64(time);
+
+            break;
+        }
 
         case Type::SUSPEND:
         {
