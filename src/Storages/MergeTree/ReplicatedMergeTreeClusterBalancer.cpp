@@ -195,7 +195,9 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
     {
         case BALANCER_SELECT_PARTITION:
         {
-            auto partition = selectPartition();
+            ReplicatedMergeTreeClusterPartitionSelector selector(cluster);
+            auto partition = selector.select();
+
             if (partition.has_value())
             {
                 state.target = partition;
@@ -208,9 +210,26 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
         case BALANCER_MIGRATE_PARTITION:
         case BALANCER_CLONE_PARTITION:
         {
+            auto zookeeper = cluster.getZooKeeper();
+            std::list<LogEntryPtr> entries;
+
             try
             {
-                migrateOrClonePartitionWithClone(*state.target);
+                entries = clonePartition(zookeeper, *state.target);
+            }
+            catch (...)
+            {
+                state.step = BALANCER_SELECT_PARTITION;
+                tryLogCurrentException(log, fmt::format("Cannot process partition {}, will restart", state.target->toStringForLog()));
+                break;
+            }
+
+            try
+            {
+                replicatePartition(*state.target, entries);
+                /// NOTE: should we introduce some log entry for DROP_RANGE with dependencies?
+                finish(*state.target);
+
                 state.target.reset();
                 state.step = BALANCER_SELECT_PARTITION;
             }
@@ -252,56 +271,9 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
     }
 }
 
-std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterBalancer::selectPartition()
+void ReplicatedMergeTreeClusterBalancer::replicatePartition(const ReplicatedMergeTreeClusterPartition & target, const std::list<ReplicatedMergeTreeLogEntryPtr> & entries)
 {
     auto zookeeper = cluster.getZooKeeper();
-
-    ReplicatedMergeTreeClusterPartitionSelector selector(cluster);
-
-    /// Loop to restart from scratch on ZBADVERSION errors.
-    for (;;)
-    {
-        Coordination::Stat balancer_stat;
-        fs::path balancer_path = cluster.zookeeper_path / "cluster" / "balancer";
-        zookeeper->get(balancer_path, &balancer_stat);
-
-        std::optional<ReplicatedMergeTreeClusterPartition> target;
-        target = selector.select();
-        if (!target.has_value())
-            return target;
-
-        Coordination::Requests ops;
-        Coordination::Responses responses;
-
-        String partition_path = cluster.zookeeper_path / "block_numbers" / target->getPartitionId();
-        ops.emplace_back(zkutil::makeSetRequest(partition_path, target->toString(), target->getVersion()));
-        ops.emplace_back(zkutil::makeSetRequest(balancer_path, "", balancer_stat.version));
-        auto error = zookeeper->tryMulti(ops, responses);
-        if (error == Coordination::Error::ZBADVERSION)
-        {
-            if (responses[0]->error == Coordination::Error::ZBADVERSION)
-                LOG_DEBUG(log, "Partition {} is already balanced by another replica. Cannot continue, will restart.", target->toStringForLog());
-            else if (responses[1]->error == Coordination::Error::ZBADVERSION)
-                LOG_DEBUG(log, "Another part had been assigned for re-sharding. Cannot continue, will restart.");
-            else if (responses[2]->error == Coordination::Error::ZBADVERSION)
-                LOG_DEBUG(log, "Replication log had been updated. Cannot continue, will restart.");
-
-            /// We cannot continue since our stats is outdated (i.e parts per replicas).
-            continue;
-        }
-        else if (error != Coordination::Error::ZOK)
-            throw zkutil::KeeperException::fromPath(error, partition_path);
-
-        cluster.updateClusterPartition(*target);
-        target->incrementVersion();
-        return target;
-    }
-}
-
-void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const ReplicatedMergeTreeClusterPartition & target)
-{
-    auto zookeeper = cluster.getZooKeeper();
-    const auto & entries = clonePartition(zookeeper, target.getPartitionId(), target.getSourceReplica());
 
     /// clonePartition() insert entries to the queue (not to the common log),
     /// and those entires need to be loaded to the in memory queue to wait them
@@ -338,14 +310,12 @@ void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const 
         LOG_INFO(log, "Waiting for entry {} ({}). Took {} ms.",
             entry->getDescriptionForLogs(storage.format_version), entry->znode_name, watch.elapsedMilliseconds());
     }
-    LOG_INFO(log, "Partition {} had been replicated. Took {} ms", target.toStringForLog(), watch.elapsedMilliseconds());
 
-    /// NOTE: should we introduce some log entry for DROP_RANGE with dependencies?
-    finish(target);
+    LOG_INFO(log, "Partition {} had been replicated. Took {} ms", target.toStringForLog(), watch.elapsedMilliseconds());
 }
 
 /// Partial copy of StorageReplicatedMergeTree::cloneReplica(),
-/// but clones only speicific partition.
+/// but clones only specific partition and doing this a single transaction.
 ///
 /// TODO:
 /// - make log_pointer per partition until the per-partition log_pointer will
@@ -355,8 +325,10 @@ void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const 
 /// - StorageReplicatedMergeTree::cloneReplica()
 /// - StorageReplicatedMergeTree::allocateBlockNumber()
 /// - StorageReplicatedMergeTree::movePartitionToTable() and friends
-std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperPtr & zookeeper, const String & partition, const String & source_replica)
+std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperPtr & zookeeper, ReplicatedMergeTreeClusterPartition & target)
 {
+    const auto & source_replica = target.getSourceReplica();
+    const auto & partition = target.getPartitionId();
     const auto & source_path = cluster.zookeeper_path / "replicas" / source_replica;
     const auto & replica_path = cluster.replica_path;
     const auto & format_version = storage.format_version;
@@ -369,6 +341,17 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
     ///
     /// NOTE: we should skip log entries that is not related to specific partition.
     Coordination::Requests ops;
+
+    /// Update cluster partition
+    {
+        Coordination::Stat balancer_stat;
+        fs::path balancer_path = cluster.zookeeper_path / "cluster" / "balancer";
+        zookeeper->get(balancer_path, &balancer_stat);
+
+        String partition_path = cluster.zookeeper_path / "block_numbers" / partition;
+        ops.emplace_back(zkutil::makeSetRequest(partition_path, target.toString(), target.getVersion()));
+        ops.emplace_back(zkutil::makeSetRequest(balancer_path, "", balancer_stat.version));
+    }
 
     /// The order of the following three actions is important.
 
@@ -666,6 +649,15 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
     ops.emplace_back(zkutil::makeCheckRequest(cluster.zookeeper_path / "log", log_stat.version));
     Coordination::Responses responses;
     auto code = zookeeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZBADVERSION)
+    {
+        if (responses[0]->error == Coordination::Error::ZBADVERSION)
+            LOG_DEBUG(log, "Partition {} is already balanced by another replica. Cannot continue, will restart.", target.toStringForLog());
+        else if (responses[1]->error == Coordination::Error::ZBADVERSION)
+            LOG_DEBUG(log, "Another part had been assigned for re-sharding. Cannot continue, will restart.");
+        else if (responses.back()->error == Coordination::Error::ZBADVERSION)
+            LOG_DEBUG(log, "Replication log had been updated. Cannot continue, will restart.");
+    }
     zkutil::KeeperMultiException::check(code, ops, responses);
 
     auto it = fetch_log_entries.begin();
@@ -686,6 +678,10 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
         LOG_TRACE(log, "{} parts in ZooKeeper after mimic partition {}: {}", parts.size(), partition, fmt::join(parts, ", "));
     }
     LOG_TRACE(log, "Enqueued {} fetches after mimic partition {}: {}", created_get_parts.size(), partition, fmt::join(created_get_parts, ", "));
+
+    /// Update in-memory representation
+    cluster.updateClusterPartition(target);
+    target.incrementVersion();
 
     return fetch_log_entries;
 }

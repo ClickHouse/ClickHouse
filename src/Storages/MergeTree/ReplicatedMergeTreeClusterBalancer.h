@@ -62,10 +62,8 @@ private:
     void run();
     void runStep();
 
-    std::optional<ReplicatedMergeTreeClusterPartition> selectPartition();
-
-    void migrateOrClonePartitionWithClone(const ReplicatedMergeTreeClusterPartition & target);
-    std::list<ReplicatedMergeTreeLogEntryPtr> clonePartition(const zkutil::ZooKeeperPtr & zookeeper, const String & partition, const String & source_replica);
+    void replicatePartition(const ReplicatedMergeTreeClusterPartition & target, const std::list<ReplicatedMergeTreeLogEntryPtr> & entries);
+    std::list<ReplicatedMergeTreeLogEntryPtr> clonePartition(const zkutil::ZooKeeperPtr & zookeeper, ReplicatedMergeTreeClusterPartition & target);
 
     void finish(const ReplicatedMergeTreeClusterPartition & target);
     void revert(const ReplicatedMergeTreeClusterPartition & target);
