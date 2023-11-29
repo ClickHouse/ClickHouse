@@ -293,7 +293,7 @@ InputFormatPtr FormatFactory::getInput(
     // Decide whether to use ParallelParsingInputFormat.
 
     bool parallel_parsing =
-        max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine &&
+        max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine_creator &&
         !creators.random_access_input_creator && !need_only_count;
 
     if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage)
@@ -323,7 +323,7 @@ InputFormatPtr FormatFactory::getInput(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, creators.file_segmentation_engine, name, max_parsing_threads,
+            buf, sample, parser_creator, creators.file_segmentation_engine_creator, name, format_settings, max_parsing_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
@@ -669,10 +669,22 @@ String FormatFactory::getFormatFromFileDescriptor(int fd)
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
 {
-    auto & target = dict[name].file_segmentation_engine;
+    auto & target = dict[name].file_segmentation_engine_creator;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: File segmentation engine {} is already registered", name);
-    target = std::move(file_segmentation_engine);
+    auto creator = [file_segmentation_engine](const FormatSettings &)
+    {
+        return file_segmentation_engine;
+    };
+    target = std::move(creator);
+}
+
+void FormatFactory::registerFileSegmentationEngineCreator(const String & name, FileSegmentationEngineCreator file_segmentation_engine_creator)
+{
+    auto & target = dict[name].file_segmentation_engine_creator;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: File segmentation engine creator {} is already registered", name);
+    target = std::move(file_segmentation_engine_creator);
 }
 
 void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator)
