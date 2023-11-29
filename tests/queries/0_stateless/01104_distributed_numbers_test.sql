@@ -1,5 +1,19 @@
 -- Tags: distributed
 
+SELECT *
+FROM
+(
+    SELECT *
+    FROM system.numbers
+    WHERE number = 100
+    UNION ALL
+    SELECT *
+    FROM system.numbers
+    WHERE number = 100
+)
+LIMIT 2
+SETTINGS max_threads = 1 FORMAT Null;
+
 DROP TABLE IF EXISTS d_numbers;
 CREATE TABLE d_numbers (number UInt32) ENGINE = Distributed(test_cluster_two_shards, system, numbers, rand());
 
