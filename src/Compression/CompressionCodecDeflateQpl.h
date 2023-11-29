@@ -114,8 +114,8 @@ protected:
 private:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    std::unique_ptr<HardwareCodecDeflateQpl> hw_codec;
     std::unique_ptr<SoftwareCodecDeflateQpl> sw_codec;
+    std::unique_ptr<HardwareCodecDeflateQpl> hw_codec;
 };
 
 }
