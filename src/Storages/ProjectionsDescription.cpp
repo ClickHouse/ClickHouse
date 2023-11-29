@@ -293,7 +293,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
 {
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
-    /// Now, projections do not support in on SELECT, and (whith this change) should ignore on INSERT as well.
+    /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
 
     auto builder = InterpreterSelectQuery(
