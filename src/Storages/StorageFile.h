@@ -81,6 +81,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
+    static Names getVirtualColumnNames();
+
     static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.

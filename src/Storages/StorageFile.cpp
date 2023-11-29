@@ -1969,4 +1969,9 @@ StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
     return archive_info;
 }
 
+Names StorageFile::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
+}
+
 }

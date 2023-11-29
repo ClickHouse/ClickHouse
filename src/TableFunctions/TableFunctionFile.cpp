@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
@@ -111,6 +112,12 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
 
     return parseColumnsListFromString(structure, context);
+}
+
+std::unordered_set<String> TableFunctionFile::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    auto virtual_column_names = StorageFile::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

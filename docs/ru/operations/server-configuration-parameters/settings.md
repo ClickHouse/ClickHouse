@@ -1215,6 +1215,7 @@ ClickHouse использует потоки из глобального пул�
 -   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables/metrics.md#system_tables-metrics).
 -   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables/events.md#system_tables-events).
 -   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
+-   `errors` - флаг для экспорта количества ошибок (по кодам) случившихся с момента последнего рестарта сервера. Эта информация может быть получена из таблицы [system.errors](../system-tables/asynchronous_metrics.md#system_tables-errors)
 
 **Пример**
 
@@ -1225,6 +1226,7 @@ ClickHouse использует потоки из глобального пул�
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
     </prometheus>
 ```
 

@@ -4,6 +4,9 @@
 #include <Storages/StorageConfiguration.h>
 #include <Common/randomSeed.h>
 
+#include "config.h"
+
+#if USE_SIMDJSON || USE_RAPIDJSON
 namespace DB
 {
 
@@ -66,3 +69,4 @@ private:
 };
 
 }
+#endif
