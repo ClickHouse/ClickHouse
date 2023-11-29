@@ -304,7 +304,6 @@ ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeCluster::getOrCreateClust
         /// Partition already added by some of replicas, update the in memory representation
         if (code == Coordination::Error::ZNODEEXISTS)
         {
-            /// FIXME(cluster): what if it got updated in the mean time?
             Coordination::Stat partition_stat;
             String partition_data = zookeeper->get(partition_path, &partition_stat);
             partition = ReplicatedMergeTreeClusterPartition::fromString(
