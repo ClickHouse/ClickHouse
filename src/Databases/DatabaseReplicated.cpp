@@ -1186,7 +1186,10 @@ void DatabaseReplicated::dropReplica(
 
     auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
 
-    String database_mark = zookeeper->get(database_zookeeper_path);
+    String database_mark;
+    bool db_path_exists = zookeeper->tryGet(database_zookeeper_path, database_mark);
+    if (!db_path_exists && !throw_if_noop)
+        return;
     if (database_mark != REPLICATED_DATABASE_MARK)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} does not look like a path of Replicated database", database_zookeeper_path);
 
