@@ -29,6 +29,32 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist. Maybe you meant {}?", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name), backQuoteIfNeed(names[0]));
 }
 
+StoragePtr IDatabase::getTableAcrossAllDatabases(const String & name, ContextPtr context, Databases databases) const
+{
+    if (auto storage = tryGetTable(name, context))
+        return storage;
+
+    std::vector<std::pair<std::string, std::string>> db_and_table_names;
+    for (const auto & db : databases)
+    {
+        TableNameHints hints(db.second, context);
+        auto table_names = hints.getHints(name);
+        for (const auto & table_name : table_names)
+            db_and_table_names.emplace_back(std::pair(db.second->getDatabaseName(), table_name));
+    }
+
+    if (db_and_table_names.empty())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
+    else
+        throw Exception(
+            ErrorCodes::UNKNOWN_TABLE,
+            "Table {}.{} does not exist. Maybe you meant {}.{}?",
+            backQuoteIfNeed(getDatabaseName()),
+            backQuoteIfNeed(name),
+            backQuoteIfNeed(db_and_table_names[0].first),
+            backQuoteIfNeed(db_and_table_names[0].second));
+}
+
 std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const
 {
     /// Cannot backup any table because IDatabase doesn't own any tables.
