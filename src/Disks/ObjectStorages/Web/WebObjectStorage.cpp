@@ -179,11 +179,7 @@ std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const
         shared_lock.unlock();
         std::unique_lock unique_lock(metadata_mutex);
 
-        /// The code relies on invariant that if this function returned true
-        /// the file exists in files.
-        /// In this case we have a directory which doesn't explicitly exists (like store/xxx/yyy)
-        ///                                                        ^^^^^
-        /// Adding it to the files
+        /// Add this directory path not files cache to simplify further checks for this path.
         files.emplace(std::make_pair(path, FileData({.type = FileType::Directory})));
 
         unique_lock.unlock();
