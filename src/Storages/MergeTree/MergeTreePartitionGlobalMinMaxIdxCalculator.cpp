@@ -6,28 +6,7 @@ namespace DB
 
 namespace
 {
-
-std::vector<Range> extractMinMaxIndexesFromBlock(
-        const Block & block_with_min_max_idx
-    )
-    {
-        std::vector<Range> min_max_indexes;
-
-        for (auto i = 0u; i < block_with_min_max_idx.columns(); i++)
-        {
-            Field min_idx;
-            Field max_idx;
-
-            block_with_min_max_idx.getByPosition(i).column->get(0, min_idx);
-            block_with_min_max_idx.getByPosition(i).column->get(1, max_idx);
-
-            min_max_indexes.emplace_back(Range(std::move(min_idx), true, std::move(max_idx), true));
-        }
-
-        return min_max_indexes;
-    }
-
-    std::vector<Range> calculateMinMaxIndexesForPart(
+    Block loadMinMaxIndexesForPart(
         const MergeTreeData & storage,
         const MergeTreeData::DataPartPtr & part
     )
@@ -38,49 +17,62 @@ std::vector<Range> extractMinMaxIndexesFromBlock(
 
         min_max_index.load(storage, metadata_manager);
 
-        auto block_with_min_max_partition_ids = min_max_index.getBlock(storage);
-
-        return extractMinMaxIndexesFromBlock(block_with_min_max_partition_ids);
+        return min_max_index.getBlock(storage);
     }
 
-    void updateGlobalMinMaxIndexes(
-        std::vector<Range> & global_min_max_indexes,
-        const std::vector<Range> & local_min_max_indexes
+    void updateGlobalMinMaxBlock(
+        Block & global_min_max_block,
+        const Block & local_min_max_block
     )
     {
-        if (global_min_max_indexes.empty())
+        if (global_min_max_block.columns() == 0)
         {
-            global_min_max_indexes = local_min_max_indexes;
+            global_min_max_block = local_min_max_block;
             return;
         }
 
-        assert(local_min_max_indexes.size() == global_min_max_indexes.size());
+        assert(local_min_max_block.columns() == global_min_max_block.columns());
 
-        for (auto i = 0u; i < local_min_max_indexes.size(); i++)
+        for (size_t i = 0; i < local_min_max_block.columns(); ++i)
         {
-            const auto & local_range = local_min_max_indexes[i];
+            const auto & localColumn = local_min_max_block.getByPosition(i);
+            auto & globalColumn = global_min_max_block.getByPosition(i);
 
-            global_min_max_indexes[i] = {
-                std::min(global_min_max_indexes[i].left, local_range.left),
-                true,
-                std::max(global_min_max_indexes[i].right, local_range.right),
-                true
-            };
+            Field local_min_idx;
+            Field local_max_idx;
+
+            Field global_min_idx;
+            Field global_max_idx;
+
+            localColumn.column->get(0, local_min_idx);
+            localColumn.column->get(1, local_max_idx);
+
+            globalColumn.column->get(0, global_min_idx);
+            globalColumn.column->get(1, global_max_idx);
+
+            auto new_column = globalColumn.type->createColumn();
+
+            new_column->insert(std::min(global_min_idx, local_min_idx));
+            new_column->insert(std::max(global_max_idx, local_max_idx));
+
+            globalColumn.column = std::move(new_column);
         }
     }
 
 }
 
-std::vector<Range> MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
+Block MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
     const MergeTreeData & storage,
     const DataPartsVector & parts
 )
 {
-    std::vector<Range> global_min_max_indexes;
+    Block global_min_max_indexes;
 
     for (const auto & part : parts)
     {
-        updateGlobalMinMaxIndexes(global_min_max_indexes, calculateMinMaxIndexesForPart(storage, part));
+        auto min_max_indexes_block = loadMinMaxIndexesForPart(storage, part);
+
+        updateGlobalMinMaxBlock(global_min_max_indexes, loadMinMaxIndexesForPart(storage, part));
     }
 
     return global_min_max_indexes;

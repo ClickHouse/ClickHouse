@@ -18,7 +18,7 @@ class MergeTreePartitionGlobalMinMaxIdxCalculator
     using DataPartsVector = std::vector<DataPartPtr>;
 
 public:
-    static std::vector<Range> calculate(
+    static Block calculate(
         const MergeTreeData & storage,
         const DataPartsVector & parts
     );

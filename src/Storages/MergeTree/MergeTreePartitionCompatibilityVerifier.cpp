@@ -30,14 +30,27 @@ namespace
             destination_table_metadata->getColumns().getOrdinary()
         };
 
-        MonotonicityCheckVisitor::Data data {{table_with_columns}, destination_storage.getContext(), {}};
+        auto expression_list = extractKeyExpressionList(definition_ast);
 
-        // fix this, I still do not know how to proceed from here
-        data.range = hyperrectangle[0];
+        Monotonicity monotonicity;
 
-        MonotonicityCheckVisitor(data).visit(definition_ast);
+        for (auto i = 0u; i < expression_list->children.size(); i++)
+        {
+            MonotonicityCheckVisitor::Data data {{table_with_columns}, destination_storage.getContext(), {}};
 
-        return data.monotonicity.is_monotonic && data.monotonicity.is_positive;
+            data.range = hyperrectangle[i];
+
+            MonotonicityCheckVisitor(data).visit(expression_list->children[i]);
+            monotonicity = data.monotonicity;
+
+            if (!monotonicity.is_monotonic || !monotonicity.is_positive)
+            {
+                return false;
+            }
+
+        }
+
+        return monotonicity.is_monotonic && monotonicity.is_positive;
     }
 
     void validatePartitionIds(
@@ -82,6 +95,31 @@ namespace
         return true;
     }
 
+    /*
+     * Need to come up with a better name. This method builds a hyperrectangle from a given set of columns.
+     * */
+    std::vector<Range> buildHyperrectangleForColumns(
+        const Block & block,
+        const Names & columns
+    )
+    {
+        std::vector<Range> hyperrectangle;
+
+        for (const auto & column_name : columns)
+        {
+            auto column_idx = block.getPositionByName(column_name);
+            Field min_idx;
+            Field max_idx;
+
+            block.getByPosition(column_idx).column->get(0, min_idx);
+            block.getByPosition(column_idx).column->get(1, max_idx);
+
+            hyperrectangle.emplace_back(min_idx, true, max_idx, true);
+        }
+
+        return hyperrectangle;
+    }
+
 }
 
 void MergeTreePartitionCompatibilityVerifier::verify(
@@ -90,8 +128,13 @@ void MergeTreePartitionCompatibilityVerifier::verify(
     const DataPartsVector & source_parts
 )
 {
-    const auto source_partition_key_ast = source_storage.getInMemoryMetadataPtr()->getPartitionKeyAST();
-    const auto destination_partition_key_ast = destination_storage.getInMemoryMetadataPtr()->getPartitionKeyAST();
+    const auto source_metadata = source_storage.getInMemoryMetadataPtr();
+    const auto destination_metadata = destination_storage.getInMemoryMetadataPtr();
+
+    const auto source_partition_key_ast = source_metadata->getPartitionKeyAST();
+    const auto destination_partition_key_ast = destination_metadata->getPartitionKeyAST();
+
+    destination_storage.getInMemoryMetadataPtr()->getColumnsRequiredForPartitionKey();
 
     // If destination partition expression columns are a subset of source partition expression columns,
     // there is no need to check for monotonicity.
@@ -102,14 +145,16 @@ void MergeTreePartitionCompatibilityVerifier::verify(
 
     auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(source_storage, source_parts);
 
-    assert(!src_global_min_max_indexes.empty());
+    assert(src_global_min_max_indexes.columns());
 
-    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(src_global_min_max_indexes, destination_storage))
+    auto hyperrectangle = buildHyperrectangleForColumns(src_global_min_max_indexes, destination_metadata->getColumnsRequiredForPartitionKey());
+
+    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(hyperrectangle, destination_storage))
     {
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
     }
 
-    validatePartitionIds(source_storage, destination_storage, src_global_min_max_indexes);
+    validatePartitionIds(source_storage, destination_storage, hyperrectangle);
 }
 
 }
