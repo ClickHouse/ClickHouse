@@ -378,6 +378,7 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
     if (!source_is_lost && !source_is_removed && last_log_entry > source_log_pointer)
         throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Source replica {} did not processed all log entries", source_replica);
 
+    /// FIXME: we cannot use this, since we explicitly check version after, while it checks it in the loop
     auto source_queue_names = storage.getSourceQueueEntries(source_replica, source_is_lost_stat, zookeeper, /* update_source_replica_log_pointer= */ false);
 
     /// We got log pointer and list of queue entries of source replica.
@@ -649,6 +650,8 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
     }
 
     ops.emplace_back(zkutil::makeCheckRequest(cluster.zookeeper_path / "log", log_stat.version));
+    ops.emplace_back(zkutil::makeCheckRequest(source_path / "log_pointer", source_log_pointer_stat.version));
+
     Coordination::Responses responses;
     auto code = zookeeper->tryMulti(ops, responses);
     if (code == Coordination::Error::ZBADVERSION)
