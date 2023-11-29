@@ -1,3 +1,7 @@
+#include <Storages/StorageFuzzJSON.h>
+
+#if USE_SIMDJSON || USE_RAPIDJSON
+
 #include <optional>
 #include <random>
 #include <string_view>
@@ -6,7 +10,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageFuzzJSON.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
@@ -693,3 +696,4 @@ void registerStorageFuzzJSON(StorageFactory & factory)
 }
 
 }
+#endif
