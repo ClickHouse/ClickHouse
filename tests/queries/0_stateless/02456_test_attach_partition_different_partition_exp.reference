@@ -157,6 +157,21 @@ SELECT * FROM destination ORDER BY (a, b, c);
 1	2	3
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 1
+-- Should be allowed. Special test case, tricky to explain. First column of source partition expression is
+-- timestamp, while first column of destination partition expression is `A`. One of the previous implementations
+-- would not match the columns, which could lead to `timestamp` min max being used to calculate monotonicity of `A`.
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+CREATE TABLE source (`timestamp` DateTime, `A` Int64) ENGINE = MergeTree PARTITION BY tuple(toYYYYMM(timestamp), intDiv(A, 6)) ORDER BY timestamp;
+CREATE TABLE destination (`timestamp` DateTime, `A` Int64) ENGINE = MergeTree PARTITION BY A ORDER BY timestamp;
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01', 5);
+ALTER TABLE destination ATTACH PARTITION ID '201003-0' FROM source;
+SELECT * FROM source ORDER BY timestamp;
+2010-03-02 02:01:01	5
+SELECT * FROM destination ORDER BY timestamp;
+2010-03-02 02:01:01	5
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+5
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;

@@ -20,7 +20,8 @@ class MergeTreePartitionGlobalMinMaxIdxCalculator
 public:
     static Block calculate(
         const MergeTreeData & storage,
-        const DataPartsVector & parts
+        const DataPartsVector & parts,
+        const Names & columns_of_interest
     );
 };
 

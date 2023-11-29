@@ -22,18 +22,19 @@ namespace
 
     void updateGlobalMinMaxBlock(
         Block & global_min_max_block,
-        const Block & local_min_max_block
+        const Block & local_min_max_block,
+        const Names & columns_of_interest
     )
     {
         if (global_min_max_block.columns() == 0)
         {
-            global_min_max_block = local_min_max_block;
+            global_min_max_block = local_min_max_block.cloneWithOnlyColumns(columns_of_interest);
             return;
         }
 
         assert(local_min_max_block.columns() == global_min_max_block.columns());
 
-        for (size_t i = 0; i < local_min_max_block.columns(); ++i)
+        for (size_t i = 0; i < global_min_max_block.columns(); ++i)
         {
             const auto & localColumn = local_min_max_block.getByPosition(i);
             auto & globalColumn = global_min_max_block.getByPosition(i);
@@ -63,7 +64,8 @@ namespace
 
 Block MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
     const MergeTreeData & storage,
-    const DataPartsVector & parts
+    const DataPartsVector & parts,
+    const Names & columns_of_interest
 )
 {
     Block global_min_max_indexes;
@@ -72,7 +74,7 @@ Block MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
     {
         auto min_max_indexes_block = loadMinMaxIndexesForPart(storage, part);
 
-        updateGlobalMinMaxBlock(global_min_max_indexes, loadMinMaxIndexesForPart(storage, part));
+        updateGlobalMinMaxBlock(global_min_max_indexes, loadMinMaxIndexesForPart(storage, part), columns_of_interest);
     }
 
     return global_min_max_indexes;

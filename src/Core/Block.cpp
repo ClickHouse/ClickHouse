@@ -575,6 +575,16 @@ Block Block::cloneWithCutColumns(size_t start, size_t length) const
     return copy;
 }
 
+Block Block::cloneWithOnlyColumns(const Names & column_names) const
+{
+    Block res;
+
+    for (const auto & name : column_names)
+        res.insert(getByName(name));
+
+    return res;
+}
+
 Block Block::sortColumns() const
 {
     Block sorted_block;

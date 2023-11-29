@@ -54,20 +54,14 @@ namespace
     }
 
     void validatePartitionIds(
-        const MergeTreeData & source_storage,
         const MergeTreeData & destination_storage,
-        const std::vector<Range> & hyperrectangle
+        const Block & block
     )
     {
-        auto block_with_min_and_max_idx = IMergeTreeDataPart::MinMaxIndex::buildBlockWithMinAndMaxIndexes(
-            source_storage,
-            hyperrectangle
-        );
-
         MergeTreePartition()
             .createAndValidateMinMaxPartitionIds(
                 destination_storage.getInMemoryMetadataPtr(),
-                block_with_min_and_max_idx,
+                block,
                 destination_storage.getContext()
             );
     }
@@ -134,7 +128,7 @@ void MergeTreePartitionCompatibilityVerifier::verify(
     const auto source_partition_key_ast = source_metadata->getPartitionKeyAST();
     const auto destination_partition_key_ast = destination_metadata->getPartitionKeyAST();
 
-    destination_storage.getInMemoryMetadataPtr()->getColumnsRequiredForPartitionKey();
+    const auto destination_partition_expression_columns = destination_storage.getInMemoryMetadataPtr()->getColumnsRequiredForPartitionKey();
 
     // If destination partition expression columns are a subset of source partition expression columns,
     // there is no need to check for monotonicity.
@@ -143,7 +137,11 @@ void MergeTreePartitionCompatibilityVerifier::verify(
         return;
     }
 
-    auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(source_storage, source_parts);
+    const auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
+        source_storage,
+        source_parts,
+        destination_partition_expression_columns
+    );
 
     assert(src_global_min_max_indexes.columns());
 
@@ -154,7 +152,7 @@ void MergeTreePartitionCompatibilityVerifier::verify(
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
     }
 
-    validatePartitionIds(source_storage, destination_storage, hyperrectangle);
+    validatePartitionIds(destination_storage, src_global_min_max_indexes);
 }
 
 }

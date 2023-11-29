@@ -155,6 +155,39 @@ SELECT * FROM source ORDER BY (a, b, c);
 SELECT * FROM destination ORDER BY (a, b, c);
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
+-- Should be allowed. Special test case, tricky to explain. First column of source partition expression is
+-- timestamp, while first column of destination partition expression is `A`. One of the previous implementations
+-- would not match the columns, which could lead to `timestamp` min max being used to calculate monotonicity of `A`.
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (`timestamp` DateTime, `A` Int64) ENGINE = MergeTree PARTITION BY tuple(toYYYYMM(timestamp), intDiv(A, 6)) ORDER BY timestamp;
+CREATE TABLE destination (`timestamp` DateTime, `A` Int64) ENGINE = MergeTree PARTITION BY A ORDER BY timestamp;
+
+INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01', 5);
+
+ALTER TABLE destination ATTACH PARTITION ID '201003-0' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
+-- Should be allowed. Destination partition expression contains multiple expressions, but all of them are monotonically
+-- increasing in the source partition min max indexes.
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(A, B) ORDER BY tuple();
+CREATE TABLE destination (A Int, B Int) ENGINE = MergeTree PARTITION BY tuple(intDiv(A, 2), intDiv(B, 2)) ORDER BY tuple();
+
+INSERT INTO TABLE source VALUES (6, 12);
+
+ALTER TABLE destination ATTACH PARTITION ID '6-12' FROM source;
+
+SELECT * FROM source ORDER BY A;
+SELECT * FROM destination ORDER BY A;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS destination;
