@@ -78,11 +78,13 @@ public:
     virtual ASTPtr clone() const = 0;
 
     /** Get hash code, identifying this element and its subtree.
+     *  Hashing by default ignores aliases (e.g. identifier aliases, function aliases, literal aliases) which is
+     *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
       */
     using Hash = CityHash_v1_0_2::uint128;
-    Hash getTreeHash() const;
-    void updateTreeHash(SipHash & hash_state) const;
-    virtual void updateTreeHashImpl(SipHash & hash_state) const;
+    Hash getTreeHash(bool ignore_aliases) const;
+    void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
+    virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
 
     void dumpTree(WriteBuffer & ostr, size_t indent = 0) const;
     std::string dumpTree(size_t indent = 0) const;

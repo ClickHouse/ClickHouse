@@ -550,11 +550,11 @@ public:
 
         return std::make_unique<WriteBufferFromS3>(
                     client,
-                    client,
                     bucket,
                     file_name,
                     DBMS_DEFAULT_BUFFER_SIZE,
                     request_settings,
+                    nullptr,
                     std::nullopt,
                     getAsyncPolicy().getScheduler());
     }
@@ -1215,7 +1215,7 @@ TEST_F(WBS3Test, ReadBeyondLastOffset) {
         /// create encrypted file reader
 
         auto cache_log = std::shared_ptr<FilesystemCacheLog>();
-        const StoredObjects objects = { StoredObject(remote_file, data.size() + FileEncryption::Header::kSize) };
+        const StoredObjects objects = { StoredObject(remote_file, /* local_path */ "", data.size() + FileEncryption::Header::kSize) };
         auto async_read_counters = std::make_shared<AsyncReadCounters>();
         auto prefetch_log = std::shared_ptr<FilesystemReadPrefetchesLog>();
 

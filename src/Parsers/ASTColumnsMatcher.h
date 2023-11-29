@@ -27,7 +27,7 @@ public:
     const String & getPattern() const;
     const std::shared_ptr<re2::RE2> & getMatcher() const;
     bool isColumnMatching(const String & column_name) const;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr expression;
     ASTPtr transformers;
@@ -65,7 +65,7 @@ public:
     const std::shared_ptr<re2::RE2> & getMatcher() const;
     void setPattern(String pattern, bool set_matcher = true);
     void setMatcher(std::shared_ptr<re2::RE2> matcher);
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr qualifier;
     ASTPtr transformers;

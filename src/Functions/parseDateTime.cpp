@@ -7,14 +7,15 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/numLiteralChars.h>
 
+#include <Interpreters/Context.h>
+
 #include <IO/WriteHelpers.h>
-#include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
+
 
 namespace DB
 {
@@ -465,12 +466,14 @@ namespace
     {
     public:
         const bool mysql_M_is_month_name;
+        const bool mysql_parse_ckl_without_leading_zeros;
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
 
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+            , mysql_parse_ckl_without_leading_zeros(context->getSettings().parsedatetime_parse_without_leading_zeros)
         {
         }
 
@@ -834,6 +837,14 @@ namespace
                 return cur;
             }
 
+            static Pos mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                Int32 month;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month);
+                date.setMonth(month);
+                return cur;
+            }
+
             static Pos mysqlCentury(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 century;
@@ -1130,10 +1141,26 @@ namespace
                 return cur;
             }
 
+            static Pos mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                Int32 hour;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour);
+                date.setHour(hour, true, true);
+                return cur;
+            }
+
             static Pos mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour);
+                date.setHour(hour, false, false);
+                return cur;
+            }
+
+            static Pos mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                Int32 hour;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour);
                 date.setHour(hour, false, false);
                 return cur;
             }
@@ -1489,9 +1516,14 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextShort));
                             break;
 
-                        // Month as a decimal number (01-12)
+                        // Month as a decimal number:
+                        // - if parsedatetime_parse_without_leading_zeros = true: possibly without leading zero, i.e. 1-12
+                        // - else: with leading zero required, i.e. 01-12
                         case 'c':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonth));
+                            if (mysql_parse_ckl_without_leading_zeros)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthWithoutLeadingZero));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonth));
                             break;
 
                         // Year, divided by 100, zero-padded
@@ -1644,14 +1676,24 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
                             break;
 
-                        // Hour in 24h format (00-23)
+                        // Hour in 24h format:
+                        // - if parsedatetime_parse_without_leading_zeros = true, possibly without leading zero: i.e. 0-23
+                        // - else with leading zero required: i.e. 00-23
                         case 'k':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24));
+                            if (mysql_parse_ckl_without_leading_zeros)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24WithoutLeadingZero));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24));
                             break;
 
-                        // Hour in 12h format (01-12)
+                        // Hour in 12h format:
+                        // - if parsedatetime_parse_without_leading_zeros = true: possibly without leading zero, i.e. 0-12
+                        // - else with leading zero required: i.e. 00-12
                         case 'l':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
+                            if (mysql_parse_ckl_without_leading_zeros)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12WithoutLeadingZero));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
                             break;
 
                         case 't':

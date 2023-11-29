@@ -239,6 +239,8 @@ public:
 
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
+    bool isCommentAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;

@@ -84,6 +84,12 @@
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemS3Queue.h>
+#include <Storages/System/StorageSystemDashboards.h>
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+#include <Storages/System/StorageSystemSymbols.h>
+#endif
 
 #if USE_RDKAFKA
 #include <Storages/System/StorageSystemKafkaConsumers.h>
@@ -150,6 +156,9 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
     attach<StorageSystemScheduler>(context, system_database, "scheduler");
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    attach<StorageSystemSymbols>(context, system_database, "symbols");
+#endif
 #if USE_RDKAFKA
     attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers");
 #endif
@@ -196,6 +205,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes");
     attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins");
+    attach<StorageSystemS3Queue>(context, system_database, "s3queue");
+    attach<StorageSystemDashboards>(context, system_database, "dashboards");
 
     if (has_zookeeper)
     {
