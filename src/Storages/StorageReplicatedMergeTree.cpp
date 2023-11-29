@@ -3978,6 +3978,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
     if (cluster.has_value())
     {
+        /// Ensure that partition version is up-to-date, otherwise replicas is out of sync.
         ops.emplace_back(zkutil::makeCheckRequest(
             fs::path(zookeeper_path) / "block_numbers" / partition_id, partition_version));
     }

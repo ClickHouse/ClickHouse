@@ -261,9 +261,6 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterBal
     /// Loop to restart from scratch on ZBADVERSION errors.
     for (;;)
     {
-        Coordination::Stat log_stat;
-        zookeeper->get(cluster.zookeeper_path / "log", &log_stat);
-
         Coordination::Stat balancer_stat;
         fs::path balancer_path = cluster.zookeeper_path / "cluster" / "balancer";
         zookeeper->get(balancer_path, &balancer_stat);
@@ -279,8 +276,6 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterBal
         String partition_path = cluster.zookeeper_path / "block_numbers" / target->getPartitionId();
         ops.emplace_back(zkutil::makeSetRequest(partition_path, target->toString(), target->getVersion()));
         ops.emplace_back(zkutil::makeSetRequest(balancer_path, "", balancer_stat.version));
-        /// Update version to avoid creating log entries with out dated cluster partitions map.
-        ops.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", log_stat.version));
         auto error = zookeeper->tryMulti(ops, responses);
         if (error == Coordination::Error::ZBADVERSION)
         {
@@ -705,8 +700,6 @@ void ReplicatedMergeTreeClusterBalancer::finish(const ReplicatedMergeTreeCluster
     {
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeSetRequest(partition_path, new_partition.toString(), new_partition.getVersion()));
-        /// Just update version, because merges and balancer selector relies on it
-        ops.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", -1));
         zookeeper->multi(ops);
     }
     cluster.updateClusterPartition(new_partition);
@@ -724,8 +717,6 @@ void ReplicatedMergeTreeClusterBalancer::revert(const ReplicatedMergeTreeCluster
     Coordination::Responses responses;
 
     ops.emplace_back(zkutil::makeSetRequest(partition_path, new_partition.toString(), target.getVersion()));
-    /// Just update version, because merges and balancer selector relies on it
-    ops.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", -1));
 
     auto error = zookeeper->tryMulti(ops, responses);
     if (error == Coordination::Error::ZOK)
@@ -759,8 +750,6 @@ void ReplicatedMergeTreeClusterBalancer::enqueueDropPartition(const zkutil::ZooK
     Coordination::Requests ops_src;
     ops_src.emplace_back(zkutil::makeCreateRequest(
         cluster.zookeeper_path / "log/log-", entry_delete.toString(), zkutil::CreateMode::PersistentSequential));
-    /// Just update version, because merges assignment relies on it
-    ops_src.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", -1));
     delimiting_block_lock->getUnlockOp(ops_src);
 
     zookeeper->multi(ops_src);
