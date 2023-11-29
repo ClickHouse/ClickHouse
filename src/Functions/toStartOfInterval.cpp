@@ -1,6 +1,8 @@
 #include <base/arithmeticOverflow.h>
+#include "Common/IntervalKind.h"
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
+#include "base/types.h"
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsDateTime.h>
@@ -220,7 +222,7 @@ private:
 
         if (isDateTime64(time_column_type))
         {
-            if (!isDateTime64(origin_column.type.get()) && origin_column.column != nullptr)
+            if (origin_column.column != nullptr && !isDateTime64(origin_column.type.get()))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
 
             const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column_col);
@@ -231,9 +233,8 @@ private:
         }
         else if (isDateTime(time_column_type))
         {
-            if (origin_column.column != nullptr)
-                if (!isDateTime(origin_column.type.get()))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
+            if (origin_column.column != nullptr && !isDateTime(origin_column.type.get()))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
 
             const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column_col);
             if (time_column_vec)
@@ -241,9 +242,8 @@ private:
         }
         else if (isDate(time_column_type))
         {
-            if (origin_column.column != nullptr)
-                if (!isDate(origin_column.type.get()))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
+            if (origin_column.column != nullptr && !isDate(origin_column.type.get()))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
 
             const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column_col);
             if (time_column_vec)
@@ -330,19 +330,23 @@ private:
         else
         {
             UInt64 origin = origin_column.column->get64(0);
-            std::cerr << "origin: " << origin << std::endl;
-            std::cerr << "scale_multiplier: " << scale_multiplier << std::endl;
 
             for (size_t i = 0; i != size; ++i)
             {
                 auto td = time_data[i];
+                result_data[i] = 0;
                 if (origin > size_t(td))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date/datetime");
+
                 td -= origin;
-                result_data[i] = static_cast<ToFieldType>(ToStartOfInterval<unit>::execute(td, num_units, time_zone, scale_multiplier));
+                auto res = static_cast<ToFieldType>(ToStartOfInterval<unit>::execute(td, num_units, time_zone, scale_multiplier));
+
                 if (!(unit == IntervalKind::Millisecond || unit == IntervalKind::Microsecond || unit == IntervalKind::Nanosecond) && scale_multiplier != 10)
                     origin = origin / scale_multiplier;
-                result_data[i] += origin;
+                if (unit == IntervalKind::Week || unit == IntervalKind::Month || unit == IntervalKind::Quarter || unit == IntervalKind::Year)
+                    result_data[i] = UInt16(origin/86400 + res);
+                else
+                    result_data[i] += origin + res;
             }
         }
 
