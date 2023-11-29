@@ -207,6 +207,9 @@ class SessionTracker;
 
 struct ServerSettings;
 
+class IStatisticsStorage;
+using IStatisticsStoragePtr = std::shared_ptr<IStatisticsStorage>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -281,6 +284,8 @@ protected:
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
+    bool is_distributed_for_query_coordination = false;  /// Whether the current context it used for distributed query for query coordination
+
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
 
@@ -302,6 +307,12 @@ protected:
 
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
+
+    /// for query coordination
+    Int32 fragment_id_counter = 0;
+
+    /// for query coordination secondary query
+    QueryCoordinationMetaInfo query_coordination_meta;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -580,6 +591,16 @@ public:
     std::optional<UUID> getUserID() const;
     String getUserName() const;
 
+    Int32 getFragmentID()
+    {
+        return ++fragment_id_counter;
+    }
+
+    bool addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
+    const QueryCoordinationMetaInfo & getQueryCoordinationMetaInfo() const;
+
+    void setQuotaKey(String quota_key_);
+
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     std::vector<UUID> getCurrentRoles() const;
@@ -756,6 +777,9 @@ public:
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
+
+    void setDistributedForQueryCoord(bool is_distributed_for_query_coord) { is_distributed_for_query_coordination = is_distributed_for_query_coord; }
+    bool isDistributedForQueryCoord() const { return is_distributed_for_query_coordination; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
@@ -1105,6 +1129,9 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
+
+    IStatisticsStoragePtr & getStatisticsStorage() const;
+    void initializeStatisticsStorage(UInt64 refresh_interval);
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
