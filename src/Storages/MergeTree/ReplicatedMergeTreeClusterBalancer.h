@@ -41,7 +41,7 @@ public:
     void wakeup();
     void shutdown();
 
-    void waitSynced(bool throw_if_stopped);
+    void waitSynced(const zkutil::ZooKeeperPtr & zookeeper, bool throw_if_stopped);
 
 private:
     ReplicatedMergeTreeCluster & cluster;
@@ -60,16 +60,16 @@ private:
 
     void restoreStateFromCoordinator();
     void run();
-    void runStep();
+    void runStep(const zkutil::ZooKeeperPtr & zookeeper);
 
-    void replicatePartition(const ReplicatedMergeTreeClusterPartition & target, const std::list<ReplicatedMergeTreeLogEntryPtr> & entries);
+    void replicatePartition(const zkutil::ZooKeeperPtr & zookeeper, const ReplicatedMergeTreeClusterPartition & target, const std::list<ReplicatedMergeTreeLogEntryPtr> & entries);
     std::list<ReplicatedMergeTreeLogEntryPtr> clonePartition(const zkutil::ZooKeeperPtr & zookeeper, ReplicatedMergeTreeClusterPartition & target);
 
-    void finish(const ReplicatedMergeTreeClusterPartition & target);
-    void revert(const ReplicatedMergeTreeClusterPartition & target);
+    void finish(const zkutil::ZooKeeperPtr & zookeeper, const ReplicatedMergeTreeClusterPartition & target);
+    void revert(const zkutil::ZooKeeperPtr & zookeeper, const ReplicatedMergeTreeClusterPartition & target);
 
     void enqueueDropPartition(const zkutil::ZooKeeperPtr & zookeeper, const String & source_replica, const String & partition_id);
-    void cleanupOldPartitions(time_t ttl);
+    void cleanupOldPartitions(const zkutil::ZooKeeperPtr & zookeeper, time_t ttl);
 };
 
 }

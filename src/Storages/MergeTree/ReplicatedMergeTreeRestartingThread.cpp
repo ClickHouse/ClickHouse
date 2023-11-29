@@ -171,7 +171,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         if (storage.cluster.has_value())
         {
             LOG_INFO(log, "Table is part of the cluster, instead of clone, replica will take part in re-sharding process.");
-            storage.cluster->initialize();
+            storage.cluster->initialize(zookeeper);
         }
         else
             storage.cloneReplicaIfNeeded(zookeeper);

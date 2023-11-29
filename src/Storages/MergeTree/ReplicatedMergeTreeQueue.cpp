@@ -2237,7 +2237,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     /// We need to update the clusters partitions map to get recent changes in it.
     /// In case it will be changed again, the version of the "log" (merges_version) will not match.
     if (queue.storage.cluster.has_value())
-        queue.storage.cluster->loadFromCoordinator();
+        queue.storage.cluster->loadFromCoordinator(zookeeper);
 
     {
         /// We avoid returning here a version to be used in a lightweight transaction.

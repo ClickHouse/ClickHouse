@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <Core/Types_fwd.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterPartition.h>
+#include "Common/ZooKeeper/ZooKeeper.h"
 
 namespace Poco
 {
@@ -22,7 +23,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeClusterPartitionSelector
 {
 public:
-    explicit ReplicatedMergeTreeClusterPartitionSelector(ReplicatedMergeTreeCluster & cluster_);
+    explicit ReplicatedMergeTreeClusterPartitionSelector(zkutil::ZooKeeperPtr zookeeper_, ReplicatedMergeTreeCluster & cluster_);
 
     std::optional<ReplicatedMergeTreeClusterPartition> select();
 
@@ -33,6 +34,7 @@ private:
     ReplicatedMergeTreeCluster & cluster;
     StorageReplicatedMergeTree & storage;
     Poco::Logger * log;
+    zkutil::ZooKeeperPtr zookeeper;
 };
 
 }

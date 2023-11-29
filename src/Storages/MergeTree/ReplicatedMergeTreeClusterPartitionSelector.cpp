@@ -17,7 +17,7 @@ namespace ErrorCodes
 class ReplicatedMergeTreeClusterPartitionSelectorImpl
 {
 public:
-    ReplicatedMergeTreeClusterPartitionSelectorImpl(ReplicatedMergeTreeCluster & cluster, const StorageReplicatedMergeTree & storage, Poco::Logger * log);
+    ReplicatedMergeTreeClusterPartitionSelectorImpl(const zkutil::ZooKeeperPtr & zookeeper_, ReplicatedMergeTreeCluster & cluster, const StorageReplicatedMergeTree & storage, Poco::Logger * log);
 
     std::optional<ReplicatedMergeTreeClusterPartition> select();
     std::optional<ReplicatedMergeTreeClusterPartition> selectPartitionToMigrateFromRemovedReplica();
@@ -29,6 +29,7 @@ private:
     const StorageReplicatedMergeTree & storage;
     Poco::Logger * log;
     const String replica_name;
+    const zkutil::ZooKeeperPtr & zookeeper;
 
     /// <replica_name, partitions>
     std::unordered_map<String, std::vector<String>> replicas_partitions;
@@ -40,11 +41,12 @@ private:
 
     void reset();
 };
-ReplicatedMergeTreeClusterPartitionSelectorImpl::ReplicatedMergeTreeClusterPartitionSelectorImpl(ReplicatedMergeTreeCluster & cluster_, const StorageReplicatedMergeTree & storage_, Poco::Logger * log_)
+ReplicatedMergeTreeClusterPartitionSelectorImpl::ReplicatedMergeTreeClusterPartitionSelectorImpl(const zkutil::ZooKeeperPtr & zookeeper_, ReplicatedMergeTreeCluster & cluster_, const StorageReplicatedMergeTree & storage_, Poco::Logger * log_)
     : cluster(cluster_)
     , storage(storage_)
     , log(log_)
     , replica_name(storage.getReplicaName())
+    , zookeeper(zookeeper_)
     , cluster_replication_factor(storage.getSettings()->cluster_replication_factor)
 {
 }
@@ -59,7 +61,7 @@ void ReplicatedMergeTreeClusterPartitionSelectorImpl::reset()
 std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPartitionSelectorImpl::select()
 {
     reset();
-    cluster.loadFromCoordinator();
+    cluster.loadFromCoordinator(zookeeper);
 
     suitable_partitions = cluster.getClusterPartitions();
     if (suitable_partitions.empty())
@@ -85,7 +87,7 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
 
     /// Take into account replicas without partitions
     {
-        auto active_replicas = cluster.getActiveReplicas();
+        auto active_replicas = cluster.getActiveReplicas(zookeeper);
         for (const auto & active_replica : active_replicas)
             replicas_partitions[active_replica];
         /// Always adds ourself
@@ -102,7 +104,7 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
 
     for (const auto & [replica, _] : replicas_partitions)
     {
-        if (cluster.getZooKeeper()->exists(cluster.cluster_path / "replicas" / replica / "removed"))
+        if (zookeeper->exists(cluster.cluster_path / "replicas" / replica / "removed"))
             removing_replicas.emplace(replica);
     }
     size_t alive_replicas = replicas_partitions.size() - removing_replicas.size();
@@ -297,16 +299,17 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
 }
 
 
-ReplicatedMergeTreeClusterPartitionSelector::ReplicatedMergeTreeClusterPartitionSelector(ReplicatedMergeTreeCluster & cluster_)
+ReplicatedMergeTreeClusterPartitionSelector::ReplicatedMergeTreeClusterPartitionSelector(zkutil::ZooKeeperPtr zookeeper_, ReplicatedMergeTreeCluster & cluster_)
     : cluster(cluster_)
     , storage(cluster.storage)
     , log(&Poco::Logger::get(storage.getStorageID().getFullTableName() + " (ClusterPartitionSelector)"))
+    , zookeeper(std::move(zookeeper_))
 {
 }
 
 std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPartitionSelector::select()
 {
-    ReplicatedMergeTreeClusterPartitionSelectorImpl impl(cluster, storage, log);
+    ReplicatedMergeTreeClusterPartitionSelectorImpl impl(zookeeper, cluster, storage, log);
     return impl.select();
 }
 
@@ -325,7 +328,7 @@ Strings ReplicatedMergeTreeClusterPartitionSelector::allocatePartition()
 
     auto settings = storage.getSettings();
 
-    auto replicas_names = cluster.getActiveReplicas();
+    auto replicas_names = cluster.getActiveReplicas(zookeeper);
     if (replicas_names.size() < settings->cluster_replication_factor)
     {
         throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS,

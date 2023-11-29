@@ -45,14 +45,12 @@ public:
     bool isReplicaActive() const;
     void dropReplica(ContextPtr local_context);
 
-    void initialize();
+    void initialize(const zkutil::ZooKeeperPtr & zookeeper);
     void startDistributor();
 
     void shutdown();
     void sync();
     void loadFromCoordinator(const zkutil::ZooKeeperPtr & zookeeper);
-    /// TODO: get rid of version without zookeeper client
-    void loadFromCoordinator();
     void loadPartitionFromCoordinator(const String & partition_id);
 
     ReplicatedMergeTreeClusterPartition getOrCreateClusterPartition(const String & partition_id);
@@ -77,8 +75,7 @@ private:
     const fs::path replica_path;
     const fs::path replica_name;
 
-    Strings getActiveReplicasImpl(const zkutil::ZooKeeperPtr & zookeeper) const;
-    Strings getActiveReplicas() const;
+    Strings getActiveReplicas(const zkutil::ZooKeeperPtr & zookeeper) const;
     /// Store <partition_id, info>
     std::unordered_map<String, ReplicatedMergeTreeClusterPartition> partitions TSA_GUARDED_BY(partitions_mutex);
 
@@ -89,7 +86,7 @@ private:
     void loadFromCoordinatorImpl(const zkutil::ZooKeeperPtr & zookeeper, const Strings & partition_ids);
     ReplicatedMergeTreeClusterReplica resolveReplica(const String & name) const;
 
-    void cloneReplicaWithReshardingIfNeeded();
+    void cloneReplicaWithReshardingIfNeeded(const zkutil::ZooKeeperPtr & zookeeper);
     void cloneReplicaWithResharding(const zkutil::ZooKeeperPtr & zookeeper);
 
     void updateReplicas(const Strings & names);

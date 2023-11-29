@@ -89,7 +89,7 @@ void ReplicatedMergeTreeClusterBalancer::shutdown()
     background_task->deactivate();
 }
 
-void ReplicatedMergeTreeClusterBalancer::waitSynced(bool throw_if_stopped)
+void ReplicatedMergeTreeClusterBalancer::waitSynced(const zkutil::ZooKeeperPtr & zookeeper, bool throw_if_stopped)
 {
     LOG_TRACE(log, "Syncing cluster");
     Stopwatch watch;
@@ -112,7 +112,7 @@ void ReplicatedMergeTreeClusterBalancer::waitSynced(bool throw_if_stopped)
     {
         try
         {
-            runStep();
+            runStep(zookeeper);
         }
         catch (const Coordination::Exception & e)
         {
@@ -141,7 +141,7 @@ void ReplicatedMergeTreeClusterBalancer::waitSynced(bool throw_if_stopped)
             break;
     }
 
-    cleanupOldPartitions(0);
+    cleanupOldPartitions(zookeeper, 0);
 
     if (throw_if_stopped && is_stopped)
         throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
@@ -149,7 +149,10 @@ void ReplicatedMergeTreeClusterBalancer::waitSynced(bool throw_if_stopped)
 
 void ReplicatedMergeTreeClusterBalancer::restoreStateFromCoordinator()
 {
-    cluster.loadFromCoordinator();
+    auto zookeeper = cluster.getZooKeeper();
+
+    cluster.loadFromCoordinator(zookeeper);
+
     const auto & partitions = cluster.getClusterPartitions();
     const auto & replica_name = storage.getReplicaName();
     for (const auto & partition : partitions)
@@ -170,11 +173,13 @@ void ReplicatedMergeTreeClusterBalancer::restoreStateFromCoordinator()
 void ReplicatedMergeTreeClusterBalancer::run()
 try
 {
-    cleanupOldPartitions(DISTRIBUTOR_PARTITION_DROP_TTL_SEC);
+    auto zookeeper = cluster.getZooKeeper();
+
+    cleanupOldPartitions(zookeeper, DISTRIBUTOR_PARTITION_DROP_TTL_SEC);
 
     while (!is_stopped)
     {
-        runStep();
+        runStep(zookeeper);
         if (state.step == BALANCER_NOTHING_TODO)
             break;
     }
@@ -189,13 +194,13 @@ catch (...)
         background_task->scheduleAfter(DISTRIBUTOR_ERROR_DELAY_MS);
 }
 
-void ReplicatedMergeTreeClusterBalancer::runStep()
+void ReplicatedMergeTreeClusterBalancer::runStep(const zkutil::ZooKeeperPtr & zookeeper)
 {
     switch (state.step)
     {
         case BALANCER_SELECT_PARTITION:
         {
-            ReplicatedMergeTreeClusterPartitionSelector selector(cluster);
+            ReplicatedMergeTreeClusterPartitionSelector selector(zookeeper, cluster);
             auto partition = selector.select();
 
             if (partition.has_value())
@@ -210,7 +215,6 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
         case BALANCER_MIGRATE_PARTITION:
         case BALANCER_CLONE_PARTITION:
         {
-            auto zookeeper = cluster.getZooKeeper();
             std::list<LogEntryPtr> entries;
 
             try
@@ -226,9 +230,9 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
 
             try
             {
-                replicatePartition(*state.target, entries);
+                replicatePartition(zookeeper, *state.target, entries);
                 /// NOTE: should we introduce some log entry for DROP_RANGE with dependencies?
-                finish(*state.target);
+                finish(zookeeper, *state.target);
 
                 state.target.reset();
                 state.step = BALANCER_SELECT_PARTITION;
@@ -257,12 +261,12 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
         }
         case BALANCER_DROP_PARTITION:
             /// No real drop happens, it will be done in background (if any)
-            finish(*state.target);
+            finish(zookeeper, *state.target);
             state.target.reset();
             state.step = BALANCER_SELECT_PARTITION;
             break;
         case BALANCER_REVERT:
-            revert(*state.target);
+            revert(zookeeper, *state.target);
             state.step = BALANCER_SELECT_PARTITION;
             break;
         case BALANCER_NOTHING_TODO:
@@ -271,10 +275,8 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
     }
 }
 
-void ReplicatedMergeTreeClusterBalancer::replicatePartition(const ReplicatedMergeTreeClusterPartition & target, const std::list<ReplicatedMergeTreeLogEntryPtr> & entries)
+void ReplicatedMergeTreeClusterBalancer::replicatePartition(const zkutil::ZooKeeperPtr & zookeeper, const ReplicatedMergeTreeClusterPartition & target, const std::list<ReplicatedMergeTreeLogEntryPtr> & entries)
 {
-    auto zookeeper = cluster.getZooKeeper();
-
     /// clonePartition() insert entries to the queue (not to the common log),
     /// and those entires need to be loaded to the in memory queue to wait them
     /// below
@@ -686,10 +688,8 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
     return fetch_log_entries;
 }
 
-void ReplicatedMergeTreeClusterBalancer::finish(const ReplicatedMergeTreeClusterPartition & target)
+void ReplicatedMergeTreeClusterBalancer::finish(const zkutil::ZooKeeperPtr & zookeeper, const ReplicatedMergeTreeClusterPartition & target)
 {
-    auto zookeeper = cluster.getZooKeeper();
-
     auto new_partition = target;
     new_partition.finish();
     String partition_path = cluster.zookeeper_path / "block_numbers" / new_partition.getPartitionId();
@@ -702,10 +702,8 @@ void ReplicatedMergeTreeClusterBalancer::finish(const ReplicatedMergeTreeCluster
     LOG_INFO(log, "Task had been successfully processed for partition {}", target.toStringForLog());
 }
 
-void ReplicatedMergeTreeClusterBalancer::revert(const ReplicatedMergeTreeClusterPartition & target)
+void ReplicatedMergeTreeClusterBalancer::revert(const zkutil::ZooKeeperPtr & zookeeper, const ReplicatedMergeTreeClusterPartition & target)
 {
-    auto zookeeper = cluster.getZooKeeper();
-
     const auto & new_partition = target;
     String partition_path = cluster.zookeeper_path / "block_numbers" / new_partition.getPartitionId();
 
@@ -754,11 +752,9 @@ void ReplicatedMergeTreeClusterBalancer::enqueueDropPartition(const zkutil::ZooK
         partition_id, source_replica, entry_delete.getDescriptionForLogs(storage.format_version));
 }
 
-void ReplicatedMergeTreeClusterBalancer::cleanupOldPartitions(time_t ttl)
+void ReplicatedMergeTreeClusterBalancer::cleanupOldPartitions(const zkutil::ZooKeeperPtr & zookeeper, time_t ttl)
 {
-    auto zookeeper = cluster.getZooKeeper();
-
-    cluster.loadFromCoordinator();
+    cluster.loadFromCoordinator(zookeeper);
     time_t now = time(nullptr);
     auto partitions = cluster.getClusterPartitions();
 
