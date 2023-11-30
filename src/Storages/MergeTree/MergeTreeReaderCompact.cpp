@@ -356,8 +356,17 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.getter = buffer_getter;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         if (offset > 0)
-            serialization->deserializeBinaryBulkWithMultipleStreamsSilently(temp_column, offset, deserialize_settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+        {
+            if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(temp_column, offset, deserialize_settings, state))
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+            else
+            {
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, offset + rows_to_read, deserialize_settings, state, nullptr);
+                temp_column = temp_column->cut(offset, rows_to_read);
+            }
+        }
+        else
+            serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
 
         auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
 
@@ -383,8 +392,17 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.getter = buffer_getter;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         if (offset > 0)
-            serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
+        {
+            if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, state))
+                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
+            else
+            {
+                serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + rows_to_read, deserialize_settings, state, nullptr);
+                column = column->cut(offset, rows_to_read);
+            }
+        }
+        else
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }
 
     /// The buffer is left in inconsistent state after reading single offsets

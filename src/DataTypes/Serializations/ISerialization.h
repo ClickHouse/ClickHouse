@@ -287,7 +287,7 @@ public:
         SubstreamsCache * cache) const;
 
     /// Read limit values silently.
-    virtual void deserializeBinaryBulkWithMultipleStreamsSilently(
+    virtual bool deserializeBinaryBulkWithMultipleStreamsSilently(
         ColumnPtr & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,

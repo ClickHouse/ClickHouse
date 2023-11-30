@@ -371,7 +371,7 @@ void SerializationString::serializeTextMarkdown(
         serializeTextEscaped(column, row_num, ostr, settings);
 }
 
-void SerializationString::deserializeBinaryBulkWithMultipleStreamsSilently(
+bool SerializationString::deserializeBinaryBulkWithMultipleStreamsSilently(
     ColumnPtr & /* column */,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -379,8 +379,6 @@ void SerializationString::deserializeBinaryBulkWithMultipleStreamsSilently(
 {
     if (ReadBuffer * istr = settings.getter(settings.path))
     {
-        ColumnString::Offsets offsets;
-        offsets.reserve(limit);
         for (size_t i = 0; i < limit; ++i)
         {
             UInt64 size;
@@ -388,6 +386,7 @@ void SerializationString::deserializeBinaryBulkWithMultipleStreamsSilently(
             istr->ignore(size);
         }
     }
+    return true;
 }
 
 }

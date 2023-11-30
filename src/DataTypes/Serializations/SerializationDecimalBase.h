@@ -28,7 +28,7 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsSilently(
+    bool deserializeBinaryBulkWithMultipleStreamsSilently(
         ColumnPtr & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,

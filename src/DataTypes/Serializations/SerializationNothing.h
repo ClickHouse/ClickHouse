@@ -30,7 +30,7 @@ public:
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsSilently(
+    bool deserializeBinaryBulkWithMultipleStreamsSilently(
         ColumnPtr & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,

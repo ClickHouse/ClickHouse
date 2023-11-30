@@ -165,7 +165,7 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulkWithMultipleStreamsSilently(
+bool SerializationNumber<T>::deserializeBinaryBulkWithMultipleStreamsSilently(
     ColumnPtr & /* column */,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -175,6 +175,7 @@ void SerializationNumber<T>::deserializeBinaryBulkWithMultipleStreamsSilently(
     {
         istr->ignore(sizeof(typename ColumnVector<T>::ValueType) * limit);
     }
+    return true;
 }
 
 template class SerializationNumber<UInt8>;

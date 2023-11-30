@@ -169,7 +169,7 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
 #pragma clang diagnostic pop
 }
 
-void SerializationUUID::deserializeBinaryBulkWithMultipleStreamsSilently(
+bool SerializationUUID::deserializeBinaryBulkWithMultipleStreamsSilently(
     ColumnPtr & /* column */,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -179,6 +179,7 @@ void SerializationUUID::deserializeBinaryBulkWithMultipleStreamsSilently(
     {
         istr->ignore(sizeof(UUID) * limit);
     }
+    return true;
 }
 
 }

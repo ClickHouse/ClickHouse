@@ -220,7 +220,7 @@ void SerializationFixedString::serializeTextMarkdown(
         serializeTextEscaped(column, row_num, ostr, settings);
 }
 
-void SerializationFixedString::deserializeBinaryBulkWithMultipleStreamsSilently(
+bool SerializationFixedString::deserializeBinaryBulkWithMultipleStreamsSilently(
     ColumnPtr & /* column */,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -236,6 +236,7 @@ void SerializationFixedString::deserializeBinaryBulkWithMultipleStreamsSilently(
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large sizes of FixedString to deserialize: {}", max_bytes);
         istr->ignore(max_bytes);
     }
+    return true;
 }
 
 }

@@ -69,7 +69,7 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::deserializeBinaryBulkWithMultipleStreamsSilently(
+bool SerializationDecimalBase<T>::deserializeBinaryBulkWithMultipleStreamsSilently(
     ColumnPtr & /* column */,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -79,6 +79,7 @@ void SerializationDecimalBase<T>::deserializeBinaryBulkWithMultipleStreamsSilent
     {
         istr->ignore(sizeof(FieldType) * limit);
     }
+    return true;
 }
 
 template class SerializationDecimalBase<Decimal32>;

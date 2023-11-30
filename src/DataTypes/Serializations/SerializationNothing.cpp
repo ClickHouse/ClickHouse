@@ -22,7 +22,7 @@ void SerializationNothing::deserializeBinaryBulk(IColumn & column, ReadBuffer & 
     typeid_cast<ColumnNothing &>(column).addSize(istr.tryIgnore(limit));
 }
 
-void SerializationNothing::deserializeBinaryBulkWithMultipleStreamsSilently(
+bool SerializationNothing::deserializeBinaryBulkWithMultipleStreamsSilently(
     ColumnPtr & /* column */,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -32,6 +32,7 @@ void SerializationNothing::deserializeBinaryBulkWithMultipleStreamsSilently(
     {
         istr->ignore(limit);
     }
+    return true;
 }
 
 }

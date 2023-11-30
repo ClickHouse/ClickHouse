@@ -130,7 +130,7 @@ public:
         size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit);
         x.resize(initial_size + size / sizeof(IPv));
     }
-    void deserializeBinaryBulkWithMultipleStreamsSilently(
+    bool deserializeBinaryBulkWithMultipleStreamsSilently(
         ColumnPtr & /* column */,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
@@ -140,6 +140,7 @@ public:
         {
             istr->ignore(sizeof(IPv) * limit);
         }
+        return true;
     }
 };
 

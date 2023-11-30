@@ -135,14 +135,13 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
-void ISerialization::deserializeBinaryBulkWithMultipleStreamsSilently(
-    ColumnPtr & column,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+bool ISerialization::deserializeBinaryBulkWithMultipleStreamsSilently(
+    ColumnPtr &,
+    size_t,
+    DeserializeBinaryBulkSettings &,
+    DeserializeBinaryBulkStatePtr &) const
 {
-    ColumnPtr tmp_column = column->cloneEmpty();
-    deserializeBinaryBulkWithMultipleStreams(tmp_column, limit, settings, state, nullptr);
+    return false;
 }
 
 namespace

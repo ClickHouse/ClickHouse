@@ -348,11 +348,19 @@ void MergeTreeReaderWide::readData(
 
     if (offset > 0)
     {
-        serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, deserialize_state);
-        seek_to_mark = false;
+        if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, deserialize_state))
+        {
+            seek_to_mark = false;
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+        }
+        else
+        {
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+            column = column->cut(offset, column->size() - offset);
+        }
     }
-
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    else
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
 }
 

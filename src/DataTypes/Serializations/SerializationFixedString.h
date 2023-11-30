@@ -43,7 +43,7 @@ public:
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsSilently(
+    bool deserializeBinaryBulkWithMultipleStreamsSilently(
         ColumnPtr & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
