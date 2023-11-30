@@ -621,7 +621,7 @@ struct CommitRetryContext
     size_t block_number = 0;
     std::vector<String> conflict_block_ids;
     bool part_was_deduplicated = false;
-    Coordination::Error unsertain_keeper_error = Coordination::Error::ZOK;
+    Coordination::Error uncertain_keeper_error = Coordination::Error::ZOK;
 };
 
 template<bool async_insert>
@@ -695,7 +695,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             retries_ctl.setUserError(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                     "Insert failed due to zookeeper error. Please retry. Reason: {}",
-                    retry_context.unsertain_keeper_error);
+                    retry_context.uncertain_keeper_error);
 
             /// trigger next keeper retry
             return CommitRetryContext::UNCERTAIN_COMMIT;
@@ -838,6 +838,17 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 zkutil::CreateMode::PersistentSequential));
     };
 
+    auto sleep_before_commit_for_tests = [&] ()
+    {
+        auto sleep_before_commit_local_part_in_replicated_table_ms = storage.getSettings()->sleep_before_commit_local_part_in_replicated_table_ms;
+        if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
+        {
+            LOG_INFO(log, "committing part {}, triggered sleep_before_commit_local_part_in_replicated_table_ms {}",
+                     part->name, sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds());
+            sleepForMilliseconds(sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds());
+        }
+    };
+
     auto commit_new_part_stage = [&] () -> CommitRetryContext::Stages
     {
         chassert(retry_context.block_number_lock.has_value());
@@ -905,45 +916,36 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
         if (multi_code == Coordination::Error::ZOK)
         {
-            auto sleep_before_commit_local_part_in_replicated_table_ms = storage.getSettings()->sleep_before_commit_local_part_in_replicated_table_ms;
-            if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
-            {
-                LOG_INFO(log, "committing part {}, triggered sleep_before_commit_local_part_in_replicated_table_ms {}",
-                         part->name, sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds());
-                sleepForMilliseconds(sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds());
-            }
-
             part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
+            sleep_before_commit_for_tests();
             transaction.commit();
 
             /// Lock nodes have been already deleted, do not delete them in destructor
             retry_context.block_number_lock->assumeUnlocked();
-
             return CommitRetryContext::SUCCESS;
         }
 
         if (Coordination::isHardwareError(multi_code))
         {
-            retry_context.unsertain_keeper_error = multi_code;
+            retry_context.uncertain_keeper_error = multi_code;
 
             /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
              *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
              */
+            sleep_before_commit_for_tests();
             transaction.commit();
-
             return CommitRetryContext::UNCERTAIN_COMMIT;
         }
 
+        transaction.rollback();
+
         if (!Coordination::isUserError(multi_code))
-        {
-            transaction.rollback();
             throw Exception(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                     "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
                     retry_context.block_number,
                     toString(block_id),
                     multi_code);
-        }
 
         auto failed_op_idx = zkutil::getFailedOpIndex(multi_code, responses);
         String failed_op_path = ops[failed_op_idx]->getPath();
@@ -953,8 +955,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
             LOG_INFO(log, "Block with ID {} already exists (it was just appeared) for part {}. Ignore it.",
                      toString(block_id), part->name);
-
-            transaction.rollback();
 
             if constexpr (async_insert)
             {
@@ -966,37 +966,29 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             return CommitRetryContext::DUPLICATED_PART;
         }
-        else if (multi_code == Coordination::Error::ZNONODE && failed_op_idx == block_unlock_op_idx)
-        {
-            transaction.rollback();
+
+        if (multi_code == Coordination::Error::ZNONODE && failed_op_idx == block_unlock_op_idx)
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                             "Insert query (for block {}) was canceled by concurrent ALTER PARTITION or TRUNCATE",
                             retry_context.block_number_lock->getPath());
-        }
-        else if (shared_lock_ops_id_begin <= failed_op_idx && failed_op_idx < shared_lock_op_id_end)
-        {
-            transaction.rollback();
+
+        if (shared_lock_ops_id_begin <= failed_op_idx && failed_op_idx < shared_lock_op_id_end)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Creating shared lock for part {} has failed with error: {}. It's a bug. "
                             "No race is possible since it is a new part.",
                             part->name, multi_code);
-        }
-        else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
-        {
-            transaction.rollback();
-            throw Exception(ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE, "Another quorum insert has been already started");
-        }
-        else
-        {
-            transaction.rollback();
-            throw Exception(
-                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                    "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
-                    retry_context.block_number,
-                    toString(block_id),
-                    multi_code,
-                    failed_op_path);
-        }
+
+        if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
+            throw Exception(ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE,
+                            "Another quorum insert has been already started");
+
+        throw Exception(
+                ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
+                retry_context.block_number,
+                toString(block_id),
+                multi_code,
+                failed_op_path);
     };
 
     auto stage_switcher = [&] ()
