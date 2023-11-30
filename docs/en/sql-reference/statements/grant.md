@@ -191,6 +191,7 @@ Hierarchy of privileges:
     - `addressToSymbol`
     - `demangle`
 - [SOURCES](#grant-sources)
+    - `STRIPELOG`
     - `FILE`
     - `URL`
     - `REMOTE`
@@ -457,6 +458,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
 - `SOURCES`. Level: `GROUP`
+    - `STRIPELOG`. Level: `GLOBAL`
     - `FILE`. Level: `GLOBAL`
     - `URL`. Level: `GLOBAL`
     - `REMOTE`. Level: `GLOBAL`

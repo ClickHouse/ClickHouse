@@ -733,6 +733,10 @@
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
 
+        <!-- By default, for backward compatibility Create StripeLog ignore STRIPELOG grant,
+             however you can change this behaviour by setting this to true -->
+        <create_stripelog_requires_grant>false</create_stripelog_requires_grant>
+
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
