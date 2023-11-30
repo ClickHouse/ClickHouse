@@ -96,7 +96,6 @@ public:
     void closeSession(const String & session_id);
 
 private:
-    std::mutex mutex;
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
     void recordLoginSucess(ContextPtr login_context) const;

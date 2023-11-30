@@ -292,16 +292,11 @@ Session::Session(const ContextPtr & global_context_, ClientInfo::Interface inter
 
 Session::~Session()
 {
-    /// Early release a NamedSessionData.
-    if (named_session)
-        named_session->release();
-
     if (notified_session_log_about_login)
     {
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
-            std::lock_guard lock(mutex);
             session_log->addLogOut(auth_id, user, getClientInfo());
         }
     }
@@ -560,10 +555,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Copy prepared client info to the session context, no matter it's been just created or not.
     /// If we continue using a previously created session context found by session ID
     /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
-    {
-        std::lock_guard lock(mutex);
-        new_session_context->setClientInfo(*prepared_client_info);
-    }
+    new_session_context->setClientInfo(*prepared_client_info);
     prepared_client_info.reset();
 
     auto access = new_session_context->getAccess();
