@@ -102,7 +102,9 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge. Expected JSON object");
             };
 
-            const auto * first_string = typeid_cast<const ColumnString *>(arguments[0].column.get());
+            const auto first_full_column = arguments[0].column->convertToFullColumnIfConst();
+            const auto * first_string = typeid_cast<const ColumnString *>(first_full_column.get());
+
             if (!first_string)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
@@ -117,7 +119,9 @@ namespace
 
             for (size_t col_idx = 1; col_idx < arguments.size(); ++col_idx)
             {
-                const auto * column_string = typeid_cast<const ColumnString *>(arguments[col_idx].column.get());
+                const auto full_column = arguments[col_idx].column->convertToFullColumnIfConst();
+                const auto * column_string = typeid_cast<const ColumnString *>(full_column.get());
+
                 if (!column_string)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
