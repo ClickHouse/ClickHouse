@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCluster.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -358,28 +359,29 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
     /// The order of the following three actions is important.
 
     Coordination::Stat source_is_lost_stat;
-    bool source_is_lost = zookeeper->get(source_path / "is_lost", &source_is_lost_stat) == "1";
-    bool source_is_removed = zookeeper->exists(cluster.cluster_path / "replicas" / source_replica / "removed");
+    zookeeper->get(source_path / "is_lost", &source_is_lost_stat);
 
     Coordination::Stat source_log_pointer_stat;
     String source_log_pointer_raw = zookeeper->get(source_path / "log_pointer", &source_log_pointer_stat);
     UInt64 source_log_pointer = parse<UInt64>(source_log_pointer_raw);
+    String min_source_log_pointer = "log-" + padIndex(source_log_pointer);
 
     Coordination::Stat log_stat;
     zookeeper->get(cluster.zookeeper_path / "log", &log_stat);
 
     UInt64 last_log_entry = 0;
-    {
-        Strings log_entries = zookeeper->getChildren(cluster.zookeeper_path / "log");
-        if (!log_entries.empty())
-            last_log_entry = parse<UInt64>(std::max_element(log_entries.begin(), log_entries.end())->substr(strlen("log-")));
-    }
-    LOG_DEBUG(log, "Trying to clone partition {} from replica {} (log_pointer: {}, last_log_entry: {})", partition, source_replica, source_log_pointer, last_log_entry);
-    if (!source_is_lost && !source_is_removed && last_log_entry > source_log_pointer)
-        throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Source replica {} did not processed all log entries", source_replica);
+    Strings log_entries_names = zookeeper->getChildren(cluster.zookeeper_path / "log");
+    if (!log_entries_names.empty())
+        last_log_entry = parse<UInt64>(std::max_element(log_entries_names.begin(), log_entries_names.end())->substr(strlen("log-")));
 
-    /// FIXME: we cannot use this, since we explicitly check version after, while it checks it in the loop
-    auto source_queue_names = storage.getSourceQueueEntries(source_replica, source_is_lost_stat, zookeeper, /* update_source_replica_log_pointer= */ false);
+    LOG_DEBUG(log, "Trying to clone partition {} from replica {} (log_pointer: {}, last_log_entry: {}, log entries: {})",
+        partition, source_replica, source_log_pointer, last_log_entry, log_entries_names.size());
+
+    std::erase_if(log_entries_names, [&min_source_log_pointer](const String & entry) { return entry < min_source_log_pointer; });
+    /// FIXME: we cannot use this, since we explicitly check version after, while it checks it in the loop, in other words this loop is useless for us.
+    auto source_queue_entries_names = storage.getSourceQueueEntries(source_replica, source_is_lost_stat, zookeeper, /* update_source_replica_log_pointer= */ false);
+    LOG_DEBUG(log, "Unprocessed log entries by source replica: {}, queue entries: {}",
+        log_entries_names.size(), source_queue_entries_names.size());
 
     /// We got log pointer and list of queue entries of source replica.
     /// At first we will get queue entries and then we will get list of active parts of source replica
@@ -388,32 +390,43 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
     /// We will try to parse queue entries before copying them
     /// to avoid creation of excessive and duplicating entries in our queue.
     /// See also removePartAndEnqueueFetch(...)
-    std::vector<StorageReplicatedMergeTree::QueueEntryInfo> source_queue;
+    std::vector<StorageReplicatedMergeTree::QueueEntryInfo> queue_entries;
     ActiveDataPartSet get_part_set{format_version};
     ActiveDataPartSet drop_range_set{format_version};
     std::unordered_set<String> exact_part_names;
 
     {
-        std::vector<zkutil::ZooKeeper::FutureGet> queue_get_futures;
-        queue_get_futures.reserve(source_queue_names.size());
+        /// <get_future, path, is_log_entry>
+        std::vector<std::tuple<zkutil::ZooKeeper::FutureGet, String, bool>> get_futures;
+        get_futures.reserve(source_queue_entries_names.size() + log_entries_names.size());
 
-        for (const String & entry_name : source_queue_names)
-            queue_get_futures.push_back(zookeeper->asyncTryGet(source_path / "queue" / entry_name));
-
-        auto queue_entry = [&](Coordination::GetResponse && res, LogEntryPtr && parsed_entry) -> StorageReplicatedMergeTree::QueueEntryInfo &
+        for (const String & entry_name : source_queue_entries_names)
         {
-            source_queue.emplace_back();
-            auto & info = source_queue.back();
+            String path = source_path / "queue" / entry_name;
+            get_futures.emplace_back(zookeeper->asyncTryGet(path), std::move(path), /* is_log_entry= */ false);
+        }
+        /// Since we cannot copy log_pointer we need to process log entries as well in addition to queue entries.
+        for (const String & entry_name : log_entries_names)
+        {
+            String path = cluster.zookeeper_path / "log" / entry_name;
+            get_futures.emplace_back(zookeeper->asyncTryGet(path), path, /* is_log_entry= */ true);
+        }
+
+        auto add_entry_to_queue = [&](Coordination::GetResponse && res, LogEntryPtr && parsed_entry) -> StorageReplicatedMergeTree::QueueEntryInfo &
+        {
+            queue_entries.emplace_back();
+            auto & info = queue_entries.back();
             info.data = std::move(res.data);
             info.stat = std::move(res.stat);
             info.parsed_entry = std::move(parsed_entry);
             return info;
         };
 
-        source_queue.reserve(source_queue_names.size());
-        for (size_t i = 0; i < source_queue_names.size(); ++i)
+        queue_entries.reserve(get_futures.size());
+        for (auto & [future, path, is_log_entry] : get_futures)
         {
-            auto res = queue_get_futures[i].get();
+            auto res = future.get();
+
             /// It's ok if entry is already executed and removed: we also will get source parts set.
             if (res.error == Coordination::Error::ZNONODE)
                 continue;
@@ -424,19 +437,32 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
             {
                 parsed_entry = LogEntry::parse(res.data, res.stat, format_version);
             }
-            catch (...)
+            catch (Exception & e)
             {
-                tryLogCurrentException(log, "Cannot parse source queue entry " + source_queue_names[i]);
+                e.addMessage("Cannot parse entry " + path);
+
+                /// log entry cannot be unparsed since we need to filter by replicas them.
+                if (is_log_entry)
+                    throw;
+                else
+                    tryLogCurrentException(log);
             }
 
-            /// It may be ok if source replica has newer version. We will copy entry as is.
+            if (is_log_entry)
+            {
+                const auto & entry_replicas = parsed_entry->replicas;
+                if (std::find(entry_replicas.begin(), entry_replicas.end(), source_replica) == entry_replicas.end())
+                    continue;
+            }
+
+            /// It may be ok if entry from source replica queue has newer version. We will copy entry as is.
             if (!parsed_entry)
             {
-                queue_entry(std::move(res), std::move(parsed_entry));
+                add_entry_to_queue(std::move(res), std::move(parsed_entry));
                 continue;
             }
 
-            parsed_entry->znode_name = source_queue_names[i];
+            parsed_entry->znode_name = path;
 
             /// Do not process unrelated partitions
             bool entry_contains_partition = false;
@@ -455,7 +481,7 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
             if (!entry_contains_partition)
                 continue;
 
-            auto & info = queue_entry(std::move(res), std::move(parsed_entry));
+            auto & info = add_entry_to_queue(std::move(res), std::move(parsed_entry));
             if (info.parsed_entry->type == LogEntry::DROP_RANGE || info.parsed_entry->type == LogEntry::DROP_PART)
             {
                 drop_range_set.add(info.parsed_entry->new_part_name);
@@ -626,7 +652,7 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
 
     /// Add content of the reference/master replica queue to the queue.
     size_t total_entries_to_copy = 0;
-    for (const auto & entry_info : source_queue)
+    for (const auto & entry_info : queue_entries)
     {
         chassert(!entry_info.data.empty());
         if (entry_info.parsed_entry && !entry_info.parsed_entry->new_part_name.empty())
@@ -677,7 +703,7 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
     size_t total_parts_to_fetch = created_get_parts.size();
     LOG_DEBUG(log, "Queued {} parts to be fetched for partition {}, {} parts ignored", total_parts_to_fetch, partition, active_parts.size() - total_parts_to_fetch);
 
-    LOG_DEBUG(log, "Copied {} queue entries, {} entries ignored (for partition {})", total_entries_to_copy, source_queue.size() - total_entries_to_copy, partition);
+    LOG_DEBUG(log, "Copied {} queue entries, {} entries ignored (for partition {})", total_entries_to_copy, queue_entries.size() - total_entries_to_copy, partition);
     {
         auto parts = zookeeper->getChildren(replica_path / "parts");
         LOG_TRACE(log, "{} parts in ZooKeeper after mimic partition {}: {}", parts.size(), partition, fmt::join(parts, ", "));
