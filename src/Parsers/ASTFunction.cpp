@@ -539,9 +539,9 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     writeChar(')', ostr);
 
     if (nulls_action == NullsAction::RESPECT_NULLS)
-        writeCString(" RESPECT NULLS ", ostr);
+        writeCString(" RESPECT NULLS", ostr);
     else if (nulls_action == NullsAction::IGNORE_NULLS)
-        writeCString(" IGNORE NULLS ", ostr);
+        writeCString(" IGNORE NULLS", ostr);
 
     if (is_window_function)
     {
@@ -565,9 +565,9 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 void ASTFunction::finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (nulls_action == NullsAction::RESPECT_NULLS)
-        settings.ostr << " RESPECT NULLS ";
+        settings.ostr << " RESPECT NULLS";
     else if (nulls_action == NullsAction::IGNORE_NULLS)
-        settings.ostr << " IGNORE NULLS ";
+        settings.ostr << " IGNORE NULLS";
 
     if (!is_window_function)
         return;
