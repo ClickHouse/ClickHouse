@@ -39,13 +39,11 @@ struct FieldRef : public Field
 };
 
 /** Range with open or closed ends; possibly unbounded.
-  */
+ */
 struct Range;
+/** A serious of range who can overlap or non-overlap.
+ */
 using Ranges = std::vector<Range>;
-
-/** Hyperrectangle is a product of ranges: each range across each coordinate.
-  */
-using Hyperrectangle = std::vector<Range>;
 
 /** Range with open or closed ends; possibly unbounded.
   */
