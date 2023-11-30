@@ -1624,6 +1624,9 @@ public:
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
         auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
+
+        fs::create_directories(fs::path(partition_path).parent_path());
+
         PartitionedSink::validatePartitionKey(partition_path, true);
         checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
@@ -1681,8 +1684,6 @@ SinkToStoragePtr StorageFile::write(
     {
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
-
-        fs::create_directories(fs::path(path_for_partitioned_write).parent_path());
 
         return std::make_shared<PartitionedStorageFileSink>(
             insert_query->partition_by,
