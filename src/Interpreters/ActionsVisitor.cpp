@@ -76,6 +76,7 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
+    extern const int SYNTAX_ERROR;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
