@@ -112,9 +112,14 @@ def test_parallel_quorum_actually_quorum(started_cluster):
         def insert_fail_quorum_timeout(node, settings):
             if "insert_quorum_timeout" not in settings:
                 settings["insert_quorum_timeout"] = "1000"
-            error = node.query_and_get_error("INSERT INTO q VALUES(3, 'Hi')", settings=settings)
+            error = node.query_and_get_error(
+                "INSERT INTO q VALUES(3, 'Hi')", settings=settings
+            )
             assert "DB::Exception: Unknown status, client must retry." in error, error
-            assert "DB::Exception: Timeout while waiting for quorum. (TIMEOUT_EXCEEDED)" in error, error
+            assert (
+                "DB::Exception: Timeout while waiting for quorum. (TIMEOUT_EXCEEDED)"
+                in error
+            ), error
 
         p = Pool(2)
         res = p.apply_async(
@@ -147,7 +152,12 @@ def test_parallel_quorum_actually_quorum(started_cluster):
 
         # Insert to the second to satisfy quorum
         insert_fail_quorum_timeout(
-            node2, {"insert_quorum": "3", "insert_quorum_parallel": "1", "insert_quorum_timeout": "1000"}
+            node2,
+            {
+                "insert_quorum": "3",
+                "insert_quorum_parallel": "1",
+                "insert_quorum_timeout": "1000",
+            },
         )
 
         res.get()

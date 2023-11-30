@@ -56,9 +56,9 @@ function filter_temporary_locks()
 
 
 function insert_duplicates() {
-  query_with_retry "insert into r1 values(1);" --send_logs_level="error"  &
+  $CLICKHOUSE_CLIENT -q "insert into r1 values(1);" --send_logs_level="error"  &
 
-  query_with_retry "insert into r2 values(1);" --send_logs_level="error"
+  $CLICKHOUSE_CLIENT -q "insert into r2 values(1);" --send_logs_level="error"
 
   wait
 
