@@ -1004,7 +1004,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     }
 }
 
-/// This optimisation is obsolete and will be removed.
+/// This optimization is obsolete and will be removed.
 /// optimizeReadInOrder covers it.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
 {

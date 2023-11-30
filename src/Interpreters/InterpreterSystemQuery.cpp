@@ -35,6 +35,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -76,6 +77,7 @@ namespace CurrentMetrics
 {
     extern const Metric RestartReplicaThreads;
     extern const Metric RestartReplicaThreadsActive;
+    extern const Metric RestartReplicaThreadsScheduled;
 }
 
 namespace DB
@@ -809,7 +811,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
     LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
-    ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, threads);
+    ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, CurrentMetrics::RestartReplicaThreadsScheduled, threads);
 
     for (auto & replica : replica_names)
     {

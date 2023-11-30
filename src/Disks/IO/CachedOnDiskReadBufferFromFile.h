@@ -63,7 +63,7 @@ public:
 private:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 
-    void initialize(size_t offset, size_t size);
+    void initialize();
 
     /**
      * Return a list of file segments ordered in ascending order. This list represents
@@ -85,7 +85,7 @@ private:
 
     bool nextImplStep();
 
-    size_t getTotalSizeToRead();
+    size_t getRemainingSizeToRead();
 
     bool completeFileSegmentAndGetNext();
 
@@ -94,6 +94,8 @@ private:
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
     static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
+
+    bool nextFileSegmentsBatch();
 
     Poco::Logger * log;
     FileCache::Key cache_key;
