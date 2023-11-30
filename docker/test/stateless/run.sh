@@ -46,7 +46,7 @@ fi
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
-echo $BUGFIX_VALIDATE_CHECK
+echo "$BUGFIX_VALIDATE_CHECK"
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
     sudo cat /etc/clickhouse-server/config.d/zookeeper.xml \
     | sed "/<use_compression>1<\/use_compression>/d" \
