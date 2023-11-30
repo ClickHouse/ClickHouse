@@ -141,6 +141,14 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
             new_settings.allow_experimental_parallel_reading_from_replicas = false;
     }
 
+    if (settings.max_execution_time_leaf.value > 0)
+    {
+        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
+        /// with 'timeout_overflow_mode_leaf'
+        new_settings.max_execution_time = settings.max_execution_time_leaf;
+        new_settings.timeout_overflow_mode = settings.timeout_overflow_mode_leaf;
+    }
+
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;

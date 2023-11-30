@@ -22,6 +22,7 @@ struct RangesInDataPartDescription
 {
     MergeTreePartInfo info;
     MarkRanges ranges;
+    size_t rows = 0;
 
     void serialize(WriteBuffer & out) const;
     String describe() const;

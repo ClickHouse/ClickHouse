@@ -684,6 +684,33 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false);
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ASTPtr stat_type;
+
+    ++pos;
+
+    if (!stat_type_parser.parse(pos, stat_type, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "STATISTIC";
+    function_node->arguments = stat_type;
+    function_node->children.push_back(function_node->arguments);
+
+    node = function_node;
+    return true;
+}
+
 bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr collation;

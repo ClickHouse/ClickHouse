@@ -19,6 +19,9 @@ void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionRedis(TableFunctionFactory & factory);
+#if USE_RAPIDJSON || USE_SIMDJSON
+void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
+#endif
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
