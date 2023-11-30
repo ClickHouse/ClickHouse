@@ -1835,9 +1835,10 @@ Settings:
 
 - `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
 - `port` – Port for `endpoint`.
-- `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
 
 **Example**
 
@@ -1853,6 +1854,7 @@ Settings:
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
     </prometheus>
     <!-- highlight-end -->
 </clickhouse>
@@ -2350,7 +2352,7 @@ Path on the local filesystem to store temporary data for processing large querie
 
 ## user_files_path {#user_files_path}
 
-The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md).
+The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md), [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
 
 **Example**
 

@@ -1147,6 +1147,10 @@ public:
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);
 
+    /// Path to the folder containing the proto files for the well-known Protobuf types
+    String getGoogleProtosPath() const;
+    void setGoogleProtosPath(const String & path);
+
     SampleBlockCache & getSampleBlockCache() const;
 
     /// Query parameters for prepared statements.
