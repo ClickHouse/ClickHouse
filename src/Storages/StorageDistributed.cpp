@@ -881,13 +881,6 @@ void StorageDistributed::read(
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
-            // if (query_info.getCluster()->getShardCount() == 1)
-            // {
-            //     // we are reading from single shard with multiple replicas but didn't transform replicas
-            //     // into virtual shards with custom_key set
-            //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
-            // }
-
             chassert(query_info.getCluster()->getShardsInfo().size() == 1);
             additional_shard_filter_generator
                 = [my_custom_key_ast = std::move(custom_key_ast),
