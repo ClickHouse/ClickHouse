@@ -556,7 +556,6 @@ class SettingsRandomizer:
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
         "optimize_append_index": lambda: random.randint(1, 1),
-        "optimize_syntax_fuse_functions": lambda: random.randint(1, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(1, 1),
         "optimize_if_transform_strings_to_enum": lambda: random.randint(1, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
