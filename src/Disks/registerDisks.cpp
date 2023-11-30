@@ -10,7 +10,7 @@ namespace DB
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check);
 
 #if USE_AWS_S3
-void registerDiskS3(DiskFactory & factory, bool global_skip_access_check);
+void registerDiskS3(DiskFactory & factory, bool global_skip_access_check, bool allow_vfs);
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -34,14 +34,15 @@ void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_acce
 
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
-void registerDisks(bool global_skip_access_check)
+void registerDisks(bool global_skip_access_check, bool allow_vfs)
 {
     auto & factory = DiskFactory::instance();
 
     registerDiskLocal(factory, global_skip_access_check);
 
 #if USE_AWS_S3
-    registerDiskS3(factory, global_skip_access_check);
+    registerDiskS3(factory, global_skip_access_check, allow_vfs);
+    /* ToDo: prevent allow_vfs unused */
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
