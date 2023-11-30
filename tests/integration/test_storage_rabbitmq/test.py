@@ -102,18 +102,35 @@ def rabbitmq_setup_teardown():
 # Tests
 
 
-def test_rabbitmq_select(rabbitmq_cluster):
+@pytest.mark.parametrize(
+    "secure",
+    [
+        pytest.param(0),
+        pytest.param(1),
+    ],
+)
+def test_rabbitmq_select(rabbitmq_cluster, secure):
+    if secure and instance.is_built_with_thread_sanitizer():
+        pytest.skip(
+            "Data races: see https://github.com/ClickHouse/ClickHouse/issues/56866"
+        )
+
+    port = cluster.rabbitmq_port
+    if secure:
+        port = cluster.rabbitmq_secure_port
+
     instance.query(
         """
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{}:5672',
+            SETTINGS rabbitmq_host_port = '{}:{}',
                      rabbitmq_exchange_name = 'select',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_row_delimiter = '\\n';
+                     rabbitmq_row_delimiter = '\\n',
+                     rabbitmq_secure = {};
         """.format(
-            rabbitmq_cluster.rabbitmq_host
+            rabbitmq_cluster.rabbitmq_host, port, secure
         )
     )
 
@@ -3422,3 +3439,102 @@ def test_rabbitmq_flush_by_time(rabbitmq_cluster):
     )
 
     assert int(result) == 3
+
+
+def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.rabbitmq;
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.data;
+        DROP TABLE IF EXISTS test.errors;
+        DROP TABLE IF EXISTS test.errors_view;
+
+        CREATE TABLE test.rabbit (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{}:5672',
+                     rabbitmq_exchange_name = 'select',
+                     rabbitmq_commit_on_select = 1,
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n',
+                     rabbitmq_handle_error_mode = 'stream';
+
+
+        CREATE TABLE test.errors (error Nullable(String), broken_message Nullable(String))
+             ENGINE = MergeTree()
+             ORDER BY tuple();
+
+        CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS
+                SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error);
+
+        CREATE TABLE test.data (key UInt64, value UInt64)
+             ENGINE = MergeTree()
+             ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.view TO test.data AS
+                SELECT key, value FROM test.rabbit;
+        """.format(
+            rabbitmq_cluster.rabbitmq_host
+        )
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages = []
+    num_rows = 50
+    for i in range(num_rows):
+        if i % 2 == 0:
+            messages.append(json.dumps({"key": i, "value": i}))
+        else:
+            messages.append("Broken message " + str(i))
+
+    for message in messages:
+        channel.basic_publish(exchange="select", routing_key="", body=message)
+
+    connection.close()
+    # The order of messages in select * from test.rabbitmq is not guaranteed, so sleep to collect everything in one select
+    time.sleep(1)
+
+    attempt = 0
+    rows = 0
+    while attempt < 500:
+        rows = int(instance.query("SELECT count() FROM test.data"))
+        if rows == num_rows:
+            break
+        attempt += 1
+
+    assert rows == num_rows
+
+    result = instance.query("SELECT * FROM test.data ORDER by key")
+    expected = "0\t0\n" * (num_rows // 2)
+    for i in range(num_rows):
+        if i % 2 == 0:
+            expected += str(i) + "\t" + str(i) + "\n"
+
+    assert result == expected
+
+    attempt = 0
+    errors_count = 0
+    while attempt < 500:
+        errors_count = int(instance.query("SELECT count() FROM test.errors"))
+        if errors_count == num_rows:
+            break
+        attempt += 1
+
+    assert errors_count == num_rows / 2
+
+    broken_messages = instance.query(
+        "SELECT broken_message FROM test.errors order by broken_message"
+    )
+    expected = []
+    for i in range(num_rows):
+        if i % 2 != 0:
+            expected.append("Broken message " + str(i) + "\n")
+
+    expected = "".join(sorted(expected))
+    assert broken_messages == expected

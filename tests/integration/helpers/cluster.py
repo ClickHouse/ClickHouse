@@ -515,6 +515,7 @@ class ClickHouseCluster:
         self.spark_session = None
 
         self.with_azurite = False
+        self._azurite_port = 0
 
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
@@ -574,7 +575,6 @@ class ClickHouseCluster:
 
         # available when with_ldap == True
         self.ldap_host = "openldap"
-        self.ldap_ip = None
         self.ldap_container = None
         self.ldap_port = 1389
         self.ldap_id = self.get_instance_docker_id(self.ldap_host)
@@ -583,6 +583,7 @@ class ClickHouseCluster:
         self.rabbitmq_host = "rabbitmq1"
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
+        self.rabbitmq_secure_port = 5671
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
@@ -733,6 +734,13 @@ class ClickHouseCluster:
             return self._kerberized_kafka_port
         self._kerberized_kafka_port = get_free_port()
         return self._kerberized_kafka_port
+
+    @property
+    def azurite_port(self):
+        if self._azurite_port:
+            return self._azurite_port
+        self._azurite_port = get_free_port()
+        return self._azurite_port
 
     @property
     def mongo_port(self):
@@ -1309,6 +1317,7 @@ class ClickHouseCluster:
         self.with_rabbitmq = True
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
+        env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
         env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
@@ -1436,6 +1445,16 @@ class ClickHouseCluster:
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
+        env_variables["AZURITE_PORT"] = str(self.azurite_port)
+        env_variables[
+            "AZURITE_STORAGE_ACCOUNT_URL"
+        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        env_variables["AZURITE_CONNECTION_STRING"] = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint={env_variables['AZURITE_STORAGE_ACCOUNT_URL']};"
+        )
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_azurite.yml")]
         )
@@ -2524,7 +2543,11 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
-        connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+        connection_string = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint=http://127.0.0.1:{self.env_variables['AZURITE_PORT']}/devstoreaccount1;"
+        )
         time.sleep(1)
         start = time.time()
         while time.time() - start < timeout:
@@ -2597,20 +2620,17 @@ class ClickHouseCluster:
         raise Exception("Can't wait Cassandra to start")
 
     def wait_ldap_to_start(self, timeout=180):
-        self.ldap_ip = self.get_instance_ip(self.ldap_host)
         self.ldap_container = self.get_docker_handle(self.ldap_id)
         start = time.time()
         while time.time() - start < timeout:
             try:
-                logging.info(
-                    f"Check LDAP Online {self.ldap_id} {self.ldap_ip} {self.ldap_port}"
-                )
+                logging.info(f"Check LDAP Online {self.ldap_host} {self.ldap_port}")
                 self.exec_in_container(
                     self.ldap_id,
                     [
                         "bash",
                         "-c",
-                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_ip}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org",
+                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org",
                     ],
                     user="root",
                 )
@@ -2948,7 +2968,8 @@ class ClickHouseCluster:
                 self.wait_cassandra_to_start()
 
             if self.with_ldap and self.base_ldap_cmd:
-                subprocess_check_call(self.base_ldap_cmd + ["up", "-d"])
+                ldap_start_cmd = self.base_ldap_cmd + common_opts
+                subprocess_check_call(ldap_start_cmd)
                 self.up_called = True
                 self.wait_ldap_to_start()
 
@@ -3675,6 +3696,8 @@ class ClickHouseInstance:
             method = "POST" if data else "GET"
 
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        # Force encoding to UTF-8
+        r.encoding = "UTF-8"
 
         if r.ok:
             return (r.content if content else r.text, None)
@@ -4107,14 +4130,14 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
+                    "if [ ! -f /var/lib/clickhouse/metadata/system.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql; fi",
                 ]
             )
             self.exec_in_container(
                 [
                     "bash",
                     "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
         self.exec_in_container(

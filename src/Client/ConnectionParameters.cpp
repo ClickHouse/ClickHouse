@@ -27,10 +27,11 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                                            std::string connection_host,
                                            std::optional<UInt16> connection_port)
     : host(connection_host)
-    , port(connection_port.value_or(getPortFromConfig(config)))
+    , port(connection_port.value_or(getPortFromConfig(config, connection_host)))
 {
     bool is_secure = config.getBool("secure", false);
-    security = is_secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com");
+    security = (is_secure || is_clickhouse_cloud) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
     default_database = config.getString("database", "");
 
@@ -112,16 +113,19 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     timeouts.sync_request_timeout = Poco::Timespan(config.getInt("sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC), 0);
 }
 
-ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
-    : ConnectionParameters(config, config.getString("host", "localhost"), getPortFromConfig(config))
+ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,
+                                           std::string connection_host)
+    : ConnectionParameters(config, config.getString("host", "localhost"), getPortFromConfig(config, connection_host))
 {
 }
 
-UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config)
+UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config,
+                                               std::string connection_host)
 {
     bool is_secure = config.getBool("secure", false);
+    bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com");
     return config.getInt("port",
-        config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
-            is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+        config.getInt(is_secure || is_clickhouse_cloud ? "tcp_port_secure" : "tcp_port",
+            is_secure || is_clickhouse_cloud ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 }
 }

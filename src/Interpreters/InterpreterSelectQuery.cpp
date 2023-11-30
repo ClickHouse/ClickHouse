@@ -39,6 +39,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
+#include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -423,6 +424,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
     }
 
+    if (settings.optimize_uniq_to_count)
+    {
+        RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
+        RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
+    }
+
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
     bool got_storage_from_query = false;
@@ -474,13 +481,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Check support for FINAL for parallel replicas
     bool is_query_with_final = isQueryWithFinal(query_info);
-    if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
+    if (is_query_with_final && settings.allow_experimental_parallel_reading_from_replicas > 0)
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
             LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            context->setSetting("parallel_replicas_custom_key", String{""});
         }
         else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
         {
@@ -572,7 +578,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     settings.parallel_replica_offset,
                     std::move(custom_key_ast),
                     settings.parallel_replicas_custom_key_filter_type,
-                    *storage,
+                    storage->getInMemoryMetadataPtr()->columns,
                     context);
             }
             else if (settings.parallel_replica_offset > 0)
@@ -622,12 +628,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
             query.setFinal();
 
-        /// Save scalar sub queries's results in the query context
-        /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
-        if (!options.only_analyze && context->hasQueryContext())
-            for (const auto & it : syntax_analyzer_result->getScalars())
-                context->getQueryContext()->addScalar(it.first, it.second);
-
         if (view)
         {
             /// Restore original view name. Save rewritten subquery for future usage in StorageView.
@@ -658,6 +658,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
+                    storage->getConditionEstimatorByPredicate(query_info, storage_snapshot, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};
@@ -1049,6 +1050,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             if (analysis_result.before_window)
                 return analysis_result.before_window->getResultColumns();
 
+            // NOTE: should not handle before_limit_by specially since
+            // WithMergeableState does not process LIMIT BY
+
             return analysis_result.before_order_by->getResultColumns();
         }
 
@@ -1091,6 +1095,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         // WithMergeableState stage.
         if (analysis_result.before_window)
             return analysis_result.before_window->getResultColumns();
+
+        // In case of query on remote shards executed up to
+        // WithMergeableStateAfterAggregation*, they can process LIMIT BY,
+        // since the initiator will not apply LIMIT BY again.
+        if (analysis_result.before_limit_by)
+            return analysis_result.before_limit_by->getResultColumns();
 
         return analysis_result.before_order_by->getResultColumns();
     }
@@ -1538,7 +1548,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 if (query.limitLength())
                     executeDistinct(query_plan, false, expressions.selected_columns, false);
 
-                if (expressions.hasLimitBy())
+                /// In case of query executed on remote shards (up to
+                /// WithMergeableState*) LIMIT BY cannot be applied, since it
+                /// will be applied on the initiator as well, and the header
+                /// may not match in some obscure cases.
+                if (options.to_stage == QueryProcessingStage::FetchColumns && expressions.hasLimitBy())
                 {
                     executeExpression(query_plan, expressions.before_limit_by, "Before LIMIT BY");
                     executeLimitBy(query_plan);
@@ -2928,6 +2942,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window.full_sort_description,
+                window.partition_by,
                 0 /* LIMIT */,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
@@ -2935,7 +2950,11 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             query_plan.addStep(std::move(sorting_step));
         }
 
-        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions);
+        // Fan out streams only for the last window to preserve the ordering between windows,
+        // and WindowTransform works on single stream anyway.
+        const bool streams_fan_out = settings.query_plan_enable_multithreading_after_window_functions && ((i + 1) == windows_sorted.size());
+
+        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions, streams_fan_out);
         window_step->setStepDescription("Window step for window '" + window.window_name + "'");
 
         query_plan.addStep(std::move(window_step));

@@ -466,7 +466,7 @@ public:
             std::vector<DataSet *> data_vec;
             data_vec.resize(places.size());
 
-            for (unsigned long i = 0; i < data_vec.size(); i++)
+            for (size_t i = 0; i < data_vec.size(); ++i)
                 data_vec[i] = &this->data(places[i]).set;
 
             DataSet::parallelizeMergePrepare(data_vec, thread_pool);

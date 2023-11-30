@@ -272,13 +272,13 @@ void ExternalAuthenticators::resetImpl()
 
 void ExternalAuthenticators::reset()
 {
-    std::scoped_lock lock(mutex);
+    std::lock_guard lock(mutex);
     resetImpl();
 }
 
 void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
 {
-    std::scoped_lock lock(mutex);
+    std::lock_guard lock(mutex);
     resetImpl();
 
     Poco::Util::AbstractConfiguration::Keys all_keys;
@@ -390,7 +390,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
     UInt128 params_hash = 0;
 
     {
-        std::scoped_lock lock(mutex);
+        std::lock_guard lock(mutex);
 
         // Retrieve the server parameters.
         const auto pit = ldap_client_params_blueprint.find(server);
@@ -460,7 +460,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
     // Update the cache, but only if this is the latest check and the server is still configured in a compatible way.
     if (result)
     {
-        std::scoped_lock lock(mutex);
+        std::lock_guard lock(mutex);
 
         // If the server was removed from the config while we were checking the password, we discard the current result.
         const auto pit = ldap_client_params_blueprint.find(server);
@@ -507,7 +507,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
 
 bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const
 {
-    std::scoped_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (!kerberos_params.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kerberos is not enabled");
@@ -526,7 +526,7 @@ bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, cons
 
 GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
 {
-    std::scoped_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (!kerberos_params.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kerberos is not enabled");
@@ -536,7 +536,7 @@ GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
 
 HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const String& server) const
 {
-    std::scoped_lock lock{mutex};
+    std::lock_guard lock{mutex};
 
     const auto it = http_auth_servers.find(server);
     if (it == http_auth_servers.end())
