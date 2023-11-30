@@ -158,7 +158,6 @@
         <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
     </merge_tree>
 
-    <temporary_data_in_cache>s3_with_cache</temporary_data_in_cache>
     <database_catalog_unused_dir_hide_timeout_sec>0</database_catalog_unused_dir_hide_timeout_sec>
     <database_catalog_unused_dir_rm_timeout_sec>60</database_catalog_unused_dir_rm_timeout_sec>
     <database_catalog_unused_dir_cleanup_period_sec>1</database_catalog_unused_dir_cleanup_period_sec>
