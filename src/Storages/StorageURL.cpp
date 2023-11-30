@@ -1014,6 +1014,11 @@ NamesAndTypesList IStorageURLBase::getVirtuals() const
     return virtual_columns;
 }
 
+Names IStorageURLBase::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
+}
+
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 {
     static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));

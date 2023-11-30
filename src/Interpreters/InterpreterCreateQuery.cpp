@@ -437,6 +437,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
+        if (column.stat)
+        {
+            column_declaration->stat_type = column.stat->ast;
+            column_declaration->children.push_back(column_declaration->stat_type);
+        }
+
         if (column.ttl)
         {
             column_declaration->ttl = column.ttl;
@@ -637,6 +643,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
+        }
+
+        if (col_decl.stat_type)
+        {
+            if (!attach && !context_->getSettingsRef().allow_experimental_statistic)
+                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
+            column.stat = StatisticDescription::getStatisticFromColumnDeclaration(col_decl);
         }
 
         if (col_decl.ttl)

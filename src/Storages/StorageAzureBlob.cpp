@@ -800,6 +800,11 @@ NamesAndTypesList StorageAzureBlob::getVirtuals() const
     return virtual_columns;
 }
 
+Names StorageAzureBlob::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
+}
+
 bool StorageAzureBlob::supportsPartitionBy() const
 {
     return true;

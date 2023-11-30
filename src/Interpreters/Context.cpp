@@ -588,6 +588,28 @@ struct ContextSharedPart : boost::noncopyable
             cache->cache->deactivateBackgroundOperations();
 
         {
+            // Disk selector might not be initialized if there was some error during
+            // its initialization. Don't try to initialize it again on shutdown.
+            if (merge_tree_disk_selector)
+            {
+                for (const auto & [disk_name, disk] : merge_tree_disk_selector->getDisksMap())
+                {
+                    LOG_INFO(log, "Shutdown disk {}", disk_name);
+                    disk->shutdown();
+                }
+            }
+
+            /// Special volumes might also use disks that require shutdown.
+            auto & tmp_data = root_temp_data_on_disk;
+            if (tmp_data && tmp_data->getVolume())
+            {
+                auto & disks = tmp_data->getVolume()->getDisks();
+                for (auto & disk : disks)
+                    disk->shutdown();
+            }
+        }
+
+        {
             std::lock_guard lock(mutex);
 
             /** Compiled expressions stored in cache need to be destroyed before destruction of static objects.
@@ -4066,26 +4088,6 @@ void Context::stopServers(const ServerType & server_type) const
 
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    // Disk selector might not be initialized if there was some error during
-    // its initialization. Don't try to initialize it again on shutdown.
-    if (shared->merge_tree_disk_selector)
-    {
-        for (auto & [disk_name, disk] : getDisksMap())
-        {
-            LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
-            disk->shutdown();
-        }
-    }
-
-    /// Special volumes might also use disks that require shutdown.
-    auto & tmp_data = shared->root_temp_data_on_disk;
-    if (tmp_data && tmp_data->getVolume())
-    {
-        auto & disks = tmp_data->getVolume()->getDisks();
-        for (auto & disk : disks)
-            disk->shutdown();
-    }
-
     shared->shutdown();
 }
 
