@@ -304,7 +304,9 @@ MutableColumns parseAvro(
 
 /**
  * Each version of table metadata is stored in a `metadata` directory and
- * has format: v<V>.metadata.json, where V - metadata version.
+ * has one of 2 formats:
+ *   1) v<V>.metadata.json, where V - metadata version.
+ *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
  */
 std::pair<Int32, String> getMetadataFileAndVersion(const StorageS3::Configuration & configuration)
 {
@@ -322,7 +324,14 @@ std::pair<Int32, String> getMetadataFileAndVersion(const StorageS3::Configuratio
     for (const auto & path : metadata_files)
     {
         String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
-        String version_str(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+        String version_str;
+        /// v<V>.metadata.json
+        if (file_name.starts_with('v'))
+            version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+        /// <V>-<random-uuid>.metadata.json
+        else
+            version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
+
         if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
         metadata_files_with_versions.emplace_back(std::stoi(version_str), path);

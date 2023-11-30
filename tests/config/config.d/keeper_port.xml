@@ -20,6 +20,8 @@
             <election_timeout_lower_bound_ms>0</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>0</election_timeout_upper_bound_ms>
 
+            <compress_logs>0</compress_logs>
+
             <async_replication>1</async_replication>
         </coordination_settings>
 

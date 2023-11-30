@@ -306,6 +306,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set path for format schema files
     if (config().has("format_schema_path"))
         global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 
@@ -325,7 +329,7 @@ try
 
     processConfig();
     adjustSettings();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
@@ -1459,7 +1463,6 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         DB::Client client;
         // Initialize command line options
         client.init(argc, argv);
-        /// Initialize config file
         return client.run();
     }
     catch (const DB::Exception & e)
