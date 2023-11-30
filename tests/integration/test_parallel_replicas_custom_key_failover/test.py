@@ -12,6 +12,7 @@ node2 = cluster.add_instance(
 
 nodes = [node1, node2]
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -47,8 +48,12 @@ def create_tables(cluster, table_name):
     )
 
     # populate data
-    node1.query(f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000)")
-    node2.query(f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000, 1000)")
+    node1.query(
+        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000)"
+    )
+    node2.query(
+        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000, 1000)"
+    )
     node1.query(f"SYSTEM SYNC REPLICA {table_name}")
     node2.query(f"SYSTEM SYNC REPLICA {table_name}")
 
@@ -57,12 +62,18 @@ def create_tables(cluster, table_name):
 @pytest.mark.parametrize("filter_type", ["default", "range"])
 @pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
 @pytest.mark.parametrize("use_hedged_requests", [1, 0])
-def test_parallel_replicas_custom_key_failover(start_cluster, custom_key, filter_type, use_hedged_requests, prefer_localhost_replica):
+def test_parallel_replicas_custom_key_failover(
+    start_cluster,
+    custom_key,
+    filter_type,
+    use_hedged_requests,
+    prefer_localhost_replica,
+):
     for node in nodes:
         node.rotate_logs()
 
     cluster = "test_single_shard_multiple_replicas"
-    table = 'test_table'
+    table = "test_table"
 
     create_tables(cluster, table)
 
