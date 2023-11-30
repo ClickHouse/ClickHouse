@@ -3945,7 +3945,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     if (cluster.has_value())
     {
         const auto & partition = cluster->getClusterPartition(partition_id);
-        partition_replicas = partition.getActiveReplicas();
+        partition_replicas = partition.getAllReplicas();
         partition_version = partition.getVersion();
     }
 
@@ -4021,7 +4021,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     if (cluster.has_value())
     {
         const auto & partition = cluster->getClusterPartition(part.info.partition_id);
-        partition_replicas = partition.getActiveReplicas();
+        partition_replicas = partition.getAllReplicas();
         partition_version = partition.getVersion();
         if (std::find(partition_replicas.begin(), partition_replicas.end(), replica_name) == partition_replicas.end())
         {
