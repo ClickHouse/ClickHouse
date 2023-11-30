@@ -40,6 +40,7 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -7781,10 +7782,24 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
+    String partition_id = src_data.getPartitionIDFromQuery(partition, query_context);
 
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
     DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
+
+    auto query_to_string = [] (const ASTPtr & ast)
+    {
+        return ast ? queryToString(ast) : "";
+    };
+
+    const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
+    const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
+    const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
+
+    if (is_partition_exp_different)
+    {
+        MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_all_parts);
+    }
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -7810,6 +7825,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
         MergeTreePartInfo drop_range;
         std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+        // TODO ARTHUR investigate below
         bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
         if (replace && partition_was_empty)
         {
@@ -7849,6 +7865,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             else
                 LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
 
+            // this also ha sto be investigated
             String block_id_path = (replace || is_duplicated_part) ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
 
             auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
@@ -7858,27 +7875,66 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 continue;
             }
 
-            UInt64 index = lock->getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-
             bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                 || dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
+
+            UInt64 index = lock->getNumber();
+
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport(),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
-                src_part,
-                TMP_PREFIX,
-                dst_part_info,
-                metadata_snapshot,
-                clone_params,
-                query_context->getReadSettings(),
-                query_context->getWriteSettings());
+
+            if (is_partition_exp_different)
+            {
+                auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+                IMergeTreeDataPart::MinMaxIndex min_max_index;
+
+                min_max_index.load(src_data, metadata_manager);
+
+                MergeTreePartition new_partition;
+
+                new_partition.create(metadata_snapshot, min_max_index.getBlock(src_data), 0u, getContext());
+
+                partition_id = new_partition.getID(*this);
+
+                MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+
+                auto [dst_part, part_lock] =
+                    cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                        src_part,
+                        TMP_PREFIX,
+                        dst_part_info,
+                        metadata_snapshot,
+                        new_partition,
+                        min_max_index,
+                        clone_params,
+                        query_context->getReadSettings(),
+                        query_context->getWriteSettings()
+                    );
+
+                dst_parts.emplace_back(dst_part);
+                dst_parts_locks.emplace_back(std::move(part_lock));
+            }
+            else
+            {
+                MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+
+                auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+                    src_part,
+                    TMP_PREFIX,
+                    dst_part_info,
+                    metadata_snapshot,
+                    clone_params,
+                    query_context->getReadSettings(),
+                    query_context->getWriteSettings());
+
+                dst_parts.emplace_back(dst_part);
+                dst_parts_locks.emplace_back(std::move(part_lock));
+            }
+
             src_parts.emplace_back(src_part);
-            dst_parts.emplace_back(dst_part);
-            dst_parts_locks.emplace_back(std::move(part_lock));
             ephemeral_locks.emplace_back(std::move(*lock));
             block_id_paths.emplace_back(block_id_path);
             part_checksums.emplace_back(hash_hex);

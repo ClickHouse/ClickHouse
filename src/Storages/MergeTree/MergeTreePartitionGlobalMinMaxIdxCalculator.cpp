@@ -72,7 +72,9 @@ Block MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
 
     for (const auto & part : parts)
     {
-        updateGlobalMinMaxBlock(global_min_max_indexes, loadMinMaxIndexesForPart(storage, part), columns_of_interest);
+        auto block_with_part_min_max_indexes = loadMinMaxIndexesForPart(storage, part);
+
+        updateGlobalMinMaxBlock(global_min_max_indexes, block_with_part_min_max_indexes, columns_of_interest);
     }
 
     return global_min_max_indexes;
