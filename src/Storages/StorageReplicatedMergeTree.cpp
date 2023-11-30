@@ -2645,16 +2645,56 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 .copy_instead_of_hardlink = (our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport(),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-            auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
-                part_desc->src_table_part,
-                TMP_PREFIX + "clone_",
-                part_desc->new_part_info,
-                metadata_snapshot,
-                clone_params,
-                getContext()->getReadSettings(),
-                getContext()->getWriteSettings());
-            part_desc->res_part = std::move(res_part);
-            part_desc->temporary_part_lock = std::move(temporary_part_lock);
+
+            if (part_desc->src_table_part->info.partition_id != part_desc->new_part_info.partition_id)
+            {
+                auto src_part = part_desc->src_table_part;
+                const auto & src_storage = src_part->storage;
+
+                auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+                IMergeTreeDataPart::MinMaxIndex min_max_index;
+
+                min_max_index.load(src_part->storage, metadata_manager);
+
+                MergeTreePartition new_partition;
+
+                new_partition.create(metadata_snapshot, min_max_index.getBlock(src_storage), 0u, getContext());
+
+                /// This will generate unique name in scope of current server process.
+                Int64 temp_index = insert_increment.get();
+
+                auto partition_id = new_partition.getID(*this);
+
+                MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+
+                auto [res_part, temporary_part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                    src_part,
+                    TMP_PREFIX + "clone_",
+                    part_desc->new_part_info,
+                    metadata_snapshot,
+                    new_partition,
+                    min_max_index,
+                    clone_params,
+                    getContext()->getReadSettings(),
+                    getContext()->getWriteSettings());
+
+                part_desc->res_part = std::move(res_part);
+                part_desc->temporary_part_lock = std::move(temporary_part_lock);
+            }
+            else
+            {
+                auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
+                    part_desc->src_table_part,
+                    TMP_PREFIX + "clone_",
+                    part_desc->new_part_info,
+                    metadata_snapshot,
+                    clone_params,
+                    getContext()->getReadSettings(),
+                    getContext()->getWriteSettings());
+
+                part_desc->res_part = std::move(res_part);
+                part_desc->temporary_part_lock = std::move(temporary_part_lock);
+            }
         }
         else if (!part_desc->replica.empty())
         {
@@ -7825,7 +7865,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
         MergeTreePartInfo drop_range;
         std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
-        // TODO ARTHUR investigate below
         bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
         if (replace && partition_was_empty)
         {
@@ -7865,7 +7904,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             else
                 LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
 
-            // this also ha sto be investigated
             String block_id_path = (replace || is_duplicated_part) ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
 
             auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
