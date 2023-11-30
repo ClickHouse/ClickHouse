@@ -192,20 +192,17 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
 {
     /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
     /// Let's find them.
-#ifdef ABORT_ON_LOGICAL_ERROR
     if (size < 0)
         return;
 
-    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
+    constexpr Int64 threshold = 5 * 1024 * 1024; /// The choice is arbitrary (maybe we should decrease it)
     if (size < threshold)
         return;
-
-    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-    LOG_TEST(&Poco::Logger::get("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
-                                                   "it may lead to OOM. Stack trace: {}", size, StackTrace().toString());
-#else
-    return;     /// Avoid trash logging in release builds
-#endif
+    throw DB::Exception(
+        DB::ErrorCodes::LOGICAL_ERROR,
+        "Too big allocation ({} bytes) without checking memory limits, it may lead to OOM. Stack trace: {}",
+        size,
+        StackTrace().toString());
 }
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
