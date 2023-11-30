@@ -48,7 +48,7 @@ struct StorageInMemoryMetadata
     ASTPtr settings_changes;
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
-    /// Materialized view REFRESH paramaters.
+    /// Materialized view REFRESH parameters.
     ASTPtr refresh;
 
     String comment;

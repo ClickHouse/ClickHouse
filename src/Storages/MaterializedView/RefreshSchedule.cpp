@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 RefreshSchedule::RefreshSchedule(const ASTRefreshStrategy & strategy)
 {
     kind = strategy.schedule_kind;

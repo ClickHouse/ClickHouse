@@ -3,6 +3,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask_fwd.h>
 #include <Storages/MaterializedView/RefreshSchedule.h>
+#include <Storages/MaterializedView/RefreshSettings.h>
 
 #include <Processors/Executors/ManualPipelineExecutor.h>
 
@@ -80,6 +81,7 @@ private:
     std::shared_ptr<ASTInsertQuery> refresh_query;
 
     RefreshSchedule refresh_schedule;
+    RefreshSettings refresh_settings; // TODO: populate, use, update on alter
     RefreshSet::Handle set_handle;
 
     /// StorageIDs of our dependencies that we're waiting for.

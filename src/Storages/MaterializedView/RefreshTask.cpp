@@ -364,7 +364,9 @@ void RefreshTask::refreshTask()
                 lock.lock();
                 info.exception_message = text;
 
-                /// TODO: Backoff. Maybe just assigning next_refresh_* will work.
+                /// TODO: Do a few retries with exponential backoff.
+                if (!finished)
+                    advanceNextRefreshTime(currentTime());
             }
             chassert(lock.owns_lock());
 
@@ -412,6 +414,7 @@ void RefreshTask::initializeRefreshUnlocked(std::shared_ptr<const StorageMateria
 
 bool RefreshTask::executeRefreshUnlocked()
 {
+    /// TODO: Execute in multiple threads.
     bool not_finished{true};
     while (!interrupt_execution.load() && not_finished)
         not_finished = refresh_executor->executeStep(interrupt_execution);

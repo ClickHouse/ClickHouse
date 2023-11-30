@@ -1,0 +1,5 @@
+a	[]		1
+CREATE MATERIALIZED VIEW <db>a\nREFRESH AFTER 1 SECOND\n(\n    `x` UInt64\n)\nENGINE = Memory AS\nSELECT number\nFROM numbers(2)\nUNION ALL\nSELECT rand64()
+3	1	1
+500
+1
