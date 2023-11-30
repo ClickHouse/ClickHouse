@@ -605,13 +605,13 @@ void Cluster::addShard(const Settings & settings, Addresses addresses, bool trea
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
     shards_info.push_back({
-        .insert_path_for_internal_replication = std::move(insert_paths),
-        .shard_num = current_shard_num,
-        .weight = weight,
-        .local_addresses = std::move(shard_local_addresses),
-        .pool = std::move(shard_pool),
-        .per_replica_pools = std::move(all_replicas_pools),
-        .has_internal_replication = internal_replication,
+        std::move(insert_paths),
+        current_shard_num,
+        weight,
+        std::move(shard_local_addresses),
+        std::move(shard_pool),
+        std::move(all_replicas_pools),
+        internal_replication
     });
 }
 
