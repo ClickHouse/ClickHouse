@@ -112,8 +112,7 @@ public:
                 throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
 
             /// Create a new session from current context.
-            auto context = Context::createCopy(global_context);
-            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, context, timeout, *this))).first;
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, global_context, timeout, *this))).first;
             const auto & session = it->second;
 
             if (!thread.joinable())
@@ -302,6 +301,7 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
+            std::lock_guard lock(mutex);
             session_log->addLogOut(auth_id, user, getClientInfo());
         }
     }
@@ -560,7 +560,10 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Copy prepared client info to the session context, no matter it's been just created or not.
     /// If we continue using a previously created session context found by session ID
     /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
-    new_session_context->setClientInfo(*prepared_client_info);
+    {
+        std::lock_guard lock(mutex);
+        new_session_context->setClientInfo(*prepared_client_info);
+    }
     prepared_client_info.reset();
 
     auto access = new_session_context->getAccess();
