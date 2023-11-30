@@ -155,6 +155,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
+        if (!getContext()->getSettings().allow_experimental_statistic && (
+            command_ast->type == ASTAlterCommand::ADD_STATISTIC ||
+            command_ast->type == ASTAlterCommand::DROP_STATISTIC ||
+            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTIC))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is now disabled. Turn on allow_experimental_statistic");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
@@ -316,6 +321,21 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_SAMPLE_BY:
         {
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
+            break;
+        }
+        case ASTAlterCommand::ADD_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_ADD_STATISTIC, database, table);
+            break;
+        }
+        case ASTAlterCommand::DROP_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_DROP_STATISTIC, database, table);
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTIC, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:
