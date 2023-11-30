@@ -427,10 +427,7 @@ private:
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
 
-    /// during server restart or attach table process, set since_metadata_err_incr_readonly_metric = true and increase readonly metric if has_metadata_in_zookeeper = false.
-    /// during detach or drop table process, decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
-    /// during restore replica process, set since_metadata_err_incr_readonly_metric = false and decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
-    bool since_metadata_err_incr_readonly_metric = false;
+    bool is_readonly_metric_set = false;
 
     static const String default_zookeeper_name;
     const String zookeeper_name;
