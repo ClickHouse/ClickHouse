@@ -19,6 +19,7 @@ used projections
 SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 1
+0
 broke metadata of part 'proj' (parent part: all_2_2_0)
 system.parts
 all_0_0_0	1	['proj','proj_2']
@@ -39,8 +40,9 @@ check table
 0
 broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
-check table full (all_2_2_0)
+check table full (test - all_2_2_0)
 all_2_2_0
+0
 broke data of part 'proj_2' (parent part: all_2_2_0)
 broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
@@ -78,6 +80,7 @@ used projections
 SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 0
+0
 broke data of part 'proj_2' (parent part: all_3_3_0)
 broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
@@ -111,6 +114,7 @@ used projections
 SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 0
+0
 broke metadata of part 'proj' (parent part: all_1_1_0)
 Detach - Attach
 broken projections info
@@ -118,6 +122,7 @@ all_1_1_0	proj	NO_FILE_IN_DATA_PART
 all_2_2_0	proj	NO_FILE_IN_DATA_PART
 all_2_2_0	proj_2	FILE_DOESNT_EXIST
 all_3_3_0	proj_2	FILE_DOESNT_EXIST
+0
 broke data of part 'proj_2' (parent part: all_1_1_0)
 Detach - Attach
 broken projections info
@@ -146,10 +151,10 @@ used projections
 SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 0
-check table full (all_1_1_0)
+check table full (test - all_1_1_0)
 all_1_1_0
 materialize projection proj
-check table full ()
+check table full (test - )
 system.parts
 all_0_0_0	0	['proj','proj_2']
 all_0_0_0_6	1	['proj','proj_2']
@@ -175,7 +180,8 @@ SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 1
 materialize projection proj_2
-check table full ()
+check table full (test - )
+0
 broke data of part 'proj' (parent part: all_3_5_1_7)
 insert new part
 optimize
@@ -214,3 +220,215 @@ used projections
 SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 1
+insert new part
+insert new part
+insert new part
+insert new part
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+select from projection 'proj', expect error: 
+used projections
+SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2', expect error: 
+used projections
+SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+1
+system.parts
+all_1_1_0	1	['proj','proj_2']
+select from projection 'proj', expect error: 
+used projections
+SELECT c FROM test2_replica WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2', expect error: 
+used projections
+SELECT d FROM test2_replica WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+1
+0
+broke data of part 'proj' (parent part: all_0_0_0)
+check table full (test2 - all_0_0_0)
+all_0_0_0
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+select from projection 'proj', expect error: 
+used projections
+SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2', expect error: 
+used projections
+SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+0
+broke data of part 'all_0_0_0'
+check table full (test2 - all_0_0_0)
+all_0_0_0
+system.parts
+all_0_0_0	0	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+select from projection 'proj', expect error: 
+used projections
+SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2', expect error: 
+used projections
+SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+1
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+select from projection 'proj', expect error: 
+used projections
+SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2', expect error: 
+used projections
+SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+1
+insert new part
+insert new part
+insert new part
+insert new part
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+all_2_2_0	1	['proj','proj_2']
+all_3_3_0	1	['proj','proj_2']
+select from projection 'proj', expect error: 
+12
+16
+used projections
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2', expect error: 
+12
+16
+used projections
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+1
+0
+broke data of part 'proj' (parent part: all_2_2_0)
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+all_2_2_0	1	['proj','proj_2']
+all_3_3_0	1	['proj','proj_2']
+select from projection 'proj', expect error: proj
+FILE_DOESNT_EXIST
+select from projection 'proj_2', expect error: proj
+12
+16
+used projections
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+0
+broken projections info
+all_2_2_0	proj	NO_FILE_IN_DATA_PART
+BACKUP_CREATED
+RESTORED
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+all_2_2_0	1	['proj','proj_2']
+all_3_3_0	1	['proj','proj_2']
+select from projection 'proj', expect error: proj
+FILE_DOESNT_EXIST
+select from projection 'proj_2', expect error: proj
+12
+16
+used projections
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+0
+broken projections info
+all_2_2_0	proj	NO_FILE_IN_DATA_PART
+0
+broke all data of part 'proj' (parent part: all_2_2_0)
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+all_2_2_0	1	['proj','proj_2']
+all_3_3_0	1	['proj','proj_2']
+select from projection 'proj', expect error: proj
+select from projection 'proj_2', expect error: proj
+12
+16
+used projections
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+0
+broken projections info
+all_2_2_0	proj	NO_FILE_IN_DATA_PART
+FILE_DOESNT_EXIST
+materialize projection proj
+system.parts
+all_0_0_0	0	['proj','proj_2']
+all_0_0_0_4	1	['proj','proj_2']
+all_1_1_0	0	['proj','proj_2']
+all_1_1_0_4	1	['proj','proj_2']
+all_2_2_0	0	['proj','proj_2']
+all_2_2_0_4	1	['proj','proj_2']
+all_3_3_0	0	['proj','proj_2']
+all_3_3_0_4	1	['proj','proj_2']
+select from projection 'proj', expect error: proj
+select from projection 'proj_2', expect error: proj
+12
+16
+used projections
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+1
+broken projections info
+all_2_2_0	proj	NO_FILE_IN_DATA_PART
+BACKUP_CREATED
+RESTORED
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+all_2_2_0	1	['proj','proj_2']
+all_3_3_0	1	['proj','proj_2']
+select from projection 'proj', expect error: proj
+select from projection 'proj_2', expect error: proj
+12
+16
+used projections
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+1
+0
+broke all data of part 'proj' (parent part: all_2_2_0)
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+all_2_2_0	1	['proj','proj_2']
+all_3_3_0	1	['proj','proj_2']
+select from projection 'proj', expect error: proj
+select from projection 'proj_2', expect error: proj
+12
+16
+used projections
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+0
+broken projections info
+all_2_2_0	proj	FILE_DOESNT_EXIST
+BACKUP_CREATED
+RESTORED
+system.parts
+all_0_0_0	1	['proj','proj_2']
+all_1_1_0	1	['proj','proj_2']
+all_2_2_0	1	['proj_2']
+all_3_3_0	1	['proj','proj_2']
+select from projection 'proj', expect error: 
+12
+16
+used projections
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2', expect error: 
+12
+16
+used projections
+SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
+check table
+0
+broken projections info

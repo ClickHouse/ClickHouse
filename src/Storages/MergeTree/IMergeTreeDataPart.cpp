@@ -647,13 +647,14 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadIndex(); /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
         loadPartitionAndMinMaxIndex();
+        bool has_broken_projections = false;
         if (!parent_part)
         {
             loadTTLInfos();
-            loadProjections(require_columns_checksums, check_consistency, false /* if_not_loaded */);
+            has_broken_projections = !loadProjections(require_columns_checksums, check_consistency, false /* if_not_loaded */);
         }
 
-        if (check_consistency)
+        if (check_consistency && !has_broken_projections)
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
@@ -715,9 +716,10 @@ void IMergeTreeDataPart::addProjectionPart(
     projection_parts[projection_name] = std::move(projection_part);
 }
 
-void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded)
+bool IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    bool has_broken_projection = false;
     for (const auto & projection : metadata_snapshot->projections)
     {
         auto path = projection.name + ".proj";
@@ -742,16 +744,19 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
                     if (isRetryableException(std::current_exception()))
                         throw;
 
+                    auto message = getCurrentExceptionMessage(true);
                     LOG_ERROR(&Poco::Logger::get("IMergeTreeDataPart"),
-                              "Cannot load projection {}, will consider it broken", projection.name);
+                              "Cannot load projection {}, will consider it broken. Reason: {}", projection.name, message);
 
-                    part->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
+                    has_broken_projection = true;
+                    part->setBrokenReason(message, getCurrentExceptionCode());
                 }
 
                 addProjectionPart(projection.name, std::move(part));
             }
         }
     }
+    return has_broken_projection;
 }
 
 void IMergeTreeDataPart::loadIndexGranularity()
