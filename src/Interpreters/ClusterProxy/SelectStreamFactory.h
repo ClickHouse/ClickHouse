@@ -83,15 +83,6 @@ public:
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator);
 
-    struct ShardPlans
-    {
-        /// If a shard has local replicas this won't be nullptr
-        std::unique_ptr<QueryPlan> local_plan;
-
-        /// Contains several steps to read from all remote replicas
-        std::unique_ptr<QueryPlan> remote_plan;
-    };
-
     const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;

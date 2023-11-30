@@ -20,12 +20,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
-bool canUseCustomKey(const Settings & settings, const Cluster & cluster, const Context & context)
-{
-    return settings.max_parallel_replicas > 1 && context.getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
-}
-
 ASTPtr getCustomKeyFilterForParallelReplica(
     size_t replicas_count,
     size_t replica_num,

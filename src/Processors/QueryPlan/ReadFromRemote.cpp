@@ -256,8 +256,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
-        LOG_DEBUG(log, "Number of replicas {}", shard.shard_info.number_of_replicas);
-        for (size_t i = 0; i < shard.shard_info.number_of_replicas; ++i)
+        LOG_DEBUG(log, "Number of replicas {}", shard.shard_info.per_replica_pools.size());
+        for (size_t i = 0; i < shard.shard_info.per_replica_pools.size(); ++i)
         {
             auto query = shard.query->clone();
             auto & select_query = query->as<ASTSelectQuery &>();

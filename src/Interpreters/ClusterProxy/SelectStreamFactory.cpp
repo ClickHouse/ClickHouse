@@ -124,7 +124,6 @@ void SelectStreamFactory::createForShard(
     if (it != objects_by_shard.end())
         replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
 
-
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(

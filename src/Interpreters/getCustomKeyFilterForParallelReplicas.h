@@ -9,9 +9,6 @@
 
 namespace DB
 {
-
-bool canUseCustomKey(const Settings & settings, const Cluster & cluster, const Context & context);
-
 /// Get AST for filter created from custom_key
 /// replica_num is the number of the replica for which we are generating filter starting from 0
 ASTPtr getCustomKeyFilterForParallelReplica(

@@ -612,7 +612,6 @@ void Cluster::addShard(const Settings & settings, Addresses addresses, bool trea
         .pool = std::move(shard_pool),
         .per_replica_pools = std::move(all_replicas_pools),
         .has_internal_replication = internal_replication,
-        .number_of_replicas = addresses.size(),
     });
 }
 

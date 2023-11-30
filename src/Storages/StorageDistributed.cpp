@@ -430,7 +430,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     query_info.cluster = cluster;
 
-    if (!query_info.use_custom_key)
+    if (!local_context->canUseParallelReplicasCustomKey(*cluster))
     {
         if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
@@ -877,7 +877,7 @@ void StorageDistributed::read(
     const auto & settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (query_info.use_custom_key)
+    if (local_context->canUseParallelReplicasCustomKey(*query_info.getCluster()))
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
@@ -894,7 +894,7 @@ void StorageDistributed::read(
                    column_description = this->getInMemoryMetadataPtr()->columns,
                    custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
                    context = local_context,
-                   replica_count = query_info.getCluster()->getShardsInfo().front().number_of_replicas](uint64_t replica_num) -> ASTPtr
+                   replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
                     replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);

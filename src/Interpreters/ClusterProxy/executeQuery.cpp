@@ -149,6 +149,13 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
         new_settings.timeout_overflow_mode = settings.timeout_overflow_mode_leaf;
     }
 
+    /// in case of parallel replicas custom key w/o hedged connenctions use round robing load balancing
+    /// load_balancing setting doesn't affect hedged connections
+    if (context->canUseParallelReplicasCustomKey(cluster) && !settings.load_balancing.changed && !settings.use_hedged_requests)
+    {
+        new_settings.load_balancing = LoadBalancing::ROUND_ROBIN;
+    }
+
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;
@@ -185,8 +192,11 @@ void executeQuery(
     QueryProcessingStage::Enum processed_stage,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
-    SelectStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
+    SelectStreamFactory & stream_factory,
+    Poco::Logger * log,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const ClusterPtr & not_optimized_cluster,
