@@ -7669,7 +7669,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
 
 bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason)
 {
-    auto remove_broken_parts = [](auto & parts)
+    auto remove_broken_parts_from_consideration = [](auto & parts)
     {
         std::set<String> broken_projection_parts;
         for (const auto & [name, part] : parts)
@@ -7684,8 +7684,8 @@ bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const 
     auto left_projection_parts = left->getProjectionParts();
     auto right_projection_parts = right->getProjectionParts();
 
-    remove_broken_parts(left_projection_parts);
-    remove_broken_parts(right_projection_parts);
+    remove_broken_parts_from_consideration(left_projection_parts);
+    remove_broken_parts_from_consideration(right_projection_parts);
 
     if (left_projection_parts.size() != right_projection_parts.size())
     {
