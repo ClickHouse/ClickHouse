@@ -390,8 +390,8 @@ void SoftwareCodecDeflateQpl::doDecompressData(const char * source, UInt32 sourc
 
 CompressionCodecDeflateQpl::CompressionCodecDeflateQpl()
     : sw_codec(std::make_unique<SoftwareCodecDeflateQpl>())
+    , hw_codec(std::make_unique<HardwareCodecDeflateQpl>(*sw_codec))
 {
-    hw_codec = std::make_unique<HardwareCodecDeflateQpl>(*sw_codec);
     setCodecDescription("DEFLATE_QPL");
 }
 
