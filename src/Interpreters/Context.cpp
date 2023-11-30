@@ -1035,7 +1035,21 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
 {
-    auto disk_ptr = getDisk(cache_disk_name);
+    String config_prefix = "storage_configuration.disks";
+    const auto & config = getConfigRef();
+    auto disk_selector = std::make_shared<DiskSelector>();
+    /** We do not want to initialize all disks, so we filter only those that are used for temporary storage.
+      * This includes the cache disk itself and the underlying disk.
+      * In some cases, this may not work if we have more than one level of nesting, but disks3 + cache should be enough.
+      */
+    auto dependent_disk = config.getString(config_prefix + "." + cache_disk_name + ".disk");
+    disk_selector->initialize(config, config_prefix, shared_from_this(),
+        [&](const auto &, const auto & disk_config_prefix)
+        {
+            return endsWith(disk_config_prefix, "." + cache_disk_name) || endsWith(disk_config_prefix, "." + dependent_disk);
+        });
+
+    auto disk_ptr = disk_selector->get(cache_disk_name);
     if (!disk_ptr)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
 
@@ -1050,7 +1064,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
 
     shared->tmp_path = file_cache->getBasePath();
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
+    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, config);
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
