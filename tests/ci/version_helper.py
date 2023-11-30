@@ -139,6 +139,11 @@ class ClickHouseVersion:
             (str(self.major), str(self.minor), str(self.patch), str(self.tweak))
         )
 
+    @property
+    def is_lts(self) -> bool:
+        """our X.3 and X.8 are LTS"""
+        return self.minor % 5 == 3
+
     def as_dict(self) -> VERSIONS:
         return {
             "revision": self.revision,
@@ -314,7 +319,9 @@ def get_supported_versions(
                 if version.major == sv.major and version.minor == sv.minor
             }:
                 supported_stable.add(version)
-        if version.description == VersionType.LTS and len(supported_lts) < 2:
+        if (version.description == VersionType.LTS or version.is_lts) and len(
+            supported_lts
+        ) < 2:
             if not {
                 sv
                 for sv in supported_lts
