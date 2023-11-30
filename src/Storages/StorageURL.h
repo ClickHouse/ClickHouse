@@ -48,6 +48,7 @@ public:
     bool supportsPartitionBy() const override { return true; }
 
     NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,

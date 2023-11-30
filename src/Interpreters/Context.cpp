@@ -328,6 +328,7 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
+    String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
@@ -585,6 +586,28 @@ struct ContextSharedPart : boost::noncopyable
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
+
+        {
+            // Disk selector might not be initialized if there was some error during
+            // its initialization. Don't try to initialize it again on shutdown.
+            if (merge_tree_disk_selector)
+            {
+                for (const auto & [disk_name, disk] : merge_tree_disk_selector->getDisksMap())
+                {
+                    LOG_INFO(log, "Shutdown disk {}", disk_name);
+                    disk->shutdown();
+                }
+            }
+
+            /// Special volumes might also use disks that require shutdown.
+            auto & tmp_data = root_temp_data_on_disk;
+            if (tmp_data && tmp_data->getVolume())
+            {
+                auto & disks = tmp_data->getVolume()->getDisks();
+                for (auto & disk : disks)
+                    disk->shutdown();
+            }
+        }
 
         {
             std::lock_guard lock(mutex);
@@ -4065,26 +4088,6 @@ void Context::stopServers(const ServerType & server_type) const
 
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    // Disk selector might not be initialized if there was some error during
-    // its initialization. Don't try to initialize it again on shutdown.
-    if (shared->merge_tree_disk_selector)
-    {
-        for (auto & [disk_name, disk] : getDisksMap())
-        {
-            LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
-            disk->shutdown();
-        }
-    }
-
-    /// Special volumes might also use disks that require shutdown.
-    auto & tmp_data = shared->root_temp_data_on_disk;
-    if (tmp_data && tmp_data->getVolume())
-    {
-        auto & disks = tmp_data->getVolume()->getDisks();
-        for (auto & disk : disks)
-            disk->shutdown();
-    }
-
     shared->shutdown();
 }
 
@@ -4139,6 +4142,16 @@ String Context::getFormatSchemaPath() const
 void Context::setFormatSchemaPath(const String & path)
 {
     shared->format_schema_path = path;
+}
+
+String Context::getGoogleProtosPath() const
+{
+    return shared->google_protos_path;
+}
+
+void Context::setGoogleProtosPath(const String & path)
+{
+    shared->google_protos_path = path;
 }
 
 Context::SampleBlockCache & Context::getSampleBlockCache() const
