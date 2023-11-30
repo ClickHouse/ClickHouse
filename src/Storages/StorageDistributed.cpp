@@ -882,18 +882,14 @@ void StorageDistributed::read(
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
             additional_shard_filter_generator =
-                [&,
-                 my_custom_key_ast = std::move(custom_key_ast),
+                [my_custom_key_ast = std::move(custom_key_ast),
+                 column_description = this->getInMemoryMetadataPtr()->columns,
+                 custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
+                 context = local_context,
                  replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
-
             {
                 return getCustomKeyFilterForParallelReplica(
-                    replica_count,
-                    replica_num - 1,
-                    my_custom_key_ast,
-                    settings.parallel_replicas_custom_key_filter_type,
-                    this->getInMemoryMetadataPtr()->columns,
-                    local_context);
+                    replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
             };
         }
     }
