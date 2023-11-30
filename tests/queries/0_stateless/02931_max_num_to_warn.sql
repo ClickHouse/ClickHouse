@@ -1,0 +1,61 @@
+CREATE TABLE test_max_num_to_warn_1 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_2 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_3 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_4 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_5 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_6 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_7 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_8 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_9 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_10 (id Int32, str String) Engine=Memory;
+CREATE TABLE test_max_num_to_warn_11 (id Int32, str String) Engine=Memory;
+
+CREATE DATABASE test_max_num_to_warn_1;
+CREATE DATABASE test_max_num_to_warn_2;
+CREATE DATABASE test_max_num_to_warn_3;
+CREATE DATABASE test_max_num_to_warn_4;
+CREATE DATABASE test_max_num_to_warn_5;
+CREATE DATABASE test_max_num_to_warn_6;
+CREATE DATABASE test_max_num_to_warn_7;
+CREATE DATABASE test_max_num_to_warn_8;
+CREATE DATABASE test_max_num_to_warn_9;
+CREATE DATABASE test_max_num_to_warn_10;
+CREATE DATABASE test_max_num_to_warn_11;
+
+INSERT INTO test_max_num_to_warn_1 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_2 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_3 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_4 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_5 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_6 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_7 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_8 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_9 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_10 VALUES (1, 'Hello');
+INSERT INTO test_max_num_to_warn_11 VALUES (1, 'Hello');
+
+SELECT * FROM system.warnings where message in ('Attached tables is more than 10', 'Attached databases is more than 10', 'Active parts is more than 10');
+
+DROP TABLE test_max_num_to_warn_1;
+DROP TABLE test_max_num_to_warn_2;
+DROP TABLE test_max_num_to_warn_3;
+DROP TABLE test_max_num_to_warn_4;
+DROP TABLE test_max_num_to_warn_5;
+DROP TABLE test_max_num_to_warn_6;
+DROP TABLE test_max_num_to_warn_7;
+DROP TABLE test_max_num_to_warn_8;
+DROP TABLE test_max_num_to_warn_9;
+DROP TABLE test_max_num_to_warn_10;
+DROP TABLE test_max_num_to_warn_11;
+
+DROP DATABASE test_max_num_to_warn_1;
+DROP DATABASE test_max_num_to_warn_2;
+DROP DATABASE test_max_num_to_warn_3;
+DROP DATABASE test_max_num_to_warn_4;
+DROP DATABASE test_max_num_to_warn_5;
+DROP DATABASE test_max_num_to_warn_6;
+DROP DATABASE test_max_num_to_warn_7;
+DROP DATABASE test_max_num_to_warn_8;
+DROP DATABASE test_max_num_to_warn_9;
+DROP DATABASE test_max_num_to_warn_10;
+DROP DATABASE test_max_num_to_warn_11;

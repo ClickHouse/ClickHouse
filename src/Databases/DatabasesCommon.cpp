@@ -263,14 +263,12 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
 void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
-    std::cout<<"========= Flag 5"<<std::endl;
     std::lock_guard lock(mutex);
     attachTableUnlocked(table_name, table);
 }
 
 void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table)
 {
-    std::cout<<"========= Flag 6"<<std::endl;
     auto table_id = table->getStorageID();
     if (table_id.database_name != database_name)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
