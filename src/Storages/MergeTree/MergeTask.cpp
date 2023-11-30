@@ -529,7 +529,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reread temporary file {}", ctx->rows_sources_uncompressed_write_buf->getFileName());
     /// Move ownership:
     /// First, release ownership from unique_ptr to base type.
-    reread_buf.release();
+    reread_buf.release(); /// NOLINT(bugprone-unused-return-value): we already have the pointer value in `reread_buffer_raw`
     /// Then, move ownership to unique_ptr to concrete type.
     std::unique_ptr<ReadBufferFromFile> reread_buffer_from_file(reread_buffer_raw);
     /// CompressedReadBufferFromFile expects std::unique_ptr<ReadBufferFromFile> as argument.
