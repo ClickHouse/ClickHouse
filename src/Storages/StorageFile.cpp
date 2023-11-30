@@ -1069,7 +1069,6 @@ Chunk StorageFileSource::generate()
                         filename_override = files_iterator->getFileNameInArchive();
 
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
@@ -1120,6 +1119,7 @@ Chunk StorageFileSource::generate()
 
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
                             continue;
 
@@ -1302,8 +1302,7 @@ Pipe StorageFile::read(
         }
     }
 
-    auto files_iterator
-        = std::make_shared<StorageFileSource::FilesIterator>(paths, archive_info, query_info.query, virtual_columns, context, distributed_processing);
+    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, archive_info, query_info.query, virtual_columns, context, distributed_processing);
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
