@@ -323,7 +323,8 @@ struct StringSource
 
 /// Treats Enum values as Strings, modeled after StringSource
 template <typename EnumDataType>
-struct EnumSource {
+struct EnumSource
+{
     using Column = typename EnumDataType::ColumnType;
     using Slice = NumericArraySlice<UInt8>;
 
@@ -371,7 +372,8 @@ struct EnumSource {
         return data.size();
     }
 
-    Slice getWhole() const {
+    Slice getWhole() const
+    {
         std::string_view name = data_type.getNameForValue(data[row_num]).toView();
         return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
     }
