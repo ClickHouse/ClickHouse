@@ -592,8 +592,7 @@ struct CommitRetryContext
 {
     enum Stages
     {
-        LOCK_BLOCK,
-        CHECK_LOCK_AND_COMMIT,
+        LOCK_AND_COMMIT,
         DUPLICATED_PART,
         UNCERTAIN_COMMIT,
         SUCCESS,
@@ -602,23 +601,17 @@ struct CommitRetryContext
 
     /// Possible ways:
 
-    /// LOCK_BLOCK -> DUPLICATED_PART
-    /// LOCK_BLOCK -> CHECK_LOCK_AND_COMMIT
-
-    /// CHECK_LOCK_AND_COMMIT -> LOCK_BLOCK
-    /// CHECK_LOCK_AND_COMMIT -> DUPLICATED_PART
-    /// CHECK_LOCK_AND_COMMIT -> UNCERTAIN_COMMIT
-    /// CHECK_LOCK_AND_COMMIT -> SUCCESS
+    /// LOCK_AND_COMMIT -> DUPLICATED_PART
+    /// LOCK_AND_COMMIT -> UNCERTAIN_COMMIT
+    /// LOCK_AND_COMMIT -> SUCCESS
 
     /// DUPLICATED_PART -> SUCCESS
     /// UNCERTAIN_COMMIT -> SUCCESS
     /// * -> ERROR
 
-    Stages stage = LOCK_BLOCK;
+    Stages stage = LOCK_AND_COMMIT;
 
     String actual_part_name;
-    std::optional<EphemeralLockInZooKeeper> block_number_lock;
-    size_t block_number = 0;
     std::vector<String> conflict_block_ids;
     bool part_was_deduplicated = false;
     Coordination::Error uncertain_keeper_error = Coordination::Error::ZOK;
@@ -700,61 +693,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// trigger next keeper retry
             return CommitRetryContext::UNCERTAIN_COMMIT;
         }
-    };
-
-    auto lock_part_number_stage = [&] () -> CommitRetryContext::Stages
-    {
-        if constexpr (async_insert)
-        {
-            /// prefilter by cache
-            retry_context.conflict_block_ids = detectConflictsInAsyncBlockIDs(block_id);
-            if (!retry_context.conflict_block_ids.empty())
-            {
-                return CommitRetryContext::ERROR;
-            }
-        }
-
-        /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
-        /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
-        /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
-
-        /// Allocate new block number and check for duplicates
-        retry_context.block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path); /// 1 RTT
-        ThreadFuzzer::maybeInjectSleep();
-
-        if (!retry_context.block_number_lock)
-        {
-            return CommitRetryContext::DUPLICATED_PART;
-        }
-
-        if constexpr (async_insert)
-        {
-            /// The truth is that we always get only one path from block_number_lock.
-            /// This is a restriction of Keeper. Here I would like to use vector because
-            /// I wanna keep extensibility for future optimization, for instance, using
-            /// cache to resolve conflicts in advance.
-            String conflict_path = retry_context.block_number_lock->getConflictPath();
-            if (!conflict_path.empty())
-            {
-                LOG_TRACE(log, "Cannot get lock, the conflict path is {}", conflict_path);
-                retry_context.conflict_block_ids.push_back(conflict_path);
-
-                return CommitRetryContext::ERROR;
-            }
-        }
-
-        retry_context.block_number = retry_context.block_number_lock->getNumber();
-
-        /// Set part attributes according to part_number.
-        part->info.min_block = retry_context.block_number;
-        part->info.max_block = retry_context.block_number;
-        part->info.level = 0;
-        part->info.mutation = 0;
-
-        part->setName(part->getNewName(part->info));
-        retry_context.actual_part_name = part->name;
-
-        return CommitRetryContext::CHECK_LOCK_AND_COMMIT;
     };
 
     auto get_quorum_ops = [&] (Coordination::Requests & ops)
@@ -851,14 +789,60 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     auto commit_new_part_stage = [&] () -> CommitRetryContext::Stages
     {
-        chassert(retry_context.block_number_lock.has_value());
-
-        /// Lock might be easily lost at some retry attempt due to connection loss
-        /// Redo the locking
-        if (!retry_context.block_number_lock->isLocked())
+        if constexpr (async_insert)
         {
-            return CommitRetryContext::LOCK_BLOCK;
+            /// prefilter by cache
+            retry_context.conflict_block_ids = detectConflictsInAsyncBlockIDs(block_id);
+            if (!retry_context.conflict_block_ids.empty())
+            {
+                return CommitRetryContext::ERROR;
+            }
         }
+
+        LOG_INFO(log, "commit_new_part_stage");
+
+        /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
+        /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
+        /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
+
+        /// Allocate new block number and check for duplicates
+        auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path); /// 1 RTT
+
+        ThreadFuzzer::maybeInjectSleep();
+
+        if (!block_number_lock.has_value())
+        {
+            return CommitRetryContext::DUPLICATED_PART;
+        }
+
+        if constexpr (async_insert)
+        {
+            /// The truth is that we always get only one path from block_number_lock.
+            /// This is a restriction of Keeper. Here I would like to use vector because
+            /// I wanna keep extensibility for future optimization, for instance, using
+            /// cache to resolve conflicts in advance.
+            String conflict_path = block_number_lock->getConflictPath();
+            if (!conflict_path.empty())
+            {
+                LOG_TRACE(log, "Cannot get lock, the conflict path is {}", conflict_path);
+                retry_context.conflict_block_ids.push_back(conflict_path);
+
+                return CommitRetryContext::ERROR;
+            }
+        }
+
+        auto block_number = block_number_lock->getNumber();
+
+        LOG_INFO(log, "lock_part_number_stage {}", block_number);
+
+        /// Set part attributes according to part_number.
+        part->info.min_block = block_number;
+        part->info.max_block = block_number;
+        part->info.level = 0;
+        part->info.mutation = 0;
+
+        part->setName(part->getNewName(part->info));
+        retry_context.actual_part_name = part->name;
 
         /// Prepare transaction to ZooKeeper
         /// It will simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.
@@ -868,7 +852,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
         /// Deletes the information that the block number is used for writing.
         size_t block_unlock_op_idx = ops.size();
-        retry_context.block_number_lock->getUnlockOp(ops);
+        block_number_lock->getUnlockOp(ops);
 
         get_quorum_ops(ops);
 
@@ -921,7 +905,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             transaction.commit();
 
             /// Lock nodes have been already deleted, do not delete them in destructor
-            retry_context.block_number_lock->assumeUnlocked();
+            block_number_lock->assumeUnlocked();
             return CommitRetryContext::SUCCESS;
         }
 
@@ -943,7 +927,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             throw Exception(
                     ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                     "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
-                    retry_context.block_number,
+                    block_number,
                     toString(block_id),
                     multi_code);
 
@@ -970,7 +954,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         if (multi_code == Coordination::Error::ZNONODE && failed_op_idx == block_unlock_op_idx)
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                             "Insert query (for block {}) was canceled by concurrent ALTER PARTITION or TRUNCATE",
-                            retry_context.block_number_lock->getPath());
+                            block_number_lock->getPath());
 
         if (shared_lock_ops_id_begin <= failed_op_idx && failed_op_idx < shared_lock_op_id_end)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -985,7 +969,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         throw Exception(
                 ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                 "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
-                retry_context.block_number,
+                block_number,
                 toString(block_id),
                 multi_code,
                 failed_op_path);
@@ -997,10 +981,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         {
             switch (retry_context.stage)
             {
-                case CommitRetryContext::LOCK_BLOCK:
-                    retry_context.stage = lock_part_number_stage();
-                    break;
-                case CommitRetryContext::CHECK_LOCK_AND_COMMIT:
+                case CommitRetryContext::LOCK_AND_COMMIT:
                     retry_context.stage = commit_new_part_stage();
                     break;
                 case CommitRetryContext::DUPLICATED_PART:
