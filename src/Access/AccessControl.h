@@ -185,6 +185,12 @@ public:
     void setCreateMergeTreeRequiresGrant(bool enable) { create_mergetree_requires_grant = enable; }
     bool doesCreateMergeTreeRequireGrant() const { return create_mergetree_requires_grant; }
 
+    void setCreateLogRequiresGrant(bool enable) { create_log_requires_grant = enable; }
+    bool doesCreateLogRequireGrant() const { return create_log_requires_grant; }
+
+    void setCreateTinyLogRequiresGrant(bool enable) { create_tinylog_requires_grant = enable; }
+    bool doesCreateTinyLogRequireGrant() const { return create_tinylog_requires_grant; }
+
     void setCreateStripeLogRequiresGrant(bool enable) { create_stripelog_requires_grant = enable; }
     bool doesCreateStripeLogRequireGrant() const { return create_stripelog_requires_grant; }
 
@@ -260,6 +266,8 @@ private:
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool create_mergetree_requires_grant = false;
+    std::atomic_bool create_log_requires_grant = false;
+    std::atomic_bool create_tinylog_requires_grant = false;
     std::atomic_bool create_stripelog_requires_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;

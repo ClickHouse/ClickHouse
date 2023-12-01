@@ -204,6 +204,8 @@ enum class AccessType
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
     \
     M(MERGETREE, "", GLOBAL, SOURCES) \
+    M(LOG, "", GLOBAL, SOURCES) \
+    M(TINYLOG, "", GLOBAL, SOURCES) \
     M(STRIPELOG, "", GLOBAL, SOURCES) \
     M(FILE, "", GLOBAL, SOURCES) \
     M(URL, "", GLOBAL, SOURCES) \

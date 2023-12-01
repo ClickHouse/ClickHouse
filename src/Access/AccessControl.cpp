@@ -293,7 +293,10 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", false));
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", false));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
+
     setCreateMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_mergetree_requires_grant", false));
+    setCreateLogRequiresGrant(config_.getBool("access_control_improvements.create_log_requires_grant", false));
+    setCreateTinyLogRequiresGrant(config_.getBool("access_control_improvements.create_tinylog_requires_grant", false));
     setCreateStripeLogRequiresGrant(config_.getBool("access_control_improvements.create_stripelog_requires_grant", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);

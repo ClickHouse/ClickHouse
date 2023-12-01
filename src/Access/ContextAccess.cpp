@@ -549,6 +549,12 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (flags & AccessType::MERGETREE && !access_control->doesCreateMergeTreeRequireGrant())
         flags &= ~AccessType::MERGETREE;
 
+    if (flags & AccessType::LOG && !access_control->doesCreateLogRequireGrant())
+        flags &= ~AccessType::LOG;
+
+    if (flags & AccessType::TINYLOG && !access_control->doesCreateTinyLogRequireGrant())
+        flags &= ~AccessType::TINYLOG;
+
     if (flags & AccessType::STRIPELOG && !access_control->doesCreateStripeLogRequireGrant())
         flags &= ~AccessType::STRIPELOG;
 

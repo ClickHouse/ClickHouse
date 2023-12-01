@@ -192,6 +192,8 @@ Hierarchy of privileges:
     - `demangle`
 - [SOURCES](#grant-sources)
     - `MERGETREE`
+    - `LOG`
+    - `TINYLOG`
     - `STRIPELOG`
     - `FILE`
     - `URL`
@@ -460,6 +462,8 @@ Allows using external data sources. Applies to [table engines](../../engines/tab
 
 - `SOURCES`. Level: `GROUP`
     - `MERGETREE`. LEVEL: `GLOBAL`
+    - `LOG`
+    - `TINYLOG`
     - `STRIPELOG`. Level: `GLOBAL`
     - `FILE`. Level: `GLOBAL`
     - `URL`. Level: `GLOBAL`
