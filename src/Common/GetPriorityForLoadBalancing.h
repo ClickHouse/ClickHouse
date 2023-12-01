@@ -31,7 +31,7 @@ public:
     LoadBalancing load_balancing = LoadBalancing::RANDOM;
 
 private:
-    mutable size_t last_used = 0; /// Last used for round_robin policy.
+    mutable std::atomic<size_t> last_used = 0; /// Last used for round_robin policy.
 };
 
 }
