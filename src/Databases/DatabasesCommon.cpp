@@ -16,7 +16,7 @@
 
 namespace CurrentMetrics
 {
-    const extern Metric AttachedTable;
+    extern const Metric AttachedTable;
 }
 
 
