@@ -7827,6 +7827,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
     DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
 
+    bool attach_empty_partition = !replace && src_all_parts.empty();
+    if (attach_empty_partition)
+        return;
+
     auto query_to_string = [] (const ASTPtr & ast)
     {
         return ast ? queryToString(ast) : "";

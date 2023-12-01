@@ -2019,8 +2019,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
-    /// ATTACH empty part set
-    if (!replace && src_parts.empty())
+    bool attach_empty_partition = !replace && src_parts.empty();
+    if (attach_empty_partition)
         return;
 
     MutableDataPartsVector dst_parts;
