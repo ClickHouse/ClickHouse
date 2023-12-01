@@ -16,7 +16,6 @@ set(COMMON_LIBS
 
 if(ENABLE_FDB)
     list(APPEND COMMON_LIBS clickhouse_common_foundationdb)
-    add_definitions(-DENABLE_FDB)
 endif()
 
 target_link_libraries (clickhouse_common_zookeeper

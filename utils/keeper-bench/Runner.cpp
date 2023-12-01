@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <config.h>
 
 
 namespace CurrentMetrics
@@ -495,7 +496,7 @@ void Runner::createConnections()
 
 std::shared_ptr<Coordination::IKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx)
 {
-#ifdef ENABLE_FDB
+#ifdef USE_FDB
     if (connection_info.is_fdb)
     {
         zkutil::ZooKeeperArgs args;
@@ -515,7 +516,7 @@ std::shared_ptr<Coordination::IKeeper> Runner::getConnection(const ConnectionInf
         args.operation_timeout_ms = connection_info.operation_timeout_ms;
         args.use_compression = connection_info.use_compression;
         return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
-#ifdef ENABLE_FDB
+#ifdef USE_FDB
     }
 #endif
 }

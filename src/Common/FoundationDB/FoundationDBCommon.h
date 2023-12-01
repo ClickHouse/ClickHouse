@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <mutex>
+#include <config.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
@@ -42,12 +43,12 @@ public:
     /// It will stop the network thread if exists.
     /// If holders exists, the network thread will be stopped after all holders
     /// have been released.
-    static void _shutdownIfNeed();
+    static void shutdownIfNeedImpl();
 
     static void shutdownIfNeed()
     {
-#ifdef ENABLE_FDB
-        _shutdownIfNeed();
+#ifdef USE_FDB
+        shutdownIfNeedImpl();
 #endif
     }
     /// Holder ensures that the FoundationDB Network thread remains active,

@@ -77,7 +77,7 @@ void FoundationDBNetwork::ensureStarted(int64_t thread)
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
-void FoundationDBNetwork::_shutdownIfNeed()
+void FoundationDBNetwork::shutdownIfNeedImpl()
 {
     release();
 }
