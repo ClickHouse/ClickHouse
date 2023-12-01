@@ -43,7 +43,10 @@ def add_instance(name, ddl_config=None):
         "configs/dict.xml",
     ]
     return cluster.add_instance(
-        name, main_configs=main_configs, dictionaries=dictionaries, with_foundationdb=True
+        name,
+        main_configs=main_configs,
+        dictionaries=dictionaries,
+        with_foundationdb=True,
     )
 
 

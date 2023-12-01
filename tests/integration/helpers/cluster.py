@@ -1695,9 +1695,7 @@ class ClickHouseCluster:
         logging.debug(f"clickhouse_start_command: {clickhouse_start_command}")
 
         if with_foundationdb and (with_zookeeper or with_zookeeper_secure):
-            raise Exception(
-                "Can't set both fdb and zk at the same time"
-            )
+            raise Exception("Can't set both fdbkeeper and zookeeper at the same time")
 
         instance = ClickHouseInstance(
             cluster=self,

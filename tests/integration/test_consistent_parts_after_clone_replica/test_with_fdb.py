@@ -62,7 +62,9 @@ def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
                 "INSERT INTO test_table VALUES ('2019-08-16', {})".format(10 + i)
             )
 
-        pm.drop_instance_zk_connections(node1, port=4501, action="REJECT --reject-with tcp-reset")
+        pm.drop_instance_zk_connections(
+            node1, port=4501, action="REJECT --reject-with tcp-reset"
+        )
 
         # drop all parts on the second replica
         node2.query_with_retry("ALTER TABLE test_table DROP PARTITION 201908")

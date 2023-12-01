@@ -1,3 +1,5 @@
+#pragma once
+
 #include <foundationdb/fdb_c.h>
 
 extern "C" {

@@ -9,7 +9,11 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", macros={"cluster": "test1"}, with_foundationdb=True)
+node1 = cluster.add_instance(
+    "node1",
+    macros={"cluster": "test1"},
+    with_foundationdb=True,
+)
 # Check, that limits on max part size for merges doesn`t affect mutations
 node2 = cluster.add_instance(
     "node2",

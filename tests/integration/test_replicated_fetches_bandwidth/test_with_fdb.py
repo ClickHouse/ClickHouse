@@ -12,7 +12,9 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_foundationdb=True)
 node2 = cluster.add_instance("node2", with_foundationdb=True)
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/limit_replication_config.xml"], with_foundationdb=True
+    "node3",
+    main_configs=["configs/limit_replication_config.xml"],
+    with_foundationdb=True,
 )
 
 
