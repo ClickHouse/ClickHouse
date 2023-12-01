@@ -189,11 +189,17 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
+    set_and_key->set->fillSetElements();
+
+    return buildSetInplace(context);
+}
+
+SetPtr FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
+{
     auto plan = build(context);
     if (!plan)
         return nullptr;
 
-    set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(Block()));

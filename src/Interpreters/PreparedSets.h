@@ -107,6 +107,7 @@ public:
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
+    SetPtr buildSetInplace(const ContextPtr & context);
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
 

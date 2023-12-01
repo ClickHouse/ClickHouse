@@ -36,7 +36,7 @@ TTLTransform::TTLTransform(
             rows_ttl, old_ttl_infos.table_ttl, current_time_, force_);
 
         /// Skip all data if table ttl is expired for part
-        if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression)
+        if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast)
             all_data_dropped = true;
 
         delete_algorithm = algorithm.get();
