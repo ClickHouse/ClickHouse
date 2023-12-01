@@ -150,7 +150,7 @@ public:
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(
-                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), this->argument_types, params, properties),
+                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), NullsAction::EMPTY, this->argument_types, params, properties),
             this->argument_types,
             params);
     }
