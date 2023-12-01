@@ -258,7 +258,7 @@ void executeQuery(
             remote_shards,
             static_cast<UInt32>(shards),
             parallel_replicas_enabled,
-            std::move(shard_filter_generator));
+            shard_filter_generator);
     }
 
     if (!remote_shards.empty())
