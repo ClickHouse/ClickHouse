@@ -570,10 +570,10 @@ void Pipe::addTransform(
     if (extremes_port)
         assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
 
-    processors->emplace_back(std::move(transform));
-
     if (collected_processors)
         collected_processors->emplace_back(transform);
+
+    processors->emplace_back(std::move(transform));
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
