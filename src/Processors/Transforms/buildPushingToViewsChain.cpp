@@ -206,7 +206,7 @@ std::optional<Chain> generateViewChain(
     const Block & storage_header,
     bool disable_deduplication_for_children)
 {
-    auto view = DatabaseCatalog::instance().tryGetTable(view_id, views_data->context);
+    auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
     if (view == nullptr)
     {
         LOG_WARNING(
@@ -264,7 +264,7 @@ std::optional<Chain> generateViewChain(
 
     if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
     {
-        auto lock = materialized_view->tryLockForShare(views_data->context->getInitialQueryId(), views_data->context->getSettingsRef().lock_acquire_timeout);
+        auto lock = materialized_view->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
 
         if (lock == nullptr)
         {
@@ -402,14 +402,10 @@ Chain buildPushingToViewsChain(
     auto table_id = storage->getStorageID();
     auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
-    /// We need special context for materialized views insertions
-    ContextMutablePtr select_context;
-    ContextMutablePtr insert_context;
     ViewsDataPtr views_data;
     if (!views.empty())
     {
         auto process_context = Context::createCopy(context);  /// This context will be used in `process` function
-        select_context->setSetting("parallelize_output_from_storages", Field{false});
         views_data = std::make_shared<ViewsData>(thread_status_holder, process_context, table_id, metadata_snapshot, storage);
     }
 
