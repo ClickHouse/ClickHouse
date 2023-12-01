@@ -188,22 +188,30 @@ void MemoryTracker::injectFault() const
         description ? description : "");
 }
 
-void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
+namespace
 {
     /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
     /// Let's find them.
+void debugLogBigAllocationWithoutCheck(
+    Int64 size [[maybe_unused]], bool can_throw [[maybe_unused]], bool throw_if_memory_exceeded [[maybe_unused]])
+{
     if (size < 0)
         return;
 
     constexpr Int64 threshold = 5 * 1024 * 1024; /// The choice is arbitrary (maybe we should decrease it)
-    if (size < threshold)
-        return;
-    throw DB::Exception(
-        DB::ErrorCodes::LOGICAL_ERROR,
-        "Too big allocation ({} bytes) without checking memory limits, it may lead to OOM. Stack trace: {}",
-        size,
-        StackTrace().toString());
+    if (size > threshold)
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Too big allocation ({} bytes > {}) without checking memory limits, it may lead to OOM. Can throw: {} Throw if exceeded: {}. "
+            "Stack trace: {}",
+            size,
+            threshold,
+            can_throw,
+            throw_if_memory_exceeded,
+            StackTrace().toString());
 }
+}
+
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
 {
@@ -265,7 +273,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability > 0.0 && fault(thread_local_rng)))
     {
-        if (memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
+        bool can_throw = memoryTrackerCanThrow(level, true);
+        if (can_throw && throw_if_memory_exceeded)
         {
             /// Revert
             amount.fetch_sub(size, std::memory_order_relaxed);
@@ -287,7 +296,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         else
         {
             memory_limit_exceeded_ignored = true;
-            debugLogBigAllocationWithoutCheck(size);
+            debugLogBigAllocationWithoutCheck(size, can_throw, throw_if_memory_exceeded);
         }
     }
 
@@ -358,7 +367,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         else
         {
             memory_limit_exceeded_ignored = true;
-            debugLogBigAllocationWithoutCheck(size);
+            debugLogBigAllocationWithoutCheck(size, memoryTrackerCanThrow(level, false), throw_if_memory_exceeded);
         }
     }
 
@@ -379,7 +388,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         {
             bool log_memory_usage = false;
             peak_updated = updatePeak(will_be, log_memory_usage);
-            debugLogBigAllocationWithoutCheck(size);
+            debugLogBigAllocationWithoutCheck(size, memoryTrackerCanThrow(level, false), throw_if_memory_exceeded);
         }
     }
 
