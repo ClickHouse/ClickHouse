@@ -406,6 +406,7 @@ void RefreshTask::initializeRefreshUnlocked(std::shared_ptr<const StorageMateria
     refresh_block = InterpreterInsertQuery(refresh_query, refresh_context).execute();
     refresh_block->pipeline.setProgressCallback([this](const Progress & prog)
         {
+            /// TODO: Investigate why most fields are not populated. Change columns in system.view_refreshes as needed, update documentation (docs/en/operations/system-tables/view_refreshes.md).
             progress.incrementPiecewiseAtomically(prog);
         });
 
