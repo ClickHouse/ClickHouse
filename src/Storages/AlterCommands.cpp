@@ -15,6 +15,8 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/GinFilter.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -712,6 +714,21 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
+        Block as_select_sample;
+
+        if (context->getSettingsRef().allow_experimental_analyzer)
+        {
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
+        }
+        else
+        {
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
+                context,
+                false /* is_subquery */,
+                false);
+        }
+
+        metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (type == MODIFY_SETTING)
     {
