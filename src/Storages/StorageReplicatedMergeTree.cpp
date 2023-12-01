@@ -7840,7 +7840,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
     const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
 
-    if (is_partition_exp_different)
+    if (is_partition_exp_different && !src_all_parts.empty())
     {
         MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_all_parts);
     }
