@@ -7,12 +7,11 @@ from helpers import keeper_utils
 from kazoo.client import KazooClient, KazooState
 from kazoo.exceptions import ConnectionLoss
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, keeper_config_dir="configs/")
 
 # clickhouse itself will use external zookeeper
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
     with_zookeeper=True,
 )
@@ -24,7 +23,7 @@ def random_string(length):
 
 def get_connection_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+        hosts=cluster.get_instance_ip(nodename) + ":2181", timeout=timeout
     )
     _fake_zk_instance.start()
     return _fake_zk_instance
@@ -42,10 +41,10 @@ def started_cluster():
 
 
 def test_soft_limit_create(started_cluster):
-    keeper_utils.wait_until_connected(started_cluster, node)
+    started_cluster.wait_zookeeper_to_start()
     try:
-        node_zk = get_connection_zk("node")
-        loop_time = 10000
+        node_zk = get_connection_zk("zoo1")
+        loop_time = 100000
         node_zk.create("/test_soft_limit", b"abc")
 
         for i in range(loop_time):
