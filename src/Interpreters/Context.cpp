@@ -1997,11 +1997,6 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     applySettingsChangesWithLock(changes, lock);
 }
 
-void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const
-{
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, profile_elements, source);
-}
-
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, change, source);
@@ -2017,6 +2012,11 @@ void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, Settin
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
 }
 
+void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const
+{
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, profile_elements, source);
+}
+
 void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(settings, changes, source);
@@ -2025,12 +2025,6 @@ void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, Sett
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
-}
-
-void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const
-{
-    SharedLockGuard lock(mutex);
-    checkSettingsConstraintsWithLock(profile_elements, source);
 }
 
 void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source) const
@@ -2049,6 +2043,12 @@ void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource 
 {
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
+}
+
+void Context::checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source) const
+{
+    SharedLockGuard lock(mutex);
+    checkSettingsConstraintsWithLock(profile_elements, source);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const

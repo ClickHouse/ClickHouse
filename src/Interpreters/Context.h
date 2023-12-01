@@ -128,7 +128,7 @@ class AccessControl;
 class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
-class SettingsProfileElements;
+struct AlterSettingsProfileElements;
 class RemoteHostFilter;
 struct StorageID;
 class IDisk;
@@ -776,10 +776,10 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const;
     void checkSettingsConstraints(const SettingChange & change, SettingSource source) const;
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const;
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
@@ -1268,13 +1268,13 @@ private:
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const;
-
     void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const;
 
     void checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source) const;
 
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+
+    void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
 
