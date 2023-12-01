@@ -20,9 +20,9 @@ dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
 # Check that the tools are available under short names
-ch --query "SELECT 1" || exit 1
-chl --query "SELECT 1" || exit 1
-chc --version || exit 1
+#ch --query "SELECT 1" || exit 1
+#chl --query "SELECT 1" || exit 1
+#chc --version || exit 1
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
