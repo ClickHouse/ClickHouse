@@ -427,7 +427,11 @@ class ClickHouseCluster:
             else p.join(HELPERS_DIR, "zookeeper_config.xml")
         )
 
-        self.keeper_config_dir = p.join(self.base_dir, keeper_config_dir) if keeper_config_dir is not None else HELPERS_DIR
+        self.keeper_config_dir = (
+            p.join(self.base_dir, keeper_config_dir)
+            if keeper_config_dir
+            else HELPERS_DIR
+        )
 
         project_name = (
             pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
@@ -2728,7 +2732,9 @@ class ClickHouseCluster:
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
                     for i in range(1, 4):
                         shutil.copy(
-                            os.path.join(self.keeper_config_dir, f"keeper_config{i}.xml"),
+                            os.path.join(
+                                self.keeper_config_dir, f"keeper_config{i}.xml"
+                            ),
                             os.path.join(
                                 self.keeper_instance_dir_prefix + f"{i}", "config"
                             ),
