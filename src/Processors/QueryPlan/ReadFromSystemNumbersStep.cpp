@@ -513,17 +513,15 @@ void ReadFromSystemNumbersStep::checkLimits(size_t rows)
 {
     const auto & settings = context->getSettingsRef();
 
-    SizeLimits limits;
     if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
-        limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
-
-    SizeLimits leaf_limits;
-    if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
-        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
-
-    if (limits.max_rows || leaf_limits.max_rows)
     {
+        const auto limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
         limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+    }
+
+    if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
+    {
+        const auto leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
         leaf_limits.check(rows, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 }
