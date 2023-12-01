@@ -182,6 +182,9 @@ public:
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
+    void setCreateMergeTreeRequiresGrant(bool enable) { create_mergetree_requires_grant = enable; }
+    bool doesCreateMergeTreeRequireGrant() const { return create_mergetree_requires_grant; }
+
     void setCreateStripeLogRequiresGrant(bool enable) { create_stripelog_requires_grant = enable; }
     bool doesCreateStripeLogRequireGrant() const { return create_stripelog_requires_grant; }
 
@@ -256,6 +259,7 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
+    std::atomic_bool create_mergetree_requires_grant = false;
     std::atomic_bool create_stripelog_requires_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;

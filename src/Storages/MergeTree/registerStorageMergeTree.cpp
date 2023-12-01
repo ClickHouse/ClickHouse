@@ -758,6 +758,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
+        .source_access_type = AccessType::MERGETREE
     };
 
     factory.registerStorage("MergeTree", create, features);

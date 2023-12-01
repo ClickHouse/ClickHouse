@@ -191,6 +191,7 @@ Hierarchy of privileges:
     - `addressToSymbol`
     - `demangle`
 - [SOURCES](#grant-sources)
+    - `MERGETREE`
     - `STRIPELOG`
     - `FILE`
     - `URL`
@@ -458,6 +459,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
 - `SOURCES`. Level: `GROUP`
+    - `MERGETREE`. LEVEL: `GLOBAL`
     - `STRIPELOG`. Level: `GLOBAL`
     - `FILE`. Level: `GLOBAL`
     - `URL`. Level: `GLOBAL`

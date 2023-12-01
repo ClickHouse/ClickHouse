@@ -546,6 +546,9 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
         flags &= ~AccessType::CLUSTER;
 
+    if (flags & AccessType::MERGETREE && !access_control->doesCreateMergeTreeRequireGrant())
+        flags &= ~AccessType::MERGETREE;
+
     if (flags & AccessType::STRIPELOG && !access_control->doesCreateStripeLogRequireGrant())
         flags &= ~AccessType::STRIPELOG;
 

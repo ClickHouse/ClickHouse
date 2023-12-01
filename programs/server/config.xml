@@ -733,6 +733,10 @@
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
 
+        <!-- By default, for backward compatibility Create MergeTree ignore MERGETREE grant,
+             however you can change this behaviour by setting this to true -->
+        <create_mergetree_requires_grant>false</create_mergetree_requires_grant>
+
         <!-- By default, for backward compatibility Create StripeLog ignore STRIPELOG grant,
              however you can change this behaviour by setting this to true -->
         <create_stripelog_requires_grant>false</create_stripelog_requires_grant>

@@ -203,6 +203,7 @@ enum class AccessType
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
     \
+    M(MERGETREE, "", GLOBAL, SOURCES) \
     M(STRIPELOG, "", GLOBAL, SOURCES) \
     M(FILE, "", GLOBAL, SOURCES) \
     M(URL, "", GLOBAL, SOURCES) \
