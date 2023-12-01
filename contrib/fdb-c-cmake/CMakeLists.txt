@@ -28,6 +28,9 @@ elseif(SANITIZE STREQUAL "undefined")
     set(USE_UBSAN ON)
 endif()
 
+# Avoid harmful function name
+add_definitions(-Dbasename=_FDB_basename)
+
 add_subdirectory("${FDB_C_SOURCE_DIR}" "${ClickHouse_BINARY_DIR}/contrib/fdb-c")
 
 # Custom fdb_c target
