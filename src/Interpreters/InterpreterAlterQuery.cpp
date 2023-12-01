@@ -155,6 +155,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
+
         if (!getContext()->getSettings().allow_experimental_statistic && (
             command_ast->type == ASTAlterCommand::ADD_STATISTIC ||
             command_ast->type == ASTAlterCommand::DROP_STATISTIC ||
@@ -407,6 +408,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::DELETE:
+        case ASTAlterCommand::APPLY_DELETED_MASK:
         case ASTAlterCommand::DROP_PARTITION:
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         {

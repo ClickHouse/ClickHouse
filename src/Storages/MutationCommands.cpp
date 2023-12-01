@@ -59,6 +59,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         }
         return res;
     }
+    else if (command->type == ASTAlterCommand::APPLY_DELETED_MASK)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = APPLY_DELETED_MASK;
+        res.predicate = command->predicate;
+        res.partition = command->partition;
+        return res;
+    }
     else if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
         MutationCommand res;

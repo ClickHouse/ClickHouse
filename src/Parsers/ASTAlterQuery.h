@@ -71,6 +71,7 @@ public:
 
         DELETE,
         UPDATE,
+        APPLY_DELETED_MASK,
 
         NO_TYPE,
 
