@@ -158,19 +158,19 @@ CREATE MATERIALIZED VIEW destination REFRESH AFTER 1 HOUR DEPENDS ON source AS S
 where `1 HOUR` can be any duration less than `source`'s refresh period. The dependent table won't be refreshed more frequently than any of its dependencies. This is a valid way to set up a chain of refreshable views without specifying the real refresh period more than once.
 
 A few more examples:
- * `REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br>
+ * `REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br/>
    If `source` refresh takes more than 10 minutes, `destination` will wait for it.
- * `REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br>
+ * `REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br/>
    Similar to the above, even though the corresponding refreshes happen on different calendar days.
    `destination`'s refresh on day X+1 will wait for `source`'s refresh on day X (if it takes more than 2 hours).
- * `REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br>
+ * `REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br/>
    The 2 HOUR refresh happens after the 1 HOUR refresh for every other hour, e.g. after the midnight
    refresh, then after the 2am refresh, etc.
- * `REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br>
-   `REFRESH AFTER 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br>
-   `REFRESH AFTER 1 MINUTE` depends on `REFRESH AFTER 2 HOUR`<br>
+ * `REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+   `REFRESH AFTER 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+   `REFRESH AFTER 1 MINUTE` depends on `REFRESH AFTER 2 HOUR`<br/>
    `destination` is refreshed once after every `source` refresh, i.e. every 2 hours. The `1 MINUTE` is effectively ignored.
- * `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br>
+ * `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
    Currently this is not recommended.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}

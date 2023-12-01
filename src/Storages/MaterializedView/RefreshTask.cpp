@@ -90,7 +90,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
     DatabaseAndTableNameSet deps_set(deps.begin(), deps.end());
     std::vector<StorageID> removed_deps;
     for (const auto & id : remaining_dependencies)
-        if (!deps_set.count(id))
+        if (!deps_set.contains(id))
             removed_deps.push_back(id);
     for (const auto & id : removed_deps)
         arriveDependency(id);

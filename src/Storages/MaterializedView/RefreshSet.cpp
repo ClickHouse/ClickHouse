@@ -128,7 +128,7 @@ std::vector<RefreshTaskHolder> RefreshSet::getDependents(const StorageID & id) c
     auto it = dependents.find(id);
     if (it == dependents.end())
         return {};
-    for (auto & dep_id : it->second)
+    for (const StorageID & dep_id : it->second)
         if (auto task = tasks.find(dep_id); task != tasks.end())
             res.push_back(task->second);
     return res;
