@@ -11,6 +11,46 @@ public:
     explicit GetPriorityForLoadBalancing(LoadBalancing load_balancing_) : load_balancing(load_balancing_) {}
     GetPriorityForLoadBalancing() = default;
 
+    GetPriorityForLoadBalancing(const GetPriorityForLoadBalancing & other)
+        : hostname_prefix_distance(other.hostname_prefix_distance)
+        , hostname_levenshtein_distance(other.hostname_levenshtein_distance)
+        , load_balancing(other.load_balancing)
+        , last_used(other.last_used.load())
+    {
+    }
+
+    GetPriorityForLoadBalancing & operator=(const GetPriorityForLoadBalancing & other)
+    {
+        if (this != &other)
+        {
+            hostname_prefix_distance = other.hostname_prefix_distance;
+            hostname_levenshtein_distance = other.hostname_levenshtein_distance;
+            load_balancing = other.load_balancing;
+            last_used = other.last_used.load();
+        }
+        return *this;
+    }
+
+    GetPriorityForLoadBalancing(GetPriorityForLoadBalancing && other) noexcept
+        : hostname_prefix_distance(std::move(other.hostname_prefix_distance))
+        , hostname_levenshtein_distance(std::move(other.hostname_levenshtein_distance))
+        , load_balancing(other.load_balancing)
+        , last_used(other.last_used.load())
+    {
+    }
+
+    GetPriorityForLoadBalancing & operator=(GetPriorityForLoadBalancing && other) noexcept
+    {
+        if (this != &other)
+        {
+            hostname_prefix_distance = std::move(other.hostname_prefix_distance);
+            hostname_levenshtein_distance = std::move(other.hostname_levenshtein_distance);
+            load_balancing = other.load_balancing;
+            last_used = other.last_used.load();
+        }
+        return *this;
+    }
+
     bool operator == (const GetPriorityForLoadBalancing & other) const
     {
         return load_balancing == other.load_balancing
