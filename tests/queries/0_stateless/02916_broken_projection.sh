@@ -459,11 +459,13 @@ function test3()
     broken_projections_info test
 
     ${CLICKHOUSE_CLIENT} -nm --query "
+    set send_logs_level='fatal';
     backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_3')
     " | grep -o "BACKUP_CREATED"
 
     ${CLICKHOUSE_CLIENT} -nm --stacktrace --query "
     drop table test sync;
+    set send_logs_level='fatal';
     restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_3');
     " | grep -o "RESTORED"
 
@@ -476,12 +478,14 @@ function test3()
     broken_projections_info test
 
     ${CLICKHOUSE_CLIENT} -nm --query "
+    set send_logs_level='fatal';
     backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_2')
     settings check_projection_parts=false, allow_backup_broken_projections=true;
     " | grep -o "BACKUP_CREATED"
 
     ${CLICKHOUSE_CLIENT} -nm --stacktrace --query "
     drop table test sync;
+    set send_logs_level='fatal';
     restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_2');
     " | grep -o "RESTORED"
 
