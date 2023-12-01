@@ -30,7 +30,7 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     Block block = getInputPort().getHeader().cloneWithColumns(columns);
 
     ColumnsWithTypeAndName res_columns;
-    for (auto column : columns)
+    for (const auto & column : columns)
     {
         if (isColumnLazy(*column))
         {
