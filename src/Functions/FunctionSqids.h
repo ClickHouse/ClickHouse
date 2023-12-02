@@ -59,10 +59,6 @@ public:
         for (auto i : collections::range(0, arguments.size()))
         {
             if (!checkDataTypes<
-                    DataTypeInt8,
-                    DataTypeInt16,
-                    DataTypeInt32,
-                    DataTypeInt64,
                     DataTypeUInt8,
                     DataTypeUInt16,
                     DataTypeUInt32,
