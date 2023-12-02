@@ -89,6 +89,8 @@ Columns:
 - `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/cli.md) or another TCP client version.
+- `http_host` ([String](../../sql-reference/data-types/string.md)) — HTTP header `Host` passed in the HTTP query.
+- `tls_sni` ([String](../../sql-reference/data-types/string.md)) — Hostname that the client is requesting to connect to in the TLS Handshake.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
