@@ -160,14 +160,12 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
 
 /// Check if PostgreSQL relation is empty.
 /// postgres_table must be already quoted + schema-qualified.
-template<typename T>
-bool isTableEmpty(T &tx, const String & postgres_table) {
-  auto query = fmt::format(
-    "SELECT NOT EXISTS (SELECT * FROM {} LIMIT 1);",
-    postgres_table
-  );
-  pqxx::result result{tx.exec(query)};
-  return result[0][0].as<bool>();
+template <typename T>
+bool isTableEmpty(T & tx, const String & postgres_table)
+{
+    auto query = fmt::format("SELECT NOT EXISTS (SELECT * FROM {} LIMIT 1);", postgres_table);
+    pqxx::result result{tx.exec(query)};
+    return result[0][0].as<bool>();
 }
 
 template<typename T>
@@ -231,31 +229,31 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             /// support for empty tables OR attempt fallback to a discovered
             /// array_ndims CHECK constraint.
             int dimensions;
-            if (isTableEmpty(tx, postgres_table)) {
-              dimensions = 1;
-            } else {
-              /// All rows must contain the same number of dimensions.
-              /// 1 is ok. If number of dimensions in all rows is not the same -
-              /// such arrays are not able to be used as ClickHouse Array at all.
-              ///
-              /// Assume dimensions=1 for empty arrays.
-              auto postgres_column = doubleQuoteString(name_and_type.name);
-              pqxx::result result{tx.exec(fmt::format(
-                  "SELECT {} IS NULL, COALESCE(array_ndims({}), 1) "
-                  "FROM {} LIMIT 1;",
-                  postgres_column, postgres_column, postgres_table
-              ))};
+            if (isTableEmpty(tx, postgres_table))
+            {
+                dimensions = 1;
+            }
+            else
+            {
+                /// All rows must contain the same number of dimensions.
+                /// 1 is ok. If number of dimensions in all rows is not the same -
+                /// such arrays are not able to be used as ClickHouse Array at all.
+                ///
+                /// Assume dimensions=1 for empty arrays.
+                auto postgres_column = doubleQuoteString(name_and_type.name);
+                pqxx::result result{tx.exec(fmt::format(
+                    "SELECT {} IS NULL, COALESCE(array_ndims({}), 1) "
+                    "FROM {} LIMIT 1;",
+                    postgres_column,
+                    postgres_column,
+                    postgres_table))};
 
-              /// Nullable(Array) is not supported.
-              auto is_null = result[0][0].as<bool>();
-              if (is_null) {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "PostgreSQL array cannot be NULL. Column: {}", postgres_column
-                );
-              }
+                /// Nullable(Array) is not supported.
+                auto is_null = result[0][0].as<bool>();
+                if (is_null)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL array cannot be NULL. Column: {}", postgres_column);
 
-              dimensions = result[0][1].as<int>();
+                dimensions = result[0][1].as<int>();
             }
 
             /// It is always 1d array if it is in recheck.
