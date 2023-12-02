@@ -102,35 +102,26 @@ public:
     {
 
         // Calculate the size of the dense and sparse encodings to choose the smallest one
-        size_t dense_encoding_size = 0, sparse_encoding_size = 0;
         UInt64 num_bins = 0, num_non_empty_bins = 0;
         if (count != 0)
         {
             num_bins = max_key - min_key + 1;
         }
 
-        dense_encoding_size += estimatedVarIntSize(num_bins);
-        dense_encoding_size += estimatedVarIntSize(min_key);
-        dense_encoding_size += estimatedVarIntSize(1); // indexDelta in dense encoding
-
-        int previous_index = min_key;
+        size_t sparse_encoding_overhead = 0;
         for (int index = min_key; index <= max_key; ++index)
         {
-            Float64 count = bins[index - offset];
-            size_t count_varfloat64_size = estimatedFloatSize(count);
-            dense_encoding_size += count_varfloat64_size;
-            if (count != 0)
+            if (bins[index - offset] != 0)
             {
                 num_non_empty_bins++;
-                sparse_encoding_size += estimatedFloatSize(index - previous_index);
-                sparse_encoding_size += count_varfloat64_size;
-                previous_index = index;
+                sparse_encoding_overhead += 2; // 2 bytes for index delta
             }
         }
-        sparse_encoding_size += estimatedVarIntSize(num_non_empty_bins);
+
+        size_t dense_encoding_overhead = (num_bins - num_non_empty_bins) * estimatedFloatSize(0.0);
 
         // Choose the smallest encoding and write to buffer
-        if (dense_encoding_size <= sparse_encoding_size)
+        if (dense_encoding_overhead <= sparse_encoding_overhead)
         {
             // Write the dense encoding
             writeBinary(enc.BinEncodingContiguousCounts, buf); // Flag for dense encoding
@@ -147,7 +138,7 @@ public:
             // Write the sparse encoding
             writeBinary(enc.BinEncodingIndexDeltasAndCounts, buf); // Flag for sparse encoding
             writeVarUInt(num_non_empty_bins, buf);
-            previous_index = 0;
+            int previous_index = 0;
             for (int index = min_key; index <= max_key; ++index)
             {
                 Float64 count = bins[index - offset];
@@ -251,23 +242,19 @@ private:
 
     void shiftBins(int shift)
     {
-        if (shift > 0)
-        {
-            bins.insert(bins.begin(), shift, 0.0);
-            bins.resize(bins.size() - shift);
-        }
+        int new_offset = offset - shift;
+        if (new_offset > offset)
+            std::rotate(bins.begin(), bins.begin() + (new_offset - offset) % bins.size(), bins.end());
         else
-        {
-            bins.erase(bins.begin(), bins.begin() + std::abs(shift));
-            bins.resize(bins.size() + std::abs(shift), 0.0);
-        }
-        offset -= shift;
+            std::rotate(bins.begin(), bins.end() - (offset - new_offset) % bins.size(), bins.end());
+        offset = new_offset;
     }
 
     void centerBins(int new_min_key, int new_max_key)
     {
-        int middle_key = new_min_key + (new_max_key - new_min_key + 1) / 2;
-        shiftBins(offset + length() / 2 - middle_key);
+        int margins = length() - (new_max_key - new_min_key + 1);
+        int new_offset = new_min_key - margins / 2;
+        shiftBins(offset - new_offset);
     }
 
     // This is a rough estimate for the size of a VarInt/VarUInt.

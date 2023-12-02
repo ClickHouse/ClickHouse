@@ -25,6 +25,12 @@ namespace DB
 {
 class DDSketchEncoding
 {
+private:
+    static constexpr UInt8 numBitsForType = 2;
+    static constexpr UInt8 flagTypeMask = (1 << numBitsForType) - 1;
+    static constexpr UInt8 subFlagMask = ~flagTypeMask;
+    static constexpr UInt8 flagTypeSketchFeatures = 0b00;
+
 public:
     class Flag
     {
@@ -90,12 +96,6 @@ public:
     // - ...
     // - [varfloat64] count of N-th bin
     static constexpr UInt8 BinEncodingContiguousCounts = 3 << numBitsForType;
-
-private:
-    static constexpr UInt8 numBitsForType = 2;
-    static constexpr UInt8 flagTypeMask = (1 << numBitsForType) - 1;
-    static constexpr UInt8 subFlagMask = ~flagTypeMask;
-    static constexpr UInt8 flagTypeSketchFeatures = 0b00;
 };
 
 }
