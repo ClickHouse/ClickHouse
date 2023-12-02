@@ -43,15 +43,21 @@ public:
 
         bool has_default_disk = false;
 
+        /// For the output to be ordered
+        std::set<String> disks;
+
         for (const auto & disk_name : keys)
         {
             if (disk_name == default_disk_name)
                 has_default_disk = true;
-            std::cout << disk_name << '\n';
+            disks.insert(disk_name);
         }
 
         if (!has_default_disk)
-            std::cout << default_disk_name << '\n';
+            disks.insert(default_disk_name);
+
+        for (const auto & disk : disks)
+            std::cout << disk << '\n';
     }
 };
 }
