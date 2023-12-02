@@ -432,7 +432,7 @@ void Session::setClientConnectionId(uint32_t connection_id)
         prepared_client_info->connection_id = connection_id;
 }
 
-void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const String & http_host, const String & tls_sni,  const Poco::Net::NameValueCollection & http_headers)
+void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const String & http_host, const String & tls_sni, const Poco::Net::NameValueCollection & http_headers)
 {
     if (session_context)
     {

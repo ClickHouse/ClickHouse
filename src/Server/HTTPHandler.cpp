@@ -504,10 +504,10 @@ bool HTTPHandler::authenticateUser(
         http_method = ClientInfo::HTTPMethod::POST;
 
     String tls_sni;
+#if USE_SSL
     if (request.isSecure())
-    {
         tls_sni = request.getTLSServerName();
-    }
+#endif
 
     session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request.get("Host", ""), tls_sni, request);
     session->setForwardedFor(request.get("X-Forwarded-For", ""));

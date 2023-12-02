@@ -35,10 +35,10 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     server_address = session.serverAddress();
     secure = session.socket().secure();
 
+#if USE_SSL
     if (secure)
-    {
         tls_sni = getTLSServerName();
-    }
+#endif
 
     auto receive_timeout = context->getReceiveTimeout();
     auto send_timeout = context->getSendTimeout();
