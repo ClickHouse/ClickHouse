@@ -35,6 +35,22 @@ config1 = """<clickhouse>
                 </replica>
             </shard>
         </test_cluster>
+        <test_replica_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_replica_cluster>
     </remote_servers>
 </clickhouse>"""
 
@@ -60,6 +76,26 @@ config2 = """<clickhouse>
                 </replica>
             </shard>
         </test_cluster>
+        <test_replica_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_replica_cluster>
     </remote_servers>
 </clickhouse>
 """
@@ -74,6 +110,8 @@ def started_cluster():
                 f"""
                 create table dist_local (c1 Int32, c2 String) engine=MergeTree() order by c1;
                 create table dist (c1 Int32, c2 String) engine=Distributed(test_cluster, currentDatabase(), dist_local, c1);
+                create table replica_dist_local (c1 Int32, c2 String) engine=MergeTree() order by c1;
+                create table replica_dist (c1 Int32, c2 String) engine=Distributed(test_replica_cluster, currentDatabase(), replica_dist_local, c1);
                 """
             )
         yield cluster
@@ -121,3 +159,50 @@ def test_distributed_async_insert(started_cluster):
     assert int(node1.query("select count() from dist_local where c2 = 'C'")) == 5
     assert int(node2.query("select count() from dist_local where c2 = 'C'")) == 0
     assert int(node3.query("select count() from dist_local where c2 = 'C'")) == 5
+
+def test_distributed_replica_async_insert(started_cluster):
+    node1.query("insert into replica_dist select number,'A' from system.numbers limit 10;")
+    node1.query("system flush distributed replica_dist;")
+
+    assert int(node3.query("select count() from replica_dist_local where c2 = 'A'")) == 5
+    assert int(node1.query("select count() from replica_dist_local where c2 = 'A'")) == 5
+
+    # Add node2
+    node1.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config2)
+    node1.query("SYSTEM RELOAD CONFIG;")
+
+    node2.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config2)
+    node2.query("SYSTEM RELOAD CONFIG;")
+
+    node3.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config2)
+    node3.query("SYSTEM RELOAD CONFIG;")
+
+    node1.query("insert into replica_dist select number,'B' from system.numbers limit 10;")
+    node1.query("insert into replica_dist select number,'B' from system.numbers limit 10;")
+    node1.query("insert into replica_dist select number,'B' from system.numbers limit 10;")
+    node1.query("insert into replica_dist select number,'B' from system.numbers limit 10;")
+    node1.query("system flush distributed replica_dist;")
+
+    assert int(node1.query("select count() from replica_dist_local where c2 = 'B'")) > 0
+    assert int(node2.query("select count() from replica_dist_local where c2 = 'B'")) > 0
+    assert int(node3.query("select count() from replica_dist_local where c2 = 'B'")) > 0
+
+    # Delete node2
+    node1.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config1)
+    node1.query("SYSTEM RELOAD CONFIG;")
+
+    node2.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config1)
+    node2.query("SYSTEM RELOAD CONFIG;")
+
+    node3.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config1)
+    node3.query("SYSTEM RELOAD CONFIG;")
+
+    node1.query("insert into replica_dist select number,'C' from system.numbers limit 10;")
+    node1.query("insert into replica_dist select number,'C' from system.numbers limit 10;")
+    node1.query("insert into replica_dist select number,'C' from system.numbers limit 10;")
+    node1.query("insert into replica_dist select number,'C' from system.numbers limit 10;")
+    node1.query("system flush distributed replica_dist;")
+
+    assert int(node1.query("select count() from replica_dist_local where c2 = 'C'")) > 0
+    assert int(node2.query("select count() from replica_dist_local where c2 = 'C'")) == 0
+    assert int(node3.query("select count() from replica_dist_local where c2 = 'C'")) > 0

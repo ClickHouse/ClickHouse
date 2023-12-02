@@ -239,26 +239,6 @@ ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// Check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1).
-        if (address.shard_index != 0)
-        {
-            if (!address.replica_index)
-                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "Wrong replica_index={}", address.replica_index);
-
-            if (address.shard_index > shards_info.size())
-                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "No shard with shard_index={}", address.shard_index);
-
-            const auto & shard_info = shards_info[address.shard_index - 1];
-            if (address.replica_index > shard_info.per_replica_pools.size())
-                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "No shard with replica_index={}", address.replica_index);
-
-            return shard_info.per_replica_pools[address.replica_index - 1];
-        }
-
         /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {

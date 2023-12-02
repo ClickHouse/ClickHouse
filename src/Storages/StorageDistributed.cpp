@@ -1426,12 +1426,7 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
             if (dirname.ends_with("_all_replicas"))
             {
                 for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
-                {
-                    Cluster::Address replica_address = replicas_addresses[replica_index - 1];
-                    replica_address.shard_index = address.shard_index;
-                    replica_address.replica_index = static_cast<UInt32>(replica_index);
-                    addresses.emplace_back(std::move(replica_address));
-                }
+                    addresses.push_back(replicas_addresses[replica_index - 1]);
                 continue;
             }
 
@@ -1441,10 +1436,7 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
                 continue;
             }
 
-            Cluster::Address replica_address = replicas_addresses[address.replica_index - 1];
-            replica_address.shard_index = address.shard_index;
-            replica_address.replica_index = address.replica_index;
-            addresses.emplace_back(std::move(replica_address));
+            addresses.push_back(replicas_addresses[address.replica_index - 1]);
         }
         else
             addresses.push_back(address);
