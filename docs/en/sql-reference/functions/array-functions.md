@@ -1083,7 +1083,7 @@ Result:
 
 **See also**
 
-- [arrayFold](#arrayFold)
+- [arrayFold](#arrayfold)
 
 ## arrayReduceInRanges
 
