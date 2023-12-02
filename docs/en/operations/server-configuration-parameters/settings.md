@@ -74,7 +74,7 @@ The maximum number of threads that will be used for fetching data parts from ano
 
 Type: UInt64
 
-Default: 8
+Default: 16
 
 ## background_merges_mutations_concurrency_ratio
 
@@ -136,7 +136,7 @@ The maximum number of threads that will be used for constantly executing some li
 
 Type: UInt64
 
-Default: 128
+Default: 512
 
 ## backup_threads
 
@@ -214,7 +214,7 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 1024
+Default: 10
 
 
 ## index_mark_cache_policy
@@ -569,7 +569,6 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
                 <max_size_rows>10M</max_size_rows>
                 <max_file_segment_size>1M</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
-                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
             </tiny_local_cache>
             <!-- highlight-end -->
         </disks>
@@ -962,9 +961,11 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 
 Lazy loading of dictionaries.
 
-If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
+If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 
-If `false`, all dictionaries are created when the server starts, if the dictionary or dictionaries are created too long or are created with errors, then the server boots without of these dictionaries and continues to try to create these dictionaries.
+If `false`, then the server loads all dictionaries at startup.
+The server will wait at startup until all the dictionaries finish their loading before receiving any connections
+(exception: if `wait_dictionaries_load_at_startup` is set to `false` - see below).
 
 The default is `true`.
 
@@ -1396,6 +1397,23 @@ For more information, see the section [Creating replicated tables](../../engines
 <macros incl="macros" optional="true" />
 ```
 
+## replica_group_name {#replica_group_name}
+
+Replica group name for database Replicated.
+
+The cluster created by Replicated database will consist of replicas in the same group.
+DDL queries will only wait for the replicas in the same group.
+
+Empty by default.
+
+**Example**
+
+``` xml
+<replica_group_name>backups</replica_group_name>
+```
+
+Default value: ``.
+
 ## max_open_files {#max-open-files}
 
 The maximum number of open files.
@@ -1807,15 +1825,20 @@ The trailing slash is mandatory.
 
 ## Prometheus {#prometheus}
 
+:::note
+ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+:::
+
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
 Settings:
 
 - `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
 - `port` – Port for `endpoint`.
-- `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
 
 **Example**
 
@@ -1831,6 +1854,7 @@ Settings:
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
     </prometheus>
     <!-- highlight-end -->
 </clickhouse>
@@ -2328,7 +2352,7 @@ Path on the local filesystem to store temporary data for processing large querie
 
 ## user_files_path {#user_files_path}
 
-The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md).
+The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md), [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
 
 **Example**
 
@@ -2371,6 +2395,28 @@ Path to the file that contains:
 <users_config>users.xml</users_config>
 ```
 
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
+
+This setting allows to specify behavior if `dictionaries_lazy_load` is `false`.
+(If `dictionaries_lazy_load` is `true` this setting doesn't affect anything.)
+
+If `wait_dictionaries_load_at_startup` is `false`, then the server
+will start loading all the dictionaries at startup and it will receive connections in parallel with that loading.
+When a dictionary is used in a query for the first time then the query will wait until the dictionary is loaded if it's not loaded yet.
+Setting `wait_dictionaries_load_at_startup` to `false` can make ClickHouse start faster, however some queries can be executed slower
+(because they will have to wait for some dictionaries to be loaded).
+
+If `wait_dictionaries_load_at_startup` is `true`, then the server will wait at startup
+until all the dictionaries finish their loading (successfully or not) before receiving any connections.
+
+The default is `true`.
+
+**Example**
+
+``` xml
+<wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
+```
+
 ## zookeeper {#server-settings_zookeeper}
 
 Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
@@ -2407,6 +2453,8 @@ This section contains the following parameters:
   * hostname_levenshtein_distance - just like nearest_hostname, but it compares hostname in a levenshtein distance manner.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
+- `use_compression` — If set to true, enables compression in Keeper protocol.
+
 
 **Example configuration**
 
@@ -2631,3 +2679,118 @@ Possible values:
 -   1 — Enabled.
 
 Default value: 0.
+
+## proxy {#proxy}
+
+Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
+
+There are three ways to define proxy servers: environment variables, proxy lists, and remote proxy resolvers.
+
+### Environment variables
+
+The `http_proxy` and `https_proxy` environment variables allow you to specify a
+proxy server for a given protocol. If you have it set on your system, it should work seamlessly.
+
+This is the simplest approach if a given protocol has
+only one proxy server and that proxy server doesn't change.
+
+### Proxy lists
+
+This approach allows you to specify one or more
+proxy servers for a protocol. If more than one proxy server is defined,
+ClickHouse uses the different proxies on a round-robin basis, balancing the
+load across the servers. This is the simplest approach if there is more than
+one proxy server for a protocol and the list of proxy servers doesn't change.
+
+### Configuration template
+
+``` xml
+<proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
+`<proxy>` fields
+
+* `<http>` - A list of one or more HTTP proxies
+* `<https>` - A list of one or more HTTPS proxies
+
+`<http>` and `<https>` fields
+
+* `<uri>` - The URI of the proxy
+
+### Remote proxy resolvers
+
+It's possible that the proxy servers change dynamically. In that
+case, you can define the endpoint of a resolver. ClickHouse sends
+an empty GET request to that endpoint, the remote resolver should return the proxy host.
+ClickHouse will use it to form the proxy URI using the following template: `{proxy_scheme}://{proxy_host}:{proxy_port}`
+
+### Configuration template
+
+``` xml
+<proxy>
+    <http>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>80</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </http>
+
+    <https>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>3128</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </https>
+
+</proxy>
+```
+
+`<proxy>` fields
+
+* `<http>` - A list of one or more resolvers*
+* `<https>` - A list of one or more resolvers*
+
+`<http>` and `<https>` fields
+
+* `<resolver>` - The endpoint and other details for a resolver.
+  You can have multiple `<resolver>` elements, but only the first
+  `<resolver>` for a given protocol is used. Any other `<resolver>`
+  elements for that protocol are ignored. That means load balancing
+  (if needed) should be implemented by the remote resolver.
+
+`<resolver>` fields
+
+* `<endpoint>` - The URI of the proxy resolver
+* `<proxy_scheme>` - The protocol of the final proxy URI. This can be either `http` or `https`.
+* `<proxy_port>` - The port number of the proxy resolver
+* `<proxy_cache_time>` - The time in seconds that values from the resolver
+  should be cached by ClickHouse. Setting this value to `0` causes ClickHouse
+  to contact the resolver for every HTTP or HTTPS request.
+
+### Precedence
+
+Proxy settings are determined in the following order:
+
+1. Remote proxy resolvers
+2. Proxy lists
+3. Environment variables
+
+ClickHouse will check the highest priority resolver type for the request protocol. If it is not defined,
+it will check the next highest priority resolver type, until it reaches the environment resolver.
+This also allows a mix of resolver types can be used.
+
+### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.

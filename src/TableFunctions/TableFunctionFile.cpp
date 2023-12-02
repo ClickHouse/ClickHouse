@@ -1,5 +1,6 @@
-#include <TableFunctions/TableFunctionFile.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <TableFunctions/ITableFunctionFileLike.h>
+#include <TableFunctions/TableFunctionFile.h>
 
 #include "Parsers/IAST_fwd.h"
 #include "registerTableFunctions.h"
@@ -7,10 +8,12 @@
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+
 
 namespace DB
 {
@@ -85,7 +88,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
-    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
+    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -109,6 +112,12 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
 
     return parseColumnsListFromString(structure, context);
+}
+
+std::unordered_set<String> TableFunctionFile::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    auto virtual_column_names = StorageFile::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

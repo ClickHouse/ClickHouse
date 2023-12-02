@@ -424,7 +424,7 @@ void LocalServer::setupUsers()
 
 void LocalServer::connect()
 {
-    connection_parameters = ConnectionParameters(config());
+    connection_parameters = ConnectionParameters(config(), "localhost");
     connection = LocalConnection::createConnection(
         connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
@@ -494,7 +494,8 @@ try
     registerFormats();
 
     processConfig();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    adjustSettings();
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
 
     applyCmdSettings(global_context);
 
@@ -562,9 +563,6 @@ catch (...)
 
 void LocalServer::updateLoggerLevel(const String & logs_level)
 {
-    if (!logging_initialized)
-        return;
-
     config().setString("logger.level", logs_level);
     updateLevels(config(), logger());
 }
@@ -576,6 +574,8 @@ void LocalServer::processConfig()
 
     if (config().has("multiquery"))
         is_multiquery = true;
+
+    pager = config().getString("pager", "");
 
     delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
     if (!is_interactive || delayed_interactive)
@@ -604,21 +604,13 @@ void LocalServer::processConfig()
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
         Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
         Poco::Logger::root().setChannel(log);
-        logging_initialized = true;
-    }
-    else if (logging || is_interactive)
-    {
-        config().setString("logger", "logger");
-        auto log_level_default = is_interactive && !logging ? "none" : level;
-        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
-        buildLoggers(config(), logger(), "clickhouse-local");
-        logging_initialized = true;
     }
     else
     {
-        Poco::Logger::root().setLevel("none");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-        logging_initialized = false;
+        config().setString("logger", "logger");
+        auto log_level_default = logging ? level : "fatal";
+        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
 
     shared_context = Context::createShared();
@@ -760,7 +752,7 @@ void LocalServer::processConfig()
         {
             DatabaseCatalog::instance().createBackgroundTasks();
             loadMetadata(global_context);
-            DatabaseCatalog::instance().startupBackgroundCleanup();
+            DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
@@ -783,15 +775,6 @@ void LocalServer::processConfig()
 
     global_context->setQueryKindInitial();
     global_context->setQueryKind(query_kind);
-
-    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
-    {
-        Settings settings = global_context->getSettings();
-        settings.input_format_values_allow_data_after_semicolon = true;
-        /// Do not send it to the server
-        settings.input_format_values_allow_data_after_semicolon.changed = false;
-        global_context->setSettings(settings);
-    }
 }
 
 
