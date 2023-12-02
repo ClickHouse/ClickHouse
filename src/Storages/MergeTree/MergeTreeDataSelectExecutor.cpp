@@ -778,25 +778,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 {
     if (!filter_dag)
         return {};
-
     auto sample = data.getSampleBlockWithVirtualColumns();
-    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
-    for (const auto * input : filter_dag->getInputs())
-        if (sample.has(input->result_name))
-            allowed_inputs.insert(input);
-
-    if (allowed_inputs.empty())
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), sample);
+    if (!dag)
         return {};
-
-    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
-    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
-    if (atoms.empty())
-        return {};
-
-    auto dag = ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
 
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
-    VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
+    VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 

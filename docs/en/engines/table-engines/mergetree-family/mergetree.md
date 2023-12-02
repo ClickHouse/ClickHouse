@@ -39,8 +39,8 @@ If you need to update rows frequently, we recommend using the [`ReplacingMergeTr
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [TTL expr1] [PRIMARY KEY],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [TTL expr2] [PRIMARY KEY],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -504,8 +504,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | inverted |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|----------|
-| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#equals)                | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
 | [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
 | [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
 | [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
@@ -513,10 +513,10 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            | ✔        |
 | [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
 | [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                        | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
 | [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
 | [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
 | [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
@@ -1358,3 +1358,33 @@ In this sample configuration:
 - `_partition_value` — Values (a tuple) of a `partition by` expression.
 - `_sample_factor` — Sample factor (from the query).
 - `_block_number` — Block number of the row, it is persisted on merges when `allow_experimental_block_number_column` is set to true.
+
+## Column Statistics (Experimental) {#column-statistics}
+
+The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
+
+``` sql
+CREATE TABLE example_table
+(
+    a Int64 STATISTIC(tdigest),
+    b Float64
+)
+ENGINE = MergeTree
+ORDER BY a
+```
+
+We can also manipulate statistics with `ALTER` statements.
+
+```sql
+ALTER TABLE example_table ADD STATISTIC b TYPE tdigest;
+ALTER TABLE example_table DROP STATISTIC a TYPE tdigest;
+```
+
+These lightweight statistics aggregate information about distribution of values in columns.
+They can be used for query optimization when we enable `set allow_statistic_optimize = 1`.
+
+#### Available Types of Column Statistics {#available-types-of-column-statistics}
+
+-   `tdigest`
+
+    Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.

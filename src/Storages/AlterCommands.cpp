@@ -16,6 +16,8 @@
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/GinFilter.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -23,6 +25,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTStatisticDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
@@ -42,6 +45,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_STATISTIC;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
@@ -239,6 +243,21 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::ADD_STATISTIC)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.statistic_decl = command_ast->statistic_decl;
+        command.type = AlterCommand::ADD_STATISTIC;
+
+        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+
+        command.statistic_columns = ast_stat_decl.getColumnNames();
+        command.statistic_type = ast_stat_decl.type;
+        command.if_not_exists = command_ast->if_not_exists;
+
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         AlterCommand command;
@@ -292,6 +311,23 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         if (command_ast->clear_index)
             command.clear = true;
+
+        if (command_ast->partition)
+            command.partition = command_ast->partition;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_STATISTIC)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::DROP_STATISTIC;
+        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+
+        command.statistic_columns = ast_stat_decl.getColumnNames();
+        command.statistic_type = ast_stat_decl.type;
+        command.if_exists = command_ast->if_exists;
+        command.clear = command_ast->clear_statistic;
 
         if (command_ast->partition)
             command.partition = command_ast->partition;
@@ -584,6 +620,42 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             metadata.secondary_indices.erase(erase_it);
         }
     }
+    else if (type == ADD_STATISTIC)
+    {
+        for (const auto & statistic_column_name : statistic_columns)
+        {
+            if (!metadata.columns.has(statistic_column_name))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: this column is not found", statistic_column_name, statistic_type);
+            }
+            if (!if_exists && metadata.columns.get(statistic_column_name).stat)
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: statistic on this column with this type already exists", statistic_column_name, statistic_type);
+        }
+
+        auto stats = StatisticDescription::getStatisticsFromAST(statistic_decl, metadata.columns);
+        for (auto && stat : stats)
+        {
+            metadata.columns.modify(stat.column_name,
+                [&](ColumnDescription & column) { column.stat = std::move(stat); });
+        }
+    }
+    else if (type == DROP_STATISTIC)
+    {
+        for (const auto & stat_column_name : statistic_columns)
+        {
+            if (!metadata.columns.has(stat_column_name) || !metadata.columns.get(stat_column_name).stat)
+            {
+                if (if_exists)
+                    return;
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Wrong statistic name. Cannot find statistic {} with type {} to drop", backQuote(stat_column_name), statistic_type);
+            }
+            if (!partition && !clear)
+            {
+                metadata.columns.modify(stat_column_name,
+                    [&](ColumnDescription & column) { column.stat = std::nullopt; });
+            }
+        }
+    }
     else if (type == ADD_CONSTRAINT)
     {
         auto constraints = metadata.constraints.getConstraints();
@@ -644,6 +716,21 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
+        Block as_select_sample;
+
+        if (context->getSettingsRef().allow_experimental_analyzer)
+        {
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
+        }
+        else
+        {
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
+                context,
+                false /* is_subquery */,
+                false);
+        }
+
+        metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (type == MODIFY_SETTING)
     {
@@ -686,6 +773,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
                     rename_visitor.visit(column_to_modify.ttl);
+                if (column_to_modify.name == column_name && column_to_modify.stat)
+                    column_to_modify.stat->column_name = rename_to;
             });
         }
         if (metadata.table_ttl.definition_ast)
@@ -807,7 +896,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
+    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTIC)
         return true;
 
     /// Drop alias is metadata alter, in other case mutation is required.
@@ -908,6 +997,18 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     {
         result.type = MutationCommand::Type::DROP_INDEX;
         result.column_name = index_name;
+        if (clear)
+            result.clear = true;
+        if (partition)
+            result.partition = partition;
+
+        result.predicate = nullptr;
+    }
+    else if (type == DROP_STATISTIC)
+    {
+        result.type = MutationCommand::Type::DROP_STATISTIC;
+        result.statistic_columns = statistic_columns;
+
         if (clear)
             result.clear = true;
         if (partition)

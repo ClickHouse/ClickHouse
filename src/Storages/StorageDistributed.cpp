@@ -897,7 +897,12 @@ void StorageDistributed::read(
                 [&, my_custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    shard_count, shard_num - 1, my_custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
+                    shard_count,
+                    shard_num - 1,
+                    my_custom_key_ast,
+                    settings.parallel_replicas_custom_key_filter_type,
+                    this->getInMemoryMetadataPtr()->columns,
+                    local_context);
             };
         }
     }
@@ -1036,7 +1041,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         else
         {
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-            auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
+            auto connections = shard_info.pool->getMany(timeouts, settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
                     shard_info.shard_num);
