@@ -7,6 +7,7 @@
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 
+#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -28,6 +29,10 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         && !ParserWithOptionalAlias(std::make_unique<ParserTableAsStringLiteralIdentifier>(), allow_alias_without_as_keyword)
                 .parse(pos, res->database_and_table_name, expected))
         return false;
+
+    /// STREAM
+    if (ParserKeyword("STREAM").ignore(pos, expected))
+        res->stream = true;
 
     /// FINAL
     if (ParserKeyword("FINAL").ignore(pos, expected))

@@ -674,16 +674,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             if (table_expression_query_info.table_expression_modifiers)
             {
                 const auto & table_expression_modifiers = table_expression_query_info.table_expression_modifiers;
+                bool has_stream = table_expression_modifiers->hasStream();
                 auto sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
                 auto sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
 
                 table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
+                    has_stream,
                     sample_size_ratio,
                     sample_offset_ratio);
             }
             else
             {
                 table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
+                    false,
                     {} /*sample_size_ratio*/,
                     {} /*sample_offset_ratio*/);
             }
@@ -818,6 +821,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+
+                if (!table_expression_query_info.table_expression_modifiers.has_value()) {
+                    LOG_DEBUG(&Poco::Logger::get("Planner"), "table_expression_modifiers is none");
+                } else if (table_expression_query_info.table_expression_modifiers->hasStream()) {
+                    LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is ON");
+                }
 
                 for (const auto & filter_info_and_description : where_filters)
                 {

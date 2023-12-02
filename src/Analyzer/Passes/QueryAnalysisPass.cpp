@@ -2221,6 +2221,15 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
                     "Storage {} doesn't support sampling",
                     storage->getStorageID().getFullNameNotQuoted());
+
+            if (table_expression_modifiers->hasStream())
+            {
+                if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
+                    throw Exception(ErrorCodes::ILLEGAL_FINAL,
+                        "Streaming query does not compatible with other table expression modifiers");
+
+                // TODO: add cursor storage check
+            }
         }
     }
 }
