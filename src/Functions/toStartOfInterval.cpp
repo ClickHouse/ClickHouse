@@ -1,21 +1,21 @@
-#include <base/arithmeticOverflow.h>
 #include "Common/IntervalKind.h"
-#include <Common/Exception.h>
-#include <Common/DateLUTImpl.h>
-#include "base/types.h"
-#include <DataTypes/DataTypesDecimal.h>
-#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <base/arithmeticOverflow.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -325,26 +325,31 @@ private:
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
         if (origin_column.column == nullptr)
+        {
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = static_cast<ToFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+        }
         else
         {
             UInt64 origin = origin_column.column->get64(0);
 
             for (size_t i = 0; i != size; ++i)
             {
-                auto td = time_data[i];
-                result_data[i] = 0;
-                if (origin > size_t(td))
+                auto t = time_data[i];
+                if (origin > static_cast<size_t>(t))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date/datetime");
 
-                td -= origin;
-                auto res = static_cast<ToFieldType>(ToStartOfInterval<unit>::execute(td, num_units, time_zone, scale_multiplier));
+                t -= origin;
+                auto res = static_cast<ToFieldType>(ToStartOfInterval<unit>::execute(t, num_units, time_zone, scale_multiplier));
 
                 if (!(unit == IntervalKind::Millisecond || unit == IntervalKind::Microsecond || unit == IntervalKind::Nanosecond) && scale_multiplier != 10)
                     origin = origin / scale_multiplier;
+
+                static constexpr size_t SECONDS_PER_DAY = 86400;
+
+                result_data[i] = 0;
                 if (unit == IntervalKind::Week || unit == IntervalKind::Month || unit == IntervalKind::Quarter || unit == IntervalKind::Year)
-                    result_data[i] = UInt16(origin/86400 + res);
+                    result_data[i] = static_cast<UInt16>(origin/SECONDS_PER_DAY + res);
                 else
                     result_data[i] += origin + res;
             }
