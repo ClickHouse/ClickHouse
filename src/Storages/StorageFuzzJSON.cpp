@@ -1,3 +1,7 @@
+#include <Storages/StorageFuzzJSON.h>
+
+#if USE_SIMDJSON || USE_RAPIDJSON
+
 #include <optional>
 #include <random>
 #include <string_view>
@@ -6,11 +10,11 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageFuzzJSON.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/checkStackSize.h>
+#include <Common/escapeString.h>
 
 namespace DB
 {
@@ -138,7 +142,7 @@ void traverse(const ParserImpl::Element & e, std::shared_ptr<JSONNode> node)
     {
         auto field = getFixedValue(e);
         if (!field)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse a fixed JSON value.");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse a fixed JSON value '{}'.", escapeString(e.getString()));
 
         val.fixed = std::move(field);
     }
@@ -151,7 +155,14 @@ std::shared_ptr<JSONNode> parseJSON(const String & json)
     ParserImpl p;
 
     if (!p.parse(json, document))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse JSON string.");
+    {
+        constexpr size_t max_length = 128LU;
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Failed to parse JSON from the string '{}'{}.",
+            escapeString(json.substr(0, max_length)),
+            json.size() >= max_length ? "... (truncated)" : "");
+    }
 
     auto root = std::make_shared<JSONNode>();
     traverse(document, root);
@@ -693,3 +704,4 @@ void registerStorageFuzzJSON(StorageFactory & factory)
 }
 
 }
+#endif

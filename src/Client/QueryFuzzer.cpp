@@ -46,6 +46,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 namespace DB
 {
@@ -382,6 +383,39 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
 
     // We don't have to recurse here to fuzz the children, this is handled by
     // the generic recursion into IAST.children.
+}
+
+void QueryFuzzer::fuzzNullsAction(NullsAction & action)
+{
+    /// If it's not using actions, then it's a high change it doesn't support it to begin with
+    if ((action == NullsAction::EMPTY) && (fuzz_rand() % 100 == 0))
+    {
+        if (fuzz_rand() % 2 == 0)
+            action = NullsAction::RESPECT_NULLS;
+        else
+            action = NullsAction::IGNORE_NULLS;
+    }
+    else if (fuzz_rand() % 20 == 0)
+    {
+        switch (fuzz_rand() % 3)
+        {
+            case 0:
+            {
+                action = NullsAction::EMPTY;
+                break;
+            }
+            case 1:
+            {
+                action = NullsAction::RESPECT_NULLS;
+                break;
+            }
+            default:
+            {
+                action = NullsAction::IGNORE_NULLS;
+                break;
+            }
+        }
+    }
 }
 
 void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
@@ -965,6 +999,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
+
+        if (AggregateUtils::isAggregateFunction(*fn))
+            fuzzNullsAction(fn->nulls_action);
 
         if (fn->is_window_function && fn->window_definition)
         {

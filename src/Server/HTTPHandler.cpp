@@ -45,6 +45,7 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/NameValueCollection.h>
 
 #include <chrono>
 #include <sstream>
@@ -508,7 +509,7 @@ bool HTTPHandler::authenticateUser(
         tls_sni = request.getTLSServerName();
     }
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request.get("Host", ""), tls_sni);
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request.get("Host", ""), tls_sni, request);
     session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 

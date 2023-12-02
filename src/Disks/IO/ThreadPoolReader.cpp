@@ -52,6 +52,7 @@ namespace ProfileEvents
     extern const Event ThreadPoolReaderPageCacheMiss;
     extern const Event ThreadPoolReaderPageCacheMissBytes;
     extern const Event ThreadPoolReaderPageCacheMissElapsedMicroseconds;
+    extern const Event AsynchronousReaderIgnoredBytes;
 
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
@@ -193,6 +194,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHit);
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitBytes, bytes_read);
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
+            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
             promise.set_value({bytes_read, request.ignore, nullptr});
             return future;
@@ -241,6 +243,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
+        ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     }, request.priority);
