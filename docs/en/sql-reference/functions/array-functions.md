@@ -1175,7 +1175,7 @@ FROM numbers(1,10);
 
 **See also**
 
-- [arrayReduce](#arrayReduce)
+- [arrayReduce](#arrayreduce)
 
 ## arrayReverse(arr)
 
