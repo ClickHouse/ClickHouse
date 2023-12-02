@@ -736,6 +736,21 @@
         <!-- By default, for backward compatibility create table with a specific table engine ignores grant,
              however you can change this behaviour by setting this to true -->
         <create_mergetree_requires_grant>false</create_mergetree_requires_grant>
+        <create_collapsingmergetree_requires_grant>false</create_collapsingmergetree_requires_grant>
+        <create_replacingmergetree_requires_grant>false</create_replacingmergetree_requires_grant>
+        <create_aggregatingmergetree_requires_grant>false</create_aggregatingmergetree_requires_grant>
+        <create_summingmergetree_requires_grant>false</create_summingmergetree_requires_grant>
+        <create_graphitemergetree_requires_grant>false</create_graphitemergetree_requires_grant>
+        <create_versionedcollapsingmergetree_requires_grant>false</create_versionedcollapsingmergetree_requires_grant>
+
+        <create_replicatedmergetree_requires_grant>false</create_replicatedmergetree_requires_grant>
+        <create_replicatedcollapsingmergetree_requires_grant>false</create_replicatedcollapsingmergetree_requires_grant>
+        <create_replicatedreplacingmergetree_requires_grant>false</create_replicatedreplacingmergetree_requires_grant>
+        <create_replicatedaggregatingmergetree_requires_grant>false</create_replicatedaggregatingmergetree_requires_grant>
+        <create_replicatedsummingmergetree_requires_grant>false</create_replicatedsummingmergetree_requires_grant>
+        <create_replicatedgraphitemergetree_requires_grant>false</create_replicatedgraphitemergetree_requires_grant>
+        <create_replicatedversionedcollapsingmergetree_requires_grant>false</create_replicatedversionedcollapsingmergetree_requires_grant>
+
         <create_log_requires_grant>false</create_log_requires_grant>
         <create_tinylog_requires_grant>false</create_tinylog_requires_grant>
         <create_stripelog_requires_grant>false</create_stripelog_requires_grant>

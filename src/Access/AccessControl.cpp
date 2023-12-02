@@ -295,6 +295,21 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
 
     setCreateMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_mergetree_requires_grant", false));
+    setCreateCollapsingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_collapsingmergetree_requires_grant", false));
+    setCreateReplacingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_replacingmergetree_requires_grant", false));
+    setCreateAggregatingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_aggregatingmergetree_requires_grant", false));
+    setCreateSummingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_summingmergetree_requires_grant", false));
+    setCreateGraphiteMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_graphitemergetree_requires_grant", false));
+    setCreateVersionedCollapsingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_versionedcollapsingmergetree_requires_grant", false));
+
+    setCreateReplicatedMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_replicatedmergetree_requires_grant", false));
+    setCreateReplicatedCollapsingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_replicatedcollapsingmergetree_requires_grant", false));
+    setCreateReplicatedReplacingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_replicatedreplacingmergetree_requires_grant", false));
+    setCreateReplicatedAggregatingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_replicatedaggregatingmergetree_requires_grant", false));
+    setCreateReplicatedSummingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_replicatedsummingmergetree_requires_grant", false));
+    setCreateReplicatedGraphiteMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_replicatedgraphitemergetree_requires_grant", false));
+    setCreateReplicatedVersionedCollapsingMergeTreeRequiresGrant(config_.getBool("access_control_improvements.create_replicatedversionedcollapsingmergetree_requires_grant", false));
+
     setCreateLogRequiresGrant(config_.getBool("access_control_improvements.create_log_requires_grant", false));
     setCreateTinyLogRequiresGrant(config_.getBool("access_control_improvements.create_tinylog_requires_grant", false));
     setCreateStripeLogRequiresGrant(config_.getBool("access_control_improvements.create_stripelog_requires_grant", false));

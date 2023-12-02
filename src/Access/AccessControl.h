@@ -185,6 +185,45 @@ public:
     void setCreateMergeTreeRequiresGrant(bool enable) { create_mergetree_requires_grant = enable; }
     bool doesCreateMergeTreeRequireGrant() const { return create_mergetree_requires_grant; }
 
+    void setCreateCollapsingMergeTreeRequiresGrant(bool enable) { create_collapsingmergetree_requires_grant = enable; }
+    bool doesCreateCollapsingMergeTreeRequireGrant() const { return create_collapsingmergetree_requires_grant; }
+
+    void setCreateReplacingMergeTreeRequiresGrant(bool enable) { create_replacingmergetree_requires_grant = enable; }
+    bool doesCreateReplacingMergeTreeRequireGrant() const { return create_replacingmergetree_requires_grant; }
+
+    void setCreateAggregatingMergeTreeRequiresGrant(bool enable) { create_aggregatingmergetree_requires_grant = enable; }
+    bool doesCreateAggregatingMergeTreeRequireGrant() const { return create_aggregatingmergetree_requires_grant; }
+
+    void setCreateSummingMergeTreeRequiresGrant(bool enable) { create_summingmergetree_requires_grant = enable; }
+    bool doesCreateSummingMergeTreeRequireGrant() const { return create_summingmergetree_requires_grant; }
+
+    void setCreateGraphiteMergeTreeRequiresGrant(bool enable) { create_graphitemergetree_requires_grant = enable; }
+    bool doesCreateGraphiteMergeTreeRequireGrant() const { return create_graphitemergetree_requires_grant; }
+
+    void setCreateVersionedCollapsingMergeTreeRequiresGrant(bool enable) { create_versionedcollapsingmergetree_requires_grant = enable; }
+    bool doesCreateVersionedCollapsingMergeTreeRequireGrant() const { return create_versionedcollapsingmergetree_requires_grant; }
+
+    void setCreateReplicatedMergeTreeRequiresGrant(bool enable) { create_replicatedmergetree_requires_grant = enable; }
+    bool doesCreateReplicatedMergeTreeRequireGrant() const { return create_replicatedmergetree_requires_grant; }
+
+    void setCreateReplicatedCollapsingMergeTreeRequiresGrant(bool enable) { create_replicatedcollapsingmergetree_requires_grant = enable; }
+    bool doesCreateReplicatedCollapsingMergeTreeRequireGrant() const { return create_replicatedcollapsingmergetree_requires_grant; }
+
+    void setCreateReplicatedReplacingMergeTreeRequiresGrant(bool enable) { create_replicatedreplacingmergetree_requires_grant = enable; }
+    bool doesCreateReplicatedReplacingMergeTreeRequireGrant() const { return create_replicatedreplacingmergetree_requires_grant; }
+
+    void setCreateReplicatedAggregatingMergeTreeRequiresGrant(bool enable) { create_replicatedaggregatingmergetree_requires_grant = enable; }
+    bool doesCreateReplicatedAggregatingMergeTreeRequireGrant() const { return create_replicatedaggregatingmergetree_requires_grant; }
+
+    void setCreateReplicatedSummingMergeTreeRequiresGrant(bool enable) { create_replicatedsummingmergetree_requires_grant = enable; }
+    bool doesCreateReplicatedSummingMergeTreeRequireGrant() const { return create_replicatedsummingmergetree_requires_grant; }
+
+    void setCreateReplicatedGraphiteMergeTreeRequiresGrant(bool enable) { create_replicatedgraphitemergetree_requires_grant = enable; }
+    bool doesCreateReplicatedGraphiteMergeTreeRequireGrant() const { return create_replicatedgraphitemergetree_requires_grant; }
+
+    void setCreateReplicatedVersionedCollapsingMergeTreeRequiresGrant(bool enable) { create_replicatedversionedcollapsingmergetree_requires_grant = enable; }
+    bool doesCreateReplicatedVersionedCollapsingMergeTreeRequireGrant() const { return create_replicatedversionedcollapsingmergetree_requires_grant; }
+
     void setCreateLogRequiresGrant(bool enable) { create_log_requires_grant = enable; }
     bool doesCreateLogRequireGrant() const { return create_log_requires_grant; }
 
@@ -266,6 +305,19 @@ private:
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool create_mergetree_requires_grant = false;
+    std::atomic_bool create_collapsingmergetree_requires_grant = false;
+    std::atomic_bool create_replacingmergetree_requires_grant = false;
+    std::atomic_bool create_aggregatingmergetree_requires_grant = false;
+    std::atomic_bool create_summingmergetree_requires_grant = false;
+    std::atomic_bool create_graphitemergetree_requires_grant = false;
+    std::atomic_bool create_versionedcollapsingmergetree_requires_grant = false;
+    std::atomic_bool create_replicatedmergetree_requires_grant = false;
+    std::atomic_bool create_replicatedcollapsingmergetree_requires_grant = false;
+    std::atomic_bool create_replicatedreplacingmergetree_requires_grant = false;
+    std::atomic_bool create_replicatedaggregatingmergetree_requires_grant = false;
+    std::atomic_bool create_replicatedsummingmergetree_requires_grant = false;
+    std::atomic_bool create_replicatedgraphitemergetree_requires_grant = false;
+    std::atomic_bool create_replicatedversionedcollapsingmergetree_requires_grant = false;
     std::atomic_bool create_log_requires_grant = false;
     std::atomic_bool create_tinylog_requires_grant = false;
     std::atomic_bool create_stripelog_requires_grant = false;

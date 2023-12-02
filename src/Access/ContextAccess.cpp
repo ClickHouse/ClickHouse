@@ -549,6 +549,45 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (flags & AccessType::MERGETREE && !access_control->doesCreateMergeTreeRequireGrant())
         flags &= ~AccessType::MERGETREE;
 
+    if (flags & AccessType::COLLAPSINGMERGETREE && !access_control->doesCreateCollapsingMergeTreeRequireGrant())
+        flags &= ~AccessType::COLLAPSINGMERGETREE;
+
+    if (flags & AccessType::REPLACINGMERGETREE && !access_control->doesCreateReplacingMergeTreeRequireGrant())
+        flags &= ~AccessType::REPLACINGMERGETREE;
+
+    if (flags & AccessType::AGGREGATINGMERGETREE && !access_control->doesCreateAggregatingMergeTreeRequireGrant())
+        flags &= ~AccessType::AGGREGATINGMERGETREE;
+
+    if (flags & AccessType::SUMMINGMERGETREE && !access_control->doesCreateSummingMergeTreeRequireGrant())
+        flags &= ~AccessType::SUMMINGMERGETREE;
+
+    if (flags & AccessType::GRAPHITEMERGETREE && !access_control->doesCreateGraphiteMergeTreeRequireGrant())
+        flags &= ~AccessType::GRAPHITEMERGETREE;
+
+    if (flags & AccessType::VERSIONEDCOLLAPSINGMERGETREE && !access_control->doesCreateVersionedCollapsingMergeTreeRequireGrant())
+        flags &= ~AccessType::VERSIONEDCOLLAPSINGMERGETREE;
+
+    if (flags & AccessType::REPLICATEDMERGETREE && !access_control->doesCreateReplicatedMergeTreeRequireGrant())
+        flags &= ~AccessType::REPLICATEDMERGETREE;
+
+    if (flags & AccessType::REPLICATEDCOLLAPSINGMERGETREE && !access_control->doesCreateReplicatedCollapsingMergeTreeRequireGrant())
+        flags &= ~AccessType::REPLICATEDCOLLAPSINGMERGETREE;
+
+    if (flags & AccessType::REPLICATEDREPLACINGMERGETREE && !access_control->doesCreateReplicatedReplacingMergeTreeRequireGrant())
+        flags &= ~AccessType::REPLICATEDREPLACINGMERGETREE;
+
+    if (flags & AccessType::REPLICATEDAGGREGATINGMERGETREE && !access_control->doesCreateReplicatedAggregatingMergeTreeRequireGrant())
+        flags &= ~AccessType::REPLICATEDAGGREGATINGMERGETREE;
+
+    if (flags & AccessType::REPLICATEDSUMMINGMERGETREE && !access_control->doesCreateReplicatedSummingMergeTreeRequireGrant())
+        flags &= ~AccessType::REPLICATEDSUMMINGMERGETREE;
+
+    if (flags & AccessType::REPLICATEDGRAPHITEMERGETREE && !access_control->doesCreateReplicatedGraphiteMergeTreeRequireGrant())
+        flags &= ~AccessType::REPLICATEDGRAPHITEMERGETREE;
+
+    if (flags & AccessType::REPLICATEDVERSIONEDCOLLAPSINGMERGETREE && !access_control->doesCreateReplicatedVersionedCollapsingMergeTreeRequireGrant())
+        flags &= ~AccessType::REPLICATEDVERSIONEDCOLLAPSINGMERGETREE;
+
     if (flags & AccessType::LOG && !access_control->doesCreateLogRequireGrant())
         flags &= ~AccessType::LOG;
 
