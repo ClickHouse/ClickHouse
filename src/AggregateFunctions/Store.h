@@ -257,15 +257,6 @@ private:
         shiftBins(offset - new_offset);
     }
 
-    // This is a rough estimate for the size of a VarInt/VarUInt.
-    // The actual size depends on the encoding and the value.
-    size_t estimatedVarIntSize(Int64 value) const
-    {
-        // This is a very rough estimate.
-        // Some encodings (like LEB128 or VarInt) use 1 byte for small values and more bytes for larger values.
-        return 1 + (sizeof(value) * 8) / 7;
-    }
-
     size_t estimatedFloatSize(Float64 value) const
     {
         // Assuming IEEE 754 double-precision binary floating-point format: binary64
