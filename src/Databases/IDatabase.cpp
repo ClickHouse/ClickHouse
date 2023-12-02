@@ -21,29 +21,12 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 {
     if (auto storage = tryGetTable(name, context))
         return storage;
+
     TableNameHints hints(this->shared_from_this(), context);
-    std::vector<String> names = hints.getHints(name);
-    if (names.empty())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
-    else
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist. Maybe you meant {}?", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name), backQuoteIfNeed(names[0]));
-}
+    /// hint is a pair which holds a single database_name and table_name suggestion for the given table name.
+    auto hint = hints.getHintForTable(name);
 
-StoragePtr IDatabase::getTableAcrossAllDatabases(const String & name, ContextPtr context, Databases databases) const
-{
-    if (auto storage = tryGetTable(name, context))
-        return storage;
-
-    std::vector<std::pair<std::string, std::string>> db_and_table_names;
-    for (const auto & db : databases)
-    {
-        TableNameHints hints(db.second, context);
-        auto table_names = hints.getHints(name);
-        for (const auto & table_name : table_names)
-            db_and_table_names.emplace_back(std::pair(db.second->getDatabaseName(), table_name));
-    }
-
-    if (db_and_table_names.empty())
+    if (hint.first.empty())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
     else
         throw Exception(
@@ -51,8 +34,8 @@ StoragePtr IDatabase::getTableAcrossAllDatabases(const String & name, ContextPtr
             "Table {}.{} does not exist. Maybe you meant {}.{}?",
             backQuoteIfNeed(getDatabaseName()),
             backQuoteIfNeed(name),
-            backQuoteIfNeed(db_and_table_names[0].first),
-            backQuoteIfNeed(db_and_table_names[0].second));
+            backQuoteIfNeed(hint.first),
+            backQuoteIfNeed(hint.second));
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const

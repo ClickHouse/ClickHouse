@@ -423,14 +423,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     {
         try
         {
-            Databases current_databases;
-            {
-                std::lock_guard lock(databases_mutex);
-                current_databases = databases;
-            }
-            /// getTableAcrossAllDatabases returns the table if found in the current context. Otherwise, it tries to search for that
-            /// table across all the current databases. If found, it adds the database.table to the hint thrown in the exception.
-            table = database->getTableAcrossAllDatabases(table_id.table_name, context_, current_databases);
+            table = database->getTable(table_id.table_name, context_);
         }
         catch (const Exception & e)
         {
