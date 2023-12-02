@@ -583,6 +583,7 @@ class ClickHouseCluster:
         self.rabbitmq_host = "rabbitmq1"
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
+        self.rabbitmq_secure_port = 5671
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
@@ -1316,6 +1317,7 @@ class ClickHouseCluster:
         self.with_rabbitmq = True
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
+        env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
         env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
@@ -4128,14 +4130,14 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
+                    "if [ ! -f /var/lib/clickhouse/metadata/system.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql; fi",
                 ]
             )
             self.exec_in_container(
                 [
                     "bash",
                     "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
         self.exec_in_container(

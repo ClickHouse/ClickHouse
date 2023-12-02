@@ -46,6 +46,7 @@ namespace CurrentMetrics
 {
     extern const Metric DDLWorkerThreads;
     extern const Metric DDLWorkerThreadsActive;
+    extern const Metric DDLWorkerThreadsScheduled;
 }
 
 namespace DB
@@ -93,7 +94,7 @@ DDLWorker::DDLWorker(
     {
         LOG_WARNING(log, "DDLWorker is configured to use multiple threads. "
                          "It's not recommended because queries can be reordered. Also it may cause some unknown issues to appear.");
-        worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
+        worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
     }
 
     queue_dir = zk_root_dir;
@@ -213,7 +214,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     /// Stage 2: resolve host_id and check if we should execute query or not
     /// Multiple clusters can use single DDL queue path in ZooKeeper,
     /// So we should skip task if we cannot find current host in cluster hosts list.
-    if (!task->findCurrentHostID(context, log))
+    if (!task->findCurrentHostID(context, log, zookeeper))
     {
         out_reason = "There is no a local address in host list";
         return add_to_skip_set();
@@ -1113,7 +1114,7 @@ void DDLWorker::runMainThread()
         /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
         /// We create new thread pool to forget previous exceptions.
         if (1 < pool_size)
-            worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
+            worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
         last_skipped_entry_name.reset();
@@ -1152,7 +1153,7 @@ void DDLWorker::runMainThread()
                 initialized = false;
                 /// Wait for pending async tasks
                 if (1 < pool_size)
-                    worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, pool_size);
+                    worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
                 LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
             }
             else

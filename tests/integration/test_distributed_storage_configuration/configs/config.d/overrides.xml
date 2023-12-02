@@ -27,14 +27,14 @@
         </disks>
 
         <policies>
-            <default>
+            <jbod_policy>
                 <volumes>
                     <main>
                         <disk>disk1</disk>
                         <disk>disk2</disk>
                     </main>
                 </volumes>
-            </default>
+            </jbod_policy>
         </policies>
     </storage_configuration>
 </clickhouse>

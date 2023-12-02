@@ -495,7 +495,7 @@ try
 
     processConfig();
     adjustSettings();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
 
     applyCmdSettings(global_context);
 
@@ -563,9 +563,6 @@ catch (...)
 
 void LocalServer::updateLoggerLevel(const String & logs_level)
 {
-    if (!logging_initialized)
-        return;
-
     config().setString("logger.level", logs_level);
     updateLevels(config(), logger());
 }
@@ -607,21 +604,13 @@ void LocalServer::processConfig()
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
         Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
         Poco::Logger::root().setChannel(log);
-        logging_initialized = true;
-    }
-    else if (logging || is_interactive)
-    {
-        config().setString("logger", "logger");
-        auto log_level_default = is_interactive && !logging ? "none" : level;
-        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
-        buildLoggers(config(), logger(), "clickhouse-local");
-        logging_initialized = true;
     }
     else
     {
-        Poco::Logger::root().setLevel("none");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-        logging_initialized = false;
+        config().setString("logger", "logger");
+        auto log_level_default = logging ? level : "fatal";
+        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
 
     shared_context = Context::createShared();

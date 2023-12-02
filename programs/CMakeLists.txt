@@ -63,8 +63,6 @@ option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
 
-option (ENABLE_CLICKHOUSE_REPORT "A tiny tool to collect a clickhouse-server state" ${ENABLE_CLICKHOUSE_ALL})
-
 if (NOT ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
     # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
@@ -390,9 +388,6 @@ if (ENABLE_CLICKHOUSE_SU)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-su" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE clickhouse-su)
 endif ()
-if (ENABLE_CLICKHOUSE_REPORT)
-    include(${ClickHouse_SOURCE_DIR}/utils/report/CMakeLists.txt)
-endif ()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER AND CREATE_KEEPER_SYMLINK)
@@ -461,4 +456,11 @@ endif()
 
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
+endif ()
+
+if (TARGET ch_contrib::protobuf)
+    get_property(google_proto_files TARGET ch_contrib::protobuf PROPERTY google_proto_files)
+    foreach (proto_file IN LISTS google_proto_files)
+        install(FILES ${proto_file} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse/protos/google/protobuf)
+    endforeach()
 endif ()

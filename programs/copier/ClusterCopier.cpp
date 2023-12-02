@@ -25,6 +25,7 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -200,7 +201,7 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
 {
     /// Fetch partitions list from a shard
     {
-        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
+        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
         for (const TaskShardPtr & task_shard : task_table.all_shards)
             thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]()
@@ -1407,7 +1408,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         /// 3) Create helping table on the whole destination cluster
         auto & settings_push = task_cluster->settings_push;
 
-        auto connection = task_table.cluster_push->getAnyShardInfo().pool->get(timeouts, &settings_push, true);
+        auto connection = task_table.cluster_push->getAnyShardInfo().pool->get(timeouts, settings_push, true);
         String create_query = getRemoteCreateTable(task_shard.task_table.table_push, *connection, settings_push);
 
         ParserCreateQuery parser_create_query;
@@ -1785,7 +1786,7 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
     /// Fetch and parse (possibly) new definition
-    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
+    auto connection_entry = task_shard.info.pool->get(timeouts, task_cluster->settings_pull, true);
     String create_query_pull_str = getRemoteCreateTable(
             task_shard.task_table.table_pull,
             *connection_entry,

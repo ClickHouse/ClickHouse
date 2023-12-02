@@ -9,7 +9,7 @@ Expression (Project names)
               Distinct (DISTINCT)
                 Distinct (Preliminary DISTINCT)
                   Expression ((Projection + Change column names to column identifiers))
-                    ReadFromStorage (SystemNumbers)
+                    ReadFromSystemNumbers
 -- Enabled query_plan_remove_redundant_distinct
 -- DISTINCT is only in most inner subquery
 -- query
@@ -28,7 +28,7 @@ Expression ((Project names + (Projection + (Change column names to column identi
   Distinct (DISTINCT)
     Distinct (Preliminary DISTINCT)
       Expression ((Projection + Change column names to column identifiers))
-        ReadFromStorage (SystemNumbers)
+        ReadFromSystemNumbers
 -- execute
 0
 1
@@ -53,12 +53,12 @@ Expression (Project names)
               Distinct (DISTINCT)
                 Distinct (Preliminary DISTINCT)
                   Expression ((Projection + Change column names to column identifiers))
-                    ReadFromStorage (SystemNumbers)
+                    ReadFromSystemNumbers
             Expression (( + ( + Project names)))
               Distinct (DISTINCT)
                 Distinct (Preliminary DISTINCT)
                   Expression ((Projection + Change column names to column identifiers))
-                    ReadFromStorage (SystemNumbers)
+                    ReadFromSystemNumbers
 -- execute
 0
 1
@@ -84,12 +84,12 @@ Expression (Project names)
             Distinct (DISTINCT)
               Distinct (Preliminary DISTINCT)
                 Expression ((Projection + Change column names to column identifiers))
-                  ReadFromStorage (SystemNumbers)
+                  ReadFromSystemNumbers
           Expression ((Change column names to column identifiers + Project names))
             Distinct (DISTINCT)
               Distinct (Preliminary DISTINCT)
                 Expression ((Projection + Change column names to column identifiers))
-                  ReadFromStorage (SystemNumbers)
+                  ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -112,7 +112,7 @@ Expression ((Project names + (Projection + (Change column names to column identi
   Distinct (DISTINCT)
     Distinct (Preliminary DISTINCT)
       Expression ((Projection + Change column names to column identifiers))
-        ReadFromStorage (SystemNumbers)
+        ReadFromSystemNumbers
 -- execute
 0	0
 1	2
@@ -134,7 +134,7 @@ Expression ((Project names + (Projection + (Change column names to column identi
   Distinct (DISTINCT)
     Distinct (Preliminary DISTINCT)
       Expression ((Projection + Change column names to column identifiers))
-        ReadFromStorage (SystemNumbers)
+        ReadFromSystemNumbers
 -- execute
 2	0	0
 2	1	2
@@ -231,9 +231,9 @@ Expression ((Project names + (Projection + (Change column names to column identi
     Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
       Join (JOIN FillRightFirst)
         Expression (Change column names to column identifiers)
-          ReadFromStorage (SystemNumbers)
+          ReadFromSystemNumbers
         Expression (Change column names to column identifiers)
-          ReadFromStorage (SystemNumbers)
+          ReadFromSystemNumbers
 -- execute
 0
 2
@@ -264,9 +264,9 @@ Expression (Project names)
           Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
             Join (JOIN FillRightFirst)
               Expression (Change column names to column identifiers)
-                ReadFromStorage (SystemNumbers)
+                ReadFromSystemNumbers
               Expression (Change column names to column identifiers)
-                ReadFromStorage (SystemNumbers)
+                ReadFromSystemNumbers
 -- execute
 12
 -- GROUP BY WITH ROLLUP before DISTINCT with on different columns => do _not_ remove DISTINCT
@@ -296,9 +296,9 @@ Expression (Project names)
             Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
               Join (JOIN FillRightFirst)
                 Expression (Change column names to column identifiers)
-                  ReadFromStorage (SystemNumbers)
+                  ReadFromSystemNumbers
                 Expression (Change column names to column identifiers)
-                  ReadFromStorage (SystemNumbers)
+                  ReadFromSystemNumbers
 -- execute
 12
 36
@@ -326,9 +326,9 @@ Expression ((Project names + (Projection + (Change column names to column identi
       Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
         Join (JOIN FillRightFirst)
           Expression (Change column names to column identifiers)
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
           Expression (Change column names to column identifiers)
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
 -- execute
 0
 2
@@ -361,9 +361,9 @@ Expression (Project names)
             Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
               Join (JOIN FillRightFirst)
                 Expression (Change column names to column identifiers)
-                  ReadFromStorage (SystemNumbers)
+                  ReadFromSystemNumbers
                 Expression (Change column names to column identifiers)
-                  ReadFromStorage (SystemNumbers)
+                  ReadFromSystemNumbers
 -- execute
 12
 36
@@ -391,9 +391,9 @@ Expression ((Project names + (Projection + (Change column names to column identi
       Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
         Join (JOIN FillRightFirst)
           Expression (Change column names to column identifiers)
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
           Expression (Change column names to column identifiers)
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
 -- execute
 0
 2
@@ -426,9 +426,9 @@ Expression (Project names)
             Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
               Join (JOIN FillRightFirst)
                 Expression (Change column names to column identifiers)
-                  ReadFromStorage (SystemNumbers)
+                  ReadFromSystemNumbers
                 Expression (Change column names to column identifiers)
-                  ReadFromStorage (SystemNumbers)
+                  ReadFromSystemNumbers
 -- execute
 12
 
@@ -457,9 +457,9 @@ Expression ((Project names + (Projection + (Change column names to column identi
       Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
         Join (JOIN FillRightFirst)
           Expression (Change column names to column identifiers)
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
           Expression (Change column names to column identifiers)
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
 -- execute
 0
 2
@@ -476,7 +476,7 @@ Expression (Project names)
       Expression (Projection)
         Aggregating
           Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
 -- execute
 1
 -- UNION ALL with DISTINCT => do _not_ remove DISTINCT
@@ -499,12 +499,12 @@ Expression (Project names)
           Distinct (DISTINCT)
             Distinct (Preliminary DISTINCT)
               Expression ((Projection + Change column names to column identifiers))
-                ReadFromStorage (SystemNumbers)
+                ReadFromSystemNumbers
         Expression (( + ( + Project names)))
           Distinct (DISTINCT)
             Distinct (Preliminary DISTINCT)
               Expression ((Projection + Change column names to column identifiers))
-                ReadFromStorage (SystemNumbers)
+                ReadFromSystemNumbers
 -- execute
 0
 1

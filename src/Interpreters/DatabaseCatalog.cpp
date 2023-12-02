@@ -44,6 +44,7 @@ namespace CurrentMetrics
     extern const Metric TablesToDropQueueSize;
     extern const Metric DatabaseCatalogThreads;
     extern const Metric DatabaseCatalogThreadsActive;
+    extern const Metric DatabaseCatalogThreadsScheduled;
 }
 
 namespace DB
@@ -1024,7 +1025,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
-    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive);
+    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
     for (const auto & elem : dropped_metadata)
     {
         pool.scheduleOrThrowOnError([&]()
@@ -1045,9 +1046,17 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 {
-    return getContext()->getPath() + "metadata/" +
-           escapeForFileName(table_id.getDatabaseName()) + "/" +
-           escapeForFileName(table_id.getTableName()) + ".sql";
+    auto database = getDatabase(table_id.getDatabaseName());
+    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
+
+    if (!database_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get metadata path from database {}", table_id.getDatabaseName());
+
+    auto metadata_path = database_ptr->getMetadataPath();
+    if (metadata_path.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty metadata path in database {}", table_id.getDatabaseName());
+
+    return metadata_path + escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)

@@ -395,6 +395,8 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
+    M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.") \
+    M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.") \
     M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)") \
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
@@ -442,8 +444,13 @@ The server successfully detected this situation and will download merged part fr
     M(WaitPrefetchTaskMicroseconds, "Time spend waiting for prefetched reader") \
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
+    M(ThreadpoolReaderPrepareMicroseconds, "Time spent on preparation (e.g. call to reader seek() method)") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
     M(ThreadpoolReaderSubmit, "Bytes read from a threadpool task in asynchronous reading") \
+    M(ThreadpoolReaderSubmitReadSynchronously, "How many times we haven't scheduled a task on the thread pool and read synchronously instead") \
+    M(ThreadpoolReaderSubmitReadSynchronouslyBytes, "How many bytes were read synchronously") \
+    M(ThreadpoolReaderSubmitReadSynchronouslyMicroseconds, "How much time we spent reading synchronously") \
+    M(AsynchronousReaderIgnoredBytes, "Number of bytes ignored during asynchronous reading") \
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \

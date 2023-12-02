@@ -53,6 +53,7 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
+    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -493,7 +494,7 @@ StorageAzureBlob::StorageAzureBlob(
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
 
-    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
@@ -799,6 +800,11 @@ NamesAndTypesList StorageAzureBlob::getVirtuals() const
     return virtual_columns;
 }
 
+Names StorageAzureBlob::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
+}
+
 bool StorageAzureBlob::supportsPartitionBy() const
 {
     return true;
@@ -1010,7 +1016,11 @@ Chunk StorageAzureBlobSource::generate()
             if (const auto * input_format = reader.getInputFormat())
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, fs::path(container) / reader.getRelativePath());
+            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
+                chunk,
+                requested_virtual_columns,
+                fs::path(container) / reader.getRelativePath(),
+                reader.getRelativePathWithMetadata().metadata.size_bytes);
             return chunk;
         }
 
@@ -1087,7 +1097,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
     , query_info(query_info_)
-    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
+    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, CurrentMetrics::ObjectStorageAzureThreadsScheduled, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
@@ -1383,7 +1393,7 @@ std::unique_ptr<ReadBuffer> StorageAzureBlobSource::createAsyncAzureReadBuffer(
 {
     auto modified_settings{read_settings};
     modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
-    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, object_size}}, modified_settings);
+    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, /* local_path */ "", object_size}}, modified_settings);
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)

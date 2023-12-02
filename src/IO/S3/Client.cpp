@@ -103,6 +103,20 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
+void addAdditionalAMZHeadersToCanonicalHeadersList(
+    Aws::AmazonWebServiceRequest & request,
+    const HTTPHeaderEntries & extra_headers
+)
+{
+    for (const auto & [name, value] : extra_headers)
+    {
+        if (name.starts_with("x-amz-"))
+        {
+            request.SetAdditionalCustomHeaderValue(name, value);
+        }
+    }
+}
+
 }
 
 std::unique_ptr<Client> Client::create(
@@ -118,16 +132,9 @@ std::unique_ptr<Client> Client::create(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
 }
 
-std::unique_ptr<Client> Client::clone(
-    std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy,
-    std::optional<Int64> override_request_timeout_ms) const
+std::unique_ptr<Client> Client::clone() const
 {
-    PocoHTTPClientConfiguration new_configuration = client_configuration;
-    if (override_retry_strategy.has_value())
-        new_configuration.retryStrategy = *override_retry_strategy;
-    if (override_request_timeout_ms.has_value())
-        new_configuration.requestTimeoutMs = *override_request_timeout_ms;
-    return std::unique_ptr<Client>(new Client(*this, new_configuration));
+    return std::unique_ptr<Client>(new Client(*this, client_configuration));
 }
 
 namespace
@@ -272,11 +279,13 @@ template void Client::setKMSHeaders<CreateMultipartUploadRequest>(CreateMultipar
 template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & request) const;
 template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request) const;
 
-Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) const
+Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
+
+    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -353,36 +362,36 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
 /// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
 
-Model::ListObjectsV2Outcome Client::ListObjectsV2(const ListObjectsV2Request & request) const
+Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
         request, [this](const Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
 }
 
-Model::ListObjectsOutcome Client::ListObjects(const ListObjectsRequest & request) const
+Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
         request, [this](const Model::ListObjectsRequest & req) { return ListObjects(req); });
 }
 
-Model::GetObjectOutcome Client::GetObject(const GetObjectRequest & request) const
+Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
     return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
 }
 
-Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(const AbortMultipartUploadRequest & request) const
+Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
 }
 
-Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(const CreateMultipartUploadRequest & request) const
+Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
-Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const
+Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
@@ -429,43 +438,43 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const Comp
     return outcome;
 }
 
-Model::CopyObjectOutcome Client::CopyObject(const CopyObjectRequest & request) const
+Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CopyObjectRequest & req) { return CopyObject(req); });
 }
 
-Model::PutObjectOutcome Client::PutObject(const PutObjectRequest & request) const
+Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
-Model::UploadPartOutcome Client::UploadPart(const UploadPartRequest & request) const
+Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::UploadPartRequest & req) { return UploadPart(req); });
 }
 
-Model::UploadPartCopyOutcome Client::UploadPartCopy(const UploadPartCopyRequest & request) const
+Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
 }
 
-Model::DeleteObjectOutcome Client::DeleteObject(const DeleteObjectRequest & request) const
+Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
 }
 
-Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & request) const
+Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
 }
 
-Client::ComposeObjectOutcome Client::ComposeObject(const ComposeObjectRequest & request) const
+Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
 {
     auto request_fn = [this](const ComposeObjectRequest & req)
     {
@@ -497,8 +506,9 @@ Client::ComposeObjectOutcome Client::ComposeObject(const ComposeObjectRequest & 
 
 template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType>
-Client::doRequest(const RequestType & request, RequestFn request_fn) const
+Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
+    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
 
@@ -575,8 +585,9 @@ Client::doRequest(const RequestType & request, RequestFn request_fn) const
 
 template <bool IsReadMethod, typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType>
-Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const
+Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
 {
+    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
@@ -672,6 +683,8 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
     Aws::S3::Model::HeadBucketRequest req;
     req.SetBucket(bucket);
+
+    addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);
 
     std::string region;
     auto outcome = HeadBucket(req);
@@ -905,6 +918,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
+        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
         get_request_throttler,
         put_request_throttler,
         error_report);
