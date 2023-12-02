@@ -92,7 +92,7 @@ namespace
                 }
             };
 
-            auto parse_json_document = [](const ColumnString & column, rapidjson::Document & document, size_t i)
+            auto parse_json_document = [](const IColumn & column, rapidjson::Document & document, size_t i)
             {
                 auto str_ref = column.getDataAt(i);
                 const char * json = str_ref.data;
@@ -102,10 +102,11 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge. Expected JSON object");
             };
 
-            const auto first_full_column = arguments[0].column->convertToFullColumnIfConst();
-            const auto * first_string = typeid_cast<const ColumnString *>(first_full_column.get());
+            const auto * first_column_arg = arguments[0].column.get();
+            const auto * first_column_arg_string = typeid_cast<const ColumnString *>(first_column_arg);
+            const auto * first_column_arg_const = typeid_cast<const ColumnConst *>(first_column_arg);
 
-            if (!first_string)
+            if (!first_column_arg_string && !first_column_arg_const)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
             std::vector<rapidjson::Document> merged_jsons;
@@ -114,21 +115,22 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto & merged_json = merged_jsons.emplace_back(rapidjson::Type::kObjectType, &allocator);
-                parse_json_document(*first_string, merged_json, i);
+                parse_json_document(*first_column_arg, merged_json, i);
             }
 
             for (size_t col_idx = 1; col_idx < arguments.size(); ++col_idx)
             {
-                const auto full_column = arguments[col_idx].column->convertToFullColumnIfConst();
-                const auto * column_string = typeid_cast<const ColumnString *>(full_column.get());
+                const auto * column_arg = arguments[col_idx].column.get();
+                const auto * column_arg_string = typeid_cast<const ColumnString *>(column_arg);
+                const auto * column_arg_const = typeid_cast<const ColumnConst *>(column_arg);
 
-                if (!column_string)
+                if (!column_arg_string && !column_arg_const)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     rapidjson::Document document(&allocator);
-                    parse_json_document(*column_string, document, i);
+                    parse_json_document(*column_arg, document, i);
                     merge_objects(merged_jsons[i], document);
                 }
             }
