@@ -707,7 +707,22 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
         const auto table_shared_id_ = getTableSharedID();
 
         if (!disk_types_for_zero_copy.empty())
-            futures.push_back(zookeeper->asyncTryCreateNoThrow(settings->remote_fs_zero_copy_zookeeper_path.toString(), String(), zkutil::CreateMode::Persistent));
+        {
+            /// create all ancestors of remote_fs_zero_copy_zookeeper_path
+            auto remote_fs_zero_copy_zookeeper_path = fs::path(settings->remote_fs_zero_copy_zookeeper_path.toString());
+            fs::path ancestor = *remote_fs_zero_copy_zookeeper_path.begin();
+            for (auto it = ++remote_fs_zero_copy_zookeeper_path.begin(); it != remote_fs_zero_copy_zookeeper_path.end(); it++)
+            {
+                /// If there is a directory separator after the last file-name in the path,
+                /// the last element before the end iterator is an empty element.
+                /// We do not what to create path with the / at the end
+                if (!it->empty())
+                {
+                    ancestor = ancestor / *it;
+                    futures.push_back(zookeeper->asyncTryCreateNoThrow(ancestor, String(), zkutil::CreateMode::Persistent));
+                }
+            }
+        }
 
         for (const auto & disk_type: disk_types_for_zero_copy)
         {
@@ -747,7 +762,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     {
         auto res = future.get();
         if (res.error != Coordination::Error::ZOK && res.error != Coordination::Error::ZNODEEXISTS)
-            throw Coordination::Exception(res.error, "Failed to create new nodes at {}", zookeeper_path);
+            throw Coordination::Exception(res.error, "Failed to create new nodes {} at {}", res.path_created, zookeeper_path);
     }
 }
 
