@@ -2,20 +2,20 @@
 1
 Expression ((Project names + (Projection + Change column names to column identifiers)))
   Limit (preliminary LIMIT (without OFFSET))
-    ReadFromSystemNumbers
+    ReadFromStorage (SystemNumbers)
 Expression ((Project names + (Projection + Change column names to column identifiers)))
   Limit (preliminary LIMIT (without OFFSET))
-    ReadFromSystemNumbers
+    ReadFromStorage (SystemNumbers)
 (Expression)
 ExpressionTransform
   (Limit)
   Limit
-    (ReadFromSystemNumbers)
-    NumbersRange 0 → 1
+    (ReadFromStorage)
+    Numbers 0 → 1
 (Expression)
 ExpressionTransform
   (Limit)
   Limit
-    (ReadFromSystemNumbers)
-    NumbersRange 0 → 1
+    (ReadFromStorage)
+    Numbers 0 → 1
 1

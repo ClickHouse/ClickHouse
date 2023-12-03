@@ -1,5 +1,4 @@
-#include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/Statistics/Statistics.h>
+#include "Storages/MergeTree/IDataPartStorage.h"
 #include <Storages/MergeTree/MergeTask.h>
 
 #include <memory>
@@ -374,7 +373,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
-        MergeTreeStatisticsFactory::instance().getMany(global_ctx->metadata_snapshot->getColumns()),
         ctx->compression_codec,
         global_ctx->txn,
         /*reset_columns=*/ true,
@@ -592,7 +590,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         /// because all of them were already recalculated and written
         /// as key part of vertical merge
         std::vector<MergeTreeIndexPtr>{},
-        std::vector<StatisticPtr>{}, /// TODO: think about it
         &global_ctx->written_offset_columns,
         global_ctx->to->getIndexGranularity());
 

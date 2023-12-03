@@ -18,7 +18,6 @@ enum class MovePartsOutcome
     NothingToMove,
     MovesAreCancelled,
     MoveWasPostponedBecauseOfZeroCopy,
-    CannotScheduleMove,
 };
 
 /// Active part from storage and destination reservation where it has to be moved

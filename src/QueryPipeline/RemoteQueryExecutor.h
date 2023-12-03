@@ -165,10 +165,10 @@ public:
     Block getExtremes() { return std::move(extremes); }
 
     /// Set callback for progress. It will be called on Progress packet.
-    void setProgressCallback(ProgressCallback callback);
+    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
-    void setProfileInfoCallback(ProfileInfoCallback callback);
+    void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.

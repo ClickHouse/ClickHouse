@@ -60,7 +60,7 @@ uint8_t CompressionCodecZSTD::getMethodByte() const
 
 void CompressionCodecZSTD::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) const

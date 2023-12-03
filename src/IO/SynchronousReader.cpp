@@ -17,7 +17,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
-    extern const Event AsynchronousReaderIgnoredBytes;
 }
 
 namespace CurrentMetrics
@@ -89,7 +88,6 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
     watch.stop();
     ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-    ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
     return Result{ .size = bytes_read, .offset = request.ignore };
 }
 

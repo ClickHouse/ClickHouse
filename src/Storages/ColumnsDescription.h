@@ -7,7 +7,6 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
-#include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 
 #include <boost/multi_index/member.hpp>
@@ -84,14 +83,12 @@ struct ColumnDescription
     String comment;
     ASTPtr codec;
     ASTPtr ttl;
-    std::optional<StatisticDescription> stat;
 
     ColumnDescription() = default;
     ColumnDescription(ColumnDescription &&) = default;
     ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
 
-    bool identical(const ColumnDescription & other) const;
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
@@ -126,7 +123,6 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
-    bool identical(const ColumnsDescription & other) const;
     bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 

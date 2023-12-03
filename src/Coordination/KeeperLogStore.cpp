@@ -127,8 +127,7 @@ void KeeperLogStore::shutdownChangelog()
 bool KeeperLogStore::flushChangelogAndShutdown()
 {
     std::lock_guard lock(changelog_lock);
-    if (changelog.isInitialized())
-        changelog.flush();
+    changelog.flush();
     changelog.shutdown();
     return true;
 }

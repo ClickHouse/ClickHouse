@@ -26,8 +26,6 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
-#include <Poco/Net/NameValueCollection.h>
-#include <Core/Types.h>
 
 #include "config.h"
 
@@ -109,7 +107,6 @@ class FilesystemReadPrefetchesLog;
 class S3QueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
-class BlobStorageLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
@@ -642,7 +639,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers = {});
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
@@ -795,7 +792,6 @@ public:
     EmbeddedDictionaries & getEmbeddedDictionaries();
     void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
-    void waitForDictionariesLoad() const;
 
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
@@ -950,8 +946,6 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
-    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
-
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// --- Caches ------------------------------------------------------------------------------------------
@@ -1060,7 +1054,6 @@ public:
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
-    std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
     std::vector<ISystemLog *> getSystemLogs() const;
 
@@ -1075,11 +1068,6 @@ public:
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
     size_t getMaxTableSizeToDrop() const;
-    void setClientHTTPHeaderForbiddenHeaders(const String & forbidden_headers);
-    /// Return the forbiddent headers that users can't get via getClientHTTPHeader function
-    const std::unordered_set<String> & getClientHTTPHeaderForbiddenHeaders() const;
-    void setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function);
-    bool allowGetHTTPHeaderFunction() const;
     void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const;
 
     /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
@@ -1146,10 +1134,6 @@ public:
     /// Base path for format schemas
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);
-
-    /// Path to the folder containing the proto files for the well-known Protobuf types
-    String getGoogleProtosPath() const;
-    void setGoogleProtosPath(const String & path);
 
     SampleBlockCache & getSampleBlockCache() const;
 

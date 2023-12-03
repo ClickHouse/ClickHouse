@@ -232,11 +232,11 @@ public:
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
+    const Columns & getOrderedSet() const { return ordered_set; }
+
     bool hasMonotonicFunctionsChain() const;
 
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
-
-    const Columns & getOrderedSet() const { return ordered_set; }
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.

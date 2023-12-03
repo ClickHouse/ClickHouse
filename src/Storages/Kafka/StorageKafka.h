@@ -50,7 +50,7 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     Pipe read(
         const Names & column_names,

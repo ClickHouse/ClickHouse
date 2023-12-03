@@ -9,7 +9,10 @@
 #include <sparsehash/sparse_hash_set>
 #include <type_traits>
 
-namespace DB::HashedDictionaryImpl
+namespace DB
+{
+
+namespace HashedDictionaryImpl
 {
 
 /// Return true if the type is POD [1] for the purpose of layout (this is not
@@ -253,5 +256,7 @@ struct HashedDictionarySetType<dictionary_key_type, /* sparse= */ true, Key>
         HashSet<UInt64, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>,
         HashSet<StringRef, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
 };
+
+}
 
 }

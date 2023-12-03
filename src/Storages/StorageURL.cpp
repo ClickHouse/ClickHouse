@@ -140,7 +140,7 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -170,11 +170,24 @@ namespace
         return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
     }
 
+    auto proxyConfigurationToPocoProxyConfiguration(const ProxyConfiguration & proxy_configuration)
+    {
+        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+        poco_proxy_config.host = proxy_configuration.host;
+        poco_proxy_config.port = proxy_configuration.port;
+        poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
+
+        return poco_proxy_config;
+    }
+
     auto getProxyConfiguration(const std::string & protocol_string)
     {
         auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
                                              : ProxyConfigurationResolver::Protocol::HTTP;
-        return ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+        auto proxy_config = ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+
+        return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }
 }
 
@@ -308,10 +321,12 @@ StorageURLSource::StorageURLSource(
         curr_uri = uri_and_buf.first;
         auto last_mod_time = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
-        current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
-            file_progress_callback(FileProgress(0, current_file_size.value_or(0)));
+        {
+            size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
+            file_progress_callback(FileProgress(0, file_size));
+        }
 
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
@@ -399,7 +414,7 @@ Chunk StorageURLSource::generate()
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath(), current_file_size);
+            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath());
             return chunk;
         }
 
@@ -1012,11 +1027,6 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
 NamesAndTypesList IStorageURLBase::getVirtuals() const
 {
     return virtual_columns;
-}
-
-Names IStorageURLBase::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)

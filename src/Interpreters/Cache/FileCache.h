@@ -80,13 +80,8 @@ public:
      * As long as pointers to returned file segments are held
      * it is guaranteed that these file segments are not removed from cache.
      */
-    FileSegmentsHolderPtr getOrSet(
-        const Key & key,
-        size_t offset,
-        size_t size,
-        size_t file_size,
-        const CreateFileSegmentSettings & settings,
-        size_t file_segments_limit = 0);
+    FileSegmentsHolderPtr
+    getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -97,7 +92,7 @@ public:
      * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
      * it's state (and become DOWNLOADED).
      */
-    FileSegmentsHolderPtr get(const Key & key, size_t offset, size_t size, size_t file_segments_limit);
+    FileSegmentsHolderPtr get(const Key & key, size_t offset, size_t size);
 
     FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
@@ -209,41 +204,26 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     void assertInitialized() const;
+
     void assertCacheCorrectness();
 
     void loadMetadata();
     void loadMetadataImpl();
     void loadMetadataForKeys(const std::filesystem::path & keys_dir);
 
-    /// Get all file segments from cache which intersect with `range`.
-    /// If `file_segments_limit` > 0, return no more than first file_segments_limit
-    /// file segments.
-    FileSegments getImpl(
-        const LockedKey & locked_key,
-        const FileSegment::Range & range,
-        size_t file_segments_limit) const;
+    FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range) const;
 
-    /// Split range into subranges by max_file_segment_size,
-    /// each subrange size must be less or equal to max_file_segment_size.
-    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size);
-
-    /// Split range into subranges by max_file_segment_size (same as in splitRange())
-    /// and create a new file segment for each subrange.
-    /// If `file_segments_limit` > 0, create no more than first file_segments_limit
-    /// file segments.
     FileSegments splitRangeIntoFileSegments(
         LockedKey & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
-        size_t file_segments_limit,
         const CreateFileSegmentSettings & create_settings);
 
     void fillHolesWithEmptyFileSegments(
         LockedKey & locked_key,
         FileSegments & file_segments,
         const FileSegment::Range & range,
-        size_t file_segments_limit,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings);
 

@@ -56,7 +56,7 @@ On Linux, macOS and FreeBSD:
   ./clickhouse client
   ClickHouse client version 23.2.1.1501 (official build).
   Connecting to localhost:9000 as user default.
-  Connected to ClickHouse server version 23.2.1.
+  Connected to ClickHouse server version 23.2.1 revision 54461.
 
   local-host :)
   ```

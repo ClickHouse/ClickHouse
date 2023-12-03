@@ -22,7 +22,6 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   fi
 fi
 
-
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
 # export CCACHE_LOGFILE=/build/ccache.log
@@ -32,7 +31,6 @@ fi
 mkdir -p /build/build_docker
 cd /build/build_docker
 rm -f CMakeCache.txt
-
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
@@ -128,7 +126,6 @@ fi
 
 mv ./programs/clickhouse* /output || mv ./programs/*_fuzzer /output
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
-[ -x ./programs/self-extracting/clickhouse-stripped ] && mv ./programs/self-extracting/clickhouse-stripped /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 mv ./programs/*.dict ./programs/*.options ./programs/*_seed_corpus.zip /output ||: # libFuzzer oss-fuzz compatible infrastructure
 

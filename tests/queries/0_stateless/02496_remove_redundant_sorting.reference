@@ -7,7 +7,7 @@ Expression (Projection)
         Expression ((Before ORDER BY + Projection))
           Sorting (Sorting for ORDER BY)
             Expression (Before ORDER BY)
-              ReadFromSystemNumbers
+              ReadFromStorage (SystemNumbers)
 -- Enabled query_plan_remove_redundant_sorting
 -- ORDER BY removes ORDER BY clauses in subqueries
 -- query
@@ -28,7 +28,7 @@ ORDER BY number ASC
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromSystemNumbers
+      ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -55,7 +55,7 @@ Expression (Projection)
       Filling
         Sorting (Sorting for ORDER BY)
           Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -84,7 +84,7 @@ Expression (Projection)
         Expression (Before LIMIT BY)
           Sorting (Sorting for ORDER BY)
             Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-              ReadFromSystemNumbers
+              ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -119,11 +119,11 @@ Expression ((Projection + Before ORDER BY))
     Expression ((Before JOIN + Projection))
       Sorting (Sorting for ORDER BY)
         Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
     Expression ((Joined actions + (Rename joined columns + Projection)))
       Sorting (Sorting for ORDER BY)
         Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0	2
 0	1
@@ -165,9 +165,9 @@ Expression (Projection)
     Expression (Before ORDER BY)
       Join (JOIN FillRightFirst)
         Expression ((Before JOIN + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
         Expression ((Joined actions + (Rename joined columns + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0	0
 0	1
@@ -197,7 +197,7 @@ GROUP BY number
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromSystemNumbers
+      ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -221,7 +221,7 @@ GROUP BY number
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression ((Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
-      ReadFromSystemNumbers
+      ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -239,7 +239,7 @@ FROM
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-      ReadFromSystemNumbers
+      ReadFromStorage (SystemNumbers)
 -- execute
 45
 -- check that optimization is applied recursively to subqueries as well
@@ -264,7 +264,7 @@ Expression (Projection)
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
         Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -290,7 +290,7 @@ Expression (Projection)
     Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
       Aggregating
         Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -320,7 +320,7 @@ Expression ((Projection + (Before ORDER BY + )))
   Aggregating
     Filter
       Filter (( + (Before GROUP BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY))))))
-        ReadFromSystemNumbers
+        ReadFromStorage (SystemNumbers)
 -- execute
 2
 1
@@ -346,7 +346,7 @@ Expression (Projection)
     Expression ((Before ORDER BY + (Projection + (Before ORDER BY + (Projection + Before ORDER BY)))))
       Aggregating
         Expression (Before GROUP BY)
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -467,7 +467,7 @@ Expression (Projection)
       Expression (Projection)
         Sorting (Sorting for ORDER BY)
           Expression (Before ORDER BY)
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 -- execute
 0	0
 1	0
@@ -496,7 +496,7 @@ Expression (Projection)
     Expression (Projection)
       Sorting (Sorting for ORDER BY)
         Expression (Before ORDER BY)
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 9	11
 8	10

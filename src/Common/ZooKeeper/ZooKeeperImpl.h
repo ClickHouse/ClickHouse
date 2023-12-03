@@ -15,8 +15,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -241,13 +239,8 @@ private:
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
     Poco::Net::SocketAddress socket_address;
-
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
-    std::optional<CompressedReadBuffer> compressed_in;
-    std::optional<CompressedWriteBuffer> compressed_out;
-
-    bool use_compression = false;
 
     int64_t session_id = 0;
 
@@ -334,10 +327,6 @@ private:
 
     template <typename T>
     void read(T &);
-
-    WriteBuffer & getWriteBuffer();
-    void flushWriteBuffer();
-    ReadBuffer & getReadBuffer();
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 

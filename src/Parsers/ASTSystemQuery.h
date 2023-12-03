@@ -86,7 +86,6 @@ public:
         START_PULLING_REPLICATION_LOG,
         STOP_CLEANUP,
         START_CLEANUP,
-        RESET_COVERAGE,
         END
     };
 

@@ -28,7 +28,6 @@ namespace CurrentMetrics
 {
     extern const Metric DWARFReaderThreads;
     extern const Metric DWARFReaderThreadsActive;
-    extern const Metric DWARFReaderThreadsScheduled;
 }
 
 namespace DB
@@ -239,7 +238,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     LOG_DEBUG(&Poco::Logger::get("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
-    pool.emplace(CurrentMetrics::DWARFReaderThreads, CurrentMetrics::DWARFReaderThreadsActive, CurrentMetrics::DWARFReaderThreadsScheduled, num_threads);
+    pool.emplace(CurrentMetrics::DWARFReaderThreads, CurrentMetrics::DWARFReaderThreadsActive, num_threads);
     for (size_t i = 0; i < num_threads; ++i)
         pool->scheduleOrThrowOnError(
             [this, thread_group = CurrentThread::getGroup()]()
