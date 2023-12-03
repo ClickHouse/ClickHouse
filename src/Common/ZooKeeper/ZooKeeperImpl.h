@@ -118,10 +118,6 @@ public:
         const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
-    // Probably not needed, just call different constructor.
-    // Refactoring part, extract the socket as load balancer manager is responsible for connecting.
-    void connectBySocket(Poco::Net::StreamSocket & socket, Int8 original_idx);
-
     ~ZooKeeper() override;
 
     void setSendRecvErrorCallback(std::function<void()> callback);
@@ -132,7 +128,6 @@ public:
     Int8 getConnectedNodeIdx() const override { return original_index; }
     String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
     int32_t getConnectionXid() const override { return next_xid.load(); }
-    UInt8 isConnectedHostLocalAZ() const override { return is_host_az_same; }
 
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.
@@ -224,8 +219,6 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
-    String getAvailabilityZone() const override { return availability_zone; }
-
     // Update session deadline to be in range [min_seconds, max_seconds].
     UInt32 setClientSessionDeadline(UInt32 min_seconds, UInt32 max_seconds) override;
 
@@ -263,9 +256,6 @@ private:
     int64_t session_id = 0;
 
     std::atomic<XID> next_xid {1};
-
-    bool is_host_az_same = false;
-
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
     std::atomic_flag finalization_started;

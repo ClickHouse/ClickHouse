@@ -1,23 +1,14 @@
 #pragma once
 
-// TODO: trim them down.
-
-#include "Interpreters/SystemLog.h"
 #include "Types.h"
-#include <Poco/Logger.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <optional>
-#include <unordered_set>
-#include <future>
+#include <functional>
+#include <unistd.h>
+#include <random>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
+
 #include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -25,11 +16,10 @@
 #include <Common/thread_local_rng.h>
 #include <Coordination/KeeperFeatureFlags.h>
 
+#include <Poco/Logger.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
 
-#include <unistd.h>
-#include <random>
 
 namespace Coordination
 {
@@ -39,13 +29,18 @@ namespace Coordination
 // [X] Shuffle
 //    - Testing.
 // [X] DNS
-// - Disconnect reason and make the host keep track of it.
+// [x] Disconnect reason and make the host keep track of it.
 //   - Callback.
-// 4. Availability zone initialization.
+// [x] Notify ZooKeeper when the swap can happen.
+//   - Trick part: track the current in-use node. refactor to use shared_ptr or use callback? TBD.
+// [x] Remove the existing AZ code.
+// - Availability zone initialization.
 // 5. (optional) background thread check on the hosts.
 class ZooKeeperLoadBalancerManager
 {
 public:
+    using BetterKeeperHostUpdater = std::function<void (std::unique_ptr<Coordination::IKeeper>)>;
+
     // NOTE: we need to support reconfdigure, see test_keeper_nodes_add test cases.
     // How this is done before? Check
     // Add request not necessarily current session tear down.
@@ -53,6 +48,9 @@ public:
     ZooKeeperLoadBalancerManager(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
 
     std::unique_ptr<Coordination::ZooKeeper> createClient();
+
+    // When ZooKeeperLoadBalancerManager detects that a better Keeper hots is available, it will call this handler.
+    void setBetterKeeperHostUpdater(BetterKeeperHostUpdater handler);
 
 private:
     struct HostInfo
@@ -95,8 +93,11 @@ private:
     std::vector<HostInfo> host_info_list;
 
     zkutil::ZooKeeperArgs args;
+
     // ZooKeeper just pass-in so totally okay to just let here own this.
     std::shared_ptr<ZooKeeperLog> zk_log;
+
+    BetterKeeperHostUpdater better_keeper_host_updater;
 
     Poco::Logger* log;
 };

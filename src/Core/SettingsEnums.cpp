@@ -23,8 +23,7 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
      {"hostname_levenshtein_distance", LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE},
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
-     {"round_robin",      LoadBalancing::ROUND_ROBIN},
-     {"keeper_local_availability_zone",      LoadBalancing::KEEPER_LOCAL_AVAILABILITY_ZONE}})
+     {"round_robin",      LoadBalancing::ROUND_ROBIN}})
 
 
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,

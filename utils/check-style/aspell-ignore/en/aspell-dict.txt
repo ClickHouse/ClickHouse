@@ -434,7 +434,6 @@ Kahan
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequets
-KeeperConnectedHostInLocalAZ
 Kerberos
 Khanna
 KittenHouse

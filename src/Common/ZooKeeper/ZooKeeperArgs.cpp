@@ -5,7 +5,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <IO/S3/Credentials.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -25,31 +24,6 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
         initFromKeeperServerSection(config);
     else
         initFromKeeperSection(config, config_name);
-
-    // Availability zone for this keeper client, namely ClickHouse itself. This is different from keeper_server.availability_zone.
-    // which is the availability zone for keeper server.
-    availability_zone = config.getString("availability_zone", "");
-    if (config.hasProperty("availability_zone"))
-    {
-        auto keeper_az = config.getString("availability_zone.value", "");
-        const auto auto_detect_for_cloud = config.getBool("availability_zone.enable_auto_detection_on_cloud", false);
-        if (keeper_az.empty() && auto_detect_for_cloud)
-        {
-            try
-            {
-                keeper_az = DB::S3::getRunningAvailabilityZone();
-            }
-            catch (std::exception & ex)
-            {
-                LOG_ERROR(&Poco::Logger::get("Application"), "Unable to initialize current availability zone '{}'", ex.what());
-            }
-        }
-        if (!keeper_az.empty())
-        {
-            availability_zone = keeper_az;
-            LOG_INFO(&Poco::Logger::get("Application"), "Initialize the Keeper Client with availability zone: '{}'", keeper_az);
-        }
-    }
 
     if (!chroot.empty())
     {

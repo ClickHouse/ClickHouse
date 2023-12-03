@@ -553,9 +553,6 @@ public:
     /// Get the xid of current connection.
     virtual int32_t getConnectionXid() const = 0;
 
-    /// Return true if the current connection is to a host in the same availbility zone.
-    virtual UInt8 isConnectedHostLocalAZ() const = 0;
-
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 
@@ -631,10 +628,6 @@ public:
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
 
-    // Returns the availability zone of the connected keeper server.
-    virtual String getAvailabilityZone() const {return ""; }
-
-    // This is still needed.
     virtual UInt32 setClientSessionDeadline(UInt32, UInt32) { return 0; }
 
     /// A ZooKeeper session can have an optional deadline set on it.

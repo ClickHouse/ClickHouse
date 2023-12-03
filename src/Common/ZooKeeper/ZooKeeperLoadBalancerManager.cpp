@@ -1,8 +1,7 @@
-#include <base/types.h>
-#include <base/sort.h>
-// #include "Common/logger_useful.h"
 #include <memory>
 
+#include <base/types.h>
+#include <base/sort.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeperLoadBalancerManager.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
@@ -67,6 +66,11 @@ ZooKeeperLoadBalancerManager::ZooKeeperLoadBalancerManager(zkutil::ZooKeeperArgs
         host_info.secure = secure;
         host_info_list.push_back(host_info);
     }
+}
+
+void ZooKeeperLoadBalancerManager::setBetterKeeperHostUpdater(BetterKeeperHostUpdater handler)
+{
+    better_keeper_host_updater = handler;
 }
 
 

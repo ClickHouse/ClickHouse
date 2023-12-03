@@ -59,7 +59,6 @@ namespace CurrentMetrics
 {
     extern const Metric ZooKeeperRequest;
     extern const Metric ZooKeeperWatch;
-    extern const Metric KeeperConnectedHostInLocalAZ;
 }
 
 
@@ -433,46 +432,6 @@ ZooKeeper::ZooKeeper(
     }
 }
 
-void ZooKeeper::connectBySocket(Poco::Net::StreamSocket & sock, Int8 original_idx)
-{
-    socket = sock;
-    socket_address = socket.peerAddress();
-    socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
-    socket.setSendTimeout(args.operation_timeout_ms * 1000);
-    socket.setNoDelay(true);
-
-    in.emplace(socket);
-    out.emplace(socket);
-    compressed_in.reset();
-    compressed_out.reset();
-
-    try
-    {
-        sendHandshake();
-    }
-    catch (DB::Exception & e)
-    {
-        e.addMessage("while sending handshake to ZooKeeper");
-        throw;
-    }
-
-    try
-    {
-        receiveHandshake();
-    }
-    catch (DB::Exception & e)
-    {
-        e.addMessage("while receiving handshake from ZooKeeper");
-        throw;
-    }
-    if (use_compression)
-    {
-        compressed_in.emplace(*in);
-        compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
-    }
-    original_index = original_idx;
-}
-
 
 void ZooKeeper::connect(
     const Node & node,
@@ -503,10 +462,6 @@ void ZooKeeper::connect(
             }
 
             socket.connect(node.address, connection_timeout);
-
-            // parts above are done. 
-            // TODO: consider adding handshake as well? so detect failure earlier.
-
             socket_address = socket.peerAddress();
 
             socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
@@ -548,7 +503,6 @@ void ZooKeeper::connect(
             original_index = static_cast<Int8>(node.original_index);
             break;
             }
-            // This probably won't throw because try above is using connection instead.
             catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address.toString();
@@ -884,7 +838,7 @@ void ZooKeeper::receiveEvent()
             {
                 for (const auto & callback : it->second)
                     if (callback)
-                        (*callback)(watch_response);  /// NOTE We may process callbacks not under mutex.
+                        (*callback)(watch_response);   /// NOTE We may process callbacks not under mutex.
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
                 watches.erase(it);
@@ -1294,7 +1248,6 @@ void ZooKeeper::initFeatureFlags()
 
 void ZooKeeper::initAvailabilityZone()
 {
-    CurrentMetrics::set(CurrentMetrics::KeeperConnectedHostInLocalAZ, 0);
     const auto try_get = [&]() -> std::optional<String>
     {
         auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
@@ -1326,11 +1279,6 @@ void ZooKeeper::initAvailabilityZone()
     {
         LOG_INFO(log, "Set keeper availability zone: {}", *az);
         availability_zone = std::move(*az);
-        if (!availability_zone.empty() && availability_zone == args.availability_zone)
-        {
-            is_host_az_same = true;
-            CurrentMetrics::set(CurrentMetrics::KeeperConnectedHostInLocalAZ, 1);
-        }
         return;
     }
 }

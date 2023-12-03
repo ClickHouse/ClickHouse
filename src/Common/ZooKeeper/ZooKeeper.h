@@ -18,7 +18,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/thread_local_rng.h>
 #include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
 #include <random>
@@ -51,24 +50,6 @@ namespace zkutil
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
-struct ShuffleHost
-{
-    String host;
-    UInt8 original_index = 0;
-    Priority priority;
-    UInt64 random = 0;
-
-    void randomize()
-    {
-        random = thread_local_rng();
-    }
-
-    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
-    {
-        return std::forward_as_tuple(lhs.priority, lhs.random)
-               < std::forward_as_tuple(rhs.priority, rhs.random);
-    }
-};
 
 struct RemoveException
 {
@@ -227,10 +208,6 @@ public:
         </zookeeper>
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
-
-    std::vector<ShuffleHost> shuffleHosts(bool & dns_error) const;
-
-    void tryConnectSameAZKeeper();
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
@@ -579,14 +556,13 @@ public:
     Int8 getConnectedHostIdx() const;
     String getConnectedHostPort() const;
     int32_t getConnectionXid() const;
-    UInt8 isConnectedHostLocalAZ() const;
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
 private:
     void init(ZooKeeperArgs args_);
 
-    std::unique_ptr<Coordination::ZooKeeperLoadBalancerManager> load_balancer_manager;
+    void updateWithBetterKeeperHost(std::unique_ptr<Coordination::IKeeper> better_keeper);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -644,6 +620,10 @@ private:
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
 
+    // NOTE: the declaration is before impl to avoid the situation that load_balancer_ is destructed first, and then impl trying to record the callback, it fails.
+    // Maybe we should instead declare it as a field, and use an init method.
+    std::unique_ptr<Coordination::ZooKeeperLoadBalancerManager> load_balancer_manager;
+
     std::unique_ptr<Coordination::IKeeper> impl;
 
     ZooKeeperArgs args;
@@ -658,35 +638,6 @@ private:
 
 
 using ZooKeeperPtr = ZooKeeper::Ptr;
-
-/// ZooKeeperAvailabilityZoneMap contains the map from the host address(without secure:// prefix) to the availability zone information.
-// We assume a given host AZ does not change.
-class ZooKeeperAvailabilityZoneMap
-{
-public:
-    static constexpr char AZ_UNKNWON[] = "AZ_UNKNWON";
-    static ZooKeeperAvailabilityZoneMap & instance();
-
-    std::string get(const std::string & host);
-    void update(const std::string & host, const std::string & availability_zone);
-
-    // shuffleHosts returns a list of the hosts with the optimal order to try to connect. This is based on previous connection information.
-    // For example, hosts whose availability zone is the same as the local one will be tried first.
-    std::vector<ShuffleHost> shuffleHosts(Poco::Logger* log, const std::string & local_az, const std::vector<std::string> & hosts, bool & dns_error_occurred);
-
-    // needTryOtherHost returns true if we want to connect to `local_az` and we have tried `attempted_host` already.
-    // If some hosts their availability zone are still unknown, or we still have some same az not tried yet.
-    bool needTryOtherHost(const std::string & local_az, const std::unordered_set<std::string_view> & attempted_host);
-
-    // Allow to skip DNS check in unit tests.
-    bool skip_dns_check_for_test = false;
-
-private:
-    void updateWithLock(const std::string & host, const std::string & availability_zone);
-
-    std::unordered_map<std::string, std::string> az_by_host;
-    std::mutex mutex;
-};
 
 
 /// Creates an ephemeral node in the constructor, removes it in the destructor.

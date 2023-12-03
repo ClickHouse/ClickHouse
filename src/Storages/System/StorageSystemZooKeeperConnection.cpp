@@ -31,8 +31,7 @@ NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
         /* 7 */ {"keeper_api_version", std::make_shared<DataTypeUInt8>()},
         /* 8 */ {"client_id", std::make_shared<DataTypeInt64>()},
         /* 9 */ {"xid", std::make_shared<DataTypeInt32>()},
-        /* 10*/ {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum))},
-        /* 11*/ {"connected_local_az_host", std::make_shared<DataTypeUInt8>()}
+        /* 10*/ {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum))}
     };
 }
 
@@ -81,7 +80,6 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[8]->insert(zookeeper->getClientID());
             columns[9]->insert(zookeeper->getConnectionXid());
             add_enabled_feature_flags(zookeeper);
-            columns[11]->insert(zookeeper->isConnectedHostLocalAZ());
         }
     };
 
