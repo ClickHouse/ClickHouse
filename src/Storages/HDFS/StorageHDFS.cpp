@@ -35,6 +35,7 @@
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
+#include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -75,6 +76,59 @@ namespace ErrorCodes
 }
 namespace
 {
+    /// Forward-declare to use in expandSelector()
+    std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(const String & path_for_ls,
+                                                                const HDFSFSPtr & fs,
+                                                                const String & for_match);
+
+    /// Process {a,b,c...} globs separately: don't match it against regex, but generate a,b,c strings instead.
+    std::vector<StorageHDFS::PathWithInfo> expandSelector(const String & path_for_ls,
+                                                          const HDFSFSPtr & fs,
+                                                          const String & for_match)
+    {
+        std::vector<size_t> anchor_positions = {};
+        bool opened = false, closed = false;
+
+        for (std::string::const_iterator it = for_match.begin(); it != for_match.end(); it++)
+        {
+            if (*it == '{')
+            {
+                anchor_positions.push_back(std::distance(for_match.begin(), it));
+                opened = true;
+            }
+            else if (*it == '}')
+            {
+                anchor_positions.push_back(std::distance(for_match.begin(), it));
+                closed = true;
+                break;
+            }
+            else if (*it == ',')
+            {
+                if (!opened)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Unexpected ''' found in path '{}' at position {}.", for_match, std::distance(for_match.begin(), it));
+                anchor_positions.push_back(std::distance(for_match.begin(), it));
+            }
+        }
+        if (!opened || !closed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid {{}} glob in path {}.", for_match);
+
+        std::vector<StorageHDFS::PathWithInfo> ret = {};
+
+        std::string common_prefix = for_match.substr(0, anchor_positions[0]);
+        std::string common_suffix = for_match.substr(anchor_positions[anchor_positions.size()-1] + 1);
+        for (size_t i = 1; i < anchor_positions.size(); ++i)
+        {
+            std::string expanded_matcher = common_prefix
+                + for_match.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
+                + common_suffix;
+            std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(path_for_ls, fs, expanded_matcher);
+            ret.insert(ret.end(), result_part.begin(), result_part.end());
+        }
+        return ret;
+    }
+
     /* Recursive directory listing with matched paths as a result.
      * Have the same method in StorageFile.
      */
@@ -83,23 +137,19 @@ namespace
         const HDFSFSPtr & fs,
         const String & for_match)
     {
-        std::vector<StorageHDFS::PathWithInfo> result;
+        /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
+        static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");
+
+        std::string_view for_match_view(for_match);
+        std::string_view matched;
+        if (RE2::FindAndConsume(&for_match_view, enum_or_range, &matched))
+        {
+            std::string buffer(matched);
+            if (buffer.find(',') != std::string::npos)
+                return expandSelector(path_for_ls, fs, for_match);
+        }
 
         const size_t first_glob_pos = for_match.find_first_of("*?{");
-
-        if (first_glob_pos == std::string::npos)
-        {
-            const String path = fs::path(path_for_ls + for_match.substr(1)).lexically_normal();
-            HDFSFileInfo ls;
-            ls.file_info = hdfsGetPathInfo(fs.get(), path.c_str());
-            if (ls.file_info != nullptr) // NOLINT
-            {
-                result.push_back(StorageHDFS::PathWithInfo{
-                        String(path),
-                        StorageHDFS::PathInfo{ls.file_info->mLastMod, static_cast<size_t>(ls.file_info->mSize)}});
-            }
-            return result;
-        }
 
         const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
         const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
@@ -122,7 +172,7 @@ namespace
             throw Exception(
                 ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
         }
-
+        std::vector<StorageHDFS::PathWithInfo> result;
         if (!ls.file_info && ls.length > 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
         for (int i = 0; i < ls.length; ++i)
@@ -173,24 +223,9 @@ namespace
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
 
-        Strings paths = expandSelectionGlob(path_from_uri);
-
-        std::vector<StorageHDFS::PathWithInfo> res;
-
-        for (const auto & path : paths)
-        {
-            auto part_of_res = LSWithRegexpMatching("/", fs, path);
-            res.insert(res.end(), part_of_res.begin(), part_of_res.end());
-        }
+        auto res = LSWithRegexpMatching("/", fs, path_from_uri);
         return res;
     }
-
-    struct HDFSFileInfoDeleter
-    {
-        /// Can have only one entry (see hdfsGetPathInfo())
-        void operator()(hdfsFileInfo * info) { hdfsFreeFileInfo(info, 1); }
-    };
-    using HDFSFileInfoPtr = std::unique_ptr<hdfsFileInfo, HDFSFileInfoDeleter>;
 }
 
 StorageHDFS::StorageHDFS(
@@ -238,7 +273,7 @@ StorageHDFS::StorageHDFS(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 namespace
@@ -424,7 +459,7 @@ public:
     StorageHDFS::PathWithInfo next()
     {
         String uri;
-        HDFSFileInfoPtr hdfs_info;
+        hdfsFileInfo * hdfs_info;
         do
         {
             size_t current_index = index.fetch_add(1);
@@ -433,7 +468,7 @@ public:
 
             uri = uris[current_index];
             auto path_and_uri = getPathFromUriAndUriWithoutPath(uri);
-            hdfs_info.reset(hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str()));
+            hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
         }
         /// Skip non-existed files.
         while (!hdfs_info && String(hdfsGetLastError()).find("FileNotFoundException") != std::string::npos);
@@ -519,7 +554,7 @@ bool HDFSSource::initialize()
         {
             auto builder = createHDFSBuilder(uri_without_path + "/", getContext()->getGlobalContext()->getConfigRef());
             auto fs = createHDFSFS(builder.get());
-            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_from_uri.c_str()));
+            auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_from_uri.c_str());
             if (hdfs_info)
                 path_with_info.info = StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)};
         }
@@ -540,7 +575,6 @@ bool HDFSSource::initialize()
     }
 
     current_path = path_with_info.path;
-    current_file_size = path_with_info.info ? std::optional(path_with_info.info->size) : std::nullopt;
 
     QueryPipelineBuilder builder;
     std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(path_with_info) : std::nullopt;
@@ -561,6 +595,7 @@ bool HDFSSource::initialize()
             max_parsing_threads = 1;
 
         input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, max_parsing_threads);
+        input_format->setQueryInfo(query_info, getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();
@@ -614,7 +649,7 @@ Chunk HDFSSource::generate()
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, current_path, current_file_size);
+            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, current_path);
             return chunk;
         }
 
@@ -969,11 +1004,6 @@ NamesAndTypesList StorageHDFS::getVirtuals() const
     return virtual_columns;
 }
 
-Names StorageHDFS::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
-}
-
 SchemaCache & StorageHDFS::getSchemaCache(const ContextPtr & ctx)
 {
     static SchemaCache schema_cache(ctx->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
@@ -996,7 +1026,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
 
             auto builder = createHDFSBuilder(uri_without_path + "/", ctx->getGlobalContext()->getConfigRef());
             auto fs = createHDFSFS(builder.get());
-            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_with_info.path.c_str()));
+            auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_with_info.path.c_str());
             if (hdfs_info)
                 return hdfs_info->mLastMod;
 

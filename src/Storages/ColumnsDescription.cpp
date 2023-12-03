@@ -53,17 +53,6 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 {
 }
 
-bool ColumnDescription::identical(const ColumnDescription & other) const
-{
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
-
-    return name == other.name
-        && type->identical(*other.type)
-        && default_desc == other.default_desc
-        && ast_to_str(codec) == ast_to_str(other.codec)
-        && ast_to_str(ttl) == ast_to_str(other.ttl);
-}
-
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
@@ -71,7 +60,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && stat == other.stat
+        && comment == other.comment
         && ast_to_str(codec) == ast_to_str(other.codec)
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -103,12 +92,6 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
     {
         writeChar('\t', buf);
         writeEscapedString(queryToString(codec), buf);
-    }
-
-    if (stat)
-    {
-        writeChar('\t', buf);
-        writeEscapedString(queryToString(stat->ast), buf);
     }
 
     if (ttl)
@@ -161,17 +144,6 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
-ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
-{
-    for (const auto & elem : ordinary)
-        add(ColumnDescription(elem.name, elem.type));
-}
-
-ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
-{
-    for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
-}
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {
@@ -894,13 +866,4 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     }
 }
 
-bool ColumnsDescription::identical(const ColumnsDescription & other) const
-{
-    if (columns.size() != other.columns.size())
-        return false;
-    for (auto it1 = columns.begin(), it2 = other.columns.begin(); it1 != columns.end(); ++it1, ++it2)
-        if (!it1->identical(*it2))
-            return false;
-    return true;
-}
 }

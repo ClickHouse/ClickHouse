@@ -22,7 +22,6 @@ namespace CurrentMetrics
 {
     extern const Metric QueryPipelineExecutorThreads;
     extern const Metric QueryPipelineExecutorThreadsActive;
-    extern const Metric QueryPipelineExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -34,8 +33,9 @@ namespace ErrorCodes
 }
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, UInt64 partial_result_duration_ms_)
     : process_list_element(std::move(elem))
+    , partial_result_duration_ms(partial_result_duration_ms_)
 {
     if (process_list_element)
     {
@@ -300,18 +300,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            try
-            {
-                /// Upscale if possible.
-                spawnThreads();
-            }
-            catch (...)
-            {
-                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                /// We should cancel execution properly before rethrow.
-                cancel();
-                throw;
-            }
+            /// Upscale if possible.
+            spawnThreads();
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
@@ -339,11 +329,11 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     Queue queue;
     graph->initializeExecution(queue);
 
-    tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get());
+    tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get(), partial_result_duration_ms);
     tasks.fill(queue);
 
     if (num_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, num_threads);
 }
 
 void PipelineExecutor::spawnThreads()

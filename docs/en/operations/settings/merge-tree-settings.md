@@ -149,7 +149,7 @@ Possible values:
 - Any positive integer.
 - 0 (disable deduplication)
 
-Default value: 1000.
+Default value: 100.
 
 The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
@@ -502,7 +502,7 @@ Possible values:
 Default value: 480.
 
 After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
-Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is 1.
+Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
 
 `fsync` is not called for new parts, so for some time new parts exist only in the server's RAM (OS cache). If the server is rebooted spontaneously, new parts can be lost or damaged.
 To protect data inactive parts are not deleted immediately.
@@ -746,14 +746,14 @@ Default value: `0` (limit never applied).
 
 Minimal ratio of the number of _default_ values to the number of _all_ values in a column. Setting this value causes the column to be stored using sparse serializations.
 
-If a column is sparse (contains mostly zeros), ClickHouse can encode it in a sparse format and automatically optimize calculations - the data does not require full decompression during queries. To enable this sparse serialization, define the `ratio_of_defaults_for_sparse_serialization` setting to be less than 1.0. If the value is greater than or equal to 1.0, then the columns will be always written using the normal full serialization.
+If a column is sparse (contains mostly zeros), ClickHouse can encode it in a sparse format and automatically optimize calculations - the data does not require full decompression during queries. To enable this sparse serialization, define the `ratio_of_defaults_for_sparse_serialization` setting to be less than 1.0. If the value is greater than or equal to 1.0 (the default), then the columns will be always written using the normal full serialization.
 
 Possible values:
 
 - Float between 0 and 1 to enable sparse serialization
 - 1.0 (or greater) if you do not want to use sparse serialization
 
-Default value: `0.9375`
+Default value: `1.0` (sparse serialization is disabled)
 
 **Example**
 

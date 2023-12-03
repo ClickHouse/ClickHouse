@@ -110,6 +110,15 @@ void QueryPipelineBuilder::init(QueryPipeline & pipeline)
         pipe.header = {};
     }
 
+    if (pipeline.partial_result)
+    {
+        /// Set partial result ports only after activation because when activated, it is set to nullptr
+        pipe.activatePartialResult(pipeline.partial_result_limit, pipeline.partial_result_duration_ms);
+        pipe.partial_result_ports = {pipeline.partial_result};
+    }
+    else
+        pipe.dropPartialResult();
+
     pipe.totals_port = pipeline.totals;
     pipe.extremes_port = pipeline.extremes;
     pipe.max_parallel_streams = pipeline.num_threads;
@@ -352,6 +361,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
 
+    /// TODO: Support joining of partial results from different pipelines.
+    left->pipe.dropPartialResult();
+    right->pipe.dropPartialResult();
+
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
     if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
@@ -364,6 +377,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
 
+    /// TODO: Support partial results in merge pipelines after joining support above.
     return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
@@ -383,6 +397,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     /// Extremes before join are useless. They will be calculated after if needed.
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
+
+    /// TODO: Support joining of partial results from different pipelines.
+    left->pipe.dropPartialResult();
+    right->pipe.dropPartialResult();
 
     left->pipe.collected_processors = collected_processors;
 
@@ -483,6 +501,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
 
     Block left_header = left->getHeader();
+    Block joined_header = JoiningTransform::transformHeader(left_header, join);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto joining = std::make_shared<JoiningTransform>(
@@ -494,9 +514,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         {
             // Process delayed joined blocks when all JoiningTransform are finished.
             auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(
-                output_header,
-                [left_header, output_header, max_block_size, join]()
-                { return join->getNonJoinedBlocks(left_header, output_header, max_block_size); });
+                joined_header,
+                [left_header, joined_header, max_block_size, join]()
+                { return join->getNonJoinedBlocks(left_header, joined_header, max_block_size); });
             if (delayed->getInputs().size() != 1 || delayed->getOutputs().size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform should have one input and one output");
 
@@ -531,7 +551,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
             delayed_ports_numbers.push_back(i);
 
-        auto delayed_processor = std::make_shared<DelayedPortsProcessor>(output_header, 2 * num_streams, delayed_ports_numbers);
+        auto delayed_processor = std::make_shared<DelayedPortsProcessor>(joined_header, 2 * num_streams, delayed_ports_numbers);
         if (collected_processors)
             collected_processors->emplace_back(delayed_processor);
         left->pipe.processors->emplace_back(delayed_processor);
@@ -543,7 +563,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         left->pipe.output_ports.clear();
         for (OutputPort & port : delayed_processor->getOutputs())
             left->pipe.output_ports.push_back(&port);
-        left->pipe.header = output_header;
+        left->pipe.header = joined_header;
         left->resize(num_streams);
     }
 
@@ -632,7 +652,7 @@ PipelineExecutorPtr QueryPipelineBuilder::execute()
     if (!isCompleted())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute pipeline because it is not completed");
 
-    return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
+    return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element, pipe.partial_result_duration_ms);
 }
 
 Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources)

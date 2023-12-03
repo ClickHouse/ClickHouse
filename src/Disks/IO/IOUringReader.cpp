@@ -19,7 +19,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
-    extern const Event AsynchronousReaderIgnoredBytes;
 
     extern const Event IOUringSQEsSubmitted;
     extern const Event IOUringSQEsResubmits;
@@ -320,7 +319,6 @@ void IOUringReader::monitorRing()
         }
         else
         {
-            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, enqueued.request.ignore);
             enqueued.promise.set_value(Result{ .size = total_bytes_read, .offset = enqueued.request.ignore });
             finalizeRequest(it);
         }

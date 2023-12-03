@@ -38,8 +38,6 @@ struct AlterCommand
         DROP_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
-        ADD_STATISTIC,
-        DROP_STATISTIC,
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -120,10 +118,6 @@ struct AlterCommand
     /// For ADD/DROP PROJECTION
     String projection_name;
 
-    ASTPtr statistic_decl = nullptr;
-    std::vector<String> statistic_columns;
-    String statistic_type;
-
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
 
@@ -172,8 +166,6 @@ struct AlterCommand
 
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
-
-    bool isDropSomething() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after

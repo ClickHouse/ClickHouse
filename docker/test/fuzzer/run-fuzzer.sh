@@ -210,31 +210,31 @@ detach
 quit
 " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid &
+    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
     sleep 5
-    # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
+    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
     # Check connectivity after we attach gdb, because it might cause the server
-    # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
+    # to freeze and the fuzzer will fail. In debug build it can take a lot of time.
     for _ in {1..180}
     do
+        sleep 1
         if clickhouse-client --query "select 1"
         then
             break
         fi
-        sleep 1
     done
+    clickhouse-client --query "select 1" # This checks that the server is responding
     kill -0 $server_pid # This checks that it is our server that is started and not some other one
-    echo 'Server started and responded.'
+    echo 'Server started and responded'
 
     setup_logs_replication
 
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
-    # SC2046: Quote this to prevent word splitting. Actually, I need word splitting.
+    # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
     timeout -s TERM --preserve-status 30m clickhouse-client \
-        --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
@@ -254,10 +254,10 @@ quit
     wait "$fuzzer_pid" || fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
 
-    # If the server dies, most often the fuzzer returns Code 210: Connetion
+    # If the server dies, most often the fuzzer returns code 210: connetion
     # refused, and sometimes also code 32: attempt to read after eof. For
-    # simplicity, check again whether the server is accepting connections using
-    # clickhouse-client. We don't check for the existence of the server process, because
+    # simplicity, check again whether the server is accepting connections, using
+    # clickhouse-client. We don't check for existence of server process, because
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
 
@@ -337,8 +337,8 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { rg -ao "Found error:.*" fuzzer.log \
-            || rg -ao "Exception:.*" fuzzer.log \
+        { rg --text -o "Found error:.*" fuzzer.log \
+            || rg --text -ao "Exception:.*" fuzzer.log \
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi

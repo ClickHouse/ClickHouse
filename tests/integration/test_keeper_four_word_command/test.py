@@ -287,7 +287,7 @@ def test_cmd_conf(started_cluster):
         assert result["quorum_reads"] == "false"
         assert result["force_sync"] == "true"
 
-        assert result["compress_logs"] == "false"
+        assert result["compress_logs"] == "true"
         assert result["compress_snapshots_with_zstd_format"] == "true"
         assert result["configuration_change_tries_count"] == "20"
 
@@ -460,19 +460,12 @@ def test_cmd_crst(started_cluster):
         print("cons output(after crst) -------------------------------------")
         print(data)
 
-        # 2 or 3 connections, 1 for 'crst', 1 for 'cons' command, 1 for zk
-        # there can be a case when 'crst' connection is not cleaned before the cons call
-        print("cons output(after crst) -------------------------------------")
-        print(data)
+        # 2 connections, 1 for 'cons' command, 1 for zk
         cons = [n for n in data.split("\n") if len(n) > 0]
-        assert len(cons) == 2 or len(cons) == 3
+        assert len(cons) == 2
 
         # connection for zk
-        zk_conns = [n for n in cons if not n.__contains__("sid=0xffffffffffffffff")]
-
-        # there can only be one
-        assert len(zk_conns) == 1
-        zk_conn = zk_conns[0]
+        zk_conn = [n for n in cons if not n.__contains__("sid=0xffffffffffffffff")][0]
 
         conn_stat = re.match(r"(.*?)[:].*[(](.*?)[)].*", zk_conn.strip(), re.S).group(2)
         assert conn_stat is not None
@@ -725,30 +718,3 @@ def test_cmd_clrs(started_cluster):
 
     finally:
         destroy_zk_client(zk)
-
-
-def test_cmd_ydld(started_cluster):
-    wait_nodes()
-    for node in [node1, node3]:
-        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="ydld")
-        assert data == "Sent yield leadership request to leader."
-
-        print("ydld output -------------------------------------")
-        print(data)
-
-        # Whenever there is a leader switch, there is a brief amount of time when any
-        # of the 4 letter commands will return empty result. Thus, we need to test for
-        # negative condition. So we can't use keeper_utils.is_leader() here and likewise
-        # in the while loop below.
-        if not keeper_utils.is_follower(cluster, node):
-            # wait for it to yield leadership
-            retry = 0
-            while not keeper_utils.is_follower(cluster, node) and retry < 30:
-                time.sleep(1)
-                retry += 1
-            if retry == 30:
-                print(
-                    node.name
-                    + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
-                )
-        assert keeper_utils.is_follower(cluster, node)

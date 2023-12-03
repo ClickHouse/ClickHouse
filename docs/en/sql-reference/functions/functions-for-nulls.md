@@ -164,7 +164,7 @@ Consider a list of contacts that may specify multiple ways to contact a customer
 └──────────┴──────┴───────────┴───────────┘
 ```
 
-The `mail` and `phone` fields are of type String, but the `telegram` field is `UInt32`, so it needs to be converted to `String`.
+The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32`, so it needs to be converted to `String`.
 
 Get the first available contact method for the customer from the contact list:
 

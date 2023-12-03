@@ -83,6 +83,11 @@ namespace
         String doGetName() const override { return finalize()->getName(); }
         TypeIndex getTypeId() const override { return TypeIndex::JSONPaths; }
 
+        String getSQLCompatibleName() const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getSQLCompatibleName is not implemented for JSONObjectForInference type");
+        }
+
         bool isParametric() const override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isParametric is not implemented for JSONObjectForInference type");

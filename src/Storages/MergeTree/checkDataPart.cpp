@@ -75,11 +75,6 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
         return true;
     }
 #endif
-    catch (const ErrnoException & e)
-    {
-        if (e.getErrno() == EMFILE)
-            return true;
-    }
     catch (const Exception & e)
     {
         if (isNotEnoughMemoryErrorCode(e.code()))

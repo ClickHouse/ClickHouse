@@ -36,7 +36,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include "Functions/IFunction.h"
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -269,7 +268,7 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
     }
 }
 
-void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
+void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context)
 {
     auto actions = std::make_shared<ExpressionActions>(dag);
     makeSets(actions, context);
@@ -351,12 +350,11 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     }
 }
 
-NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns)
+NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_columns)
 {
     auto default_virtuals = NamesAndTypesList{
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())}};
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     default_virtuals.sort();
     storage_columns.sort();
@@ -397,10 +395,7 @@ ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList 
 
     Block block;
     for (const auto & column : virtual_columns)
-    {
-        if (column.name == "_file" || column.name == "_path")
-            block.insert({column.type->createColumn(), column.type, column.name});
-    }
+        block.insert({column.type->createColumn(), column.type, column.name});
     /// Create a block with one row to construct filter
     /// Append "idx" column as the filter result
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
@@ -414,10 +409,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 {
     Block block;
     for (const auto & column : virtual_columns)
-    {
-        if (column.name == "_file" || column.name == "_path")
-            block.insert({column.type->createColumn(), column.type, column.name});
-    }
+        block.insert({column.type->createColumn(), column.type, column.name});
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
@@ -428,8 +420,8 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     return block.getByName("_idx").column;
 }
 
-void addRequestedPathFileAndSizeVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename)
+void addRequestedPathAndFileVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, const String * filename)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -450,102 +442,7 @@ void addRequestedPathFileAndSizeVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
         }
-        else if (virtual_column.name == "_size")
-        {
-            if (size)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *size)->convertToFullColumnIfConst());
-            else
-                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
-        }
     }
-}
-
-static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allowed_inputs)
-{
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
-    while (!nodes.empty())
-    {
-        const auto * cur = nodes.top();
-        nodes.pop();
-
-        if (cur->type == ActionsDAG::ActionType::INPUT && !allowed_inputs.has(cur->result_name))
-            return false;
-
-        for (const auto * child : cur->children)
-            nodes.push(child);
-    }
-
-    return true;
-}
-
-static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
-    const ActionsDAG::Node * node,
-    const Block & allowed_inputs,
-    ActionsDAG::Nodes & additional_nodes)
-{
-    if (node->type == ActionsDAG::ActionType::FUNCTION)
-    {
-        if (node->function_base->getName() == "and")
-        {
-            auto & node_copy = additional_nodes.emplace_back(*node);
-            node_copy.children.clear();
-            for (const auto * child : node->children)
-                if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes))
-                    node_copy.children.push_back(child_copy);
-
-            if (node_copy.children.empty())
-                return nullptr;
-
-            if (node_copy.children.size() == 1)
-            {
-                const ActionsDAG::Node * res = node_copy.children.front();
-                /// Expression like (not_allowed AND 256) can't be resuced to (and(256)) because AND requires
-                /// at least two arguments; also it can't be reduced to (256) because result type is different.
-                /// TODO: add CAST here
-                if (!res->result_type->equals(*node->result_type))
-                    return nullptr;
-
-                return res;
-            }
-
-            return &node_copy;
-        }
-        else if (node->function_base->getName() == "or")
-        {
-            auto & node_copy = additional_nodes.emplace_back(*node);
-            for (auto & child : node_copy.children)
-                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes); !child)
-                    return nullptr;
-
-            return &node_copy;
-        }
-    }
-
-    if (!canEvaluateSubtree(node, allowed_inputs))
-        return nullptr;
-
-    return node;
-}
-
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block & allowed_inputs)
-{
-    if (!predicate)
-        return nullptr;
-
-    ActionsDAG::Nodes additional_nodes;
-    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes);
-    if (!res)
-        return nullptr;
-
-    return ActionsDAG::cloneSubDAG({res}, true);
-}
-
-void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context)
-{
-    auto dag = splitFilterDagForAllowedInputs(predicate, block);
-    if (dag)
-        filterBlockWithDAG(dag, block, context);
 }
 
 }
