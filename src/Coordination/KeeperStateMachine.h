@@ -20,7 +20,7 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    using CommitCallback = std::function<void(uint64_t, const KeeperStorage::RequestForSession &)>;
+    using CommitCallback = std::function<void(const KeeperStorage::RequestForSession &)>;
 
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,

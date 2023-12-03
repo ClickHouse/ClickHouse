@@ -39,16 +39,16 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-## Globs in path {#globs_in_path}
+**Globs in path**
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern (not only suffix or prefix).
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 
-Constructions with `{}` are similar to the [remote](../../sql-reference/table-functions/remote.md)) table function.
+Constructions with `{}` are similar to the [remote table function](../../sql-reference/table-functions/remote.md)).
 
 **Example**
 
@@ -94,16 +94,14 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## Virtual Columns
 
-- `_path` — Path to the file. Type: `LowCardinalty(String)`.
-- `_file` — Name of the file. Type: `LowCardinalty(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
 
 ## Storage Settings {#storage-settings}
 
 - [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
 - [hdfs_create_multiple_files](/docs/en/operations/settings/settings.md#hdfs_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [hdfs_skip_empty_files](/docs/en/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [ignore_access_denied_multidirectory_globs](/docs/en/operations/settings/settings.md#ignore_access_denied_multidirectory_globs) - allows to ignore permission denied errors for multi-directory globs.
 
 **See Also**
 

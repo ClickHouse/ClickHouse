@@ -1,4 +1,0 @@
-42
-select 42\n	/dev/stdin
-4242
-select 4242\n	foo

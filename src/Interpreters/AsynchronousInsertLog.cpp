@@ -24,13 +24,6 @@ NamesAndTypesList AsynchronousInsertLogElement::getNamesAndTypes()
             {"FlushError",   static_cast<Int8>(Status::FlushError)},
         });
 
-    auto type_data_kind = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            {"Parsed",       static_cast<Int8>(DataKind::Parsed)},
-            {"Preprocessed", static_cast<Int8>(DataKind::Preprocessed)},
-        });
-
     return
     {
         {"event_date", std::make_shared<DataTypeDate>()},
@@ -46,7 +39,6 @@ NamesAndTypesList AsynchronousInsertLogElement::getNamesAndTypes()
         {"rows", std::make_shared<DataTypeUInt64>()},
         {"exception", std::make_shared<DataTypeString>()},
         {"status", type_status},
-        {"data_kind", type_data_kind},
 
         {"flush_time", std::make_shared<DataTypeDateTime>()},
         {"flush_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -72,7 +64,6 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(rows);
     columns[i++]->insert(exception);
     columns[i++]->insert(status);
-    columns[i++]->insert(data_kind);
 
     columns[i++]->insert(flush_time);
     columns[i++]->insert(flush_time_microseconds);

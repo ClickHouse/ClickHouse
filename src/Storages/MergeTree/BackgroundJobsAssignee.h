@@ -67,7 +67,7 @@ public:
 
     bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
     void scheduleFetchTask(ExecutableTaskPtr fetch_task);
-    bool scheduleMoveTask(ExecutableTaskPtr move_task);
+    void scheduleMoveTask(ExecutableTaskPtr move_task);
     void scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);
 
     /// Just call finish

@@ -47,7 +47,7 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     Pipe read(
         const Names & column_names,
@@ -102,6 +102,8 @@ public:
     String getFullDataPath(const String & file_name) const { return std::filesystem::path(root_data_path) / file_name; }
 
     NamesAndTypesList getVirtuals() const override;
+
+    static Names getVirtualColumnNames();
 
     static UInt64 getInode(const String & file_name);
 

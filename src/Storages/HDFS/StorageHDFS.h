@@ -69,7 +69,6 @@ public:
         TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
-    static Names getVirtualColumnNames();
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -182,7 +181,6 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;
-    std::optional<size_t> current_file_size;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.
     bool initialize();

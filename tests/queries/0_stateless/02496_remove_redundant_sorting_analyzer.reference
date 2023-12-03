@@ -7,7 +7,7 @@ Expression (Project names)
         Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
           Sorting (Sorting for ORDER BY)
             Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-              ReadFromSystemNumbers
+              ReadFromStorage (SystemNumbers)
 -- Enabled query_plan_remove_redundant_sorting
 -- ORDER BY removes ORDER BY clauses in subqueries
 -- query
@@ -28,7 +28,7 @@ ORDER BY number ASC
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))))
-      ReadFromSystemNumbers
+      ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -55,7 +55,7 @@ Expression (Project names)
       Filling
         Sorting (Sorting for ORDER BY)
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -84,7 +84,7 @@ Expression (Project names)
         Expression (Before LIMIT BY)
           Sorting (Sorting for ORDER BY)
             Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
-              ReadFromSystemNumbers
+              ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -119,11 +119,11 @@ Expression ((Project names + (Projection + DROP unused columns after JOIN)))
     Expression ((Change column names to column identifiers + Project names))
       Sorting (Sorting for ORDER BY)
         Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
     Expression ((Change column names to column identifiers + Project names))
       Sorting (Sorting for ORDER BY)
         Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0	2
 0	1
@@ -165,9 +165,9 @@ Expression (Project names)
     Expression ((Before ORDER BY + (Projection + DROP unused columns after JOIN)))
       Join (JOIN FillRightFirst)
         Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
         Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0	0
 0	1
@@ -197,7 +197,7 @@ GROUP BY number
 Expression ((Project names + Projection))
   Aggregating
     Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))))))
-      ReadFromSystemNumbers
+      ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -223,7 +223,7 @@ Expression ((Project names + Projection))
     Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
       Sorting (Sorting for ORDER BY)
         Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -241,7 +241,7 @@ FROM
 Expression ((Project names + Projection))
   Aggregating
     Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))
-      ReadFromSystemNumbers
+      ReadFromStorage (SystemNumbers)
 -- execute
 45
 -- check that optimization is applied recursively to subqueries as well
@@ -266,7 +266,7 @@ Expression (Project names)
     Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
       Aggregating
         Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers))))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -294,7 +294,7 @@ Expression (Project names)
         Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
           Sorting (Sorting for ORDER BY)
             Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-              ReadFromSystemNumbers
+              ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -326,7 +326,7 @@ Expression ((Project names + Projection))
       Expression ((Before GROUP BY + (Change column names to column identifiers + Project names)))
         Sorting (Sorting for ORDER BY)
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 -- execute
 2
 1
@@ -352,7 +352,7 @@ Expression (Project names)
     Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + Projection))))))))))
       Aggregating
         Expression ((Before GROUP BY + Change column names to column identifiers))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -477,7 +477,7 @@ Expression (Project names)
               Expression (Before ORDER BY)
                 Expression (Projection)
                   Expression (Change column names to column identifiers)
-                    ReadFromSystemNumbers
+                    ReadFromStorage (SystemNumbers)
 -- execute
 0	0
 1	0
@@ -509,7 +509,7 @@ Expression (Project names)
           Expression (Before ORDER BY)
             Expression (Projection)
               Expression (Change column names to column identifiers)
-                ReadFromSystemNumbers
+                ReadFromStorage (SystemNumbers)
 -- execute
 9	11
 8	10

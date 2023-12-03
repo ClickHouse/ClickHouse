@@ -72,14 +72,14 @@ public:
     {
         writeBinary(has(), buf);
         if (has())
-            writeBinaryLittleEndian(value, buf);
+            writeBinary(value, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena *)
     {
         readBinary(has_value, buf);
         if (has())
-            readBinaryLittleEndian(value, buf);
+            readBinary(value, buf);
     }
 
 
@@ -771,18 +771,26 @@ static_assert(
 
 
 /// For any other value types.
+template <bool RESULT_IS_NULLABLE = false>
 struct SingleValueDataGeneric
 {
 private:
     using Self = SingleValueDataGeneric;
+
     Field value;
+    bool has_value = false;
 
 public:
-    static constexpr bool result_is_nullable = false;
-    static constexpr bool should_skip_null_arguments = true;
+    static constexpr bool result_is_nullable = RESULT_IS_NULLABLE;
+    static constexpr bool should_skip_null_arguments = !RESULT_IS_NULLABLE;
     static constexpr bool is_any = false;
 
-    bool has() const { return !value.isNull(); }
+    bool has() const
+    {
+        if constexpr (result_is_nullable)
+            return has_value;
+        return !value.isNull();
+    }
 
     void insertResultInto(IColumn & to) const
     {
@@ -812,9 +820,19 @@ public:
             serialization.deserializeBinary(value, buf, {});
     }
 
-    void change(const IColumn & column, size_t row_num, Arena *) { column.get(row_num, value); }
+    void change(const IColumn & column, size_t row_num, Arena *)
+    {
+        column.get(row_num, value);
+        if constexpr (result_is_nullable)
+            has_value = true;
+    }
 
-    void change(const Self & to, Arena *) { value = to.value; }
+    void change(const Self & to, Arena *)
+    {
+        value = to.value;
+        if constexpr (result_is_nullable)
+            has_value = true;
+    }
 
     bool changeFirstTime(const IColumn & column, size_t row_num, Arena * arena)
     {
@@ -829,7 +847,7 @@ public:
 
     bool changeFirstTime(const Self & to, Arena * arena)
     {
-        if (!has() && to.has())
+        if (!has() && (result_is_nullable || to.has()))
         {
             change(to, arena);
             return true;
@@ -864,15 +882,30 @@ public:
         }
         else
         {
-            Field new_value;
-            column.get(row_num, new_value);
-            if (new_value < value)
+            if constexpr (result_is_nullable)
             {
-                value = new_value;
-                return true;
+                Field new_value;
+                column.get(row_num, new_value);
+                if (!value.isNull() && (new_value.isNull() || new_value < value))
+                {
+                    value = new_value;
+                    return true;
+                }
+                else
+                    return false;
             }
             else
-                return false;
+            {
+                Field new_value;
+                column.get(row_num, new_value);
+                if (new_value < value)
+                {
+                    value = new_value;
+                    return true;
+                }
+                else
+                    return false;
+            }
         }
     }
 
@@ -880,13 +913,30 @@ public:
     {
         if (!to.has())
             return false;
-        if (!has() || to.value < value)
+        if constexpr (result_is_nullable)
         {
-            change(to, arena);
-            return true;
+            if (!has())
+            {
+                change(to, arena);
+                return true;
+            }
+            if (to.value.isNull() || (!value.isNull() && to.value < value))
+            {
+                value = to.value;
+                return true;
+            }
+            return false;
         }
         else
-            return false;
+        {
+            if (!has() || to.value < value)
+            {
+                change(to, arena);
+                return true;
+            }
+            else
+                return false;
+        }
     }
 
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
@@ -898,15 +948,29 @@ public:
         }
         else
         {
-            Field new_value;
-            column.get(row_num, new_value);
-            if (new_value > value)
+            if constexpr (result_is_nullable)
             {
-                value = new_value;
-                return true;
+                Field new_value;
+                column.get(row_num, new_value);
+                if (!value.isNull() && (new_value.isNull() || value < new_value))
+                {
+                    value = new_value;
+                    return true;
+                }
+                return false;
             }
             else
-                return false;
+            {
+                Field new_value;
+                column.get(row_num, new_value);
+                if (new_value > value)
+                {
+                    value = new_value;
+                    return true;
+                }
+                else
+                    return false;
+            }
         }
     }
 
@@ -914,18 +978,36 @@ public:
     {
         if (!to.has())
             return false;
-        if (!has() || to.value > value)
+        if constexpr (result_is_nullable)
         {
-            change(to, arena);
-            return true;
+            if (!value.isNull() && (to.value.isNull() || value < to.value))
+            {
+                value = to.value;
+                return true;
+            }
+            return false;
         }
         else
-            return false;
+        {
+            if (!has() || to.value > value)
+            {
+                change(to, arena);
+                return true;
+            }
+            else
+                return false;
+        }
     }
 
-    bool isEqualTo(const IColumn & column, size_t row_num) const { return has() && value == column[row_num]; }
+    bool isEqualTo(const IColumn & column, size_t row_num) const
+    {
+        return has() && value == column[row_num];
+    }
 
-    bool isEqualTo(const Self & to) const { return has() && to.value == value; }
+    bool isEqualTo(const Self & to) const
+    {
+        return has() && to.value == value;
+    }
 
     static bool allocatesMemoryInArena()
     {
@@ -1193,13 +1275,13 @@ struct AggregateFunctionAnyHeavyData : Data
     void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
         Data::write(buf, serialization);
-        writeBinaryLittleEndian(counter, buf);
+        writeBinary(counter, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
     {
         Data::read(buf, serialization, arena);
-        readBinaryLittleEndian(counter, buf);
+        readBinary(counter, buf);
     }
 
     static const char * name() { return "anyHeavy"; }

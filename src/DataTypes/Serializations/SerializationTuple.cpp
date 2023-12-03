@@ -135,10 +135,7 @@ void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, co
                 assertChar(',', istr);
                 skipWhitespaceIfAny(istr);
             }
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextQuotedImpl(extractElementColumn(column, i), istr, settings, elems[i]);
-            else
-                elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr, settings);
+            elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr, settings);
         }
 
         // Special format for one element tuple (1,)
@@ -163,23 +160,16 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
         && have_explicit_names)
     {
         writeChar('{', ostr);
-
-        bool first = true;
         for (size_t i = 0; i < elems.size(); ++i)
         {
-            const auto & element_column = extractElementColumn(column, i);
-            if (settings.json.skip_null_value_in_named_tuples && element_column.isNullAt(row_num))
-                continue;
-
-            if (!first)
+            if (i != 0)
+            {
                 writeChar(',', ostr);
-
+            }
             writeJSONString(elems[i]->getElementName(), ostr, settings);
             writeChar(':', ostr);
-            elems[i]->serializeTextJSON(element_column, row_num, ostr, settings);
-            first = false;
+            elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr, settings);
         }
-
         writeChar('}', ostr);
     }
     else
@@ -201,24 +191,15 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         && have_explicit_names)
     {
         writeCString("{\n", ostr);
-
-        bool first = true;
         for (size_t i = 0; i < elems.size(); ++i)
         {
-            const auto & element_column = extractElementColumn(column, i);
-            if (settings.json.skip_null_value_in_named_tuples && element_column.isNullAt(row_num))
-                continue;
-
-            if (!first)
+            if (i != 0)
                 writeCString(",\n", ostr);
-
             writeChar(' ', (indent + 1) * 4, ostr);
             writeJSONString(elems[i]->getElementName(), ostr, settings);
             writeCString(": ", ostr);
             elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
-            first = false;
         }
-
         writeChar('\n', ostr);
         writeChar(' ', indent * 4, ostr);
         writeChar('}', ostr);
@@ -385,10 +366,7 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
                 assertChar(settings.csv.tuple_delimiter, istr);
                 skipWhitespaceIfAny(istr);
             }
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextCSVImpl(extractElementColumn(column, i), istr, settings, elems[i]);
-            else
-                elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, settings);
+            elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, settings);
         }
     });
 }

@@ -113,9 +113,6 @@ String DDLLogEntry::toString() const
         writeChar('\n', wb);
     }
 
-    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
-        wb << "is_backup_restore: " << is_backup_restore << "\n";
-
     return wb.str();
 }
 
@@ -168,12 +165,6 @@ void DDLLogEntry::parse(const String & data)
         checkChar('\n', rb);
     }
 
-    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
-    {
-        checkString("is_backup_restore: ", rb);
-        readBoolText(is_backup_restore, rb);
-        checkChar('\n', rb);
-    }
 
     assertEOF(rb);
 
@@ -215,7 +206,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 }
 
 
-bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, const ZooKeeperPtr & zookeeper)
+bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
 {
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
@@ -262,22 +253,6 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
 
     if (!host_in_hostlist && first_exception)
     {
-        if (zookeeper->exists(getFinishedNodePath()))
-        {
-            LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because {} exists. Skipping the task. Error: {}",
-                        entry_name, getFinishedNodePath(), getExceptionMessage(first_exception, /*with_stacktrace*/ true));
-            return false;
-        }
-
-        size_t finished_nodes_count = zookeeper->getChildren(fs::path(entry_path) / "finished").size();
-        if (entry.hosts.size() == finished_nodes_count)
-        {
-            LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because the number of finished nodes ({}) "
-                        "equals to the number of hosts in list. Skipping the task. Error: {}",
-                        entry_name, finished_nodes_count, getExceptionMessage(first_exception, /*with_stacktrace*/ true));
-            return false;
-        }
-
         /// We don't know for sure if we should process task or not
         std::rethrow_exception(first_exception);
     }
