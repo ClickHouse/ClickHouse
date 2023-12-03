@@ -399,7 +399,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->shutdown_called)
         return false;
 
-
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
