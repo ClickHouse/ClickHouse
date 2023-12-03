@@ -176,10 +176,9 @@ static void fillStatusColumnsWithNulls(MutableColumns & res_columns, size_t & co
 }
 
 static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
-                                GetResponseFuture & finished_data_future,
+                                Coordination::GetResponse & maybe_finished_status,
                                 UInt64 query_create_time_ms)
 {
-    auto maybe_finished_status = finished_data_future.get();
     if (maybe_finished_status.error == Coordination::Error::ZNONODE)
         return fillStatusColumnsWithNulls(res_columns, col, Status::REMOVING);
 
@@ -208,23 +207,31 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
     auto& ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
     zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
-    Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
+    Strings ddl_tasks = zookeeper->getChildren(ddl_zookeeper_path);
 
-    GetResponseFutures ddl_task_futures;
-    ListResponseFutures active_nodes_futures;
-    ListResponseFutures finished_nodes_futures;
+    Strings ddl_task_paths;
+    Strings active_finished_nodes_paths;
 
-    for (const auto & task_path : ddl_task_paths)
+    ddl_task_paths.reserve(ddl_tasks.size());
+    active_finished_nodes_paths.reserve(ddl_tasks.size() * 2);
+
+    for (const auto & task_path : ddl_tasks)
     {
-        ddl_task_futures.push_back(zookeeper->asyncTryGet(ddl_zookeeper_path / task_path));
+        ddl_task_paths.push_back(ddl_zookeeper_path / task_path);
         /// List status dirs. Active host may become finished, so we list active first.
-        active_nodes_futures.push_back(zookeeper->asyncTryGetChildrenNoThrow(ddl_zookeeper_path / task_path / "active"));
-        finished_nodes_futures.push_back(zookeeper->asyncTryGetChildrenNoThrow(ddl_zookeeper_path / task_path / "finished"));
+        active_finished_nodes_paths.push_back(ddl_zookeeper_path / task_path / "active");
+        active_finished_nodes_paths.push_back(ddl_zookeeper_path / task_path / "finished");
     }
 
-    for (size_t i = 0; i < ddl_task_paths.size(); ++i)
+    auto get_active_num = [](size_t i) { return i * 2; };
+    auto get_finished_num = [](size_t i) { return i * 2 + 1; };
+
+    auto ddl_task_result = zookeeper->tryGet(ddl_task_paths);
+    auto active_finished_nodes_result = zookeeper->tryGetChildren(active_finished_nodes_paths);
+
+    for (size_t i = 0; i < ddl_tasks.size(); ++i)
     {
-        auto maybe_task = ddl_task_futures[i].get();
+        auto maybe_task = ddl_task_result[i];
         if (maybe_task.error != Coordination::Error::ZOK)
         {
             /// Task is removed
@@ -232,7 +239,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             continue;
         }
 
-        DDLTask task{ddl_task_paths[i], ddl_zookeeper_path / ddl_task_paths[i]};
+        DDLTask task{ddl_tasks[i], ddl_zookeeper_path / ddl_tasks[i]};
         try
         {
             task.entry.parse(maybe_task.data);
@@ -263,12 +270,16 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         /// Also we should distinguish it from another case when status dirs are not created yet (extremely rare case).
         bool is_removing_task = false;
 
-        auto maybe_finished_hosts = finished_nodes_futures[i].get();
+        auto maybe_finished_hosts = active_finished_nodes_result[get_finished_num(i)];
         if (maybe_finished_hosts.error == Coordination::Error::ZOK)
         {
-            GetResponseFutures finished_status_futures;
+            Strings finished_status_paths;
+            finished_status_paths.reserve(maybe_finished_hosts.names.size());
+
             for (const auto & host_id_str : maybe_finished_hosts.names)
-                finished_status_futures.push_back(zookeeper->asyncTryGet(fs::path(task.entry_path) / "finished" / host_id_str));
+                finished_status_paths.push_back(fs::path(task.entry_path) / "finished" / host_id_str);
+
+            auto finished_status_result = zookeeper->tryGet(finished_status_paths);
 
             for (size_t host_idx = 0; host_idx < maybe_finished_hosts.names.size(); ++host_idx)
             {
@@ -277,7 +288,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
                 repeatValuesInCommonColumns(res_columns, col);
                 size_t rest_col = col;
                 fillHostnameColumns(res_columns, rest_col, host_id);
-                fillStatusColumns(res_columns, rest_col, finished_status_futures[host_idx], query_create_time_ms);
+                fillStatusColumns(res_columns, rest_col, finished_status_result[host_idx], query_create_time_ms);
                 processed_hosts.insert(host_id_str);
             }
         }
@@ -294,7 +305,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         }
 
         /// Process active nodes
-        auto maybe_active_hosts = active_nodes_futures[i].get();
+        auto maybe_active_hosts = active_finished_nodes_result[get_active_num(i)];
         if (maybe_active_hosts.error == Coordination::Error::ZOK)
         {
             for (const auto & host_id_str : maybe_active_hosts.names)
