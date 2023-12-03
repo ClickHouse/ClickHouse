@@ -18,7 +18,9 @@ Columns:
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Timestamp of the sampling moment with microseconds precision.
 - `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Timestamp of the sampling moment in nanoseconds.
 - `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
-    When connecting to the server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+
+    When connecting to the server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1.`. This field contains the `revision`, but not the `version` of a server.
+
 - `trace_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Trace type:
     - `Real` represents collecting stack traces by wall-clock time.
     - `CPU` represents collecting stack traces by CPU time.

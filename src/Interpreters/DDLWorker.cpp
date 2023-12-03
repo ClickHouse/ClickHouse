@@ -214,7 +214,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     /// Stage 2: resolve host_id and check if we should execute query or not
     /// Multiple clusters can use single DDL queue path in ZooKeeper,
     /// So we should skip task if we cannot find current host in cluster hosts list.
-    if (!task->findCurrentHostID(context, log))
+    if (!task->findCurrentHostID(context, log, zookeeper))
     {
         out_reason = "There is no a local address in host list";
         return add_to_skip_set();
