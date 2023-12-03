@@ -36,18 +36,16 @@ namespace Coordination
 
 // Changes to include 
 // [x] Connect.
-// - Shuffle
+// [X] Shuffle
+//    - Testing.
 // - DNS
 // 2. SetDeadline fallback logic.
 // 3. Disconnect reason and make the host keep track of it.
-// 4. (optional) availability zone initialization.
+// 4. Availability zone initialization.
 // 5. (optional) background thread check on the hosts.
 class ZooKeeperLoadBalancerManager
 {
 public:
-    // LBManager here filter out the unavailable host
-    // sorting algo is defined from external logic. Or maybe we can put it here?
-
     // NOTE: we need to support reconfdigure, see test_keeper_nodes_add test cases.
     // How this is done before? Check
     // Add request not necessarily current session tear down.
@@ -64,8 +62,31 @@ private:
         String host;
         Int8 original_index;
         bool secure;
-        Coordination::ZooKeeper::Node toZooKeeperNode() const;
+        Priority priority;
+        UInt64 random = 0;
+
+        Coordination::ZooKeeper::Node toZooKeeperNode() const
+        {
+            Coordination::ZooKeeper::Node node;
+            node.address = Poco::Net::SocketAddress(host);
+            node.secure = secure;
+            node.original_index = original_index;
+            return node;
+        }
+
+        void randomize()
+        {
+            random = thread_local_rng();
+        }
+
+        static bool compare(const HostInfo & lhs, const HostInfo & rhs)
+        {
+            return std::forward_as_tuple(lhs.priority, lhs.random)
+                < std::forward_as_tuple(rhs.priority, rhs.random);
+        }
     };
+
+    void shuffleHosts();
 
     // The list of the hosts, as specified in the configuration file.
     // String hosts;

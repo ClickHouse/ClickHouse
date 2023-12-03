@@ -1,6 +1,8 @@
 #include <memory>
+#include "Common/logger_useful.h"
 #include <Common/ZooKeeper/ZooKeeperLoadBalancerManager.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include "Interpreters/DDLTask.h"
 #include "Interpreters/SystemLog.h"
 #include "base/types.h"
 
@@ -42,7 +44,6 @@ void ZooKeeperLoadBalancerManager::initialize()
 }
 
 
-// TODO: handle DNS error part.
 [[noreturn]] void throwWhenNoHostAvailable(bool dns_error_occurred)
 {
     if (dns_error_occurred)
@@ -51,17 +52,25 @@ void ZooKeeperLoadBalancerManager::initialize()
         throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
 }
 
-Coordination::ZooKeeper::Node ZooKeeperLoadBalancerManager::HostInfo::toZooKeeperNode() const
+
+void ZooKeeperLoadBalancerManager::shuffleHosts()
 {
-    Coordination::ZooKeeper::Node node;
-    node.address = Poco::Net::SocketAddress(host);
-    node.secure = secure;
-    return node;
+    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
+    for (size_t i = 0; i < host_info_list.size(); ++i)
+    {
+        // if (!isKeeperHostDNSAvailable(log, args.hosts[i], dns_error_occurred))
+        //     continue;
+        if (get_priority)
+            host_info_list[i].priority = get_priority(i);
+        host_info_list[i].randomize();
+    }
+
+    ::sort(host_info_list.begin(), host_info_list.end(), HostInfo::compare);
 }
 
 std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancerManager::createClient()
 {
-    // bool dns_error = false;
+    shuffleHosts();
     for (size_t i = 0; i < host_info_list.size(); ++i)
     {
         LOG_INFO(log, "Connecting to ZooKeeper host {}, number of attempted hosts {}", host_info_list[i].host, i+1);
@@ -85,7 +94,7 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancerManager::createCli
             LOG_ERROR(log, "Failed to connect to ZooKeeper host {}, error {}", host_info_list[i].host, ex.what());
         }
     }
-    throw zkutil::KeeperException::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT, "Cannot use any of provided ZooKeeper nodes");
+    throwWhenNoHostAvailable(false);
 }
 
 }
