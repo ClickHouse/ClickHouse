@@ -1,5 +1,6 @@
-#include <sqids/blocklist.hpp>
-#include <sqids/sqids.hpp>
+#include "config.h"
+
+#ifdef ENABLE_SQIDS
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -9,10 +10,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Common/typeid_cast.h>
 
-#include <functional>
-#include <initializer_list>
+#include <sqids/sqids.hpp>
 
 namespace DB
 {
@@ -24,11 +23,16 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-// sqid(number1,...)
+// sqid(number1, ...)
 class FunctionSqid : public IFunction
 {
 public:
     static constexpr auto name = "sqid";
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -40,14 +44,6 @@ public:
 
         return std::make_shared<FunctionSqid>();
     }
-
-    String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 0; }
-
-    bool isVariadic() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -63,10 +59,8 @@ public:
                     DataTypeUInt64>(arguments[i].get()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} for function {} do not support datatype {}.",
-                    i,
-                    getName(),
-                    arguments[i]->getName());
+                    "Argument {} for function {} must have datatype UInt*, given type: {}.",
+                    i, getName(), arguments[i]->getName());
         }
 
         return std::make_shared<DataTypeString>();
@@ -99,3 +93,5 @@ REGISTER_FUNCTION(Sqid)
     factory.registerFunction<FunctionSqid>();
 }
 }
+
+#endif

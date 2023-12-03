@@ -4,15 +4,11 @@ if ((NOT ENABLE_SQIDS))
     return()
 endif()
 
-set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/sqids-cpp")
+set (SQIDS_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/sqids-cpp")
+set (SQIDS_INCLUDE_DIR "${SQIDS_SOURCE_DIR}/include")
 
-set (HDRS
-    "${LIBRARY_DIR}/include/sqids/blocklist.hpp"
-    "${LIBRARY_DIR}/include/sqids/sqids.hpp"
-)
-
-add_library(_sqids ${HDRS})
-target_include_directories(_sqids SYSTEM PUBLIC "${LIBRARY_DIR}/include")
+add_library(_sqids INTERFACE)
+target_include_directories(_sqids SYSTEM INTERFACE ${SQIDS_INCLUDE_DIR})
 
 add_library(ch_contrib::squids ALIAS _sqids)
 target_compile_definitions(_sqids INTERFACE ENABLE_SQIDS)

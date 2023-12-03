@@ -1,17 +1,13 @@
-gXHfJ1C6dN
-gXHfJ1C6dN
-0	rSCtlB
-1	86Rf07
-2	0dT3tt
-3	GKU5cI
-4	IivTBt
-oildrzxYUo
-gXHfJ1C6dN
-lNiIG1kKDO
-SoIvsIqL45
-zhcrwBm7k8
-oildrzxYUo
-gXHfJ1C6dN
-lNiIG1kKDO
-SoIvsIqL45
-zhcrwBm7k8
+-- negative tests
+-- const UInt*
+Uk
+XMbT
+86Rf07
+Td1EnWQo
+XMbT
+-- non-const UInt*
+Uk
+XMbT
+86Rf07
+Td1EnWQo
+XMbT

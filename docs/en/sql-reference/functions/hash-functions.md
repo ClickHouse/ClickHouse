@@ -1779,7 +1779,8 @@ Result:
 
 ## sqid
 
-[sqid](https://sqids.org/) generates YouTube-looking IDs from numbers. It's good for link shortening, fast & URL-safe ID generation and decoding back into numbers for quicker database lookups.
+Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).
+To use this function, set setting `allow_experimental_hash_functions = 1`.
 
 **Syntax**
 
@@ -1789,11 +1790,11 @@ sqid(number1,...)
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of UInt8, UInt16, UInt32, UInt64. Hashing function 'sqid' is experimental. Set `allow_experimental_hash_functions` setting to enable it.
+- A variable number of UInt8, UInt16, UInt32 or UInt64 numbers.
 
 **Returned Value**
 
-- A [String](/docs/en/sql-reference/data-types/string.md).
+A hash id [String](/docs/en/sql-reference/data-types/string.md).
 
 **Example**
 
