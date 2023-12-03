@@ -38,9 +38,9 @@ namespace Coordination
 // [x] Connect.
 // [X] Shuffle
 //    - Testing.
-// - DNS
-// 2. SetDeadline fallback logic.
-// 3. Disconnect reason and make the host keep track of it.
+// [X] DNS
+// - Disconnect reason and make the host keep track of it.
+//   - Callback.
 // 4. Availability zone initialization.
 // 5. (optional) background thread check on the hosts.
 class ZooKeeperLoadBalancerManager
@@ -52,15 +52,14 @@ public:
     // but how about the new nodes should be considered to load.
     ZooKeeperLoadBalancerManager(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
 
-    void initialize();
-
     std::unique_ptr<Coordination::ZooKeeper> createClient();
 
 private:
     struct HostInfo
     {
-        String host;
-        Int8 original_index;
+        // address is the network address without "secure://" prefix.
+        String address;
+        UInt8 original_index;
         bool secure;
         Priority priority;
         UInt64 random = 0;
@@ -68,7 +67,7 @@ private:
         Coordination::ZooKeeper::Node toZooKeeperNode() const
         {
             Coordination::ZooKeeper::Node node;
-            node.address = Poco::Net::SocketAddress(host);
+            node.address = Poco::Net::SocketAddress(address);
             node.secure = secure;
             node.original_index = original_index;
             return node;
@@ -87,6 +86,8 @@ private:
     };
 
     void shuffleHosts();
+
+    void recordKeeperHostError(UInt8 original_index);
 
     // The list of the hosts, as specified in the configuration file.
     // String hosts;

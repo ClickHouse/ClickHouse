@@ -109,14 +109,12 @@ public:
         bool secure;
     };
 
-    using Nodes = std::vector<Node>;
-
-    /** Connection to nodes is performed in order. If you want, shuffle them manually.
+    /** Connection to the specified Keeper host.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const Nodes & nodes,
+        const Node & node,
         const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
@@ -126,6 +124,7 @@ public:
 
     ~ZooKeeper() override;
 
+    void setSendRecvErrorCallback(std::function<void()> callback);
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
@@ -236,6 +235,8 @@ private:
     zkutil::ZooKeeperArgs args;
     Int8 original_index = -1;
 
+    std::function<void()> send_recv_error_callback;
+
     /// Fault injection
     void maybeInjectSendFault();
     void maybeInjectRecvFault();
@@ -324,7 +325,7 @@ private:
     Poco::Logger * log;
 
     void connect(
-        const Nodes & node,
+        const Node & node,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();

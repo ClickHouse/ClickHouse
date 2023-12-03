@@ -28,6 +28,7 @@ try
     std::string hosts_arg = argv[1];
     std::vector<std::string> hosts_strings;
     splitInto<','>(hosts_strings, hosts_arg);
+    // TODO: we need to change this program as well.
     ZooKeeper::Nodes nodes;
     nodes.reserve(hosts_strings.size());
     for (size_t i = 0; i < hosts_strings.size(); ++i)

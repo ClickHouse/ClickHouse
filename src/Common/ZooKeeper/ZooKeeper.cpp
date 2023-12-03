@@ -274,43 +274,43 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 
 void ZooKeeper::tryConnectSameAZKeeper()
 {
-    const std::string local_az = args.availability_zone;
-    bool dns_error = false;
-    auto & az_helper = ZooKeeperAvailabilityZoneMap::instance();
-    const auto & shuffle_hosts = az_helper.shuffleHosts(log, local_az, args.hosts, dns_error);
+    // const std::string local_az = args.availability_zone;
+    // bool dns_error = false;
+    // auto & az_helper = ZooKeeperAvailabilityZoneMap::instance();
+    // const auto & shuffle_hosts = az_helper.shuffleHosts(log, local_az, args.hosts, dns_error);
 
-    std::unordered_set<std::string_view> attempted_hosts;
-    for (const auto & host : shuffle_hosts)
-    {
-        std::string connected_host_az = ZooKeeperAvailabilityZoneMap::AZ_UNKNWON;
-        LOG_INFO(log, "Connecting to ZooKeeper host {}, number of attempted hosts {}", host.host, attempted_hosts.size());
+    // std::unordered_set<std::string_view> attempted_hosts;
+    // for (const auto & host : shuffle_hosts)
+    // {
+    //     std::string connected_host_az = ZooKeeperAvailabilityZoneMap::AZ_UNKNWON;
+    //     LOG_INFO(log, "Connecting to ZooKeeper host {}, number of attempted hosts {}", host.host, attempted_hosts.size());
 
-        attempted_hosts.insert(host.host);
-        try
-        {
-            Coordination::ZooKeeper::Nodes nodes{makeZooKeeperNode(host)};
-            impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
-            connected_host_az = impl->getAvailabilityZone();
-            az_helper.update(host.host, connected_host_az);
-            if (local_az == connected_host_az)
-            {
-                LOG_INFO(log, "Successfully connected to a ZooKeeper host {} in the same az {}", host.host, local_az);
-                return;
-            }
+    //     attempted_hosts.insert(host.host);
+    //     try
+    //     {
+    //         Coordination::ZooKeeper::Nodes nodes{makeZooKeeperNode(host)};
+    //         impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+    //         connected_host_az = impl->getAvailabilityZone();
+    //         az_helper.update(host.host, connected_host_az);
+    //         if (local_az == connected_host_az)
+    //         {
+    //             LOG_INFO(log, "Successfully connected to a ZooKeeper host {} in the same az {}", host.host, local_az);
+    //             return;
+    //         }
 
-            // Non optimal case: we connected to a keeper host in different availability zone, so set a session deadline.
-            auto session_timeout_seconds = impl->setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
-            bool need_try_other_host = az_helper.needTryOtherHost(local_az, attempted_hosts);
-            LOG_INFO(log, "Connecting to a different az ZooKeeper with session timeout {} seconds, need to try other host: {}", session_timeout_seconds, need_try_other_host);
-            if (!need_try_other_host)
-                return;
-        }
-        catch (DB::Exception& ex)
-        {
-            LOG_ERROR(log, "Failed to connect to ZooKeeper host {}, error {}", host.host, ex.what());
-        }
-    }
-    throwWhenNoHostAvailable(dns_error);
+    //         // Non optimal case: we connected to a keeper host in different availability zone, so set a session deadline.
+    //         auto session_timeout_seconds = impl->setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
+    //         bool need_try_other_host = az_helper.needTryOtherHost(local_az, attempted_hosts);
+    //         LOG_INFO(log, "Connecting to a different az ZooKeeper with session timeout {} seconds, need to try other host: {}", session_timeout_seconds, need_try_other_host);
+    //         if (!need_try_other_host)
+    //             return;
+    //     }
+    //     catch (DB::Exception& ex)
+    //     {
+    //         LOG_ERROR(log, "Failed to connect to ZooKeeper host {}, error {}", host.host, ex.what());
+    //     }
+    // }
+    // throwWhenNoHostAvailable(dns_error);
 }
 
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)

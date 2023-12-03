@@ -338,9 +338,14 @@ ZooKeeper::~ZooKeeper()
     }
 }
 
+void ZooKeeper::setSendRecvErrorCallback(std::function<void()> callback)
+{
+    send_recv_error_callback = std::move(callback);
+}
+
 
 ZooKeeper::ZooKeeper(
-    const Nodes & nodes,
+    const Node & node,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
@@ -377,7 +382,7 @@ ZooKeeper::ZooKeeper(
     try
     {
         use_compression = args.use_compression;
-        connect(nodes, args.connection_timeout_ms * 1000);
+        connect(node, args.connection_timeout_ms * 1000);
     }
     catch (...)
     {
@@ -386,7 +391,7 @@ ZooKeeper::ZooKeeper(
         if (use_compression)
         {
             use_compression = false;
-            connect(nodes, args.connection_timeout_ms * 1000);
+            connect(node, args.connection_timeout_ms * 1000);
         }
         else
             throw;
@@ -470,12 +475,9 @@ void ZooKeeper::connectBySocket(Poco::Net::StreamSocket & sock, Int8 original_id
 
 
 void ZooKeeper::connect(
-    const Nodes & nodes,
+    const Node & node,
     Poco::Timespan connection_timeout)
 {
-    if (nodes.empty())
-        throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
-
     static constexpr size_t num_tries = 3;
     bool connected = false;
 
@@ -483,108 +485,89 @@ void ZooKeeper::connect(
 
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (size_t i = 0; i < nodes.size(); ++i)
+        try
         {
-            const auto & node = nodes[i];
+            /// Reset the state of previous attempt.
+            if (node.secure)
+            {
+#if USE_SSL
+                socket = Poco::Net::SecureStreamSocket();
+#else
+                throw Poco::Exception(
+                    "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
+#endif
+            }
+            else
+            {
+                socket = Poco::Net::StreamSocket();
+            }
+
+            socket.connect(node.address, connection_timeout);
+
+            // parts above are done. 
+            // TODO: consider adding handshake as well? so detect failure earlier.
+
+            socket_address = socket.peerAddress();
+
+            socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
+            socket.setSendTimeout(args.operation_timeout_ms * 1000);
+            socket.setNoDelay(true);
+
+            in.emplace(socket);
+            out.emplace(socket);
+            compressed_in.reset();
+            compressed_out.reset();
+
             try
             {
-                /// Reset the state of previous attempt.
-                if (node.secure)
-                {
-#if USE_SSL
-                    socket = Poco::Net::SecureStreamSocket();
-#else
-                    throw Poco::Exception(
-                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
-#endif
-                }
-                else
-                {
-                    socket = Poco::Net::StreamSocket();
-                }
+                sendHandshake();
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage("while sending handshake to ZooKeeper");
+                throw;
+            }
 
-                socket.connect(node.address, connection_timeout);
+            try
+            {
+                receiveHandshake();
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage("while receiving handshake from ZooKeeper");
+                throw;
+            }
 
-                // parts above are done. 
-                // TODO: consider adding handshake as well? so detect failure earlier.
+            connected = true;
+            if (use_compression)
+            {
+                compressed_in.emplace(*in);
+                compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
+            }
 
-                socket_address = socket.peerAddress();
-
-                socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
-                socket.setSendTimeout(args.operation_timeout_ms * 1000);
-                socket.setNoDelay(true);
-
-                in.emplace(socket);
-                out.emplace(socket);
-                compressed_in.reset();
-                compressed_out.reset();
-
-                try
-                {
-                    sendHandshake();
-                }
-                catch (DB::Exception & e)
-                {
-                    e.addMessage("while sending handshake to ZooKeeper");
-                    throw;
-                }
-
-                try
-                {
-                    receiveHandshake();
-                }
-                catch (DB::Exception & e)
-                {
-                    e.addMessage("while receiving handshake from ZooKeeper");
-                    throw;
-                }
-
-                connected = true;
-                if (use_compression)
-                {
-                    compressed_in.emplace(*in);
-                    compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
-                }
-
-                original_index = static_cast<Int8>(node.original_index);
-
-                if (i != 0)
-                {
-                    auto session_lifetime_seconds = setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
-                    LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
-                    " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
-                    node.address.toString(), i, session_lifetime_seconds);
-                }
-
-                break;
+            original_index = static_cast<Int8>(node.original_index);
+            break;
             }
             // This probably won't throw because try above is using connection instead.
             catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address.toString();
             }
-        }
-
-        if (connected)
-            break;
     }
 
     if (!connected)
     {
         WriteBufferFromOwnString message;
         bool first = true;
-        for (const auto & node : nodes)
-        {
-            if (first)
-                first = false;
-            else
-                message << ", ";
+        if (first)
+            first = false;
+        else
+            message << ", ";
 
-            if (node.secure)
-                message << "secure://";
+        if (node.secure)
+            message << "secure://";
 
-            message << node.address.toString();
-        }
+        message << node.address.toString();
 
         message << fail_reasons.str() << "\n";
         throw Exception(Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper. nodes: {}", message.str());
@@ -1033,6 +1016,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
+
+    if (send_recv_error_callback)
+        send_recv_error_callback();
 
     /// Reset the original index.
     original_index = -1;
