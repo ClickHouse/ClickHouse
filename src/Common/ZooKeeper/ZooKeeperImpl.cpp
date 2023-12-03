@@ -1,3 +1,5 @@
+#include <memory>
+#include <type_traits>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 
 #include <IO/Operators.h>
@@ -19,8 +21,10 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Poco/Net/StreamSocket.h>
 
 #include "Coordination/KeeperConstants.h"
+#include "base/types.h"
 #include "config.h"
 
 #if USE_SSL
@@ -424,6 +428,46 @@ ZooKeeper::ZooKeeper(
     }
 }
 
+void ZooKeeper::connectBySocket(Poco::Net::StreamSocket & sock, Int8 original_idx)
+{
+    socket = sock;
+    socket_address = socket.peerAddress();
+    socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
+    socket.setSendTimeout(args.operation_timeout_ms * 1000);
+    socket.setNoDelay(true);
+
+    in.emplace(socket);
+    out.emplace(socket);
+    compressed_in.reset();
+    compressed_out.reset();
+
+    try
+    {
+        sendHandshake();
+    }
+    catch (DB::Exception & e)
+    {
+        e.addMessage("while sending handshake to ZooKeeper");
+        throw;
+    }
+
+    try
+    {
+        receiveHandshake();
+    }
+    catch (DB::Exception & e)
+    {
+        e.addMessage("while receiving handshake from ZooKeeper");
+        throw;
+    }
+    if (use_compression)
+    {
+        compressed_in.emplace(*in);
+        compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
+    }
+    original_index = original_idx;
+}
+
 
 void ZooKeeper::connect(
     const Nodes & nodes,
@@ -460,6 +504,10 @@ void ZooKeeper::connect(
                 }
 
                 socket.connect(node.address, connection_timeout);
+
+                // parts above are done. 
+                // TODO: consider adding handshake as well? so detect failure earlier.
+
                 socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
@@ -510,6 +558,7 @@ void ZooKeeper::connect(
 
                 break;
             }
+            // This probably won't throw because try above is using connection instead.
             catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address.toString();

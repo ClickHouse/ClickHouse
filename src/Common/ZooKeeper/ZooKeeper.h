@@ -14,6 +14,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperLoadBalancerManager.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -584,6 +585,8 @@ public:
 
 private:
     void init(ZooKeeperArgs args_);
+
+    std::unique_ptr<Coordination::ZooKeeperLoadBalancerManager> load_balancer_manager;
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);

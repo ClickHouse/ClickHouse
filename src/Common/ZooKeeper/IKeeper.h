@@ -633,6 +633,8 @@ public:
 
     // Returns the availability zone of the connected keeper server.
     virtual String getAvailabilityZone() const {return ""; }
+
+    // This is still needed.
     virtual UInt32 setClientSessionDeadline(UInt32, UInt32) { return 0; }
 
     /// A ZooKeeper session can have an optional deadline set on it.

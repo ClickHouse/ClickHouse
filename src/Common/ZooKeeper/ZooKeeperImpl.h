@@ -120,6 +120,10 @@ public:
         const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
+    // Probably not needed, just call different constructor.
+    // Refactoring part, extract the socket as load balancer manager is responsible for connecting.
+    void connectBySocket(Poco::Net::StreamSocket & socket, Int8 original_idx);
+
     ~ZooKeeper() override;
 
 

@@ -9,10 +9,12 @@
 
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <ranges>
 #include <string_view>
 #include <vector>
 
+#include "Common/logger_useful.h"
 #include <Common/Priority.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/Types.h>
@@ -205,6 +207,8 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 {
     args = std::move(args_);
     log = &Poco::Logger::get("ZooKeeper");
+    LOG_INFO(log, "ZooKeeper::init() arg hosts {}", args.hosts.size());
+    load_balancer_manager = std::make_unique<Coordination::ZooKeeperLoadBalancerManager>(args, nullptr/*TODO: move the zk log.*/);
 
     if (args.implementation == "zookeeper")
     {
@@ -217,17 +221,18 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         }
         else
         {
-            bool dns_error_occurred = false;
-            /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-            std::vector<ShuffleHost> shuffled_hosts = shuffleHosts(dns_error_occurred);
-            if (shuffled_hosts.empty())
-                throwWhenNoHostAvailable(dns_error_occurred);
+            // bool dns_error_occurred = false;
+            // /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
+            // std::vector<ShuffleHost> shuffled_hosts = shuffleHosts(dns_error_occurred);
+            // if (shuffled_hosts.empty())
+            //     throwWhenNoHostAvailable(dns_error_occurred);
 
-            Coordination::ZooKeeper::Nodes nodes;
-            for (auto & host : shuffled_hosts)
-                nodes.emplace_back(makeZooKeeperNode(host));
+            // Coordination::ZooKeeper::Nodes nodes;
+            // for (auto & host : shuffled_hosts)
+            //     nodes.emplace_back(makeZooKeeperNode(host));
 
-            impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+            // impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+            impl = load_balancer_manager->createClient();
         }
 
         if (args.chroot.empty())
@@ -316,9 +321,10 @@ ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperL
 
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-    : zk_log(std::move(zk_log_))
+    :  zk_log(std::move(zk_log_))
 {
-    init(ZooKeeperArgs(config, config_name));
+    auto zk_args = ZooKeeperArgs(config, config_name);
+    init(zk_args);
 }
 
 std::vector<ShuffleHost> ZooKeeper::shuffleHosts(bool & dns_error_occurred) const
