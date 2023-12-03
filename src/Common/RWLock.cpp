@@ -3,6 +3,8 @@
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace ProfileEvents
@@ -155,12 +157,19 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
 
     if (type == Type::Write)
     {
+        /// Always add a group for a writer (writes are never performed simultaneously).
         writers_queue.emplace_back(type);  /// SM1: may throw (nothing to roll back)
     }
-    else if (readers_queue.empty() ||
-            (rdlock_owner == readers_queue.begin() && readers_queue.size() == 1 && !writers_queue.empty()))
+    else
     {
-        readers_queue.emplace_back(type);  /// SM1: may throw (nothing to roll back)
+        /// We don't always add a group to readers_queue here because multiple readers can use the same group.
+        /// We can reuse the last group if we're in write phase now, or if the last group didn't get ownership yet,
+        /// or even if it got ownership but there are no writers waiting in writers_queue.
+        bool can_use_last_group = !readers_queue.empty() &&
+            ((rdlock_owner == readers_queue.end()) || !rdlock_owner->ownership || writers_queue.empty());
+
+        if (!can_use_last_group)
+            readers_queue.emplace_back(type);  /// SM1: may throw (nothing to roll back)
     }
     GroupsContainer::iterator it_group =
             (type == Type::Write) ? std::prev(writers_queue.end()) : std::prev(readers_queue.end());
@@ -169,11 +178,12 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
     if (rdlock_owner == readers_queue.end() && wrlock_owner == writers_queue.end())
     {
         (type == Read ? rdlock_owner : wrlock_owner) = it_group;  /// SM2: nothrow
+        grantOwnership(it_group);
     }
     else
     {
         /// Wait until our group becomes the lock owner
-        const auto predicate = [&] () { return it_group == (type == Read ? rdlock_owner : wrlock_owner); };
+        const auto predicate = [&] () { return it_group->ownership; };
 
         if (lock_deadline_tp == std::chrono::time_point<std::chrono::steady_clock>::max())
         {
@@ -193,10 +203,12 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
                 /// Rollback(SM1): nothrow
                 if (it_group->requests == 0)
                 {
-                    /// When WRITE lock fails, we need to notify next read that is waiting,
-                    /// to avoid handing request, hence next=true.
-                    dropOwnerGroupAndPassOwnership(it_group, /* next= */ true);
+                    ((type == Read) ? readers_queue : writers_queue).erase(it_group);
                 }
+                /// While we were waiting for this write lock (which has just failed) more readers could start waiting,
+                /// we need to wake up them now.
+                if ((rdlock_owner != readers_queue.end()) && writers_queue.empty())
+                    grantOwnershipToAllReaders();
                 return nullptr;
             }
         }
@@ -216,7 +228,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             /// Methods std::list<>::emplace_back() and std::unordered_map<>::emplace() provide strong exception safety
             /// We only need to roll back the changes to these objects: owner_queries and the readers/writers queue
             if (it_group->requests == 0)
-                dropOwnerGroupAndPassOwnership(it_group, /* next= */ false);  /// Rollback(SM1): nothrow
+                dropOwnerGroupAndPassOwnership(it_group);  /// Rollback(SM1): nothrow
 
             throw;
         }
@@ -246,8 +258,6 @@ void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query
     /// All of these are Undefined behavior and nothing we can do!
     if (rdlock_owner == readers_queue.end() && wrlock_owner == writers_queue.end())
         return;
-    if (rdlock_owner != readers_queue.end() && group_it != rdlock_owner)
-        return;
     if (wrlock_owner != writers_queue.end() && group_it != wrlock_owner)
         return;
 
@@ -264,12 +274,26 @@ void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query
 
     /// If we are the last remaining referrer, remove this QNode and notify the next one
     if (--group_it->requests == 0)               /// SM: nothrow
-        dropOwnerGroupAndPassOwnership(group_it, /* next= */ false);
+        dropOwnerGroupAndPassOwnership(group_it);
 }
 
 
-void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it, bool next) noexcept
+void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept
 {
+    /// All readers with ownership must finish before switching to write phase.
+    /// Such readers has iterators from `readers_queue.begin()` to `rdlock_owner`, so if `rdlock_owner` is equal to `readers_queue.begin()`
+    /// that means there is only one reader with ownership left in the readers_queue and we can proceed to generic procedure.
+    if ((group_it->type == Read) && (rdlock_owner != readers_queue.begin()) && (rdlock_owner != readers_queue.end()))
+    {
+        if (rdlock_owner == group_it)
+            --rdlock_owner;
+        readers_queue.erase(group_it);
+        /// If there are no writers waiting in writers_queue then we can wake up other readers.
+        if (writers_queue.empty())
+            grantOwnershipToAllReaders();
+        return;
+    }
+
     rdlock_owner = readers_queue.end();
     wrlock_owner = writers_queue.end();
 
@@ -278,42 +302,78 @@ void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_
         readers_queue.erase(group_it);
         /// Prepare next phase
         if (!writers_queue.empty())
-        {
             wrlock_owner = writers_queue.begin();
-        }
         else
-        {
             rdlock_owner = readers_queue.begin();
-        }
     }
     else
     {
         writers_queue.erase(group_it);
         /// Prepare next phase
         if (!readers_queue.empty())
-        {
-            if (next && readers_queue.size() > 1)
-            {
-                rdlock_owner = std::next(readers_queue.begin());
-            }
-            else
-            {
-                rdlock_owner = readers_queue.begin();
-            }
-        }
+            rdlock_owner = readers_queue.begin();
         else
-        {
             wrlock_owner = writers_queue.begin();
-        }
     }
 
     if (rdlock_owner != readers_queue.end())
     {
-        rdlock_owner->cv.notify_all();
+        grantOwnershipToAllReaders();
     }
     else if (wrlock_owner != writers_queue.end())
     {
-        wrlock_owner->cv.notify_one();
+        grantOwnership(wrlock_owner);
     }
 }
+
+
+void RWLockImpl::grantOwnership(GroupsContainer::iterator group_it) noexcept
+{
+    if (!group_it->ownership)
+    {
+        group_it->ownership = true;
+        group_it->cv.notify_all();
+    }
+}
+
+
+void RWLockImpl::grantOwnershipToAllReaders() noexcept
+{
+    if (rdlock_owner != readers_queue.end())
+    {
+        for (;;)
+        {
+            grantOwnership(rdlock_owner);
+            if (std::next(rdlock_owner) == readers_queue.end())
+                break;
+            ++rdlock_owner;
+        }
+    }
+}
+
+
+std::unordered_map<String, size_t> RWLockImpl::getOwnerQueryIds() const
+{
+    std::lock_guard lock{internal_state_mtx};
+    return owner_queries;
+}
+
+
+String RWLockImpl::getOwnerQueryIdsDescription() const
+{
+    auto map = getOwnerQueryIds();
+    WriteBufferFromOwnString out;
+    bool need_comma = false;
+    for (const auto & [query_id, num_owners] : map)
+    {
+        if (need_comma)
+            out << ", ";
+        out << query_id;
+        if (num_owners != 1)
+            out << " (" << num_owners << ")";
+        need_comma = true;
+    }
+    return out.str();
+}
+
 }
