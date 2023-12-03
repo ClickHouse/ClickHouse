@@ -36,7 +36,6 @@ list (APPEND PUBLIC_LIBS
         ch_contrib::metrohash
         ch_contrib::murmurhash
         ch_contrib::morton_nd
-        ch_contrib::sqids
 )
 
 list (APPEND PRIVATE_LIBS
@@ -102,6 +101,10 @@ endif()
 
 if (TARGET ch_contrib::crc32-vpmsum)
     list (APPEND PUBLIC_LIBS ch_contrib::crc32-vpmsum)
+endif()
+
+if (TARGET ch_contrib::squids)
+    list (APPEND PUBLIC_LIBS ch_contrib::squids)
 endif()
 
 add_subdirectory(GatherUtils)

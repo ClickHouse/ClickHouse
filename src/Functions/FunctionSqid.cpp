@@ -1,5 +1,3 @@
-#pragma once
-
 #include <sqids/blocklist.hpp>
 #include <sqids/sqids.hpp>
 
@@ -26,11 +24,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-// sqids(numbers, alphabet, minLength, blocklist)
-class FunctionSqids : public IFunction
+// sqid(number1,...)
+class FunctionSqid : public IFunction
 {
 public:
-    static constexpr auto name = "sqids";
+    static constexpr auto name = "sqid";
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -40,7 +38,7 @@ public:
                 "Hashing function '{}' is experimental. Set `allow_experimental_hash_functions` setting to enable it",
                 name);
 
-        return std::make_shared<FunctionSqids>();
+        return std::make_shared<FunctionSqid>();
     }
 
     String getName() const override { return name; }
@@ -56,7 +54,7 @@ public:
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
-        for (auto i : collections::range(0, arguments.size()))
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (!checkDataTypes<
                     DataTypeUInt8,
@@ -80,18 +78,24 @@ public:
         auto col_res = ColumnString::create();
 
         sqidscxx::Sqids<> sqids;
+        std::vector<UInt64> numbers(num_args);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::vector<UInt64> numbers(num_args);
             for (size_t j = 0; j < num_args; ++j)
             {
                 const ColumnWithTypeAndName & arg = arguments[j];
                 ColumnPtr current_column = arg.column;
                 numbers[j] = current_column->getUInt(i);
             }
-            col_res->insert(sqids.encode(numbers));
+            auto id = sqids.encode(numbers);
+            col_res->insert(id);
         }
         return col_res;
     }
 };
+
+REGISTER_FUNCTION(Sqid)
+{
+    factory.registerFunction<FunctionSqid>();
+}
 }

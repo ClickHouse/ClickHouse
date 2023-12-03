@@ -1776,3 +1776,33 @@ Result:
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+## sqid
+
+[sqid](https://sqids.org/) generates YouTube-looking IDs from numbers. It's good for link shortening, fast & URL-safe ID generation and decoding back into numbers for quicker database lookups.
+
+**Syntax**
+
+```sql
+sqid(number1,...)
+```
+
+**Arguments**
+
+The function takes a variable number of input parameters. Arguments can be any of UInt8, UInt16, UInt32, UInt64. Hashing function 'sqid' is experimental. Set `allow_experimental_hash_functions` setting to enable it.
+
+**Returned Value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT sqid(1, 2, 3, 4, 5);
+```
+
+```response
+┌─sqid(1, 2, 3, 4, 5)─┐
+│ gXHfJ1C6dN          │
+└─────────────────────┘
+```
