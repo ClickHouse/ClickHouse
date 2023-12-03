@@ -4072,6 +4072,10 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
     checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
 
+void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_table_size_to_drop) const
+{
+    checkCanBeDropped(database, table, partition_size, max_table_size_to_drop);
+}
 
 void Context::setMaxPartitionSizeToDrop(size_t max_size)
 {
@@ -4091,6 +4095,10 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
+void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
+{
+    checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
+}
 
 InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
 {
