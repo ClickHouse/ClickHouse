@@ -53,7 +53,7 @@ config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.ya
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
     sudo cat /etc/clickhouse-server/config.d/zookeeper.xml \
     | sed "/<use_compression>1<\/use_compression>/d" \
-    > /etc/clickhouse-server/config.d/zookeeper.tmp
+    > /etc/clickhouse-server/config.d/zookeeper.xml.tmp
     sudo mv /etc/clickhouse-server/config.d/zookeeper.xml.tmp /etc/clickhouse-server/config.d/zookeeper.xml
 fi
 
