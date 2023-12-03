@@ -14,7 +14,7 @@
                 </replica>
             </shard>
         </test_cluster>
-        <test_replica_cluster>
+        <test_cluster_with_replication>
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
@@ -29,6 +29,6 @@
                     <port>9000</port>
                 </replica>
             </shard>
-        </test_replica_cluster>
+        </test_cluster_with_replication>
     </remote_servers>
 </clickhouse>

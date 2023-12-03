@@ -35,7 +35,7 @@ config1 = """<clickhouse>
                 </replica>
             </shard>
         </test_cluster>
-        <test_replica_cluster>
+        <test_cluster_with_replication>
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
@@ -50,7 +50,7 @@ config1 = """<clickhouse>
                     <port>9000</port>
                 </replica>
             </shard>
-        </test_replica_cluster>
+        </test_cluster_with_replication>
     </remote_servers>
 </clickhouse>"""
 
@@ -76,7 +76,7 @@ config2 = """<clickhouse>
                 </replica>
             </shard>
         </test_cluster>
-        <test_replica_cluster>
+        <test_cluster_with_replication>
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
@@ -95,7 +95,7 @@ config2 = """<clickhouse>
                     <port>9000</port>
                 </replica>
             </shard>
-        </test_replica_cluster>
+        </test_cluster_with_replication>
     </remote_servers>
 </clickhouse>
 """
@@ -111,7 +111,7 @@ def started_cluster():
                 create table dist_local (c1 Int32, c2 String) engine=MergeTree() order by c1;
                 create table dist (c1 Int32, c2 String) engine=Distributed(test_cluster, currentDatabase(), dist_local, c1);
                 create table replica_dist_local (c1 Int32, c2 String) engine=MergeTree() order by c1;
-                create table replica_dist (c1 Int32, c2 String) engine=Distributed(test_replica_cluster, currentDatabase(), replica_dist_local, c1);
+                create table replica_dist (c1 Int32, c2 String) engine=Distributed(test_cluster_with_replication, currentDatabase(), replica_dist_local, c1);
                 """
             )
         yield cluster
