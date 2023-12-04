@@ -55,6 +55,9 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     | sed "/<use_compression>1<\/use_compression>/d" \
     > /etc/clickhouse-server/config.d/zookeeper.xml.tmp
     sudo mv /etc/clickhouse-server/config.d/zookeeper.xml.tmp /etc/clickhouse-server/config.d/zookeeper.xml
+
+    # it contains some new settings, but we can safely remove it
+    rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 fi
 
 # For flaky check we also enable thread fuzzer
