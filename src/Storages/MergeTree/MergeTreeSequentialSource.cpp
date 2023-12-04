@@ -131,6 +131,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
             .withSystemColumns();
+
         if (storage.supportsSubcolumns())
             options.withSubcolumns();
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
@@ -241,19 +242,24 @@ Pipe createMergeTreeSequentialSource(
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
+    std::optional<MarkRanges> mark_ranges,
+    bool apply_deleted_mask,
     bool read_with_direct_io,
     bool take_column_types_from_storage,
     bool quiet,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count)
 {
+    const auto & filter_column = LightweightDeleteDescription::FILTER_COLUMN;
+
     /// The part might have some rows masked by lightweight deletes
-    const bool need_to_filter_deleted_rows = data_part->hasLightweightDelete();
-    auto columns = columns_to_read;
-    if (need_to_filter_deleted_rows)
-        columns.emplace_back(LightweightDeleteDescription::FILTER_COLUMN.name);
+    const bool need_to_filter_deleted_rows = apply_deleted_mask && data_part->hasLightweightDelete();
+    const bool has_filter_column = std::ranges::find(columns_to_read, filter_column.name) != columns_to_read.end();
+
+    if (need_to_filter_deleted_rows && !has_filter_column)
+        columns_to_read.emplace_back(filter_column.name);
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-        storage, storage_snapshot, data_part, columns, std::optional<MarkRanges>{},
+        storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges),
         /*apply_deleted_mask=*/ false, read_with_direct_io, take_column_types_from_storage, quiet);
 
     Pipe pipe(std::move(column_part_source));
@@ -261,10 +267,10 @@ Pipe createMergeTreeSequentialSource(
     /// Add filtering step that discards deleted rows
     if (need_to_filter_deleted_rows)
     {
-        pipe.addSimpleTransform([filtered_rows_count](const Block & header)
+        pipe.addSimpleTransform([filtered_rows_count, has_filter_column](const Block & header)
         {
             return std::make_shared<FilterTransform>(
-                header, nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, false, filtered_rows_count);
+                header, nullptr, filter_column.name, !has_filter_column, false, filtered_rows_count);
         });
     }
 
@@ -325,9 +331,17 @@ public:
             }
         }
 
-        auto source = std::make_unique<MergeTreeSequentialSource>(
-            storage, storage_snapshot, data_part, columns_to_read,
-            std::move(mark_ranges), apply_deleted_mask, false, true);
+        auto source = createMergeTreeSequentialSource(
+            storage,
+            storage_snapshot,
+            data_part,
+            columns_to_read,
+            std::move(mark_ranges),
+            apply_deleted_mask,
+            /*read_with_direct_io=*/ false,
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
+            /*filtered_rows_count=*/ nullptr);
 
         pipeline.init(Pipe(std::move(source)));
     }
@@ -343,7 +357,7 @@ private:
     Poco::Logger * log;
 };
 
-void createMergeTreeSequentialSource(
+void createReadFromPartStep(
     QueryPlan & plan,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,

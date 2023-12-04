@@ -1030,7 +1030,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     if (source.hasLightweightDeleteMask())
         all_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
 
-
     bool has_filters = false;
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
@@ -1046,6 +1045,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             }
 
             has_filters = true;
+            settings.apply_deleted_mask = true;
         }
         else
         {
@@ -1279,7 +1279,7 @@ void MutationsInterpreter::Source::read(
 
         VirtualColumns virtual_columns(std::move(required_columns), part);
 
-        createMergeTreeSequentialSource(
+        createReadFromPartStep(
             plan, *data, storage_snapshot, part,
             std::move(virtual_columns.columns_to_read),
             apply_deleted_mask_, filter, context_,
