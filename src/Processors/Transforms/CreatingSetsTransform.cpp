@@ -7,10 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
-#include <exception>
 
 
 namespace DB
@@ -36,18 +33,6 @@ CreatingSetsTransform::~CreatingSetsTransform()
         catch (...)
         {
             tryLogCurrentException(log, "Failed to set_exception for promise");
-        }
-    }
-
-    if (executor)
-    {
-        try
-        {
-            executor->cancel();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to cancel PushingPipelineExecutor");
         }
     }
 }
@@ -90,7 +75,6 @@ void CreatingSetsTransform::work()
             try
             {
                 promise_to_build->set_exception(std::current_exception());
-                promise_to_build.reset();
             }
             catch (...)
             {
@@ -110,18 +94,18 @@ void CreatingSetsTransform::startSubquery()
         /// Retry if the set from cache fails to be built.
         while (true)
         {
-            try
+            auto from_cache = prepared_sets_cache->findOrPromiseToBuild(set_and_key->key);
+            if (from_cache.index() == 0)
             {
-                auto from_cache = prepared_sets_cache->findOrPromiseToBuild(set_and_key->key);
-                if (from_cache.index() == 0)
+                LOG_TRACE(log, "Building set, key: {}", set_and_key->key);
+                promise_to_build = std::move(std::get<0>(from_cache));
+            }
+            else
+            {
+                LOG_TRACE(log, "Waiting for set to be built by another thread, key: {}", set_and_key->key);
+                SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
+                try
                 {
-                    LOG_TRACE(log, "Building set, key: {}", set_and_key->key);
-                    promise_to_build = std::move(std::get<0>(from_cache));
-                }
-                else
-                {
-                    LOG_TRACE(log, "Waiting for set to be built by another thread, key: {}", set_and_key->key);
-                    SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
                     const SetPtr & ready_set = set_built_by_another_thread.get();
                     if (!ready_set)
                     {
@@ -133,20 +117,14 @@ void CreatingSetsTransform::startSubquery()
                     done_with_set = true;
                     set_from_cache = true;
                 }
-                break;
+                catch (const Exception & e)
+                {
+                    /// Exception that is thrown by the future::get() is shared across all waiters and cannot be modified from multiple threads.
+                    /// Re-create exception to allow later multiple modify (i.e. addMessage() during pipeline execution)
+                    throw Exception(e);
+                }
             }
-            /// Exception that is thrown by the shared_future::get() is shared across all waiters and cannot be modified from multiple threads.
-            /// Re-create exception to allow later concurrent modify (i.e. addMessage() during pipeline execution)
-            ///
-            /// Note, that findOrPromiseToBuild() can also call shared_future::get()
-            catch (const Exception & e)
-            {
-                throw Exception(e);
-            }
-            catch (...)
-            {
-                throw Exception::createRuntime(ErrorCodes::UNKNOWN_EXCEPTION, getExceptionMessage(std::current_exception(), /* with_stacktrace= */ false));
-            }
+            break;
         }
     }
 

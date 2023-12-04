@@ -154,7 +154,7 @@ namespace
         ColumnPtr executeImpl(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
-            std::call_once(once, [&] { initialize(arguments, result_type); });
+            initialize(arguments, result_type);
 
             const auto * in = arguments[0].column.get();
 
@@ -672,9 +672,11 @@ namespace
             ColumnPtr default_column;
 
             bool is_empty = false;
+            bool initialized = false;
+
+            std::mutex mutex;
         };
 
-        mutable std::once_flag once;
         mutable Cache cache;
 
 
@@ -704,6 +706,10 @@ namespace
         /// Can be called from different threads. It works only on the first call.
         void initialize(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
         {
+            std::lock_guard lock(cache.mutex);
+            if (cache.initialized)
+                return;
+
             const DataTypePtr & from_type = arguments[0].type;
 
             if (from_type->onlyNull())
@@ -818,6 +824,8 @@ namespace
                     }
                 }
             }
+
+            cache.initialized = true;
         }
     };
 

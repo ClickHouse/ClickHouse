@@ -39,12 +39,6 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->codec);
     }
 
-    if (stat_type)
-    {
-        res->stat_type = stat_type->clone();
-        res->children.push_back(res->stat_type);
-    }
-
     if (ttl)
     {
         res->ttl = ttl->clone();
@@ -103,12 +97,6 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     {
         settings.ostr << ' ';
         codec->formatImpl(settings, state, frame);
-    }
-
-    if (stat_type)
-    {
-        settings.ostr << ' ';
-        stat_type->formatImpl(settings, state, frame);
     }
 
     if (ttl)

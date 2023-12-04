@@ -8,7 +8,6 @@
 import enum
 from queue import Full
 import shutil
-import itertools
 import sys
 import os
 import os.path
@@ -578,11 +577,6 @@ class SettingsRandomizer:
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
-        "filesystem_cache_segments_batch_size": lambda: random.choice([0, 3, 10, 50]),
-        "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: random.randint(
-            0, 1
-        ),
-        "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
             0, 1
@@ -1179,25 +1173,6 @@ class TestCase:
             description_full += result.reason.value
 
         description_full += result.description
-
-        if (
-            args.collect_per_test_coverage
-            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
-        ):
-            clickhouse_execute(
-                args,
-                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
-                retry_error_codes=True,
-            )
-
-            coverage = clickhouse_execute(
-                args,
-                "SELECT length(coverage())",
-                retry_error_codes=True,
-            ).decode()
-
-            description_full += f" Coverage: {coverage}"
-
         description_full += "\n"
 
         if result.status == TestStatus.FAIL and self.testcase_args:
@@ -1254,17 +1229,6 @@ class TestCase:
             pattern = (
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
-            )
-
-        # We want to calculate per-test code coverage. That's why we reset it before each test.
-        if (
-            args.collect_per_test_coverage
-            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
-        ):
-            clickhouse_execute(
-                args,
-                "SYSTEM RESET COVERAGE",
-                retry_error_codes=True,
             )
 
         command = pattern.format(**params)
@@ -1641,8 +1605,6 @@ class TestSuite:
             if USE_JINJA
             else None
         )
-        if j2env is not None:
-            j2env.globals.update(product=itertools.product)
 
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
@@ -1910,7 +1872,6 @@ class BuildFlags:
     UNDEFINED = "ubsan"
     MEMORY = "msan"
     DEBUG = "debug"
-    SANITIZE_COVERAGE = "sanitize-coverage"
     RELEASE = "release"
     ORDINARY_DATABASE = "ordinary-database"
     POLYMORPHIC_PARTS = "polymorphic-parts"
@@ -1930,8 +1891,6 @@ def collect_build_flags(args):
         result.append(BuildFlags.UNDEFINED)
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
-    elif b"-DSANITIZE_COVERAGE=1" in value:
-        result.append(BuildFlags.SANITIZE_COVERAGE)
 
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'"
@@ -2113,8 +2072,6 @@ def reportCoverageFor(args, what, query, permissive=False):
     return True
 
 
-# This is high-level coverage on per-component basis (functions, data types, etc.)
-# Don't be confused with the code coverage.
 def reportCoverage(args):
     clickhouse_execute(args, "SYSTEM FLUSH LOGS")
 
@@ -2376,28 +2333,6 @@ def main(args):
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
-
-    if (
-        args.collect_per_test_coverage
-        and BuildFlags.SANITIZE_COVERAGE in args.build_flags
-    ):
-        clickhouse_execute(
-            args,
-            """
-                CREATE TABLE IF NOT EXISTS system.coverage
-                (
-                    time DateTime,
-                    test_name String,
-                    coverage Array(UInt64)
-                ) ENGINE = MergeTree ORDER BY test_name;
-            """,
-        )
-
-        # Coverage collected at the system startup before running any tests:
-        clickhouse_execute(
-            args,
-            "INSERT INTO system.coverage SELECT now(), '', coverage()",
-        )
 
     total_tests_run = 0
 
@@ -2742,12 +2677,6 @@ def parse_args():
         action="store_true",
         default=False,
         help="Check what high-level server components were covered by tests",
-    )
-    parser.add_argument(
-        "--collect-per-test-coverage",
-        action="store_true",
-        default=False,
-        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
     )
     parser.add_argument(
         "--report-logs-stats",

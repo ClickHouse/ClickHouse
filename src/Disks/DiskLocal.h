@@ -65,13 +65,7 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copyDirectoryContent(
-        const String & from_dir,
-        const std::shared_ptr<IDisk> & to_disk,
-        const String & to_dir,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) override;
+    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir, const ReadSettings & read_settings, const WriteSettings & write_settings) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 

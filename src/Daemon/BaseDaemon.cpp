@@ -60,7 +60,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if defined(OS_DARWIN)
 #   pragma clang diagnostic ignored "-Wunused-macros"
@@ -485,8 +485,10 @@ private:
         {
             SentryWriter::onFault(sig, error_message, stack_trace);
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
             /// Advice the user to send it manually.
-            if (std::string_view(VERSION_OFFICIAL).contains("official build"))
+            if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
             {
                 const auto & date_lut = DateLUT::instance();
 
@@ -504,6 +506,8 @@ private:
             {
                 LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
             }
+#pragma clang diagnostic pop
+
         }
 
         /// ClickHouse Keeper does not link to some part of Settings.
@@ -967,7 +971,7 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern const char * GIT_HASH;
+extern String getGitHash();
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
@@ -1007,7 +1011,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = "";
 #endif
 
-    git_hash = GIT_HASH;
+    git_hash = getGitHash();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();

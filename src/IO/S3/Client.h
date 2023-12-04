@@ -118,7 +118,15 @@ public:
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
             bool use_virtual_addressing);
 
-    std::unique_ptr<Client> clone() const;
+    /// Create a client with adjusted settings:
+    ///  * override_retry_strategy can be used to disable retries to avoid nested retries when we have
+    ///    a retry loop outside of S3 client. Specifically, for read and write buffers. Currently not
+    ///    actually used.
+    ///  * override_request_timeout_ms is used to increase timeout for CompleteMultipartUploadRequest
+    ///    because it often sits idle for 10 seconds: https://github.com/ClickHouse/ClickHouse/pull/42321
+    std::unique_ptr<Client> clone(
+        std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy = std::nullopt,
+        std::optional<Int64> override_request_timeout_ms = std::nullopt) const;
 
     Client & operator=(const Client &) = delete;
 
@@ -177,24 +185,24 @@ public:
     template <typename RequestType>
     void setKMSHeaders(RequestType & request) const;
 
-    Model::HeadObjectOutcome HeadObject(HeadObjectRequest & request) const;
-    Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;
-    Model::ListObjectsOutcome ListObjects(ListObjectsRequest & request) const;
-    Model::GetObjectOutcome GetObject(GetObjectRequest & request) const;
+    Model::HeadObjectOutcome HeadObject(const HeadObjectRequest & request) const;
+    Model::ListObjectsV2Outcome ListObjectsV2(const ListObjectsV2Request & request) const;
+    Model::ListObjectsOutcome ListObjects(const ListObjectsRequest & request) const;
+    Model::GetObjectOutcome GetObject(const GetObjectRequest & request) const;
 
-    Model::AbortMultipartUploadOutcome AbortMultipartUpload(AbortMultipartUploadRequest & request) const;
-    Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
-    Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const;
-    Model::UploadPartOutcome UploadPart(UploadPartRequest & request) const;
-    Model::UploadPartCopyOutcome UploadPartCopy(UploadPartCopyRequest & request) const;
+    Model::AbortMultipartUploadOutcome AbortMultipartUpload(const AbortMultipartUploadRequest & request) const;
+    Model::CreateMultipartUploadOutcome CreateMultipartUpload(const CreateMultipartUploadRequest & request) const;
+    Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const;
+    Model::UploadPartOutcome UploadPart(const UploadPartRequest & request) const;
+    Model::UploadPartCopyOutcome UploadPartCopy(const UploadPartCopyRequest & request) const;
 
-    Model::CopyObjectOutcome CopyObject(CopyObjectRequest & request) const;
-    Model::PutObjectOutcome PutObject(PutObjectRequest & request) const;
-    Model::DeleteObjectOutcome DeleteObject(DeleteObjectRequest & request) const;
-    Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
+    Model::CopyObjectOutcome CopyObject(const CopyObjectRequest & request) const;
+    Model::PutObjectOutcome PutObject(const PutObjectRequest & request) const;
+    Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
+    Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
 
     using ComposeObjectOutcome = Aws::Utils::Outcome<Aws::NoResult, Aws::S3::S3Error>;
-    ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
+    ComposeObjectOutcome ComposeObject(const ComposeObjectRequest & request) const;
 
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
@@ -236,11 +244,11 @@ private:
 
     template <typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType>
-    doRequest(RequestType & request, RequestFn request_fn) const;
+    doRequest(const RequestType & request, RequestFn request_fn) const;
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType>
-    doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
+    doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;

@@ -21,7 +21,6 @@ namespace CurrentMetrics
 {
     extern const Metric TablesLoaderThreads;
     extern const Metric TablesLoaderThreadsActive;
-    extern const Metric TablesLoaderThreadsScheduled;
 }
 
 namespace DB::ErrorCodes
@@ -63,7 +62,6 @@ struct AsyncLoaderTest
                 .name = fmt::format("Pool{}", pool_id),
                 .metric_threads = CurrentMetrics::TablesLoaderThreads,
                 .metric_active_threads = CurrentMetrics::TablesLoaderThreadsActive,
-                .metric_scheduled_threads = CurrentMetrics::TablesLoaderThreadsScheduled,
                 .max_threads = desc.max_threads,
                 .priority = desc.priority
             });
@@ -76,7 +74,7 @@ struct AsyncLoaderTest
     T randomInt(T from, T to)
     {
         std::uniform_int_distribution<T> distribution(from, to);
-        std::lock_guard lock(rng_mutex);
+        std::scoped_lock lock(rng_mutex);
         return distribution(rng);
     }
 

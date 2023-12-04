@@ -38,7 +38,7 @@ def cluster():
             stay_alive=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="22.6",
+            tag="22.8.14.53",
             allow_analyzer=False,
         )
 
@@ -141,9 +141,6 @@ def test_usage(cluster, node_name):
                 i
             )
         )
-
-        # to check right handling of paths in disk web
-        node2.query("SELECT count() FROM system.remote_data_paths")
 
         node2.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")

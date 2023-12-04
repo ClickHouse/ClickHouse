@@ -19,18 +19,6 @@ def cluster():
             ],
             user_configs=[
                 "configs/setting.xml",
-                "configs/s3_retries.xml",
-            ],
-            with_minio=True,
-        )
-        cluster.add_instance(
-            "node_with_inf_s3_retries",
-            main_configs=[
-                "configs/storage_conf.xml",
-            ],
-            user_configs=[
-                "configs/setting.xml",
-                "configs/inf_s3_retries.xml",
             ],
             with_minio=True,
         )
@@ -64,8 +52,6 @@ def test_upload_after_check_works(cluster, broken_s3):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        SETTINGS
-            storage_policy='broken_s3'
         """
     )
 
@@ -80,7 +66,7 @@ def test_upload_after_check_works(cluster, broken_s3):
     assert "suddenly disappeared" in error, error
 
 
-def get_multipart_counters(node, query_id, log_type="ExceptionWhileProcessing"):
+def get_counters(node, query_id, log_type="ExceptionWhileProcessing"):
     node.query("SYSTEM FLUSH LOGS")
     return [
         int(x)
@@ -89,7 +75,7 @@ def get_multipart_counters(node, query_id, log_type="ExceptionWhileProcessing"):
                 SELECT
                     ProfileEvents['S3CreateMultipartUpload'],
                     ProfileEvents['S3UploadPart'],
-                    ProfileEvents['S3WriteRequestsErrors'],
+                    ProfileEvents['S3WriteRequestsErrors']
                 FROM system.query_log
                 WHERE query_id='{query_id}'
                     AND type='{log_type}'
@@ -99,26 +85,9 @@ def get_multipart_counters(node, query_id, log_type="ExceptionWhileProcessing"):
     ]
 
 
-def get_put_counters(node, query_id, log_type="ExceptionWhileProcessing"):
-    node.query("SYSTEM FLUSH LOGS")
-    return [
-        int(x)
-        for x in node.query(
-            f"""
-                SELECT
-                    ProfileEvents['S3PutObject'],
-                    ProfileEvents['S3WriteRequestsErrors'],
-                FROM system.query_log
-                WHERE query_id='{query_id}'
-                    AND type='{log_type}'
-                """
-        ).split()
-        if x
-    ]
-
-
+#  Add "lz4" compression method in the list after https://github.com/ClickHouse/ClickHouse/issues/50975 is fixed
 @pytest.mark.parametrize(
-    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate", "lz4"]
+    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate"]
 )
 def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression):
     node = cluster.instances["node"]
@@ -148,16 +117,17 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
     assert "Code: 499" in error, error
     assert "mock s3 injected error" in error, error
 
-    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
         node, insert_query_id
     )
-    assert create_multipart == 1
-    assert upload_parts == 0
-    assert s3_errors == 1
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 0
+    assert count_s3_errors == 1
 
 
+#  Add "lz4" compression method in the list after https://github.com/ClickHouse/ClickHouse/issues/50975 is fixed
 @pytest.mark.parametrize(
-    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate", "lz4"]
+    "compression", ["none", "gzip", "br", "xz", "zstd", "bz2", "deflate"]
 )
 def test_upload_s3_fail_upload_part_when_multi_part_upload(
     cluster, broken_s3, compression
@@ -190,12 +160,12 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     assert "Code: 499" in error, error
     assert "mock s3 injected error" in error, error
 
-    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
         node, insert_query_id
     )
-    assert create_multipart == 1
-    assert upload_parts >= 2
-    assert s3_errors >= 2
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts >= 2
+    assert count_s3_errors >= 2
 
 
 def test_when_s3_connection_refused_is_retried(cluster, broken_s3):
@@ -225,12 +195,12 @@ def test_when_s3_connection_refused_is_retried(cluster, broken_s3):
         query_id=insert_query_id,
     )
 
-    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
         node, insert_query_id, log_type="QueryFinish"
     )
-    assert create_multipart == 1
-    assert upload_parts == 39
-    assert s3_errors == 3
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 39
+    assert count_s3_errors == 3
 
     broken_s3.setup_at_part_upload(count=1000, after=2, action="connection_refused")
     insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_REFUSED_RETRIED_1"
@@ -297,13 +267,13 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         query_id=insert_query_id,
     )
 
-    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
         node, insert_query_id, log_type="QueryFinish"
     )
 
-    assert create_multipart == 1
-    assert upload_parts == 39
-    assert s3_errors == 3
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 39
+    assert count_s3_errors == 3
 
     broken_s3.setup_at_part_upload(
         count=1000,
@@ -379,13 +349,13 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         query_id=insert_query_id,
     )
 
-    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
         node, insert_query_id, log_type="QueryFinish"
     )
 
-    assert create_multipart == 1
-    assert upload_parts == 39
-    assert s3_errors == 3
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 39
+    assert count_s3_errors == 3
 
     broken_s3.setup_at_create_multi_part_upload(
         count=1000,
@@ -456,13 +426,13 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         query_id=insert_query_id,
     )
 
-    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+    count_create_multi_part_uploads, count_upload_parts, count_s3_errors = get_counters(
         node, insert_query_id, log_type="QueryFinish"
     )
 
-    assert create_multipart == 1
-    assert upload_parts == 7
-    assert s3_errors == 3
+    assert count_create_multi_part_uploads == 1
+    assert count_upload_parts == 7
+    assert count_s3_errors == 3
 
     broken_s3.setup_at_part_upload(
         count=1000,
@@ -498,7 +468,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
 
 
 def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
-    node = cluster.instances["node_with_inf_s3_retries"]
+    node = cluster.instances["node"]
 
     broken_s3.setup_at_part_upload(
         count=10000000,
@@ -520,6 +490,7 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         FROM system.numbers
         LIMIT 1000000
         SETTINGS
+            s3_retry_attempts=1000000,
             s3_max_single_part_upload_size=100,
             s3_min_upload_part_size=10000,
             s3_check_objects_after_upload=0
@@ -551,60 +522,3 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         retry_count=120,
         sleep_time=1,
     )
-
-
-@pytest.mark.parametrize("node_name", ["node", "node_with_inf_s3_retries"])
-def test_adaptive_timeouts(cluster, broken_s3, node_name):
-    node = cluster.instances[node_name]
-
-    broken_s3.setup_fake_puts(part_length=1)
-    broken_s3.setup_slow_answers(
-        timeout=5,
-        count=1000000,
-    )
-
-    insert_query_id = f"TEST_ADAPTIVE_TIMEOUTS_{node_name}"
-    node.query(
-        f"""
-            INSERT INTO
-                TABLE FUNCTION s3(
-                    'http://resolver:8083/root/data/adaptive_timeouts',
-                    'minio', 'minio123',
-                    'CSV', auto, 'none'
-                )
-            SELECT
-                *
-            FROM system.numbers
-            LIMIT 1
-            SETTINGS
-                s3_request_timeout_ms=30000,
-                s3_check_objects_after_upload=0
-            """,
-        query_id=insert_query_id,
-    )
-
-    broken_s3.reset()
-
-    put_objects, s3_errors = get_put_counters(
-        node, insert_query_id, log_type="QueryFinish"
-    )
-
-    assert put_objects == 1
-
-    s3_use_adaptive_timeouts = node.query(
-        f"""
-        SELECT
-            value
-        FROM system.settings
-        WHERE
-            name='s3_use_adaptive_timeouts'
-        """
-    ).strip()
-
-    if node_name == "node_with_inf_s3_retries":
-        # first 2 attempts failed
-        assert s3_use_adaptive_timeouts == "1"
-        assert s3_errors == 1
-    else:
-        assert s3_use_adaptive_timeouts == "0"
-        assert s3_errors == 0

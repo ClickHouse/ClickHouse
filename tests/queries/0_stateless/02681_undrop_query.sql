@@ -1,6 +1,7 @@
 -- Tags: no-ordinary-database, no-replicated-database, distributed, zookeeper
 
 set database_atomic_wait_for_drop_and_detach_synchronously = 0;
+set allow_experimental_undrop_table_query = 1;
 
 select 'test MergeTree undrop';
 drop table if exists 02681_undrop_mergetree sync;

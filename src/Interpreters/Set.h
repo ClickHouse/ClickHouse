@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
-#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -34,9 +33,9 @@ public:
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
         : log(&Poco::Logger::get("Set")),
-        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_),
-        cast_cache(std::make_unique<InternalCastFunctionCache>())
-    {}
+        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_)
+    {
+    }
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -66,8 +65,6 @@ public:
       * Return UInt8 column with the result.
       */
     ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
-
-    bool hasNull() const;
 
     bool empty() const;
     size_t getTotalRowCount() const;
@@ -145,10 +142,6 @@ private:
       */
     mutable SharedMutex rwlock;
 
-    /// A cache for cast functions (if any) to avoid rebuilding cast functions
-    /// for every call to `execute`
-    mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
-
     template <typename Method>
     void insertFromBlockImpl(
         Method & method,
@@ -200,7 +193,7 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   */
 struct FieldValue
 {
-    explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+    FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
     void update(const Field & x);
 
     bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
@@ -231,8 +224,6 @@ public:
     MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
     size_t size() const { return ordered_set.at(0)->size(); }
-
-    const Columns & getOrderedSet() const { return ordered_set; }
 
     bool hasMonotonicFunctionsChain() const;
 
