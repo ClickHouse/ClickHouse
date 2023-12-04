@@ -561,7 +561,6 @@ class SettingsRandomizer:
         "optimize_read_in_order": lambda: random.randint(0, 1),
         "optimize_or_like_chain": lambda: random.randint(1, 1),
         "optimize_substitute_columns": lambda: random.randint(1, 1),
-        "optimize_using_constraints": lambda: random.randint(1, 1),
         "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
