@@ -60,7 +60,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , background_download_threads(settings.background_download_threads)
     , metadata_download_threads(settings.load_metadata_threads)
     , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
-    , metadata(settings.base_path)
+    , metadata(settings.base_path, settings.background_download_queue_size_limit)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
