@@ -309,7 +309,8 @@ namespace
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         const IDataPartStorage::ClonePartParams & params
-    ) {
+    )
+    {
         if (!doesStoragePolicyAllowSameDisk(merge_tree_data, src_part))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
