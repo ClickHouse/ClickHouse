@@ -7,13 +7,13 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <AggregateFunctions/DDSketchEncoding.h>
+#include <AggregateFunctions/DDSketch/DDSketchEncoding.h>
 
 
 // We start with 128 bins and grow the number of bins by 128
 // each time we need to extend the range of the bins.
 // This is done to avoid reallocating the bins vector too often.
-constexpr int CHUNK_SIZE = 128;
+constexpr UInt32 CHUNK_SIZE = 128;
 
 namespace DB
 {
@@ -38,7 +38,7 @@ public:
 class DenseStore : public Store
 {
 public:
-    explicit DenseStore(int chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
+    explicit DenseStore(UInt32 chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
 
     void copy(Store* other) override
     {
@@ -191,7 +191,7 @@ public:
     }
 
 private:
-    int chunk_size;
+    UInt32 chunk_size;
     DDSketchEncoding enc;
 
     int getIndex(int key)
@@ -203,10 +203,10 @@ private:
         return key - offset;
     }
 
-    int getNewLength(int new_min_key, int new_max_key) const
+    UInt32 getNewLength(int new_min_key, int new_max_key) const
     {
         int desired_length = new_max_key - new_min_key + 1;
-        return static_cast<int>(chunk_size * std::ceil(static_cast<Float64>(desired_length) / chunk_size)); // Fixed float conversion
+        return static_cast<UInt32>(chunk_size * std::ceil(static_cast<Float64>(desired_length) / chunk_size)); // Fixed float conversion
     }
 
     void extendRange(int key, int second_key)

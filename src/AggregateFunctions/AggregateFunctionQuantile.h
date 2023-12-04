@@ -98,7 +98,7 @@ public:
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one param", getName());
 
             const auto & relative_accuracy_field = params[0];
-            if (!isFloat64FieldType(relative_accuracy_field.getType()))
+            if (relative_accuracy_field.getType() != Field::Types::Float64)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires relative accuracy parameter with Float64 type", getName());
 

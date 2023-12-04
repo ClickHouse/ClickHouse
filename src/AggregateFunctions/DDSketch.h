@@ -10,9 +10,9 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
-#include <AggregateFunctions/Mapping.h>
-#include <AggregateFunctions/Store.h>
-#include <AggregateFunctions/DDSketchEncoding.h>
+#include <AggregateFunctions/DDSketch/Mapping.h>
+#include <AggregateFunctions/DDSketch/Store.h>
+#include <AggregateFunctions/DDSketch/DDSketchEncoding.h>
 
 namespace DB
 {
