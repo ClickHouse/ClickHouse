@@ -30,9 +30,4 @@ ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${user_files_path}/${CL
 ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir?/{subdir?1/data1,subdir2?/data2}.csv', CSV) WHERE _file == 'data1.csv';"
 ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir?/{subdir?1/data1,subdir2?/data2}.csv', CSV) WHERE _file == 'data2.csv';"
 
-# Add a directory to test against permission_denied
-rm -rf ${user_files_path:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/dir_inaccessible/ && mkdir -p ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir_inaccessible/ && chmod 000 ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir_inaccessible/
-
-${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir{?/subdir?1/da,2/subdir2?/da}ta1.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 1;"
-
 rm -rf ${user_files_path:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}

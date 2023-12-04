@@ -1,7 +1,6 @@
 #pragma once
 
-#include <IO/ISchedulerQueue.h>
-#include <IO/SchedulerRoot.h>
+#include <IO/ISchedulerNode.h>
 
 #include <Common/Stopwatch.h>
 

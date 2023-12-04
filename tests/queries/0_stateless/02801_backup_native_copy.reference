@@ -1,4 +1,4 @@
-BACKUP TABLE data TO S3(s3_conn, \'backups/default/data_native_copy\') SETTINGS allow_s3_native_copy = 1	1
-BACKUP TABLE data TO S3(s3_conn, \'backups/default/data_no_native_copy\') SETTINGS allow_s3_native_copy = 0	0
-RESTORE TABLE data AS data_native_copy FROM S3(s3_conn, \'backups/default/data_native_copy\') SETTINGS allow_s3_native_copy = 1	1
-RESTORE TABLE data AS data_no_native_copy FROM S3(s3_conn, \'backups/default/data_no_native_copy\') SETTINGS allow_s3_native_copy = 0	0
+BACKUP TABLE data TO S3(s3_conn, \'backups/default/data_native_copy\') SETTINGS allow_s3_native_copy=true	1
+BACKUP TABLE data TO S3(s3_conn, \'backups/default/data_no_native_copy\') SETTINGS allow_s3_native_copy=false	0
+RESTORE TABLE data AS data_native_copy FROM S3(s3_conn, \'backups/default/data_native_copy\') SETTINGS allow_s3_native_copy=true	1
+RESTORE TABLE data AS data_no_native_copy FROM S3(s3_conn, \'backups/default/data_no_native_copy\') SETTINGS allow_s3_native_copy=false	0

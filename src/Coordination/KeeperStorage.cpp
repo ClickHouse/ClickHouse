@@ -956,6 +956,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         std::string path_created = request.path;
         if (request.is_sequential)
         {
+            if (request.not_exists)
+                return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+
             auto seq_num = parent_node->seq_num;
 
             std::stringstream seq_num_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -974,7 +977,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         }
 
         if (storage.uncommitted_state.getNode(path_created))
+        {
+            if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists)
+                return new_deltas;
+
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
+        }
 
         if (getBaseNodeName(path_created).size == 0)
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
@@ -1031,6 +1039,13 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
 
+        if (storage.uncommitted_state.deltas.begin()->zxid != zxid)
+        {
+            response.path_created = zk_request->getPath();
+            response.error = Coordination::Error::ZOK;
+            return response_ptr;
+        }
+
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
             response.error = result;
@@ -1066,7 +1081,8 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
         if (request.path == Coordination::keeper_api_feature_flags_path
-            || request.path == Coordination::keeper_config_path)
+            || request.path == Coordination::keeper_config_path
+            || request.path == Coordination::keeper_availability_zone_path)
             return {};
 
         if (!storage.uncommitted_state.getNode(request.path))
@@ -1764,6 +1780,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
+                case Coordination::OpNum::CreateIfNotExists:
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
                     break;
@@ -2030,6 +2047,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::MultiRead, KeeperStorageMultiRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::CreateIfNotExists, KeeperStorageCreateRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::CheckNotExists, KeeperStorageCheckRequestProcessor>(*this);
@@ -2307,13 +2325,15 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
                     ? list_watches
                     : watches;
 
-                watches_type[zk_request->getPath()].emplace(session_id);
-                sessions_and_watchers[session_id].emplace(zk_request->getPath());
+                auto add_watch_result = watches_type[zk_request->getPath()].emplace(session_id);
+                if (add_watch_result.second)
+                    sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
             else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
             {
-                watches[zk_request->getPath()].emplace(session_id);
-                sessions_and_watchers[session_id].emplace(zk_request->getPath());
+                auto add_watch_result = watches[zk_request->getPath()].emplace(session_id);
+                if (add_watch_result.second)
+                    sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
         }
 
@@ -2479,25 +2499,15 @@ void KeeperStorage::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) co
 uint64_t KeeperStorage::getTotalWatchesCount() const
 {
     uint64_t ret = 0;
-    for (const auto & [path, subscribed_sessions] : watches)
-        ret += subscribed_sessions.size();
-
-    for (const auto & [path, subscribed_sessions] : list_watches)
-        ret += subscribed_sessions.size();
+    for (const auto & [session, paths] : sessions_and_watchers)
+        ret += paths.size();
 
     return ret;
 }
 
 uint64_t KeeperStorage::getSessionsWithWatchesCount() const
 {
-    std::unordered_set<int64_t> counter;
-    for (const auto & [path, subscribed_sessions] : watches)
-        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
-
-    for (const auto & [path, subscribed_sessions] : list_watches)
-        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
-
-    return counter.size();
+    return sessions_and_watchers.size();
 }
 
 uint64_t KeeperStorage::getTotalEphemeralNodesCount() const

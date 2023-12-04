@@ -33,6 +33,9 @@ public:
     LockMemoryExceptionInThread(const LockMemoryExceptionInThread &) = delete;
     LockMemoryExceptionInThread & operator=(const LockMemoryExceptionInThread &) = delete;
 
+    static void addUniqueLock(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
+    static void removeUniqueLock();
+
     static bool isBlocked(VariableContext current_level, bool fault_injection)
     {
         return counter > 0 && current_level >= level && (!fault_injection || block_fault_injections);

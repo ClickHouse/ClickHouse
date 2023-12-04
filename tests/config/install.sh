@@ -15,9 +15,11 @@ mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
+ln -sf $SRC_PATH/config.d/forbidden_get_client_http_headers.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/blob_storage_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
@@ -82,6 +84,8 @@ ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 
 if [[ -n "$USE_NEW_ANALYZER" ]] && [[ "$USE_NEW_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
@@ -124,8 +128,8 @@ else
 fi
 
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
-create_snapshot_on_exit=$(($RANDOM % 2))
-sed --follow-symlinks -i "s|<create_snapshot_on_exit>true</create_snapshot_on_exit>|<create_snapshot_on_exit>$create_snapshot_on_exit</create_snapshot_on_exit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+value=$(($RANDOM % 2))
+sed --follow-symlinks -i "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value</create_snapshot_on_exit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
@@ -151,6 +155,7 @@ if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
 
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
@@ -169,10 +174,16 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     chgrp clickhouse /etc/clickhouse-server2
     sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server1
     sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server2
+
     rm /etc/clickhouse-server1/config.d/macros.xml
     rm /etc/clickhouse-server2/config.d/macros.xml
     sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > /etc/clickhouse-server1/config.d/macros.xml
     sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > /etc/clickhouse-server2/config.d/macros.xml
+
+    rm /etc/clickhouse-server1/config.d/transactions.xml
+    rm /etc/clickhouse-server2/config.d/transactions.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > /etc/clickhouse-server1/config.d/transactions.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > /etc/clickhouse-server2/config.d/transactions.xml
 
     sudo mkdir -p /var/lib/clickhouse1
     sudo mkdir -p /var/lib/clickhouse2

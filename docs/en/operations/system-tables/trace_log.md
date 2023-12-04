@@ -22,7 +22,7 @@ Columns:
 
 - `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
-    When connecting to the server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+    When connecting to the server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1.`. This field contains the `revision`, but not the `version` of a server.
 
 - `trace_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Trace type:
 
@@ -33,7 +33,7 @@ Columns:
     - `MemoryPeak` represents collecting updates of peak memory usage.
     - `ProfileEvent` represents collecting of increments of profile events.
 
-- `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
+- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
 

@@ -23,43 +23,34 @@ Create a fork of ClickHouse repository. To do that please click on the “fork�
 
 The development process consists of first committing the intended changes into your fork of ClickHouse and then creating a “pull request” for these changes to be accepted into the main repository (ClickHouse/ClickHouse).
 
-To work with git repositories, please install `git`.
-
-To do that in Ubuntu you would run in the command line terminal:
+To work with Git repositories, please install `git`. To do that in Ubuntu you would run in the command line terminal:
 
     sudo apt update
     sudo apt install git
 
-A brief manual on using Git can be found here: https://education.github.com/git-cheat-sheet-education.pdf.
-For a detailed manual on Git see https://git-scm.com/book/en/v2.
+A brief manual on using Git can be found [here](https://education.github.com/git-cheat-sheet-education.pdf).
+For a detailed manual on Git see [here](https://git-scm.com/book/en/v2).
 
 ## Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
 
 Next, you need to download the source files onto your working machine. This is called “to clone a repository” because it creates a local copy of the repository on your working machine.
 
-In the command line terminal run:
+Run in your terminal:
 
-    git clone --shallow-submodules git@github.com:your_github_username/ClickHouse.git
+    git clone git@github.com:your_github_username/ClickHouse.git  # replace placeholder with your GitHub user name
     cd ClickHouse
 
-Or (if you'd like to use sparse checkout for submodules and avoid checking out unneeded files):
+This command will create a directory `ClickHouse/` containing the source code of ClickHouse. If you specify a custom checkout directory (after the URL), it is important that this path does not contain whitespaces as it may lead to problems with the build system.
 
-    git clone git@github.com:your_github_username/ClickHouse.git
-    cd ClickHouse
-    ./contrib/update-submodules.sh
+To make library dependencies available for the build, the ClickHouse repository uses Git submodules, i.e. references to external repositories. These are not checked out by default. To do so, you can either
 
-Note: please, substitute *your_github_username* with what is appropriate!
+- run `git clone` with option `--recurse-submodules`,
 
-This command will create a directory `ClickHouse` containing the working copy of the project.
+- if `git clone` did not check out submodules, run `git submodule update --init --jobs <N>` (e.g. `<N> = 12` to parallelize the checkout) to achieve the same as the previous alternative, or
 
-It is important that the path to the working directory contains no whitespaces as it may lead to problems with running the build system.
+- if `git clone` did not check out submodules and you like to use [sparse](https://github.blog/2020-01-17-bring-your-monorepo-down-to-size-with-sparse-checkout/) and [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit unneeded files and history in submodules to save space (ca. 5 GB instead of ca. 15 GB), run `./contrib/update-submodules.sh`. Not really recommended as it generally makes working with submodules less convenient and slower.
 
-Please note that ClickHouse repository uses `submodules`. That is what the references to additional repositories are called (i.e. external libraries on which the project depends). It means that when cloning the repository you need to specify the `--recursive` flag as in the example above. If the repository has been cloned without submodules, to download them you need to run the following:
-
-    git submodule init
-    git submodule update
-
-You can check the status with the command: `git submodule status`.
+You can check the Git status with the command: `git submodule status`.
 
 If you get the following error message:
 
@@ -82,36 +73,6 @@ You can also add original ClickHouse repo address to your local repository to pu
     git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
-
-### Working with Submodules {#working-with-submodules}
-
-Working with submodules in git could be painful. Next commands will help to manage it:
-
-    # ! each command accepts
-    # Update remote URLs for submodules. Barely rare case
-    git submodule sync
-    # Add new submodules
-    git submodule init
-    # Update existing submodules to the current state
-    git submodule update
-    # Two last commands could be merged together
-    git submodule update --init
-
-The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
-
-    # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync
-    # Update the registered submodules with initialize not yet initialized
-    git submodule update --init
-    # Reset all changes done after HEAD
-    git submodule foreach git reset --hard
-    # Clean files from .gitignore
-    git submodule foreach git clean -xfd
-    # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync
-    git submodule foreach git submodule update --init
-    git submodule foreach git submodule foreach git reset --hard
-    git submodule foreach git submodule foreach git clean -xfd
 
 ## Build System {#build-system}
 
@@ -152,7 +113,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-16 CXX=clang++-16`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-17 CXX=clang++-17`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -219,13 +180,21 @@ You can also run your custom-built ClickHouse binary with the config file from t
 
 ## IDE (Integrated Development Environment) {#ide-integrated-development-environment}
 
-If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on macOS.
+**CLion (recommended)**
 
-KDevelop and QTCreator are other great alternatives of an IDE for developing ClickHouse. KDevelop comes in as a very handy IDE although unstable. If KDevelop crashes after a while upon opening project, you should click “Stop All” button as soon as it has opened the list of project’s files. After doing so KDevelop should be fine to work with.
+If you do not know which IDE to use, we recommend that you use [CLion](https://www.jetbrains.com/clion/). CLion is commercial software but it offers a 30 day free trial. It is also free of charge for students. CLion can be used on both Linux and macOS.
 
-As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate (all of which are available on Linux).
+A few things to know when using CLion to develop ClickHouse:
 
-Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
+- CLion creates a `build` path on its own and automatically selects `debug` for the build type
+- It uses a version of CMake that is defined in CLion and not the one installed by you
+- CLion will use `make` to run build tasks instead of `ninja` (this is normal behavior)
+
+**Other alternatives**
+
+[KDevelop](https://kdevelop.org/) and [QTCreator](https://www.qt.io/product/development-tools) are other great alternative IDEs for developing ClickHouse. While KDevelop is a great IDE, it is sometimes unstable. If KDevelop crashes when opening a project, you should click the “Stop All” button as soon as it has opened the list of project’s files. After doing so, KDevelop should be fine to work with.
+
+Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux). If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
 
 ## Writing Code {#writing-code}
 
@@ -276,15 +245,13 @@ Most probably some of the builds will fail at first times. This is due to the fa
 
 ## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
 
-You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
-
 You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
 
 Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
 
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```
--DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
+-DENABLE_LIBRARIES=0
 ```
 
 In case of problems with any of the development options, you are on your own!

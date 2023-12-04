@@ -68,8 +68,7 @@ list(APPEND INCLUDE_DIRS
   ${CASS_SRC_DIR}/third_party/hdr_histogram
   ${CASS_SRC_DIR}/third_party/http-parser
   ${CASS_SRC_DIR}/third_party/mt19937_64
-  ${CASS_SRC_DIR}/third_party/rapidjson/rapidjson
-  ${CASS_SRC_DIR}/third_party/sparsehash/src)
+  ${CASS_SRC_DIR}/third_party/rapidjson/rapidjson)
 
 list(APPEND INCLUDE_DIRS ${CASS_INCLUDE_DIR} ${CASS_SRC_DIR})
 
@@ -82,10 +81,6 @@ set(HAVE_SYS_TYPES_H 1)
 set(HAVE_MEMCPY 1)
 set(HAVE_LONG_LONG 1)
 set(HAVE_UINT16_T 1)
-
-configure_file("${CASS_SRC_DIR}/third_party/sparsehash/config.h.cmake" "${CMAKE_CURRENT_BINARY_DIR}/sparsehash/internal/sparseconfig.h")
-
-
 
 # Determine random availability
 if (OS_LINUX)
@@ -116,17 +111,17 @@ configure_file(
   ${CASS_ROOT_DIR}/driver_config.hpp.in
   ${CMAKE_CURRENT_BINARY_DIR}/driver_config.hpp)
 
-
 add_library(_cassandra
     ${SOURCES}
     $<TARGET_OBJECTS:_curl_hostcheck>
     $<TARGET_OBJECTS:_hdr_histogram>
     $<TARGET_OBJECTS:_http-parser>)
 
-target_link_libraries(_cassandra ch_contrib::zlib ch_contrib::minizip)
+target_link_libraries(_cassandra ch_contrib::zlib ch_contrib::minizip ch_contrib::sparsehash)
 target_include_directories(_cassandra PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${INCLUDE_DIRS})
 target_include_directories(_cassandra SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
 target_compile_definitions(_cassandra PRIVATE CASS_BUILDING)
+target_compile_definitions(_cassandra PRIVATE -DSPARSEHASH_HASH=std::hash -Dsparsehash=google)
 
 target_link_libraries(_cassandra ch_contrib::uv)
 

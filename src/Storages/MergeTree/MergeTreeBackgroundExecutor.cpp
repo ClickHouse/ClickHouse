@@ -14,6 +14,7 @@ namespace CurrentMetrics
 {
     extern const Metric MergeTreeBackgroundExecutorThreads;
     extern const Metric MergeTreeBackgroundExecutorThreadsActive;
+    extern const Metric MergeTreeBackgroundExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -40,7 +41,7 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     , metric(metric_)
     , max_tasks_metric(max_tasks_metric_, 2 * max_tasks_count) // active + pending
     , pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive))
+          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive, CurrentMetrics::MergeTreeBackgroundExecutorThreadsScheduled))
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
@@ -110,6 +111,13 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     max_tasks_metric.changeTo(2 * new_max_tasks_count); // pending + active
     max_tasks_count.store(new_max_tasks_count, std::memory_order_relaxed);
     threads_count = new_threads_count;
+}
+
+template <class Queue>
+size_t MergeTreeBackgroundExecutor<Queue>::getMaxThreads() const
+{
+    std::lock_guard lock(mutex);
+    return threads_count;
 }
 
 template <class Queue>
@@ -274,7 +282,8 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
-        printExceptionWithRespectToAbort(log, query_id);
+        if (item->task->printExecutionException())
+            printExceptionWithRespectToAbort(log, query_id);
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
         release_task(std::move(item));

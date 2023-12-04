@@ -370,6 +370,7 @@ public:
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
+
     static String getSubcolumnNameForStream(const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 

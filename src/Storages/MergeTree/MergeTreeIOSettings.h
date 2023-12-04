@@ -58,6 +58,7 @@ struct MergeTreeWriterSettings
         , rewrite_primary_key(rewrite_primary_key_)
         , blocks_are_granules_size(blocks_are_granules_size_)
         , query_write_settings(query_write_settings_)
+        , max_threads_for_annoy_index_creation(global_settings.max_threads_for_annoy_index_creation)
     {
     }
 
@@ -75,6 +76,8 @@ struct MergeTreeWriterSettings
     bool rewrite_primary_key;
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
+
+    size_t max_threads_for_annoy_index_creation;
 };
 
 }

@@ -19,7 +19,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
 

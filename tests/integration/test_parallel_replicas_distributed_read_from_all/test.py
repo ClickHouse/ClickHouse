@@ -69,33 +69,40 @@ def create_tables(cluster, table_name):
     # populate data, equal number of rows for each replica
     nodes[0].query(
         f"INSERT INTO {table_name} SELECT number, number FROM numbers(10)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name} SELECT number, number FROM numbers(10, 10)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[1].query(
         f"INSERT INTO {table_name} SELECT number, number FROM numbers(20, 10)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[1].query(
         f"INSERT INTO {table_name} SELECT number, number FROM numbers(30, 10)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[2].query(
         f"INSERT INTO {table_name} SELECT number, number FROM numbers(40, 10)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[2].query(
         f"INSERT INTO {table_name} SELECT number, number FROM numbers(50, 10)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
 
     return "60\t0\t59\t1770\n"
 
 
-def test_read_equally_from_each_replica(start_cluster):
+@pytest.mark.parametrize(
+    "prefer_localhost_replica",
+    [
+        pytest.param(0),
+        pytest.param(1),
+    ],
+)
+def test_read_equally_from_each_replica(start_cluster, prefer_localhost_replica):
     """create and populate table in special way (see create_table()),
     so parallel replicas will read equal number of rows from each replica
     """
@@ -110,7 +117,7 @@ def test_read_equally_from_each_replica(start_cluster):
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 2,
-                "prefer_localhost_replica": 0,
+                "prefer_localhost_replica": prefer_localhost_replica,
                 "max_parallel_replicas": 3,
                 "use_hedged_requests": 0,
             },
