@@ -53,7 +53,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int NO_ACTIVE_REPLICAS;
-    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
+    extern const int CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT;
     extern const int CANNOT_RESTORE_TABLE;
 }
 
@@ -1108,30 +1108,42 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
 std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr)
 {
+    return getConsistentMetadataSnapshotImpl(zookeeper, {}, /* max_retries= */ 10, max_log_ptr);
+}
+
+std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
+    const ZooKeeperPtr & zookeeper,
+    const FilterByNameFunction & filter_by_table_name,
+    size_t max_retries,
+    UInt32 & max_log_ptr) const
+{
     std::map<String, String> table_name_to_metadata;
-    constexpr int max_retries = 10;
-    int iteration = 0;
+    size_t iteration = 0;
     while (++iteration <= max_retries)
     {
         table_name_to_metadata.clear();
         LOG_DEBUG(log, "Trying to get consistent metadata snapshot for log pointer {}", max_log_ptr);
-        Strings table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
+
+        Strings escaped_table_names;
+        escaped_table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
+        if (filter_by_table_name)
+            std::erase_if(escaped_table_names, [&](const String & table) { return !filter_by_table_name(unescapeForFileName(table)); });
 
         std::vector<zkutil::ZooKeeper::FutureGet> futures;
-        futures.reserve(table_names.size());
-        for (const auto & table : table_names)
+        futures.reserve(escaped_table_names.size());
+        for (const auto & table : escaped_table_names)
             futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/metadata/" + table));
 
-        for (size_t i = 0; i < table_names.size(); ++i)
+        for (size_t i = 0; i < escaped_table_names.size(); ++i)
         {
             auto res = futures[i].get();
             if (res.error != Coordination::Error::ZOK)
                 break;
-            table_name_to_metadata.emplace(unescapeForFileName(table_names[i]), res.data);
+            table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), res.data);
         }
 
         UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
-        if (new_max_log_ptr == max_log_ptr && table_names.size() == table_name_to_metadata.size())
+        if (new_max_log_ptr == max_log_ptr && escaped_table_names.size() == table_name_to_metadata.size())
             break;
 
         if (max_log_ptr < new_max_log_ptr)
@@ -1142,13 +1154,13 @@ std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(co
         else
         {
             chassert(max_log_ptr == new_max_log_ptr);
-            chassert(table_names.size() != table_name_to_metadata.size());
+            chassert(escaped_table_names.size() != table_name_to_metadata.size());
             LOG_DEBUG(log, "Cannot get metadata of some tables due to ZooKeeper error, will retry");
         }
     }
 
     if (max_retries < iteration)
-        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Cannot get consistent metadata snapshot");
+        throw Exception(ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT, "Cannot get consistent metadata snapshot");
 
     LOG_DEBUG(log, "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
 
@@ -1456,21 +1468,15 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
 {
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
-    std::vector<std::pair<ASTPtr, StoragePtr>> res;
     auto zookeeper = getContext()->getZooKeeper();
-    auto escaped_table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
-    for (const auto & escaped_table_name : escaped_table_names)
+    UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
+    auto snapshot = getConsistentMetadataSnapshotImpl(zookeeper, filter, /* max_retries= */ 20, snapshot_version);
+
+    std::vector<std::pair<ASTPtr, StoragePtr>> res;
+    for (const auto & [table_name, metadata] : snapshot)
     {
-        String table_name = unescapeForFileName(escaped_table_name);
-        if (!filter(table_name))
-            continue;
-
-        String zk_metadata;
-        if (!zookeeper->tryGet(zookeeper_path + "/metadata/" + escaped_table_name, zk_metadata))
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Metadata for table {} was not found in ZooKeeper", table_name);
-
         ParserCreateQuery parser;
-        auto create_table_query = parseQuery(parser, zk_metadata, 0, getContext()->getSettingsRef().max_parser_depth);
+        auto create_table_query = parseQuery(parser, metadata, 0, getContext()->getSettingsRef().max_parser_depth);
 
         auto & create = create_table_query->as<ASTCreateQuery &>();
         create.attach = false;
