@@ -227,8 +227,8 @@ SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
 -- Should be allowed, it is a local operation, no different than regular attach. Non replicated to replicated
-DROP TABLE IF EXISTS source;
-DROP TABLE IF EXISTS destination;
+DROP TABLE IF EXISTS source SYNC;
+DROP TABLE IF EXISTS destination SYNC;
 CREATE TABLE source(timestamp DateTime) ENGINE = MergeTree() PARTITION BY toYYYYMMDD(timestamp) ORDER BY tuple();
 
 CREATE TABLE
@@ -246,8 +246,8 @@ SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
 
 -- Should not be allowed because data would be split into two different partitions
-DROP TABLE IF EXISTS source;
-DROP TABLE IF EXISTS destination;
+DROP TABLE IF EXISTS source SYNC;
+DROP TABLE IF EXISTS destination SYNC;
 
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
@@ -303,3 +303,56 @@ INSERT INTO TABLE source VALUES ('bread'), ('mop');
 INSERT INTO TABLE source VALUES ('broccoli');
 
 ALTER TABLE destination ATTACH PARTITION ID '4589453b7ee96ce9de1265bd57674496' from source; -- { serverError 36 }
+
+-- Empty/ non-existent partition, same partition expression. Nothing should happen
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+
+ALTER TABLE destination ATTACH PARTITION ID '1' FROM source;
+
+SELECT * FROM destination;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
+-- Empty/ non-existent partition, different partition expression. Nothing should happen
+-- https://github.com/ClickHouse/ClickHouse/pull/39507#discussion_r1399839045
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+
+ALTER TABLE destination ATTACH PARTITION ID '1' FROM source;
+
+SELECT * FROM destination;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
+-- Replace instead of attach. Empty/ non-existent partition, same partition expression. Nothing should happen
+-- https://github.com/ClickHouse/ClickHouse/pull/39507#discussion_r1399839045
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
+
+ALTER TABLE destination REPLACE PARTITION '1' FROM source;
+
+SELECT * FROM destination;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+
+-- Replace instead of attach. Empty/ non-existent partition to non-empty partition, same partition id.
+-- https://github.com/ClickHouse/ClickHouse/pull/39507#discussion_r1399839045
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (A Int) engine=MergeTree ORDER BY tuple() PARTITION BY A;
+CREATE TABLE destination (A Int) engine=MergeTree ORDER BY tuple() PARTITION BY A;
+
+INSERT INTO TABLE destination VALUES (1);
+
+ALTER TABLE destination REPLACE PARTITION '1' FROM source;
+
+SELECT * FROM destination;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
