@@ -30,7 +30,6 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowStream
-AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
 AsynchronousInsert
@@ -39,6 +38,11 @@ AsynchronousInsertThreadsActive
 AsynchronousMetricsCalculationTimeSpent
 AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
+AsyncInsertCacheSize
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 Authenticator
 Authenticators
 AutoFDO
@@ -884,8 +888,6 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
-TablesLoaderThreads
-TablesLoaderThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -1384,6 +1386,7 @@ denormalized
 denormalizing
 denormals
 dequeued
+dequeues
 deserialization
 deserialized
 deserializing
@@ -1443,6 +1446,7 @@ endian
 endianness
 endsWith
 endsWithUTF
+enqueued
 enum
 enum's
 enums

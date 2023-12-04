@@ -9,11 +9,13 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
+#include <Common/PoolId.h>
 #include <Common/logger_useful.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
+#include <Core/ServerSettings.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -325,11 +327,22 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (!load_database_without_tables)
         {
-
             /// We use global context here, because storages lifetime is bigger than query context lifetime
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
-            loader.loadTables();
-            loader.startupTables();
+            auto load_tasks = loader.loadTablesAsync();
+            auto startup_tasks = loader.startupTablesAsync();
+            if (getContext()->getGlobalContext()->getServerSettings().async_load_databases)
+            {
+                scheduleLoad(load_tasks);
+                scheduleLoad(startup_tasks);
+            }
+            else
+            {
+                /// First prioritize, schedule and wait all the load table tasks
+                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
+                /// Only then prioritize, schedule and wait all the startup tasks
+                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
+            }
         }
     }
     catch (...)
