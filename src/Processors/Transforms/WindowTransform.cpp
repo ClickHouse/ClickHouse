@@ -958,7 +958,7 @@ void WindowTransform::updateAggregationState()
             auto * columns = ws.argument_columns.data();
             // Removing arena.get() from the loop makes it faster somehow...
             auto * arena_ptr = arena.get();
-            a->addBatchSinglePlaceFromInterval(first_row, past_the_end_row, buf, columns, arena_ptr);
+            a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
         }
     }
 }

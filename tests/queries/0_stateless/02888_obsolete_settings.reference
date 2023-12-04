@@ -1,10 +1,12 @@
 -- Obsolete server settings
 -- Obsolete general settings
+allow_experimental_alter_materialized_view_structure
 allow_experimental_bigint_types
 allow_experimental_database_atomic
 allow_experimental_geo_types
 allow_experimental_map_type
 allow_experimental_query_cache
+allow_experimental_undrop_table_query
 allow_experimental_window_functions
 async_insert_cleanup_timeout_ms
 async_insert_stale_timeout_ms
