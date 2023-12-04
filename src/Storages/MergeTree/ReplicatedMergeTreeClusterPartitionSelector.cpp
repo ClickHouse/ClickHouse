@@ -174,12 +174,22 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
             auto new_partition = partition;
             if (new_partition.isUnderReSharding())
             {
-                new_partition.revert();
-                LOG_INFO(log, "Revert partition {} from lost replica ({} source parts, {} local parts)",
-                    new_partition.toStringForLog(),
-                    replicas_partitions[new_partition.getSourceReplica()].size(),
-                    replicas_partitions[replica_name].size());
-                return new_partition;
+                if (new_partition.getNewReplica() == lost_replica)
+                {
+                    new_partition.revert();
+                    LOG_INFO(log, "Revert partition {} from lost replica ({} source parts, {} local parts)",
+                        new_partition.toStringForLog(),
+                        replicas_partitions[new_partition.getSourceReplica()].size(),
+                        replicas_partitions[replica_name].size());
+                    return new_partition;
+                }
+                else
+                {
+                    LOG_TEST(log, "Partition {} is already under migration from source replica {}",
+                        new_partition.toStringForLog(),
+                        lost_replica);
+                    continue;
+                }
             }
 
             if (partition.hasReplica(replica_name))
