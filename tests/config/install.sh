@@ -123,6 +123,7 @@ if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 
 else
     rm -f $DEST_SERVER_PATH/config.d/zookeeper_fault_injection.xml ||:
     ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/fdbkeeper.xml $DEST_SERVER_PATH/config.d/
 fi
 
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
@@ -154,6 +155,10 @@ if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
+fi
+
+if [[ "$OS" == "$ARM" ]]; then
+    rm -f $DEST_SERVER_PATH/config.d/fdbkeeper.xml ||:
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

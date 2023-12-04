@@ -79,14 +79,19 @@ RUN wget --no-verbose 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.
     && rm -rf hadoop-3.3.1.tar.gz
 
 # Install foundationdb
+COPY setup_fdb.sh / 
 ENV FOUNDATIONDB_VERSION 7.1.27
-RUN wget -O /tmp/foundationdb-clients_${FOUNDATIONDB_VERSION}-1_amd64.deb "https://github.com/apple/foundationdb/releases/download/${FOUNDATIONDB_VERSION}/foundationdb-clients_${FOUNDATIONDB_VERSION}-1_amd64.deb" \
-    && wget -O /tmp/foundationdb-server_${FOUNDATIONDB_VERSION}-1_amd64.deb "https://github.com/apple/foundationdb/releases/download/${FOUNDATIONDB_VERSION}/foundationdb-server_${FOUNDATIONDB_VERSION}-1_amd64.deb" \
-    && dpkg -i /tmp/foundationdb-*.deb \
-    && rm /tmp/foundationdb-*.deb \
-    # Remove auto generated data during dpkg -i
-    && /etc/init.d/foundationdb stop \
-    && rm -rf /etc/foundationdb/fdb.cluster /var/lib/foundationdb/data/*
+RUN arch=${TARGETARCH:-amd64} \
+    && case $arch in \
+        amd64) wget -O /tmp/foundationdb-clients_${FOUNDATIONDB_VERSION}-1_${arch}.deb "https://github.com/apple/foundationdb/releases/download/${FOUNDATIONDB_VERSION}/foundationdb-clients_${FOUNDATIONDB_VERSION}-1_${arch}.deb" \
+            && wget -O /tmp/foundationdb-server_${FOUNDATIONDB_VERSION}-1_${arch}.deb "https://github.com/apple/foundationdb/releases/download/${FOUNDATIONDB_VERSION}/foundationdb-server_${FOUNDATIONDB_VERSION}-1_${arch}.deb" \
+            && dpkg -i /tmp/foundationdb-*.deb \
+            && rm /tmp/foundationdb-*.deb \
+            # Remove auto generated data during dpkg -i
+            && /etc/init.d/foundationdb stop \
+            && rm -rf /etc/foundationdb/fdb.cluster /var/lib/foundationdb/data/* ;; \
+        arm64) rm /setup_fdb.sh ;; \
+    esac
 
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
@@ -97,7 +102,6 @@ RUN npm install -g azurite \
 
 COPY run.sh /
 COPY setup_minio.sh /
-COPY setup_fdb.sh /
 COPY setup_hdfs_minicluster.sh /
 COPY attach_gdb.lib /
 COPY utils.lib /

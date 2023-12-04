@@ -35,7 +35,9 @@ if [ "$HOME" == "/" ]; then
     export HOME
 fi
 
-./setup_fdb.sh
+if [ -f "setup_fdb.sh" ]; then
+    ./setup_fdb.sh
+fi
 
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
