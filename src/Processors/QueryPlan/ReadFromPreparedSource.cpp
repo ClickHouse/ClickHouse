@@ -20,11 +20,23 @@ void ReadFromPreparedSource::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(std::move(pipe));
 }
 
+ReadFromStorageStep::ReadFromStorageStep(
+    Pipe pipe_,
+    String storage_name,
+    ContextPtr context_,
+    const SelectQueryInfo & query_info_)
+    : ReadFromPreparedSource(std::move(pipe_))
+    , context(std::move(context_))
+    , query_info(query_info_)
+{
+    setStepDescription(storage_name);
+
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(query_info.storage_limits);
+}
+
 void ReadFromStorageStep::applyFilters()
 {
-    if (!context)
-        return;
-
     std::shared_ptr<const KeyCondition> key_condition;
     if (!context->getSettingsRef().allow_experimental_analyzer)
     {

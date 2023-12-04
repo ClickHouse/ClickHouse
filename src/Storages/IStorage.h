@@ -731,6 +731,7 @@ public:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
+        ContextPtr context,
         std::string storage_name);
 
 private:
