@@ -203,23 +203,44 @@ enum class AccessType
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
     \
-    M(MERGETREE, "", GLOBAL, SOURCES) \
-    M(COLLAPSINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(REPLACINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(AGGREGATINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(SUMMINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(GRAPHITEMERGETREE, "", GLOBAL, SOURCES) \
-    M(VERSIONEDCOLLAPSINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(REPLICATEDMERGETREE, "", GLOBAL, SOURCES) \
-    M(REPLICATEDCOLLAPSINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(REPLICATEDREPLACINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(REPLICATEDAGGREGATINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(REPLICATEDSUMMINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(REPLICATEDGRAPHITEMERGETREE, "", GLOBAL, SOURCES) \
-    M(REPLICATEDVERSIONEDCOLLAPSINGMERGETREE, "", GLOBAL, SOURCES) \
-    M(LOG, "", GLOBAL, SOURCES) \
-    M(TINYLOG, "", GLOBAL, SOURCES) \
-    M(STRIPELOG, "", GLOBAL, SOURCES) \
+    M(MergeTree, "", GLOBAL, SOURCES) \
+    M(CollapsingMergeTree, "", GLOBAL, SOURCES) \
+    M(ReplacingMergeTree, "", GLOBAL, SOURCES) \
+    M(AggregatingMergeTree, "", GLOBAL, SOURCES) \
+    M(SummingMergeTree, "", GLOBAL, SOURCES) \
+    M(GraphiteMergeTree, "", GLOBAL, SOURCES) \
+    M(VersionedCollapsingMergeTree, "", GLOBAL, SOURCES) \
+    M(ReplicatedMergeTree, "", GLOBAL, SOURCES) \
+    M(ReplicatedCollapsingMergeTree, "", GLOBAL, SOURCES) \
+    M(ReplicatedReplacingMergeTree, "", GLOBAL, SOURCES) \
+    M(ReplicatedAggregatingMergeTree, "", GLOBAL, SOURCES) \
+    M(ReplicatedSummingMergeTree, "", GLOBAL, SOURCES) \
+    M(ReplicatedGraphiteMergeTree, "", GLOBAL, SOURCES) \
+    M(ReplicatedVersionedCollapsingMergeTree, "", GLOBAL, SOURCES) \
+    M(Log, "", GLOBAL, SOURCES) \
+    M(TinyLog, "", GLOBAL, SOURCES) \
+    M(StripeLog, "", GLOBAL, SOURCES) \
+    M(FileLog, "", GLOBAL, SOURCES) \
+    M(Kafka, "", GLOBAL, SOURCES) \
+    M(RabbitMQ, "", GLOBAL, SOURCES) \
+    M(NATS, "", GLOBAL, SOURCES) \
+    M(EmbeddedRocksDB, "", GLOBAL, SOURCES) \
+    M(KeeperMap, "", GLOBAL, SOURCES) \
+    M(Null, "", GLOBAL, SOURCES) \
+    M(Merge, "", GLOBAL, SOURCES) \
+    M(Buffer, "", GLOBAL, SOURCES) \
+    M(Memory, "", GLOBAL, SOURCES) \
+    M(Dictionary, "", GLOBAL, SOURCES) \
+    M(Set, "", GLOBAL, SOURCES) \
+    M(Join, "", GLOBAL, SOURCES) \
+    M(View, "", GLOBAL, SOURCES) \
+    M(MaterializedView, "", GLOBAL, SOURCES) \
+    M(LiveView, "", GLOBAL, SOURCES) \
+    M(WindowView, "", GLOBAL, SOURCES) \
+    M(GenerateRandom, "", GLOBAL, SOURCES) \
+    M(Executable, "", GLOBAL, SOURCES) \
+    M(ExecutablePool, "", GLOBAL, SOURCES) \
+    M(FuzzJSON, "", GLOBAL, SOURCES) \
     M(FILE, "", GLOBAL, SOURCES) \
     M(URL, "", GLOBAL, SOURCES) \
     M(REMOTE, "", GLOBAL, SOURCES) \

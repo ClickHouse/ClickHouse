@@ -153,6 +153,8 @@ private:
     template <bool throw_if_denied, bool grant_option>
     bool checkAccessImpl(const AccessRightsElements & elements) const;
 
+    void checkTableEngines(AccessFlags & flags) const;
+
     template <bool throw_if_denied, bool grant_option, typename... Args>
     bool checkAccessImplHelper(AccessFlags flags, const Args &... args) const;
 

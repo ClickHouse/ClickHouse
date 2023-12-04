@@ -1144,9 +1144,9 @@ void registerStorageLog(StorageFactory & factory)
             args.getContext());
     };
 
-    features.source_access_type = AccessType::LOG;
+    features.source_access_type = AccessType::Log;
     factory.registerStorage("Log", create_fn, features);
-    features.source_access_type = AccessType::TINYLOG;
+    features.source_access_type = AccessType::TinyLog;
     factory.registerStorage("TinyLog", create_fn, features);
 }
 

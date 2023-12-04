@@ -760,38 +760,38 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true
     };
 
-    features.source_access_type = AccessType::MERGETREE;
+    features.source_access_type = AccessType::MergeTree;
     factory.registerStorage("MergeTree", create, features);
-    features.source_access_type = AccessType::COLLAPSINGMERGETREE;
+    features.source_access_type = AccessType::CollapsingMergeTree;
     factory.registerStorage("CollapsingMergeTree", create, features);
-    features.source_access_type = AccessType::REPLACINGMERGETREE;
+    features.source_access_type = AccessType::ReplacingMergeTree;
     factory.registerStorage("ReplacingMergeTree", create, features);
-    features.source_access_type = AccessType::AGGREGATINGMERGETREE;
+    features.source_access_type = AccessType::AggregatingMergeTree;
     factory.registerStorage("AggregatingMergeTree", create, features);
-    features.source_access_type = AccessType::SUMMINGMERGETREE;
+    features.source_access_type = AccessType::SummingMergeTree;
     factory.registerStorage("SummingMergeTree", create, features);
-    features.source_access_type = AccessType::GRAPHITEMERGETREE;
+    features.source_access_type = AccessType::GraphiteMergeTree;
     factory.registerStorage("GraphiteMergeTree", create, features);
-    features.source_access_type = AccessType::VERSIONEDCOLLAPSINGMERGETREE;
+    features.source_access_type = AccessType::VersionedCollapsingMergeTree;
     factory.registerStorage("VersionedCollapsingMergeTree", create, features);
 
     features.supports_replication = true;
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
 
-    features.source_access_type = AccessType::REPLICATEDMERGETREE;
+    features.source_access_type = AccessType::ReplicatedMergeTree;
     factory.registerStorage("ReplicatedMergeTree", create, features);
-    features.source_access_type = AccessType::REPLICATEDCOLLAPSINGMERGETREE;
+    features.source_access_type = AccessType::ReplicatedCollapsingMergeTree;
     factory.registerStorage("ReplicatedCollapsingMergeTree", create, features);
-    features.source_access_type = AccessType::REPLICATEDREPLACINGMERGETREE;
+    features.source_access_type = AccessType::ReplicatedReplacingMergeTree;
     factory.registerStorage("ReplicatedReplacingMergeTree", create, features);
-    features.source_access_type = AccessType::REPLICATEDAGGREGATINGMERGETREE;
+    features.source_access_type = AccessType::ReplicatedAggregatingMergeTree;
     factory.registerStorage("ReplicatedAggregatingMergeTree", create, features);
-    features.source_access_type = AccessType::REPLICATEDSUMMINGMERGETREE;
+    features.source_access_type = AccessType::ReplicatedSummingMergeTree;
     factory.registerStorage("ReplicatedSummingMergeTree", create, features);
-    features.source_access_type = AccessType::REPLICATEDGRAPHITEMERGETREE;
+    features.source_access_type = AccessType::ReplicatedGraphiteMergeTree;
     factory.registerStorage("ReplicatedGraphiteMergeTree", create, features);
-    features.source_access_type = AccessType::REPLICATEDVERSIONEDCOLLAPSINGMERGETREE;
+    features.source_access_type = AccessType::ReplicatedVersionedCollapsingMergeTree;
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features);
 }
 

@@ -508,6 +508,85 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
     return nothing_granted;
 }
 
+void ContextAccess::checkTableEngines(AccessFlags & flags) const
+{
+    if (flags & AccessType::MergeTree && !access_control->doesCreateMergeTreeRequireGrant())
+        flags &= ~AccessType::MergeTree;
+    else if (flags & AccessType::CollapsingMergeTree && !access_control->doesCreateCollapsingMergeTreeRequireGrant())
+        flags &= ~AccessType::CollapsingMergeTree;
+    else if (flags & AccessType::ReplacingMergeTree && !access_control->doesCreateReplacingMergeTreeRequireGrant())
+        flags &= ~AccessType::ReplacingMergeTree;
+    else if (flags & AccessType::AggregatingMergeTree && !access_control->doesCreateAggregatingMergeTreeRequireGrant())
+        flags &= ~AccessType::AggregatingMergeTree;
+    else if (flags & AccessType::SummingMergeTree && !access_control->doesCreateSummingMergeTreeRequireGrant())
+        flags &= ~AccessType::SummingMergeTree;
+    else if (flags & AccessType::GraphiteMergeTree && !access_control->doesCreateGraphiteMergeTreeRequireGrant())
+        flags &= ~AccessType::GraphiteMergeTree;
+    else if (flags & AccessType::VersionedCollapsingMergeTree && !access_control->doesCreateVersionedCollapsingMergeTreeRequireGrant())
+        flags &= ~AccessType::VersionedCollapsingMergeTree;
+    else if (flags & AccessType::ReplicatedMergeTree && !access_control->doesCreateReplicatedMergeTreeRequireGrant())
+        flags &= ~AccessType::ReplicatedMergeTree;
+    else if (flags & AccessType::ReplicatedCollapsingMergeTree && !access_control->doesCreateReplicatedCollapsingMergeTreeRequireGrant())
+        flags &= ~AccessType::ReplicatedCollapsingMergeTree;
+    else if (flags & AccessType::ReplicatedReplacingMergeTree && !access_control->doesCreateReplicatedReplacingMergeTreeRequireGrant())
+        flags &= ~AccessType::ReplicatedReplacingMergeTree;
+    else if (flags & AccessType::ReplicatedAggregatingMergeTree && !access_control->doesCreateReplicatedAggregatingMergeTreeRequireGrant())
+        flags &= ~AccessType::ReplicatedAggregatingMergeTree;
+    else if (flags & AccessType::ReplicatedSummingMergeTree && !access_control->doesCreateReplicatedSummingMergeTreeRequireGrant())
+        flags &= ~AccessType::ReplicatedSummingMergeTree;
+    else if (flags & AccessType::ReplicatedGraphiteMergeTree && !access_control->doesCreateReplicatedGraphiteMergeTreeRequireGrant())
+        flags &= ~AccessType::ReplicatedGraphiteMergeTree;
+    else if (flags & AccessType::ReplicatedVersionedCollapsingMergeTree && !access_control->doesCreateReplicatedVersionedCollapsingMergeTreeRequireGrant())
+        flags &= ~AccessType::ReplicatedVersionedCollapsingMergeTree;
+    else if (flags & AccessType::Log && !access_control->doesCreateLogRequireGrant())
+        flags &= ~AccessType::Log;
+    else if (flags & AccessType::TinyLog && !access_control->doesCreateTinyLogRequireGrant())
+        flags &= ~AccessType::TinyLog;
+    else if (flags & AccessType::StripeLog && !access_control->doesCreateStripeLogRequireGrant())
+        flags &= ~AccessType::StripeLog;
+    else if (flags & AccessType::FileLog && !access_control->doesCreateFileLogRequireGrant())
+        flags &= ~AccessType::FileLog;
+    else if (flags & AccessType::Kafka && !access_control->doesCreateKafkaRequireGrant())
+        flags &= ~AccessType::Kafka;
+    else if (flags & AccessType::RabbitMQ && !access_control->doesCreateRabbitMQRequireGrant())
+        flags &= ~AccessType::RabbitMQ;
+    else if (flags & AccessType::NATS && !access_control->doesCreateNATSRequireGrant())
+        flags &= ~AccessType::NATS;
+    else if (flags & AccessType::EmbeddedRocksDB && !access_control->doesCreateEmbeddedRocksDBRequireGrant())
+        flags &= ~AccessType::EmbeddedRocksDB;
+    else if (flags & AccessType::KeeperMap && !access_control->doesCreateKeeperMapRequireGrant())
+        flags &= ~AccessType::KeeperMap;
+    else if (flags & AccessType::Null && !access_control->doesCreateNullRequireGrant())
+        flags &= ~AccessType::Null;
+    else if (flags & AccessType::Merge && !access_control->doesCreateMergeRequireGrant())
+        flags &= ~AccessType::Merge;
+    else if (flags & AccessType::Buffer && !access_control->doesCreateBufferRequireGrant())
+        flags &= ~AccessType::Buffer;
+    else if (flags & AccessType::Memory && !access_control->doesCreateMemoryRequireGrant())
+        flags &= ~AccessType::Memory;
+    else if (flags & AccessType::Dictionary && !access_control->doesCreateDictionaryRequireGrant())
+        flags &= ~AccessType::Dictionary;
+    else if (flags & AccessType::Set && !access_control->doesCreateSetRequireGrant())
+        flags &= ~AccessType::Set;
+    else if (flags & AccessType::Join && !access_control->doesCreateJoinRequireGrant())
+        flags &= ~AccessType::Join;
+    else if (flags & AccessType::View && !access_control->doesCreateViewRequireGrant())
+        flags &= ~AccessType::View;
+    else if (flags & AccessType::MaterializedView && !access_control->doesCreateMaterializedViewRequireGrant())
+        flags &= ~AccessType::MaterializedView;
+    else if (flags & AccessType::LiveView && !access_control->doesCreateLiveViewRequireGrant())
+        flags &= ~AccessType::LiveView;
+    else if (flags & AccessType::WindowView && !access_control->doesCreateWindowViewRequireGrant())
+        flags &= ~AccessType::WindowView;
+    else if (flags & AccessType::GenerateRandom && !access_control->doesCreateGenerateRandomRequireGrant())
+        flags &= ~AccessType::GenerateRandom;
+    else if (flags & AccessType::Executable && !access_control->doesCreateExecutableRequireGrant())
+        flags &= ~AccessType::Executable;
+    else if (flags & AccessType::ExecutablePool && !access_control->doesCreateExecutablePoolRequireGrant())
+        flags &= ~AccessType::ExecutablePool;
+    else if (flags & AccessType::FuzzJSON && !access_control->doesCreateFuzzJSONRequireGrant())
+        flags &= ~AccessType::FuzzJSON;
+}
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
 bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
@@ -546,56 +625,8 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
         flags &= ~AccessType::CLUSTER;
 
-    if (flags & AccessType::MERGETREE && !access_control->doesCreateMergeTreeRequireGrant())
-        flags &= ~AccessType::MERGETREE;
-
-    if (flags & AccessType::COLLAPSINGMERGETREE && !access_control->doesCreateCollapsingMergeTreeRequireGrant())
-        flags &= ~AccessType::COLLAPSINGMERGETREE;
-
-    if (flags & AccessType::REPLACINGMERGETREE && !access_control->doesCreateReplacingMergeTreeRequireGrant())
-        flags &= ~AccessType::REPLACINGMERGETREE;
-
-    if (flags & AccessType::AGGREGATINGMERGETREE && !access_control->doesCreateAggregatingMergeTreeRequireGrant())
-        flags &= ~AccessType::AGGREGATINGMERGETREE;
-
-    if (flags & AccessType::SUMMINGMERGETREE && !access_control->doesCreateSummingMergeTreeRequireGrant())
-        flags &= ~AccessType::SUMMINGMERGETREE;
-
-    if (flags & AccessType::GRAPHITEMERGETREE && !access_control->doesCreateGraphiteMergeTreeRequireGrant())
-        flags &= ~AccessType::GRAPHITEMERGETREE;
-
-    if (flags & AccessType::VERSIONEDCOLLAPSINGMERGETREE && !access_control->doesCreateVersionedCollapsingMergeTreeRequireGrant())
-        flags &= ~AccessType::VERSIONEDCOLLAPSINGMERGETREE;
-
-    if (flags & AccessType::REPLICATEDMERGETREE && !access_control->doesCreateReplicatedMergeTreeRequireGrant())
-        flags &= ~AccessType::REPLICATEDMERGETREE;
-
-    if (flags & AccessType::REPLICATEDCOLLAPSINGMERGETREE && !access_control->doesCreateReplicatedCollapsingMergeTreeRequireGrant())
-        flags &= ~AccessType::REPLICATEDCOLLAPSINGMERGETREE;
-
-    if (flags & AccessType::REPLICATEDREPLACINGMERGETREE && !access_control->doesCreateReplicatedReplacingMergeTreeRequireGrant())
-        flags &= ~AccessType::REPLICATEDREPLACINGMERGETREE;
-
-    if (flags & AccessType::REPLICATEDAGGREGATINGMERGETREE && !access_control->doesCreateReplicatedAggregatingMergeTreeRequireGrant())
-        flags &= ~AccessType::REPLICATEDAGGREGATINGMERGETREE;
-
-    if (flags & AccessType::REPLICATEDSUMMINGMERGETREE && !access_control->doesCreateReplicatedSummingMergeTreeRequireGrant())
-        flags &= ~AccessType::REPLICATEDSUMMINGMERGETREE;
-
-    if (flags & AccessType::REPLICATEDGRAPHITEMERGETREE && !access_control->doesCreateReplicatedGraphiteMergeTreeRequireGrant())
-        flags &= ~AccessType::REPLICATEDGRAPHITEMERGETREE;
-
-    if (flags & AccessType::REPLICATEDVERSIONEDCOLLAPSINGMERGETREE && !access_control->doesCreateReplicatedVersionedCollapsingMergeTreeRequireGrant())
-        flags &= ~AccessType::REPLICATEDVERSIONEDCOLLAPSINGMERGETREE;
-
-    if (flags & AccessType::LOG && !access_control->doesCreateLogRequireGrant())
-        flags &= ~AccessType::LOG;
-
-    if (flags & AccessType::TINYLOG && !access_control->doesCreateTinyLogRequireGrant())
-        flags &= ~AccessType::TINYLOG;
-
-    if (flags & AccessType::STRIPELOG && !access_control->doesCreateStripeLogRequireGrant())
-        flags &= ~AccessType::STRIPELOG;
+    /// For backward compatibility, we have to check many table engines related to their CREATE privilege.
+    checkTableEngines(flags);
 
     if (!flags)
         return true;

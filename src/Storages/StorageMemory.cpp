@@ -519,6 +519,7 @@ void registerStorageMemory(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
+        .source_access_type = AccessType::Memory
     });
 }
 

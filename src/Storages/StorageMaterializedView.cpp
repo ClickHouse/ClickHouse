@@ -502,7 +502,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
             args.columns, args.attach, args.comment);
-    });
+    }, StorageFactory::StorageFeatures{ .source_access_type = AccessType::MaterializedView });
 }
 
 }

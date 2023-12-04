@@ -680,7 +680,7 @@ void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
-        .source_access_type = AccessType::STRIPELOG
+        .source_access_type = AccessType::StripeLog
     };
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)

@@ -428,7 +428,9 @@ void registerStorageJoin(StorageFactory & factory)
             persistent);
     };
 
-    factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{
+        .supports_settings = true,
+        .source_access_type = AccessType::Join });
 }
 
 template <typename T>

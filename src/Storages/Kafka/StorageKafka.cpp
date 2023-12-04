@@ -1043,7 +1043,11 @@ void registerStorageKafka(StorageFactory & factory)
         return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
     };
 
-    factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true,
+        .source_access_type = AccessType::Kafka
+    };
+    factory.registerStorage("Kafka", creator_fn, features);
 }
 
 NamesAndTypesList StorageKafka::getVirtuals() const

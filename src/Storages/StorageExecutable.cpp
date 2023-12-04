@@ -238,11 +238,13 @@ void registerStorageExecutable(StorageFactory & factory)
     StorageFactory::StorageFeatures storage_features;
     storage_features.supports_settings = true;
 
+    storage_features.source_access_type = AccessType::Executable;
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {
         return register_storage(args, false /*is_executable_pool*/);
     }, storage_features);
 
+    storage_features.source_access_type = AccessType::ExecutablePool;
     factory.registerStorage("ExecutablePool", [&](const StorageFactory::Arguments & args)
     {
         return register_storage(args, true /*is_executable_pool*/);

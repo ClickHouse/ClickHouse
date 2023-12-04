@@ -788,7 +788,7 @@ void registerStorageLiveView(StorageFactory & factory)
                             "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
 
         return std::make_shared<StorageLiveView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
-    });
+    }, StorageFactory::StorageFeatures{ .source_access_type = AccessType::LiveView });
 }
 
 }

@@ -315,7 +315,7 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, .source_access_type = AccessType::Set });
 }
 
 

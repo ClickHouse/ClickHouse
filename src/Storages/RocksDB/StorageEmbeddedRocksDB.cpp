@@ -751,6 +751,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
+        .source_access_type = AccessType::EmbeddedRocksDB
     };
 
     factory.registerStorage("EmbeddedRocksDB", create, features);

@@ -1678,7 +1678,7 @@ void registerStorageWindowView(StorageFactory & factory)
                             "is not enabled (the setting 'allow_experimental_window_view')");
 
         return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
-    });
+    }, StorageFactory::StorageFeatures{ .source_access_type = AccessType::WindowView });
 }
 
 }

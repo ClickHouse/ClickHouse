@@ -126,7 +126,7 @@ void registerStorages()
     registerStorageWindowView(factory);
     registerStorageFuzzJSON(factory);
 
-#if USE_AWS_S3
+    #if USE_AWS_S3
     registerStorageS3(factory);
     registerStorageCOS(factory);
     registerStorageOSS(factory);

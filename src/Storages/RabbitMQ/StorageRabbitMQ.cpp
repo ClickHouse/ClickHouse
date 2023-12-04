@@ -1211,7 +1211,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.attach);
     };
 
-    factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true,
+        .source_access_type = AccessType::RabbitMQ
+    };
+    factory.registerStorage("RabbitMQ", creator_fn, features);
 }
 
 

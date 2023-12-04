@@ -689,7 +689,8 @@ void registerStorageFuzzJSON(StorageFactory & factory)
 
             StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext());
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
-        });
+        },
+        StorageFactory::StorageFeatures{ .source_access_type = AccessType::FuzzJSON });
 }
 
 }

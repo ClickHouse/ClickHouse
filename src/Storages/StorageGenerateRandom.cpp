@@ -633,7 +633,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
             max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
-    });
+    }, StorageFactory::StorageFeatures{ .source_access_type = AccessType::GenerateRandom });
 }
 
 Pipe StorageGenerateRandom::read(

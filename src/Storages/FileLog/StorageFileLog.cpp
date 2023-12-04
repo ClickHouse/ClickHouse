@@ -823,6 +823,7 @@ void registerStorageFileLog(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .source_access_type = AccessType::FileLog
         });
 }
 

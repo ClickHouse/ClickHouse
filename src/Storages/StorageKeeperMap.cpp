@@ -1302,6 +1302,7 @@ void registerStorageKeeperMap(StorageFactory & factory)
         {
             .supports_sort_order = true,
             .supports_parallel_insert = true,
+            .source_access_type = AccessType::KeeperMap
         });
 }
 

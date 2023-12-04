@@ -1323,7 +1323,8 @@ void registerStorageMerge(StorageFactory & factory)
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());
     },
     {
-        .supports_schema_inference = true
+        .supports_schema_inference = true,
+        .source_access_type = AccessType::Merge
     });
 }
 

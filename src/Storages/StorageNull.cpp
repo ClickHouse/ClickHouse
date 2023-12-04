@@ -31,6 +31,7 @@ void registerStorageNull(StorageFactory & factory)
     },
     {
         .supports_parallel_insert = true,
+        .source_access_type = AccessType::Null
     });
 }
 

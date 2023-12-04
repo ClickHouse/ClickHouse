@@ -314,6 +314,29 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setCreateTinyLogRequiresGrant(config_.getBool("access_control_improvements.create_tinylog_requires_grant", false));
     setCreateStripeLogRequiresGrant(config_.getBool("access_control_improvements.create_stripelog_requires_grant", false));
 
+    setCreateFileLogRequiresGrant(config_.getBool("access_control_improvements.create_filelog_requires_grant", false));
+    setCreateKafkaRequiresGrant(config_.getBool("access_control_improvements.create_kafka_requires_grant", false));
+    setCreateRabbitMQRequiresGrant(config_.getBool("access_control_improvements.create_rabbitmq_requires_grant", false));
+    setCreateNATSRequiresGrant(config_.getBool("access_control_improvements.create_nats_requires_grant", false));
+    setCreateEmbeddedRocksDBRequiresGrant(config_.getBool("access_control_improvements.create_embeddedrocksdb_requires_grant", false));
+    setCreateKeeperMapRequiresGrant(config_.getBool("access_control_improvements.create_keepermap_requires_grant", false));
+
+    setCreateNullRequiresGrant(config_.getBool("access_control_improvements.create_null_requires_grant", false));
+    setCreateMergeRequiresGrant(config_.getBool("access_control_improvements.create_merge_requires_grant", false));
+    setCreateBufferRequiresGrant(config_.getBool("access_control_improvements.create_buffer_requires_grant", false));
+    setCreateMemoryRequiresGrant(config_.getBool("access_control_improvements.create_memory_requires_grant", false));
+    setCreateDictionaryRequiresGrant(config_.getBool("access_control_improvements.create_dictionary_requires_grant", false));
+    setCreateSetRequiresGrant(config_.getBool("access_control_improvements.create_set_requires_grant", false));
+    setCreateJoinRequiresGrant(config_.getBool("access_control_improvements.create_join_requires_grant", false));
+    setCreateViewRequiresGrant(config_.getBool("access_control_improvements.create_view_requires_grant", false));
+    setCreateMaterializedViewRequiresGrant(config_.getBool("access_control_improvements.create_materializedview_requires_grant", false));
+    setCreateLiveViewRequiresGrant(config_.getBool("access_control_improvements.create_liveview_requires_grant", false));
+    setCreateWindowViewRequiresGrant(config_.getBool("access_control_improvements.create_windowview_requires_grant", false));
+    setCreateGenerateRandomRequiresGrant(config_.getBool("access_control_improvements.create_generaterandom_requires_grant", false));
+    setCreateExecutableRequiresGrant(config_.getBool("access_control_improvements.create_executable_requires_grant", false));
+    setCreateExecutablePoolRequiresGrant(config_.getBool("access_control_improvements.create_executablepool_requires_grant", false));
+    setCreateFuzzJSONRequiresGrant(config_.getBool("access_control_improvements.create_fuzzjson_requires_grant", false));
+
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));

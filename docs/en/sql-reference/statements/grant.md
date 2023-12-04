@@ -191,23 +191,44 @@ Hierarchy of privileges:
     - `addressToSymbol`
     - `demangle`
 - [SOURCES](#grant-sources)
-    - `MERGETREE`
-    - `COLLAPSINGMERGETREE`
-    - `REPLACINGMERGETREE`
-    - `AGGREGATINGMERGETREE`
-    - `SUMMINGMERGETREE`
-    - `GRAPHITEMERGETREE`
-    - `VERSIONEDCOLLAPSINGMERGETREE`
-    - `REPLICATEDMERGETREE`
-    - `REPLICATEDCOLLAPSINGMERGETREE`
-    - `REPLICATEDREPLACINGMERGETREE`
-    - `REPLICATEDAGGREGATINGMERGETREE`
-    - `REPLICATEDSUMMINGMERGETREE`
-    - `REPLICATEDGRAPHITEMERGETREE`
-    - `REPLICATEDVERSIONEDCOLLAPSINGMERGETREE`
-    - `LOG`
-    - `TINYLOG`
-    - `STRIPELOG`
+    - `MergeTree`
+    - `CollapsingMergeTree`
+    - `ReplacingMergeTree`
+    - `AggregatingMergeTree`
+    - `SummingMergeTree`
+    - `GraphiteMergeTree`
+    - `VersionedCollapsingMergeTree`
+    - `ReplicatedMergeTree`
+    - `ReplicatedCollapsingMergeTree`
+    - `ReplicatedReplacingMergeTree`
+    - `ReplicatedAggregatingMergeTree`
+    - `ReplicatedSummingMergeTree`
+    - `ReplicatedGraphiteMergeTree`
+    - `ReplicatedVersionedCollapsingMergeTree`
+    - `Log`
+    - `TinyLog`
+    - `StripeLog`
+    - `FileLog`
+    - `Kafka`
+    - `RabbitMQ`
+    - `NATS`
+    - `EmbeddedRocksDB`
+    - `KeeperMap`
+    - `Null`
+    - `Merge`
+    - `Buffer`
+    - `Memory`
+    - `Dictionary`
+    - `Set`
+    - `Join`
+    - `View`
+    - `MaterializedView`
+    - `LiveView`
+    - `WindowView`
+    - `GenerateRandom`
+    - `Executable`
+    - `ExecutablePool`
+    - `FuzzJSON`
     - `FILE`
     - `URL`
     - `REMOTE`
@@ -474,23 +495,44 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
 - `SOURCES`. Level: `GROUP`
-    - `MERGETREE`. LEVEL: `GLOBAL`
-    - `COLLAPSINGMERGETREE`. LEVEL: `GLOBAL`
-    - `REPLACINGMERGETREE`. LEVEL: `GLOBAL`
-    - `AGGREGATINGMERGETREE`. LEVEL: `GLOBAL`
-    - `SUMMINGMERGETREE`. LEVEL: `GLOBAL`
-    - `GRAPHITEMERGETREE`. LEVEL: `GLOBAL`
-    - `VERSIONEDCOLLAPSINGMERGETREE`. LEVEL: `GLOBAL`
-    - `REPLICATEDMERGETREE`. LEVEL: `GLOBAL`
-    - `REPLICATEDCOLLAPSINGMERGETREE`. LEVEL: `GLOBAL`
-    - `REPLICATEDREPLACINGMERGETREE`. LEVEL: `GLOBAL`
-    - `REPLICATEDAGGREGATINGMERGETREE`. LEVEL: `GLOBAL`
-    - `REPLICATEDSUMMINGMERGETREE`. LEVEL: `GLOBAL`
-    - `REPLICATEDGRAPHITEMERGETREE`. LEVEL: `GLOBAL`
-    - `REPLICATEDVERSIONEDCOLLAPSINGMERGETREE`. LEVEL: `GLOBAL`
-    - `LOG`. LEVEL: `GLOBAL`
-    - `TINYLOG`. LEVEL: `GLOBAL`
-    - `STRIPELOG`. Level: `GLOBAL`
+    - `MergeTree`. LEVEL: `GLOBAL`
+    - `CollapsingMergeTree`. LEVEL: `GLOBAL`
+    - `ReplacingMergeTree`. LEVEL: `GLOBAL`
+    - `AggregatingMergeTree`. LEVEL: `GLOBAL`
+    - `SummingMergeTree`. LEVEL: `GLOBAL`
+    - `GraphiteMergeTree`. LEVEL: `GLOBAL`
+    - `VersionedCollapsingMergeTree`. LEVEL: `GLOBAL`
+    - `ReplicatedMergeTree`. LEVEL: `GLOBAL`
+    - `ReplicatedCollapsingMergeTree`. LEVEL: `GLOBAL`
+    - `ReplicatedReplacingMergeTree`. LEVEL: `GLOBAL`
+    - `ReplicatedAggregatingMergeTree`. LEVEL: `GLOBAL`
+    - `ReplicatedSummingMergeTree`. LEVEL: `GLOBAL`
+    - `ReplicatedGraphiteMergeTree`. LEVEL: `GLOBAL`
+    - `ReplicatedVersionedCollapsingMergeTree`. LEVEL: `GLOBAL`
+    - `Log`. LEVEL: `GLOBAL`
+    - `TinyLog`. LEVEL: `GLOBAL`
+    - `StripeLog`. Level: `GLOBAL`
+    - `FileLog`. LEVEL: `GLOBAL`
+    - `Kafka`. LEVEL: `GLOBAL`
+    - `RabbitMQ`. LEVEL: `GLOBAL`
+    - `NATS`. LEVEL: `GLOBAL`
+    - `EmbeddedRocksDB`. LEVEL: `GLOBAL`
+    - `KeeperMap`. LEVEL: `GLOBAL`
+    - `Null`. LEVEL: `GLOBAL`
+    - `Merge`. LEVEL: `GLOBAL`
+    - `Buffer`. LEVEL: `GLOBAL`
+    - `Memory`. LEVEL: `GLOBAL`
+    - `Dictionary`. LEVEL: `GLOBAL`
+    - `Set`. LEVEL: `GLOBAL`
+    - `Join`. LEVEL: `GLOBAL`
+    - `View`. LEVEL: `GLOBAL`
+    - `MaterializedView`. LEVEL: `GLOBAL`
+    - `LiveView`. LEVEL: `GLOBAL`
+    - `WindowView`. LEVEL: `GLOBAL`
+    - `GenerateRandom`. LEVEL: `GLOBAL`
+    - `Executable`. LEVEL: `GLOBAL`
+    - `ExecutablePool`. LEVEL: `GLOBAL`
+    - `FuzzJSON`. LEVEL: `GLOBAL`
     - `FILE`. Level: `GLOBAL`
     - `URL`. Level: `GLOBAL`
     - `REMOTE`. Level: `GLOBAL`

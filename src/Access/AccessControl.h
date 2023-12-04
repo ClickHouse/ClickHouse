@@ -233,6 +233,69 @@ public:
     void setCreateStripeLogRequiresGrant(bool enable) { create_stripelog_requires_grant = enable; }
     bool doesCreateStripeLogRequireGrant() const { return create_stripelog_requires_grant; }
 
+    void setCreateFileLogRequiresGrant(bool enable) { create_filelog_requires_grant = enable; }
+    bool doesCreateFileLogRequireGrant() const { return create_filelog_requires_grant; }
+
+    void setCreateKafkaRequiresGrant(bool enable) { create_kafka_requires_grant = enable; }
+    bool doesCreateKafkaRequireGrant() const { return create_kafka_requires_grant; }
+
+    void setCreateRabbitMQRequiresGrant(bool enable) { create_rabbitmq_requires_grant = enable; }
+    bool doesCreateRabbitMQRequireGrant() const { return create_rabbitmq_requires_grant; }
+
+    void setCreateNATSRequiresGrant(bool enable) { create_nats_requires_grant = enable; }
+    bool doesCreateNATSRequireGrant() const { return create_nats_requires_grant; }
+
+    void setCreateEmbeddedRocksDBRequiresGrant(bool enable) { create_embeddedrocksdb_requires_grant = enable; }
+    bool doesCreateEmbeddedRocksDBRequireGrant() const { return create_embeddedrocksdb_requires_grant; }
+
+    void setCreateKeeperMapRequiresGrant(bool enable) { create_keepermap_requires_grant = enable; }
+    bool doesCreateKeeperMapRequireGrant() const { return create_keepermap_requires_grant; }
+
+    void setCreateNullRequiresGrant(bool enable) { create_null_requires_grant = enable; }
+    bool doesCreateNullRequireGrant() const { return create_null_requires_grant; }
+
+    void setCreateMergeRequiresGrant(bool enable) { create_merge_requires_grant = enable; }
+    bool doesCreateMergeRequireGrant() const { return create_merge_requires_grant; }
+
+    void setCreateBufferRequiresGrant(bool enable) { create_buffer_requires_grant = enable; }
+    bool doesCreateBufferRequireGrant() const { return create_buffer_requires_grant; }
+
+    void setCreateMemoryRequiresGrant(bool enable) { create_memory_requires_grant = enable; }
+    bool doesCreateMemoryRequireGrant() const { return create_memory_requires_grant; }
+
+    void setCreateDictionaryRequiresGrant(bool enable) { create_dictionary_requires_grant = enable; }
+    bool doesCreateDictionaryRequireGrant() const { return create_dictionary_requires_grant; }
+
+    void setCreateSetRequiresGrant(bool enable) { create_set_requires_grant = enable; }
+    bool doesCreateSetRequireGrant() const { return create_set_requires_grant; }
+
+    void setCreateJoinRequiresGrant(bool enable) { create_join_requires_grant = enable; }
+    bool doesCreateJoinRequireGrant() const { return create_join_requires_grant; }
+
+    void setCreateViewRequiresGrant(bool enable) { create_view_requires_grant = enable; }
+    bool doesCreateViewRequireGrant() const { return create_view_requires_grant; }
+
+    void setCreateMaterializedViewRequiresGrant(bool enable) { create_materializedview_requires_grant = enable; }
+    bool doesCreateMaterializedViewRequireGrant() const { return create_materializedview_requires_grant; }
+
+    void setCreateLiveViewRequiresGrant(bool enable) { create_liveview_requires_grant = enable; }
+    bool doesCreateLiveViewRequireGrant() const { return create_liveview_requires_grant; }
+
+    void setCreateWindowViewRequiresGrant(bool enable) { create_windowview_requires_grant = enable; }
+    bool doesCreateWindowViewRequireGrant() const { return create_windowview_requires_grant; }
+
+    void setCreateGenerateRandomRequiresGrant(bool enable) { create_generaterandom_requires_grant = enable; }
+    bool doesCreateGenerateRandomRequireGrant() const { return create_generaterandom_requires_grant; }
+
+    void setCreateExecutableRequiresGrant(bool enable) { create_executable_requires_grant = enable; }
+    bool doesCreateExecutableRequireGrant() const { return create_executable_requires_grant; }
+
+    void setCreateExecutablePoolRequiresGrant(bool enable) { create_executablepool_requires_grant = enable; }
+    bool doesCreateExecutablePoolRequireGrant() const { return create_executablepool_requires_grant; }
+
+    void setCreateFuzzJSONRequiresGrant(bool enable) { create_fuzzjson_requires_grant = enable; }
+    bool doesCreateFuzzJSONRequireGrant() const { return create_fuzzjson_requires_grant; }
+
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -321,6 +384,27 @@ private:
     std::atomic_bool create_log_requires_grant = false;
     std::atomic_bool create_tinylog_requires_grant = false;
     std::atomic_bool create_stripelog_requires_grant = false;
+    std::atomic_bool create_filelog_requires_grant = false;
+    std::atomic_bool create_kafka_requires_grant = false;
+    std::atomic_bool create_rabbitmq_requires_grant = false;
+    std::atomic_bool create_nats_requires_grant = false;
+    std::atomic_bool create_embeddedrocksdb_requires_grant = false;
+    std::atomic_bool create_keepermap_requires_grant = false;
+    std::atomic_bool create_null_requires_grant = false;
+    std::atomic_bool create_merge_requires_grant = false;
+    std::atomic_bool create_buffer_requires_grant = false;
+    std::atomic_bool create_memory_requires_grant = false;
+    std::atomic_bool create_dictionary_requires_grant = false;
+    std::atomic_bool create_set_requires_grant = false;
+    std::atomic_bool create_join_requires_grant = false;
+    std::atomic_bool create_view_requires_grant = false;
+    std::atomic_bool create_materializedview_requires_grant = false;
+    std::atomic_bool create_liveview_requires_grant = false;
+    std::atomic_bool create_windowview_requires_grant = false;
+    std::atomic_bool create_generaterandom_requires_grant = false;
+    std::atomic_bool create_executable_requires_grant = false;
+    std::atomic_bool create_executablepool_requires_grant = false;
+    std::atomic_bool create_fuzzjson_requires_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
 };

@@ -755,6 +755,29 @@
         <create_tinylog_requires_grant>false</create_tinylog_requires_grant>
         <create_stripelog_requires_grant>false</create_stripelog_requires_grant>
 
+        <create_filelog_requires_grant>false</create_filelog_requires_grant>
+        <create_kafka_requires_grant>false</create_kafka_requires_grant>
+        <create_rabbitmq_requires_grant>false</create_rabbitmq_requires_grant>
+        <create_nats_requires_grant>false</create_nats_requires_grant>
+        <create_embeddedrocksdb_requires_grant>false</create_embeddedrocksdb_requires_grant>
+        <create_keepermap_requires_grant>false</create_keepermap_requires_grant>
+
+        <create_null_requires_grant>false</create_null_requires_grant>
+        <create_merge_requires_grant>false</create_merge_requires_grant>
+        <create_buffer_requires_grant>false</create_buffer_requires_grant>
+        <create_memory_requires_grant>false</create_memory_requires_grant>
+        <create_dictionary_requires_grant>false</create_dictionary_requires_grant>
+        <create_set_requires_grant>false</create_set_requires_grant>
+        <create_join_requires_grant>false</create_join_requires_grant>
+        <create_view_requires_grant>false</create_view_requires_grant>
+        <create_materializedview_requires_grant>false</create_materializedview_requires_grant>
+        <create_liveview_requires_grant>false</create_liveview_requires_grant>
+        <create_windowview_requires_grant>false</create_windowview_requires_grant>
+        <create_generaterandom_requires_grant>false</create_generaterandom_requires_grant>
+        <create_executable_requires_grant>false</create_executable_requires_grant>
+        <create_executablepool_requires_grant>false</create_executablepool_requires_grant>
+        <create_fuzzjson_requires_grant>false</create_fuzzjson_requires_grant>
+
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>

@@ -1161,6 +1161,7 @@ void registerStorageBuffer(StorageFactory & factory)
     {
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
+        .source_access_type = AccessType::Buffer
     });
 }
 
