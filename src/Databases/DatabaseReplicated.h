@@ -46,7 +46,7 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal) override;
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags) override;
 
     bool canExecuteReplicatedMetadataAlter() const override;
 
@@ -56,6 +56,7 @@ public:
 
     String getShardName() const { return shard_name; }
     String getReplicaName() const { return replica_name; }
+    String getReplicaGroupName() const { return replica_group_name; }
     String getFullReplicaName() const;
     static String getFullReplicaName(const String & shard, const String & replica);
     static std::pair<String, String> parseFullReplicaName(const String & name);
@@ -105,7 +106,11 @@ private:
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
 
     void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
+
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr);
+
+    std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
+                                                               size_t max_retries, UInt32 & max_log_ptr) const;
 
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
     String readMetadataFile(const String & table_name) const;
@@ -126,6 +131,7 @@ private:
     String zookeeper_path;
     String shard_name;
     String replica_name;
+    String replica_group_name;
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 

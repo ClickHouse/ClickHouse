@@ -4,7 +4,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Processors/ISource.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
@@ -48,6 +48,7 @@ public:
     bool supportsPartitionBy() const override { return true; }
 
     NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -142,7 +143,7 @@ private:
 };
 
 
-class StorageURLSource : public ISource, WithContext
+class StorageURLSource : public SourceWithKeyCondition, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -184,6 +185,16 @@ public:
 
     String getName() const override { return name; }
 
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
+    {
+        setKeyConditionImpl(query_info_, context_, block_for_format);
+    }
+
+    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    {
+        setKeyConditionImpl(nodes, context_, block_for_format);
+    }
+
     Chunk generate() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
@@ -215,6 +226,7 @@ private:
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
+    std::optional<size_t> current_file_size;
     String format;
     const std::optional<FormatSettings> & format_settings;
     HTTPHeaderEntries headers;

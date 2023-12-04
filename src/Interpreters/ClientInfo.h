@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/NameValueCollection.h>
 #include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/VersionNumber.h>

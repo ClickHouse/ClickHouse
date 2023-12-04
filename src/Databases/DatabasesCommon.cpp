@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
@@ -349,16 +348,22 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
 
         auto create_table_query = tryGetCreateTableQuery(it->name(), local_context);
         if (!create_table_query)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Couldn't get a create query for table {}.{}",
-                            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+        {
+            LOG_WARNING(log, "Couldn't get a create query for table {}.{}",
+                        backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+            continue;
+        }
 
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        if (create.getTable() != it->name())
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Got a create query with unexpected name {} for table {}.{}",
-                            backQuoteIfNeed(create.getTable()),
-                            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+        auto * create = create_table_query->as<ASTCreateQuery>();
+        if (create->getTable() != it->name())
+        {
+            /// Probably the database has been just renamed. Use the older name for backup to keep the backup consistent.
+            LOG_WARNING(log, "Got a create query with unexpected name {} for table {}.{}",
+                        backQuoteIfNeed(create->getTable()), backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+            create_table_query = create_table_query->clone();
+            create = create_table_query->as<ASTCreateQuery>();
+            create->setTable(it->name());
+        }
 
         storage->adjustCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
@@ -372,6 +377,7 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
     /// Creates a table by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
+    interpreter.setIsRestoreFromBackup(true);
     interpreter.execute();
 }
 

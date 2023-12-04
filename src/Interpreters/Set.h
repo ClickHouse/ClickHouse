@@ -67,6 +67,8 @@ public:
       */
     ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
 
+    bool hasNull() const;
+
     bool empty() const;
     size_t getTotalRowCount() const;
     size_t getTotalByteCount() const;
@@ -198,7 +200,7 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   */
 struct FieldValue
 {
-    FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+    explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
     void update(const Field & x);
 
     bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
@@ -233,6 +235,8 @@ public:
     bool hasMonotonicFunctionsChain() const;
 
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+
+    const Columns & getOrderedSet() const { return ordered_set; }
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.

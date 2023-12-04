@@ -54,15 +54,16 @@ template <
     typename FloatReturnType,
     /// If true, the function will accept multiple parameters with quantile levels
     ///  and return an Array filled with many values of that quantiles.
-    bool returns_many>
+    bool returns_many,
+    /// If the first parameter (before level) is accuracy.
+    bool has_accuracy_parameter>
 class AggregateFunctionQuantile final
-    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static constexpr bool is_quantile_gk = std::is_same_v<Data, QuantileGK<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -77,16 +78,16 @@ private:
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>(
             argument_types_, params, createResultType(argument_types_))
-        , levels(is_quantile_gk && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
+        , levels(has_accuracy_parameter && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
 
-        if constexpr (is_quantile_gk)
+        if constexpr (has_accuracy_parameter)
         {
             if (params.empty())
                 throw Exception(
@@ -115,7 +116,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        if constexpr (is_quantile_gk)
+        if constexpr (has_accuracy_parameter)
             new (place) Data(accuracy);
         else
             new (place) Data;
@@ -149,7 +150,7 @@ public:
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(
-                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), this->argument_types, params, properties),
+                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), NullsAction::EMPTY, this->argument_types, params, properties),
             this->argument_types,
             params);
     }
@@ -238,7 +239,7 @@ public:
         if constexpr (has_second_arg)
         {
             assertBinary(Name::name, types);
-            if (!isUnsignedInteger(types[1]))
+            if (!isUInt(types[1]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",

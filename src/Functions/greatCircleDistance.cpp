@@ -35,7 +35,7 @@ namespace ErrorCodes
   * https://github.com/sphinxsearch/sphinx/blob/409f2c2b5b2ff70b04e38f92b6b1a890326bad65/src/sphinxexpr.cpp#L3825.
   * Andrey Aksenov, the author of original code, permitted to use this code in ClickHouse under the Apache 2.0 license.
   * Presentation about this code from Highload++ Siberia 2019 is here https://github.com/ClickHouse/ClickHouse/files/3324740/1_._._GEODIST_._.pdf
-  * The main idea of this implementation is optimisations based on Taylor series, trigonometric identity
+  * The main idea of this implementation is optimizations based on Taylor series, trigonometric identity
   *  and calculated constants once for cosine, arcsine(sqrt) and look up table.
   */
 
