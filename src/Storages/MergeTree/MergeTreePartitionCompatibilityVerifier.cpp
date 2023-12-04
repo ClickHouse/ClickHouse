@@ -88,27 +88,6 @@ namespace
 
         return true;
     }
-
-    std::vector<Range> buildHyperrectangle(
-        const Block & block
-    )
-    {
-        std::vector<Range> hyperrectangle;
-
-        for (const auto & column : block)
-        {
-            Field min_idx;
-            Field max_idx;
-
-            column.column->get(0, min_idx);
-            column.column->get(1, max_idx);
-
-            hyperrectangle.emplace_back(min_idx, true, max_idx, true);
-        }
-
-        return hyperrectangle;
-    }
-
 }
 
 void MergeTreePartitionCompatibilityVerifier::verify(
@@ -135,14 +114,14 @@ void MergeTreePartitionCompatibilityVerifier::verify(
         destination_storage
     );
 
-    assert(src_global_min_max_indexes.columns());
+    assert(!src_global_min_max_indexes.hyperrectangle.empty());
 
-    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(buildHyperrectangle(src_global_min_max_indexes), destination_storage))
+    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(src_global_min_max_indexes.hyperrectangle, destination_storage))
     {
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
     }
 
-    validatePartitionIds(destination_storage, src_global_min_max_indexes);
+    validatePartitionIds(destination_storage, src_global_min_max_indexes.getBlock(destination_storage));
 }
 
 }

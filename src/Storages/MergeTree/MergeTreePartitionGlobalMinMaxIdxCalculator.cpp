@@ -3,7 +3,7 @@
 namespace DB
 {
 
-Block MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
+IMergeTreeDataPart::MinMaxIndex MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
     const DataPartsVector & parts,
     const MergeTreeData & storage
 )
@@ -21,7 +21,7 @@ Block MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
         global_min_max_indexes.merge(local_min_max_index);
     }
 
-    return global_min_max_indexes.getBlock(storage);
+    return global_min_max_indexes;
 }
 
 }
