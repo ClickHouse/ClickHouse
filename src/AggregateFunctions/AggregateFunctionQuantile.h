@@ -104,7 +104,7 @@ public:
 
             relative_accuracy = relative_accuracy_field.get<Float64>();
 
-            if (relative_accuracy <= 0 || relative_accuracy >= 1)
+            if (relative_accuracy <= 0 || relative_accuracy >= 1 || isNaN(relative_accuracy))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Aggregate function {} requires relative accuracy parameter with value between 0 and 1 but is {}",
