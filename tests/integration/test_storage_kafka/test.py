@@ -4865,7 +4865,7 @@ def test_formats_errors(kafka_cluster):
         "JSONColumns",
         "JSONCompactColumns",
         "JSONColumnsWithMetadata",
-        "BSONEachRow"
+        "BSONEachRow",
         "Native",
         "Arrow",
         "Parquet",
@@ -4905,12 +4905,20 @@ def test_formats_errors(kafka_cluster):
         """
         )
 
-        kafka_produce(kafka_cluster, format_name, ["Broken message\nBroken message\nBroken message\n"])
+        kafka_produce(
+            kafka_cluster,
+            format_name,
+            ["Broken message\nBroken message\nBroken message\n"]
+        )
 
         attempt = 0
         num_errors = 0
         while attempt < 200:
-            num_errors = int(instance.query(f"SELECT length(exceptions.text) from system.kafka_consumers where database = 'test' and table = '{table_name}'"))
+            num_errors = int(
+                instance.query(
+                    f"SELECT length(exceptions.text) from system.kafka_consumers where database = 'test' and table = '{table_name}'"
+                )
+            )
             if num_errors > 0:
                 break
             attempt += 1
