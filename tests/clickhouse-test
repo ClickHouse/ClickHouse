@@ -631,7 +631,6 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
-        "http_make_head_request": lambda: random.randint(0, 1),
     }
 
     @staticmethod
