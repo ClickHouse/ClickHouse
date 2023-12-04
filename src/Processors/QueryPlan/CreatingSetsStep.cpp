@@ -182,8 +182,7 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
         pipelines.emplace_back(plan->buildQueryPipeline(plan_settings, pipeline_settings));
     }
 
-    CreatingSetsStep(input_streams).updatePipeline(std::move(pipelines), pipeline_settings);
-    return std::move(pipelines.front());
+    return CreatingSetsStep(input_streams).updatePipeline(std::move(pipelines), pipeline_settings);
 }
 
 std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(DelayedCreatingSetsStep && step)

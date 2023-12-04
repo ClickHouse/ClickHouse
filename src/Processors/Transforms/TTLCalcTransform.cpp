@@ -7,13 +7,15 @@ namespace DB
 static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedSets::Subqueries & subqueries_for_sets, const ContextPtr & context)
 {
     auto expr = ttl_descr.buildExpression(context);
-    auto where_expr = ttl_descr.buildWhereExpression(context);
-
     auto expr_queries = expr.sets->getSubqueries();
-    auto where_expr_queries = expr.sets->getSubqueries();
-
     subqueries_for_sets.insert(subqueries_for_sets.end(), expr_queries.begin(), expr_queries.end());
-    subqueries_for_sets.insert(subqueries_for_sets.end(), where_expr_queries.begin(), where_expr_queries.end());
+
+    auto where_expr = ttl_descr.buildWhereExpression(context);
+    if (where_expr.sets)
+    {
+        auto where_expr_queries = where_expr.sets->getSubqueries();
+        subqueries_for_sets.insert(subqueries_for_sets.end(), where_expr_queries.begin(), where_expr_queries.end());
+    }
 
     return {expr.expression, where_expr.expression};
 }
