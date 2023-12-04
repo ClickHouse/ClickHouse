@@ -8,9 +8,13 @@ name will be `library/clickhouse`"""
 
 import argparse
 import logging
+from dataclasses import dataclass
+from os import getpid
 from pathlib import Path
 from pprint import pformat
+from shlex import quote
 from shutil import rmtree
+from textwrap import fill
 from typing import Dict, Iterable, Set
 
 from git_helper import git_runner
@@ -53,8 +57,14 @@ def parse_args() -> argparse.Namespace:
         default="server",
         help="which image type to process",
     )
+    parser.add_argument(
+        "--commit",
+        action="store_true",
+        help="if set, the directory `docker/official` will be staged and committed "
+        "after generating",
+    )
     subparsers = parser.add_subparsers(
-        title="commands", dest="command", help="the command to run"
+        title="commands", dest="command", required=True, help="the command to run"
     )
     parser_tree = subparsers.add_parser(
         "generate-tree", help="generates directory `docker/official`"
@@ -69,8 +79,8 @@ def parse_args() -> argparse.Namespace:
         "--use-master-docker",
         action="store_true",
         help="by default, the `docker/server` from each branch is used to generate the "
-        "directory; if this flag is set, then the `docker/server` from the `master` "
-        "branch is used",
+        "directory; if this flag is set, then the `docker/server` from the "
+        "`origin/master` branch is used",
     )
     parser_tree.add_argument(
         "--build-images",
@@ -85,6 +95,11 @@ def parse_args() -> argparse.Namespace:
         default=argparse.SUPPRESS,
         help="if set, the directory `docker/official` won't be cleaned "
         "before generating",
+    )
+    parser_tree.add_argument(
+        "--fetch-tags",
+        action="store_true",
+        help="if set, the tags will be updated before run",
     )
     args = parser.parse_args()
     return args
@@ -156,7 +171,36 @@ def generate_docker_directories(
                 )
 
 
+def path_is_changed(path: Path) -> bool:
+    logging.info("Checking if the path %s is changed", path)
+    return bool(git_runner(f"git status --porcelain -- '{path}'"))
+
+
+def get_cmdline(width: int = 80) -> str:
+    cmdline = " ".join(
+        quote(arg)
+        for arg in Path(f"/proc/{getpid()}/cmdline")
+        .read_text(encoding="utf-8")
+        .split("\x00")[:-1]
+    )
+    if width <= 2:
+        return cmdline
+
+    return " \\\n".join(
+        fill(
+            cmdline,
+            break_long_words=False,
+            break_on_hyphens=False,
+            subsequent_indent=r"  ",
+            width=width - 2,
+        ).split("\n")
+    )
+
+
 def generate_tree(args: argparse.Namespace) -> None:
+    if args.fetch_tags:
+        # Fetch all tags to not miss the latest versions
+        git_runner("git fetch --tags --no-recurse-submodules")
     if args.min_version:
         versions = get_versions_greater(args.min_version)
     else:
@@ -176,6 +220,21 @@ def generate_tree(args: argparse.Namespace) -> None:
     generate_docker_directories(
         version_dirs, args.use_master_docker, args.build_images, args.image_type
     )
+    if args.commit and path_is_changed(directory):
+        logging.info("Staging and committing content of %s", directory)
+        git_runner(f"git add {directory}")
+        commit_message = "\n".join(
+            (
+                "Re-/Generated tags for official docker library",
+                "",
+                "The changed versions:",
+                *(f"  {v.string}" for v in sorted(versions)),
+                f"The old images were removed: {args.clean}",
+                "The directory is generated and committed as following:",
+                f"{get_cmdline()}",
+            )
+        )
+        git_runner("git commit -F -", input=commit_message)
 
 
 def main() -> None:
