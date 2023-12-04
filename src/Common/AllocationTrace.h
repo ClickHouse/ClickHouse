@@ -8,7 +8,9 @@
 struct AllocationTrace
 {
     AllocationTrace() = default;
-    explicit AllocationTrace(double sample_probability_) : sample_probability(sample_probability_) {}
+    explicit AllocationTrace(double sample_probability_, bool is_null_ = false) : sample_probability(sample_probability_), is_null(is_null_)
+    {
+    }
 
     ALWAYS_INLINE void onAlloc(void * ptr, size_t size) const
     {
@@ -26,8 +28,11 @@ struct AllocationTrace
         onFreeImpl(ptr, size);
     }
 
+    ALWAYS_INLINE bool isNull() const { return is_null; }
+
 private:
     double sample_probability = 0;
+    bool is_null = false;
 
     void onAllocImpl(void * ptr, size_t size) const;
     void onFreeImpl(void * ptr, size_t size) const;

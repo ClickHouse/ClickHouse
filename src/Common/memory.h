@@ -182,7 +182,7 @@ inline ALWAYS_INLINE size_t trackMemoryNoExcept(std::size_t size, AllocationTrac
 {
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
-    return actual_size;
+    return trace.isNull() ? 0 : actual_size;
 }
 
 template <std::same_as<std::align_val_t>... TAlign>
