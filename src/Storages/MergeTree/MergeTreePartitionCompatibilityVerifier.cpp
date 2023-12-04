@@ -89,24 +89,19 @@ namespace
         return true;
     }
 
-    /*
-     * Need to come up with a better name. This method builds a hyperrectangle from a given set of columns.
-     * */
-    std::vector<Range> buildHyperrectangleForColumns(
-        const Block & block,
-        const Names & columns
+    std::vector<Range> buildHyperrectangle(
+        const Block & block
     )
     {
         std::vector<Range> hyperrectangle;
 
-        for (const auto & column_name : columns)
+        for (const auto & column : block)
         {
-            auto column_idx = block.getPositionByName(column_name);
             Field min_idx;
             Field max_idx;
 
-            block.getByPosition(column_idx).column->get(0, min_idx);
-            block.getByPosition(column_idx).column->get(1, max_idx);
+            column.column->get(0, min_idx);
+            column.column->get(1, max_idx);
 
             hyperrectangle.emplace_back(min_idx, true, max_idx, true);
         }
@@ -128,8 +123,6 @@ void MergeTreePartitionCompatibilityVerifier::verify(
     const auto source_partition_key_ast = source_metadata->getPartitionKeyAST();
     const auto destination_partition_key_ast = destination_metadata->getPartitionKeyAST();
 
-    const auto destination_partition_expression_columns = destination_storage.getInMemoryMetadataPtr()->getColumnsRequiredForPartitionKey();
-
     // If destination partition expression columns are a subset of source partition expression columns,
     // there is no need to check for monotonicity.
     if (isExpressionDirectSubsetOf(source_partition_key_ast, destination_partition_key_ast))
@@ -140,14 +133,12 @@ void MergeTreePartitionCompatibilityVerifier::verify(
     const auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
         source_storage,
         source_parts,
-        destination_partition_expression_columns
+        destination_storage.getInMemoryMetadataPtr()->getColumnsRequiredForPartitionKey()
     );
 
     assert(src_global_min_max_indexes.columns());
 
-    auto hyperrectangle = buildHyperrectangleForColumns(src_global_min_max_indexes, destination_metadata->getColumnsRequiredForPartitionKey());
-
-    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(hyperrectangle, destination_storage))
+    if (!isDestinationPartitionExpressionMonotonicallyIncreasing(buildHyperrectangle(src_global_min_max_indexes), destination_storage))
     {
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
     }
