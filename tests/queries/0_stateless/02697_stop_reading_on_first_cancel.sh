@@ -10,7 +10,8 @@ pid=$!
 
 for _ in {0..60}
 do
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = '$QUERY_ID'" | grep -F '1' && break || sleep 0.5
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = '$QUERY_ID'" | grep -F '1' && break
+    sleep 0.5
 done
 
 kill -SIGINT $pid
