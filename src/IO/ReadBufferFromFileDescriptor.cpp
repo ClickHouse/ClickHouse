@@ -249,24 +249,6 @@ void ReadBufferFromFileDescriptor::rewind()
     file_offset_of_buffer_end = 0;
 }
 
-
-/// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
-{
-    fd_set fds;
-    FD_ZERO(&fds);
-    FD_SET(fd, &fds);
-    timeval timeout = { time_t(timeout_microseconds / 1000000), suseconds_t(timeout_microseconds % 1000000) };
-
-    int res = select(1, &fds, nullptr, nullptr, &timeout);
-
-    if (-1 == res)
-        throwFromErrno("Cannot select", ErrorCodes::CANNOT_SELECT);
-
-    return res > 0;
-}
-
-
 size_t ReadBufferFromFileDescriptor::getFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
