@@ -218,6 +218,15 @@ void DistributedAsyncInsertDirectoryQueue::run()
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
+
+                const auto now = std::chrono::system_clock::now();
+                if (now - last_decrease_time > decrease_error_count_period)
+                {
+                    std::lock_guard status_lock(status_mutex);
+
+                    status.error_count /= 2;
+                    last_decrease_time = now;
+                }
             }
             catch (...)
             {
@@ -235,15 +244,6 @@ void DistributedAsyncInsertDirectoryQueue::run()
         }
         else
             LOG_TEST(LogFrequencyLimiter(log, 30), "Skipping send data over distributed table.");
-
-        const auto now = std::chrono::system_clock::now();
-        if (now - last_decrease_time > decrease_error_count_period)
-        {
-            std::lock_guard status_lock(status_mutex);
-
-            status.error_count /= 2;
-            last_decrease_time = now;
-        }
 
         if (do_sleep)
             break;
