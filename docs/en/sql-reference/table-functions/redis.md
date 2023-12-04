@@ -41,17 +41,7 @@ A table object with key as Redis key, other columns packaged together as Redis v
 
 ## Usage Example {#usage-example}
 
-Create a table in ClickHouse which allows to read data from Redis:
-
-``` sql
-CREATE TABLE redis_table
-(
-    `k` String,
-    `m` String,
-    `n` UInt32
-)
-ENGINE = Redis('redis1:6379') PRIMARY KEY(k);
-```
+Read from Redis:
 
 ```sql
 SELECT * FROM redis(
@@ -59,6 +49,15 @@ SELECT * FROM redis(
     'key',
     'key String, v1 String, v2 UInt32'
 )
+```
+
+Insert into Redis:
+
+```sql
+INSERT INTO TABLE FUNCTION redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32') values ('1', '1', 1);
 ```
 
 **See Also**
