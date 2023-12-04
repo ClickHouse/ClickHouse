@@ -332,16 +332,14 @@ all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj', expect error: proj
-FILE_DOESNT_EXIST
 select from projection 'proj_2', expect error: proj
 12
 16
 used projections
 SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
-0
+1
 broken projections info
-all_2_2_0	proj	NO_FILE_IN_DATA_PART
 0
 broke all data of part 'proj' (parent part: all_2_2_0)
 system.parts
@@ -358,7 +356,7 @@ SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 0
 broken projections info
-all_2_2_0	proj	NO_FILE_IN_DATA_PART
+all_2_2_0	proj	FILE_DOESNT_EXIST
 FILE_DOESNT_EXIST
 materialize projection proj
 system.parts
@@ -379,7 +377,7 @@ SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 1
 broken projections info
-all_2_2_0	proj	NO_FILE_IN_DATA_PART
+all_2_2_0	proj	FILE_DOESNT_EXIST
 BACKUP_CREATED
 RESTORED
 system.parts

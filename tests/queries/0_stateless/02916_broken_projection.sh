@@ -29,7 +29,7 @@ function create_table()
             SELECT d ORDER BY c
         )
     )
-    ENGINE = ReplicatedMergeTree('/test_broken_projection_24_$test_id/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '$replica') ORDER BY a
+    ENGINE = ReplicatedMergeTree('/test_broken_projection_$test_id/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '$replica') ORDER BY a
     SETTINGS min_bytes_for_wide_part = 0,
         max_parts_to_merge_at_once=3,
         enable_vertical_merge_algorithm=1,
@@ -407,7 +407,6 @@ function test2()
     check test2
 }
 
-CLICKHOUSE_TEST_UNIQUE_NAME="gghhhhhhhhhhhhhhhhhhh"
 function test3()
 {
     create_table test3 test 1
@@ -437,7 +436,7 @@ function test3()
     restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
     " | grep -o "RESTORED"
 
-    check test proj FILE_DOESNT_EXIST
+    check test proj
 
     broken_projections_info test
 
@@ -479,14 +478,14 @@ function test3()
 
     ${CLICKHOUSE_CLIENT} -nm --query "
     set send_logs_level='fatal';
-    backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_2')
+    backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_4')
     settings check_projection_parts=false, allow_backup_broken_projections=true;
     " | grep -o "BACKUP_CREATED"
 
     ${CLICKHOUSE_CLIENT} -nm --stacktrace --query "
     drop table test sync;
     set send_logs_level='fatal';
-    restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_2');
+    restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_4');
     " | grep -o "RESTORED"
 
     check test
