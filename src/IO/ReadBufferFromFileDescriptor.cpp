@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int CANNOT_SELECT;
     extern const int CANNOT_ADVISE;
 }
 
