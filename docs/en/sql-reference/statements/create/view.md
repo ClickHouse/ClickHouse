@@ -118,6 +118,14 @@ Differences from regular non-refreshable materialized views:
  * No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query and replaces the entire table.
  * No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
 
+:::note
+Currently refreshable materialized views are not compatible with Replicated database or table engines.
+:::
+
+:::note
+Currently refreshable materialized views require [Atomic database engine](../../../engines/database-engines/atomic.md).
+:::
+
 ### Refresh Schedule
 
 Example refresh schedules:

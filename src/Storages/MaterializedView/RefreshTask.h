@@ -21,7 +21,7 @@ class ASTRefreshStrategy;
 class RefreshTask : public std::enable_shared_from_this<RefreshTask>
 {
 public:
-    /// Never call it manual, public for shared_ptr construction only
+    /// Never call it manually, public for shared_ptr construction only
     explicit RefreshTask(const ASTRefreshStrategy & strategy);
 
     /// The only proper way to construct task
@@ -75,10 +75,10 @@ private:
     mutable std::mutex mutex;
 
     /// Task execution. Non-empty iff a refresh is in progress (possibly paused).
-    /// Whoever unsets these should also assign info.last_refresh_result.
-    std::optional<ManualPipelineExecutor> refresh_executor;
-    std::optional<BlockIO> refresh_block;
+    ContextMutablePtr refresh_context;
     std::shared_ptr<ASTInsertQuery> refresh_query;
+    std::optional<ManualPipelineExecutor> refresh_executor;
+    std::optional<BlockIO> refresh_pipeline;
 
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings; // TODO: populate, use, update on alter
@@ -144,8 +144,9 @@ private:
     /// Mutex must be unlocked. Called only from refresh_task.
     void initializeRefreshUnlocked(std::shared_ptr<const StorageMaterializedView> view);
     bool executeRefreshUnlocked();
-    void completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view, LastRefreshResult result, std::chrono::sys_seconds prescribed_time);
-    void cancelRefreshUnlocked(LastRefreshResult result);
+    /// Whoever calls complete/cancelRefreshUnlocked() should also assign info.last_refresh_result.
+    void completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view, std::chrono::sys_seconds prescribed_time);
+    void cancelRefreshUnlocked();
     void cleanStateUnlocked();
 
     /// Assigns next_refresh_*

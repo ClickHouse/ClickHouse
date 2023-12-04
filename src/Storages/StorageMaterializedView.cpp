@@ -283,8 +283,14 @@ bool StorageMaterializedView::optimize(
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
 }
 
-StorageID StorageMaterializedView::createFreshTable() const
+std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> StorageMaterializedView::prepareRefresh() const
 {
+    auto refresh_context = Context::createCopy(getContext());
+    /// Generate a random query id.
+    refresh_context->setCurrentQueryId("");
+
+    CurrentThread::QueryScope query_scope(refresh_context);
+
     auto inner_table_id = getTargetTableId();
     auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
 
@@ -298,31 +304,32 @@ StorageID StorageMaterializedView::createFreshTable() const
     create_query.replace_table = true;
     create_query.uuid = UUIDHelpers::Nil;
 
-    auto create_ctx = Context::createCopy(getContext());
-    InterpreterCreateQuery create_interpreter(create_table_query, create_ctx);
+    InterpreterCreateQuery create_interpreter(create_table_query, refresh_context);
     create_interpreter.setInternal(true);
     create_interpreter.execute();
 
-    return DatabaseCatalog::instance().getTable({create_query.getDatabase(), create_query.getTable()}, getContext())->getStorageID();
-}
+    StorageID fresh_table = DatabaseCatalog::instance().getTable({create_query.getDatabase(), create_query.getTable()}, getContext())->getStorageID();
 
-std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefreshQuery() const
-{
     auto insert_query = std::make_shared<ASTInsertQuery>();
     insert_query->select = getInMemoryMetadataPtr()->getSelectQuery().select_query;
-    return insert_query;
+    insert_query->setTable(fresh_table.table_name);
+    insert_query->setDatabase(fresh_table.database_name);
+    insert_query->table_id = fresh_table;
+
+    return {refresh_context, insert_query};
 }
 
-StorageID StorageMaterializedView::exchangeTargetTable(StorageID fresh_table)
+StorageID StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context)
 {
     auto stale_table_id = getTargetTableId();
 
     auto db = DatabaseCatalog::instance().getDatabase(stale_table_id.database_name);
     auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name);
 
-    auto rename_ctx = Context::createCopy(getContext());
+    CurrentThread::QueryScope query_scope(refresh_context);
+
     target_db->renameTable(
-        rename_ctx, fresh_table.table_name, *db, stale_table_id.table_name, /*exchange=*/true, /*dictionary=*/false);
+        refresh_context, fresh_table.table_name, *db, stale_table_id.table_name, /*exchange=*/true, /*dictionary=*/false);
 
     std::swap(stale_table_id.database_name, fresh_table.database_name);
     std::swap(stale_table_id.table_name, fresh_table.table_name);

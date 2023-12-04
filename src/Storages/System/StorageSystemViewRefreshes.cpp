@@ -69,7 +69,7 @@ void StorageSystemViewRefreshes::fillData(
 
         res_columns[i++]->insert(refresh.exception_message);
         res_columns[i++]->insert(Float64(refresh.progress.read_rows) / refresh.progress.total_rows_to_read);
-        res_columns[i++]->insert(refresh.progress.elapsed_ns);
+        res_columns[i++]->insert(refresh.progress.elapsed_ns / 1e9);
         res_columns[i++]->insert(refresh.progress.read_rows);
         res_columns[i++]->insert(refresh.progress.read_bytes);
         res_columns[i++]->insert(refresh.progress.total_rows_to_read);

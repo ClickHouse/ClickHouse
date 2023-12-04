@@ -260,11 +260,13 @@ void RefreshTask::refreshTask()
             interrupt_execution.store(false);
 
             /// Discard the active refresh if requested.
-            if ((stop_requested || cancel_requested) && refresh_executor)
+            if ((stop_requested || cancel_requested) && refresh_context)
             {
                 lock.unlock();
-                cancelRefreshUnlocked(LastRefreshResult::Canceled);
+                cancelRefreshUnlocked();
                 lock.lock();
+
+                info.last_refresh_result = LastRefreshResult::Canceled;
 
                 if (cancel_requested)
                 {
@@ -278,7 +280,7 @@ void RefreshTask::refreshTask()
 
             cancel_requested = false;
 
-            if (pause_requested && !refresh_executor)
+            if (pause_requested && !refresh_context)
                 pause_requested = false; // no refresh to pause
 
             if (stop_requested || pause_requested)
@@ -288,7 +290,7 @@ void RefreshTask::refreshTask()
                 break;
             }
 
-            if (!refresh_immediately && !refresh_executor)
+            if (!refresh_immediately && !refresh_context)
             {
                 auto now = currentTime();
                 if (now >= next_refresh_with_spread)
@@ -340,13 +342,13 @@ void RefreshTask::refreshTask()
 
             try
             {
-                if (!refresh_executor)
+                if (!refresh_context)
                     initializeRefreshUnlocked(view);
 
                 finished = executeRefreshUnlocked();
 
                 if (finished)
-                    completeRefreshUnlocked(view, LastRefreshResult::Finished, prescribed_time);
+                    completeRefreshUnlocked(view, prescribed_time);
 
                 lock.lock();
             }
@@ -358,10 +360,12 @@ void RefreshTask::refreshTask()
                 LOG_ERROR(log, message);
 
                 /// Don't leave a trash table.
-                if (!finished && refresh_query)
-                    cancelRefreshUnlocked(LastRefreshResult::Exception);
+                if (!finished && refresh_context)
+                    cancelRefreshUnlocked();
 
                 lock.lock();
+
+                info.last_refresh_result = LastRefreshResult::Exception;
                 info.exception_message = text;
 
                 /// TODO: Do a few retries with exponential backoff.
@@ -375,6 +379,7 @@ void RefreshTask::refreshTask()
                 auto now = currentTime();
                 auto secs = std::chrono::floor<std::chrono::seconds>(now);
                 info.last_refresh_time = UInt32(secs.time_since_epoch().count());
+                info.last_refresh_result = LastRefreshResult::Finished;
                 advanceNextRefreshTime(now);
             }
         }
@@ -393,61 +398,59 @@ void RefreshTask::refreshTask()
 
 void RefreshTask::initializeRefreshUnlocked(std::shared_ptr<const StorageMaterializedView> view)
 {
-    chassert(!refresh_query);
-
+    chassert(!refresh_context);
+    LOG_DEBUG(log, "Refreshing view {}", view->getStorageID().getFullTableName());
     progress.reset();
-
-    auto fresh_table = view->createFreshTable();
-    refresh_query = view->prepareRefreshQuery();
-    refresh_query->setTable(fresh_table.table_name);
-    refresh_query->setDatabase(fresh_table.database_name);
-    auto refresh_context = Context::createCopy(view->getContext());
-    refresh_context->makeQueryContext();
-    refresh_block = InterpreterInsertQuery(refresh_query, refresh_context).execute();
-    refresh_block->pipeline.setProgressCallback([this](const Progress & prog)
-        {
-            /// TODO: Investigate why most fields are not populated. Change columns in system.view_refreshes as needed, update documentation (docs/en/operations/system-tables/view_refreshes.md).
-            progress.incrementPiecewiseAtomically(prog);
-        });
-
-    refresh_executor.emplace(refresh_block->pipeline);
+    std::tie(refresh_context, refresh_query) = view->prepareRefresh();
 }
 
 bool RefreshTask::executeRefreshUnlocked()
 {
-    /// TODO: Execute in multiple threads.
-    bool not_finished{true};
-    while (!interrupt_execution.load() && not_finished)
-        not_finished = refresh_executor->executeStep(interrupt_execution);
+    CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
 
-    return !not_finished;
+    /// TODO: Execute in multiple threads.
+    if (!refresh_executor)
+    {
+        refresh_pipeline = InterpreterInsertQuery(refresh_query, refresh_context).execute();
+        refresh_pipeline->pipeline.setProgressCallback([this](const Progress & prog)
+            {
+                /// TODO: Investigate why most fields are not populated. Change columns in system.view_refreshes as needed, update documentation (docs/en/operations/system-tables/view_refreshes.md).
+                progress.incrementPiecewiseAtomically(prog);
+            });
+        refresh_executor.emplace(refresh_pipeline->pipeline);
+    }
+
+    bool finished{false};
+    while (!interrupt_execution.load() && !finished)
+        finished = !refresh_executor->executeStep(interrupt_execution);
+
+    return finished;
 }
 
-void RefreshTask::completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view, LastRefreshResult result, std::chrono::sys_seconds prescribed_time)
+void RefreshTask::completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view, std::chrono::sys_seconds prescribed_time)
 {
-    auto stale_table = view->exchangeTargetTable(refresh_query->table_id);
+    auto stale_table = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
 
+    auto refresh_context_ptr_copy = refresh_context;
     cleanStateUnlocked();
 
     std::unique_lock lock(mutex);
     auto refresh_schedule_copy = refresh_schedule;
     lock.unlock();
 
-    auto context = view->getContext();
+    auto global_context = view->getContext();
     StorageID my_id = view->getStorageID();
-    auto dependents = context->getRefreshSet().getDependents(my_id);
+    auto dependents = global_context->getRefreshSet().getDependents(my_id);
     for (const RefreshTaskHolder & dep_task : dependents)
         dep_task->notify(my_id, prescribed_time, refresh_schedule_copy);
 
-    auto drop_context = Context::createCopy(context);
-    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, drop_context, drop_context, stale_table, /*sync*/ true, /*ignore_sync_setting*/ true);
-
-    info.last_refresh_result = result;
+    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, global_context, refresh_context_ptr_copy, stale_table, /*sync*/ true, /*ignore_sync_setting*/ true);
 }
 
-void RefreshTask::cancelRefreshUnlocked(LastRefreshResult result)
+void RefreshTask::cancelRefreshUnlocked()
 {
     auto table_to_drop = refresh_query->table_id;
+    auto refresh_context_ptr_copy = refresh_context;
 
     /// Destroy the executor to unpin the table that we're about to drop.
     /// (Not necessary if the drop is asynchronous, but why not.)
@@ -457,9 +460,8 @@ void RefreshTask::cancelRefreshUnlocked(LastRefreshResult result)
     {
         try
         {
-            auto drop_context = Context::createCopy(view->getContext());
             InterpreterDropQuery::executeDropQuery(
-                ASTDropQuery::Kind::Drop, drop_context, drop_context, table_to_drop, /*sync*/ false, /*ignore_sync_setting*/ true);
+                ASTDropQuery::Kind::Drop, view->getContext(), refresh_context_ptr_copy, table_to_drop, /*sync*/ false, /*ignore_sync_setting*/ true);
         }
         catch (...)
         {
@@ -467,15 +469,14 @@ void RefreshTask::cancelRefreshUnlocked(LastRefreshResult result)
             /// Let's ignore this and keep going, at risk of accumulating many trash tables if this keeps happening.
         }
     }
-
-    info.last_refresh_result = result;
 }
 
 void RefreshTask::cleanStateUnlocked()
 {
     refresh_executor.reset();
-    refresh_block.reset();
+    refresh_pipeline.reset();
     refresh_query.reset();
+    refresh_context.reset();
 }
 
 void RefreshTask::advanceNextRefreshTime(std::chrono::system_clock::time_point now)

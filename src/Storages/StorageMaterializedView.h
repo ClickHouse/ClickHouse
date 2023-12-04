@@ -112,9 +112,10 @@ private:
 
     void checkStatementCanBeForwarded() const;
 
-    StorageID createFreshTable() const;
-    std::shared_ptr<ASTInsertQuery> prepareRefreshQuery() const;
-    StorageID exchangeTargetTable(StorageID fresh_table);
+    /// Prepare to refresh a refreshable materialized view: create query context, create temporary
+    /// table, form the insert-select query.
+    std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> prepareRefresh() const;
+    StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
 
     StorageID getTargetTableId() const;
     void setTargetTableId(StorageID id);
