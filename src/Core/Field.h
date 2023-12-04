@@ -854,11 +854,6 @@ inline constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
         || t == Field::Types::Bool;
 }
 
-inline constexpr bool isFloat64FieldType(Field::Types::Which t)
-{
-    return t == Field::Types::Float64;
-}
-
 // Field value getter with type checking in debug builds.
 template <typename T>
 NearestFieldType<std::decay_t<T>> & Field::get()
