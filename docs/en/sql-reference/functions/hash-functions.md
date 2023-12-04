@@ -1776,3 +1776,34 @@ Result:
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+## sqid
+
+Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).
+To use this function, set setting `allow_experimental_hash_functions = 1`.
+
+**Syntax**
+
+```sql
+sqid(number1,...)
+```
+
+**Arguments**
+
+- A variable number of UInt8, UInt16, UInt32 or UInt64 numbers.
+
+**Returned Value**
+
+A hash id [String](/docs/en/sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT sqid(1, 2, 3, 4, 5);
+```
+
+```response
+┌─sqid(1, 2, 3, 4, 5)─┐
+│ gXHfJ1C6dN          │
+└─────────────────────┘
+```

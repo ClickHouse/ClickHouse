@@ -76,7 +76,8 @@ public:
         /// Replace `countDistinct` of initial query into `count`
         auto result_type = function_node->getResultType();
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
+        auto action = NullsAction::EMPTY;
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", action, {}, {}, properties);
         function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         function_node->getArguments().getNodes().clear();
     }
