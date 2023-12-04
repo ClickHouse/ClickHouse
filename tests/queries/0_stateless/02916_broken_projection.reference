@@ -7,12 +7,12 @@ all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections
@@ -26,12 +26,12 @@ all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections
@@ -51,7 +51,7 @@ all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
-select from projection 'proj', expect error: proj_2
+select from projection 'proj'
 12
 16
 used projections
@@ -68,12 +68,12 @@ all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections
@@ -102,12 +102,12 @@ all_3_3_0	0	['proj','proj_2']
 all_3_5_1	1	['proj']
 all_4_4_0	0	['proj','proj_2']
 all_5_5_0	0	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections
@@ -139,12 +139,12 @@ all_3_3_0	0	['proj','proj_2']
 all_3_5_1	1	['proj']
 all_4_4_0	0	['proj','proj_2']
 all_5_5_0	0	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections
@@ -167,12 +167,12 @@ all_3_5_1	0	['proj']
 all_3_5_1_6	1	['proj']
 all_4_4_0	0	['proj','proj_2']
 all_5_5_0	0	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections
@@ -208,12 +208,12 @@ all_4_4_0	0	['proj','proj_2']
 all_5_5_0	0	['proj','proj_2']
 all_8_8_0	0	['proj','proj_2']
 all_9_9_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj_2
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections
@@ -227,20 +227,19 @@ insert new part
 system.parts
 all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 used projections
 SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 used projections
 SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 1
 system.parts
-all_1_1_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 used projections
 SELECT c FROM test2_replica WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 used projections
 SELECT d FROM test2_replica WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
@@ -252,10 +251,10 @@ all_0_0_0
 system.parts
 all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 used projections
 SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 used projections
 SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
@@ -266,10 +265,10 @@ all_0_0_0
 system.parts
 all_0_0_0	0	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 used projections
 SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 used projections
 SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
@@ -277,10 +276,10 @@ check table
 system.parts
 all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 used projections
 SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 used projections
 SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
@@ -294,12 +293,12 @@ all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections
@@ -315,7 +314,7 @@ all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj', expect error: proj
 FILE_DOESNT_EXIST
-select from projection 'proj_2', expect error: proj
+select from projection 'proj_2'
 12
 16
 used projections
@@ -331,8 +330,12 @@ all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
-select from projection 'proj', expect error: proj
-select from projection 'proj_2', expect error: proj
+select from projection 'proj'
+12
+16
+used projections
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2'
 12
 16
 used projections
@@ -348,7 +351,8 @@ all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj', expect error: proj
-select from projection 'proj_2', expect error: proj
+STD_EXCEPTION
+select from projection 'proj_2'
 12
 16
 used projections
@@ -368,8 +372,12 @@ all_2_2_0	0	['proj','proj_2']
 all_2_2_0_4	1	['proj','proj_2']
 all_3_3_0	0	['proj','proj_2']
 all_3_3_0_4	1	['proj','proj_2']
-select from projection 'proj', expect error: proj
-select from projection 'proj_2', expect error: proj
+select from projection 'proj'
+12
+16
+used projections
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2'
 12
 16
 used projections
@@ -385,8 +393,12 @@ all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
-select from projection 'proj', expect error: proj
-select from projection 'proj_2', expect error: proj
+select from projection 'proj'
+12
+16
+used projections
+SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
+select from projection 'proj_2'
 12
 16
 used projections
@@ -401,7 +413,7 @@ all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj', expect error: proj
-select from projection 'proj_2', expect error: proj
+select from projection 'proj_2'
 12
 16
 used projections
@@ -417,12 +429,12 @@ all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
 all_2_2_0	1	['proj_2']
 all_3_3_0	1	['proj','proj_2']
-select from projection 'proj', expect error: 
+select from projection 'proj'
 12
 16
 used projections
 SELECT c FROM test WHERE d == 12 OR d == 16 ORDER BY c;	proj
-select from projection 'proj_2', expect error: 
+select from projection 'proj_2'
 12
 16
 used projections

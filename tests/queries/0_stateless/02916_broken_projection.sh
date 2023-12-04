@@ -29,7 +29,7 @@ function create_table()
             SELECT d ORDER BY c
         )
     )
-    ENGINE = ReplicatedMergeTree('/test_broken_projection_$test_id/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '$replica') ORDER BY a
+    ENGINE = ReplicatedMergeTree('/test_broken_projection_32_$test_id/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/', '$replica') ORDER BY a
     SETTINGS min_bytes_for_wide_part = 0,
         max_parts_to_merge_at_once=3,
         enable_vertical_merge_algorithm=1,
@@ -155,39 +155,41 @@ function check()
     WHERE table='$table' AND database=currentDatabase()
     ORDER BY name;"
 
-    echo "select from projection 'proj', expect error: $expect_broken_part"
     query_id=$(random 8)
 
     if [ "$expect_broken_part" = "proj" ]
         then
+            echo "select from projection 'proj', expect error: $expect_broken_part"
             $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -nm -q "
-SET send_logs_level='fatal';
-SELECT c FROM $table WHERE d == 12 ORDER BY c;
-" 2>&1 | grep -oF "$expected_error"
+                SET send_logs_level='fatal';
+                SELECT c FROM $table WHERE d == 12 ORDER BY c;
+            " 2>&1 | grep -oF "$expected_error"
         else
+            echo "select from projection 'proj'"
             $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT c FROM $table WHERE d == 12 OR d == 16 ORDER BY c;"
             echo 'used projections'
             $CLICKHOUSE_CLIENT -nm -q "
-            SYSTEM FLUSH LOGS;
-            SELECT query, splitByChar('.', arrayJoin(projections))[-1] FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
+                SYSTEM FLUSH LOGS;
+                SELECT query, splitByChar('.', arrayJoin(projections))[-1] FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
             "
     fi
 
-    echo "select from projection 'proj_2', expect error: $expect_broken_part"
     query_id=$(random 8)
 
     if [ "$expect_broken_part" = "proj_2" ]
         then
+            echo "select from projection 'proj_2', expect error: $expect_broken_part"
             $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -nm -q "
-SET send_logs_level='fatal';
-SELECT d FROM $table WHERE c == 12 ORDER BY d;
-" 2>&1 | grep -oF "$expected_error"
+                SET send_logs_level='fatal';
+                SELECT d FROM $table WHERE c == 12 ORDER BY d;
+            " 2>&1 | grep -oF "$expected_error"
         else
+            echo "select from projection 'proj_2'"
             $CLICKHOUSE_CLIENT --optimize_use_projections 1 --query_id $query_id -q "SELECT d FROM $table WHERE c == 12 OR c == 16 ORDER BY d;"
             echo 'used projections'
             $CLICKHOUSE_CLIENT -nm -q "
-            SYSTEM FLUSH LOGS;
-            SELECT query, splitByChar('.', arrayJoin(projections))[-1] FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
+                SYSTEM FLUSH LOGS;
+                SELECT query, splitByChar('.', arrayJoin(projections))[-1] FROM system.query_log WHERE current_database=currentDatabase() AND query_id='$query_id' AND type='QueryFinish'
             "
     fi
 
@@ -436,13 +438,13 @@ function test3()
     restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
     " | grep -o "RESTORED"
 
-    check test proj
+    check test
 
     broken_projections_info test
 
     break_projection test proj all_2_2_0 part
 
-    check test proj
+    check test proj STD_EXCEPTION
 
     broken_projections_info test
 
@@ -453,7 +455,7 @@ function test3()
 
     materialize_projection test proj
 
-    check test proj
+    check test
 
     broken_projections_info test
 
@@ -468,7 +470,7 @@ function test3()
     restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_3');
     " | grep -o "RESTORED"
 
-    check test proj
+    check test
 
     break_projection test proj all_2_2_0 part
 
