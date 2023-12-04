@@ -300,8 +300,18 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            /// Upscale if possible.
-            spawnThreads();
+            try
+            {
+                /// Upscale if possible.
+                spawnThreads();
+            }
+            catch (...)
+            {
+                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                /// We should cancel execution properly before rethrow.
+                cancel();
+                throw;
+            }
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)

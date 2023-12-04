@@ -134,8 +134,12 @@ public:
 
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
+
+    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+
     /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
     bool adjustParallelReplicasAfterAnalysis();
+
 
 private:
     InterpreterSelectQuery(

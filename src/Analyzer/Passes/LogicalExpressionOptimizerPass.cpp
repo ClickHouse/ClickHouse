@@ -439,7 +439,7 @@ private:
             }
 
             /// otherwise add a stub 0 to make OR correct
-            or_operands.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0)));
+            or_operands.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0), function_node.getResultType()));
         }
 
         auto or_function_resolver = FunctionFactory::instance().get("or", getContext());

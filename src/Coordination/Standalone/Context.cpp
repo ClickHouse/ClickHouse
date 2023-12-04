@@ -235,6 +235,11 @@ std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetche
     return nullptr;
 }
 
+std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
+{
+    return nullptr;
+}
+
 void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getGlobalLock();
