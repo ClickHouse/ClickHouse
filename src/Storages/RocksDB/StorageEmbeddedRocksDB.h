@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
+#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 
 
 namespace rocksdb
@@ -95,9 +96,12 @@ public:
 
     bool supportsDelete() const override { return true; }
 
+    /// To turn on the optimization optimize_trivial_approximate_count_query=1 should be set for a query.
     bool supportsTrivialCountOptimization() const override { return true; }
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
+
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
     const String primary_key;

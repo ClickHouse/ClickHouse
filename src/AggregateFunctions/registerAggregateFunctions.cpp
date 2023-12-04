@@ -15,6 +15,7 @@ void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
+void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
@@ -112,6 +113,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionDeltaSum(factory);
         registerAggregateFunctionDeltaSumTimestamp(factory);
         registerAggregateFunctionGroupArray(factory);
+        registerAggregateFunctionGroupArraySorted(factory);
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);
         registerAggregateFunctionsQuantile(factory);
