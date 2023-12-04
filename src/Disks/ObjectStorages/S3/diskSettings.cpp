@@ -59,9 +59,9 @@ std::unique_ptr<S3::Client> getClient(
         settings.request_settings.put_request_throttler,
         uri.uri.getScheme());
 
-    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 1000);
-    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 30000);
-    client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
+    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", S3::DEFAULT_CONNECT_TIMEOUT_MS);
+    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", S3::DEFAULT_REQUEST_TIMEOUT_MS);
+    client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", S3::DEFAULT_MAX_CONNECTIONS);
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.http_keep_alive_timeout_ms = config.getUInt(
         config_prefix + ".http_keep_alive_timeout_ms", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT * 1000);
