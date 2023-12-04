@@ -1651,12 +1651,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
         }
 
-        std::unordered_set<String> broken_disk_names;
+        std::unordered_set<String> skip_check_disks;
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
             if (disk->isBroken() || disk->isCustomDisk())
             {
-                broken_disk_names.insert(disk_name);
+                skip_check_disks.insert(disk_name);
                 continue;
             }
 
@@ -1666,7 +1666,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             {
                 /// There still a chance that underlying disk is defined in storage policy
                 const auto & delegate = disk->getDelegateDiskIfExists();
-                is_disk_defined = (delegate && delegate->getPath() == disk->getPath() && defined_disk_names.contains(delegate->getName()));
+                is_disk_defined = delegate && !delegate->isBroken() && !delegate->isCustomDisk()
+                               && delegate->getPath() == disk->getPath()
+                               && defined_disk_names.contains(delegate->getName());
             }
 
             if (!is_disk_defined && disk->exists(relative_data_path))
@@ -1679,9 +1681,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                     throw Exception(
                         ErrorCodes::UNKNOWN_DISK,
                         "Part '{}' ({}) was found on disk '{}' which is not defined in the storage policy '{}' or broken"
-                        " (defined disks: [{}], broken disks: [{}])",
+                        " (defined disks: [{}], skipped disks: [{}])",
                         it->name(), it->path(), disk_name, getStoragePolicy()->getName(),
-                        fmt::join(defined_disk_names, ", "), fmt::join(broken_disk_names, ", "));
+                        fmt::join(defined_disk_names, ", "), fmt::join(skip_check_disks, ", "));
                 }
             }
         }
