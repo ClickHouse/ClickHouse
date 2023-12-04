@@ -8,7 +8,7 @@
 namespace DB
 {
 
-struct TTlExpressions
+struct TTLExpressions
 {
     ExpressionActionsPtr expression;
     ExpressionActionsPtr where_expression;
@@ -24,7 +24,7 @@ public:
     using TTLInfo = IMergeTreeDataPart::TTLInfo;
     using MutableDataPartPtr = MergeTreeMutableDataPartPtr;
 
-    ITTLAlgorithm(const TTlExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_);
+    ITTLAlgorithm(const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_);
     virtual ~ITTLAlgorithm() = default;
 
     virtual void execute(Block & block) = 0;
@@ -45,7 +45,7 @@ protected:
     bool isTTLExpired(time_t ttl) const;
     UInt32 getTimestampByIndex(const IColumn * column, size_t index) const;
 
-    const TTlExpressions ttl_expressions;
+    const TTLExpressions ttl_expressions;
     const TTLDescription description;
     const TTLInfo old_ttl_info;
     const time_t current_time;

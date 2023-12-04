@@ -4,7 +4,7 @@ namespace DB
 {
 
 TTLUpdateInfoAlgorithm::TTLUpdateInfoAlgorithm(
-    const TTlExpressions & ttl_expressions_,
+    const TTLExpressions & ttl_expressions_,
     const TTLDescription & description_,
     const TTLUpdateField ttl_update_field_,
     const String ttl_update_key_,

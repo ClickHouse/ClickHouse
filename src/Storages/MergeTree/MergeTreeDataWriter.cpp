@@ -132,7 +132,7 @@ void updateTTL(
     const Block & block,
     bool update_part_min_max_ttls)
 {
-    auto expr_and_set = ttl_entry.buildExpression();
+    auto expr_and_set = ttl_entry.buildExpression(context);
     for (auto & subquery : expr_and_set.sets->getSubqueries())
         subquery->buildSetInplace(context);
 

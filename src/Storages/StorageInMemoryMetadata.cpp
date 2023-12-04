@@ -279,7 +279,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
 
     auto add_for_rows_ttl = [&](const auto & expression, auto & to_set)
     {
-        if (add_dependent_columns(expression, to_set) && include_ttl_target)
+        if (add_dependent_columns(expression.getNames(), to_set) && include_ttl_target)
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
@@ -297,16 +297,16 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRecompressionTTLs())
-        add_dependent_columns(entry.expression_columns, required_ttl_columns);
+        add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
 
     for (const auto & [name, entry] : getColumnTTLs())
     {
-        if (add_dependent_columns(entry.expression_columns, required_ttl_columns) && include_ttl_target)
+        if (add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns) && include_ttl_target)
             updated_ttl_columns.insert(name);
     }
 
     for (const auto & entry : getMoveTTLs())
-        add_dependent_columns(entry.expression_columns, required_ttl_columns);
+        add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
 
     //TODO what about rows_where_ttl and group_by_ttl ??
 

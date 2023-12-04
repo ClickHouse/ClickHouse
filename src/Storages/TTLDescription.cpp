@@ -169,6 +169,23 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     return result;
 }
 
+ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
+{
+    auto ast = expression_ast->clone();
+    return buildExpressionAndSets(ast, expression_columns, context);
+}
+
+ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
+{
+    if (where_expression_ast)
+    {
+        auto ast = where_expression_ast->clone();
+        return buildExpressionAndSets(ast, where_expression_columns, context);
+    }
+
+    return {};
+}
+
 TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -186,7 +203,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     auto ttl_ast = result.expression_ast->clone();
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
-    result.expression_columns = expression->getRequiredColumns();
+    result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     // auto syntax_analyzer_result = TreeRewriter(context).analyze(ttl_ast, columns.getAllPhysical());
     // result.expression = ExpressionAnalyzer(ttl_ast, syntax_analyzer_result, context).getActions(false);
@@ -214,6 +231,8 @@ TTLDescription TTLDescription::getTTLFromAST(
                 where_expression = buildExpressionAndSets(where_expr_ast, columns.getAllPhysical(), context).expression;
                 // auto where_syntax_result = TreeRewriter(context).analyze(where_expr_ast, columns.getAllPhysical());
                 // result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, context).getActions(false);
+
+                result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expr_ast->getColumnName();
             }
         }

@@ -51,10 +51,10 @@ struct TTLDescription
     /// TTL d + INTERVAL 1 DAY
     ///    ^~~~~~~~~~~~~~~~~~~^
     ASTPtr expression_ast;
-    Names expression_columns;
+    NamesAndTypesList expression_columns;
 
     /// Expression actions evaluated from AST
-    ExpressionAndSets buildExpression() const;
+    ExpressionAndSets buildExpression(const ContextPtr & context) const;
 
     /// Result column of this TTL expression
     String result_column;
@@ -63,7 +63,8 @@ struct TTLDescription
     /// TTL ... WHERE x % 10 == 0 and y > 5
     ///              ^~~~~~~~~~~~~~~~~~~~~~^
     ASTPtr where_expression_ast;
-    ExpressionAndSets buildWhereExpression() const;
+    NamesAndTypesList where_expression_columns;
+    ExpressionAndSets buildWhereExpression(const ContextPtr & context) const;
 
     /// Name of result column from WHERE expression
     String where_result_column;
