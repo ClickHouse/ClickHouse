@@ -287,12 +287,11 @@ ReplxxLineReader::ReplxxLineReader(
     bool multiline_,
     Patterns extenders_,
     Patterns delimiters_,
-    const char word_break_characters_[],
     replxx::Replxx::highlighter_callback_t highlighter_)
     : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
-    , word_break_characters(word_break_characters_)
     , editor(getEditor())
 {
+    using namespace std::placeholders;
     using Replxx = replxx::Replxx;
 
     if (!history_file_path.empty())
@@ -327,16 +326,15 @@ ReplxxLineReader::ReplxxLineReader(
 
     rx.install_window_change_handler();
 
-    auto callback = [&suggest, this] (const String & context, size_t context_size)
+    auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        return suggest.getCompletions(context, context_size, word_break_characters);
+        return suggest.getCompletions(context, context_size);
     };
 
     rx.set_completion_callback(callback);
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
-    rx.set_indent_multiline(false);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
@@ -447,17 +445,6 @@ ReplxxLineReader::ReplxxLineReader(
         uint32_t reverse_search = Replxx::KEY::control('R');
         return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
     });
-
-    /// Change cursor style for overwrite mode to blinking (see console_codes(5))
-    rx.bind_key(Replxx::KEY::INSERT, [this](char32_t)
-    {
-        overwrite_mode = !overwrite_mode;
-        if (overwrite_mode)
-            rx.print("%s", "\033[5 q");
-        else
-            rx.print("%s", "\033[0 q");
-        return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
-    });
 }
 
 ReplxxLineReader::~ReplxxLineReader()
@@ -530,12 +517,6 @@ void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
-}
-
-void ReplxxLineReader::disableBracketedPaste()
-{
-    bracketed_paste_enabled = false;
-    rx.disable_bracketed_paste();
 }
 
 }

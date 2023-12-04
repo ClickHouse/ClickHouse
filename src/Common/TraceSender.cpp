@@ -33,7 +33,6 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(TraceType)                  /// trace type
         + sizeof(UInt64)                     /// thread_id
         + sizeof(Int64)                      /// size
-        + sizeof(void *)                     /// ptr
         + sizeof(ProfileEvents::Event)       /// event
         + sizeof(ProfileEvents::Count);      /// increment
 
@@ -75,7 +74,6 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
     writePODBinary(extras.size, out);
-    writePODBinary(UInt64(extras.ptr), out);
     writePODBinary(extras.event, out);
     writePODBinary(extras.increment, out);
 

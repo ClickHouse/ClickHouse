@@ -10,7 +10,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <base/StringRef.h>
-#include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -48,11 +47,10 @@ private:
     using ColVecType = ColumnVectorOrDecimal<T>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
-    T value = T{};
+    T value;
 
 public:
-    static constexpr bool result_is_nullable = false;
-    static constexpr bool should_skip_null_arguments = true;
+    static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
 
     bool has() const
@@ -72,14 +70,14 @@ public:
     {
         writeBinary(has(), buf);
         if (has())
-            writeBinaryLittleEndian(value, buf);
+            writeBinary(value, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena *)
     {
         readBinary(has_value, buf);
         if (has())
-            readBinaryLittleEndian(value, buf);
+            readBinary(value, buf);
     }
 
 
@@ -502,8 +500,7 @@ private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
 public:
-    static constexpr bool result_is_nullable = false;
-    static constexpr bool should_skip_null_arguments = true;
+    static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
 
     bool has() const
@@ -547,7 +544,7 @@ public:
 
         /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
         Int32 size_to_write = size ? size : -1;
-        writeBinaryLittleEndian(size_to_write, buf);
+        writeBinary(size_to_write, buf);
         if (has())
             buf.write(getData(), size);
     }
@@ -557,8 +554,7 @@ public:
         if (capacity < size_to_reserve)
         {
             if (unlikely(MAX_STRING_SIZE < size_to_reserve))
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}",
-                                size_to_reserve, MAX_STRING_SIZE);
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", size_to_reserve);
 
             size_t rounded_capacity = roundUpToPowerOfTwoOrZero(size_to_reserve);
             chassert(rounded_capacity <= MAX_STRING_SIZE + 1);  /// rounded_capacity <= 2^31
@@ -573,7 +569,7 @@ public:
     {
         /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
         Int32 rhs_size_signed;
-        readBinaryLittleEndian(rhs_size_signed, buf);
+        readBinary(rhs_size_signed, buf);
 
         if (rhs_size_signed < 0)
         {
@@ -628,8 +624,7 @@ public:
     void changeImpl(StringRef value, Arena * arena)
     {
         if (unlikely(MAX_STRING_SIZE < value.size))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}",
-                            value.size, MAX_STRING_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", value.size);
 
         UInt32 value_size = static_cast<UInt32>(value.size);
 
@@ -775,14 +770,17 @@ struct SingleValueDataGeneric
 {
 private:
     using Self = SingleValueDataGeneric;
+
     Field value;
 
 public:
-    static constexpr bool result_is_nullable = false;
-    static constexpr bool should_skip_null_arguments = true;
+    static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
 
-    bool has() const { return !value.isNull(); }
+    bool has() const
+    {
+        return !value.isNull();
+    }
 
     void insertResultInto(IColumn & to) const
     {
@@ -812,9 +810,15 @@ public:
             serialization.deserializeBinary(value, buf, {});
     }
 
-    void change(const IColumn & column, size_t row_num, Arena *) { column.get(row_num, value); }
+    void change(const IColumn & column, size_t row_num, Arena *)
+    {
+        column.get(row_num, value);
+    }
 
-    void change(const Self & to, Arena *) { value = to.value; }
+    void change(const Self & to, Arena *)
+    {
+        value = to.value;
+    }
 
     bool changeFirstTime(const IColumn & column, size_t row_num, Arena * arena)
     {
@@ -878,9 +882,7 @@ public:
 
     bool changeIfLess(const Self & to, Arena * arena)
     {
-        if (!to.has())
-            return false;
-        if (!has() || to.value < value)
+        if (to.has() && (!has() || to.value < value))
         {
             change(to, arena);
             return true;
@@ -912,9 +914,7 @@ public:
 
     bool changeIfGreater(const Self & to, Arena * arena)
     {
-        if (!to.has())
-            return false;
-        if (!has() || to.value > value)
+        if (to.has() && (!has() || to.value > value))
         {
             change(to, arena);
             return true;
@@ -923,9 +923,15 @@ public:
             return false;
     }
 
-    bool isEqualTo(const IColumn & column, size_t row_num) const { return has() && value == column[row_num]; }
+    bool isEqualTo(const IColumn & column, size_t row_num) const
+    {
+        return has() && value == column[row_num];
+    }
 
-    bool isEqualTo(const Self & to) const { return has() && to.value == value; }
+    bool isEqualTo(const Self & to) const
+    {
+        return has() && to.value == value;
+    }
 
     static bool allocatesMemoryInArena()
     {
@@ -1059,19 +1065,12 @@ struct AggregateFunctionAnyLastData : Data
 #endif
 };
 
-
-/** The aggregate function 'singleValueOrNull' is used to implement subquery operators,
-  * such as x = ALL (SELECT ...)
-  * It checks if there is only one unique non-NULL value in the data.
-  * If there is only one unique value - returns it.
-  * If there are zero or at least two distinct values - returns NULL.
-  */
 template <typename Data>
 struct AggregateFunctionSingleValueOrNullData : Data
 {
-    using Self = AggregateFunctionSingleValueOrNullData;
+    static constexpr bool is_nullable = true;
 
-    static constexpr bool result_is_nullable = true;
+    using Self = AggregateFunctionSingleValueOrNullData;
 
     bool first_value = true;
     bool is_null = false;
@@ -1094,7 +1093,7 @@ struct AggregateFunctionSingleValueOrNullData : Data
         if (!to.has())
             return;
 
-        if (first_value && !to.first_value)
+        if (first_value)
         {
             first_value = false;
             this->change(to, arena);
@@ -1193,13 +1192,13 @@ struct AggregateFunctionAnyHeavyData : Data
     void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
         Data::write(buf, serialization);
-        writeBinaryLittleEndian(counter, buf);
+        writeBinary(counter, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
     {
         Data::read(buf, serialization, arena);
-        readBinaryLittleEndian(counter, buf);
+        readBinary(counter, buf);
     }
 
     static const char * name() { return "anyHeavy"; }
@@ -1239,7 +1238,7 @@ public:
 
     static DataTypePtr createResultType(const DataTypePtr & type_)
     {
-        if constexpr (Data::result_is_nullable)
+        if constexpr (Data::is_nullable)
             return makeNullable(type_);
         return type_;
     }
@@ -1358,17 +1357,6 @@ public:
         this->data(place).insertResultInto(to);
     }
 
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & original_function,
-        const DataTypes & /*arguments*/,
-        const Array & /*params*/,
-        const AggregateFunctionProperties & /*properties*/) const override
-    {
-        if (Data::result_is_nullable && !Data::should_skip_null_arguments)
-            return original_function;
-        return nullptr;
-    }
-
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const override
@@ -1387,11 +1375,11 @@ public:
         b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), llvm::assumeAligned(this->alignOfData()));
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
     {
         if constexpr (Data::is_compilable)
         {
-            Data::compileChangeIfBetter(builder, aggregate_data_ptr, arguments[0].value);
+            Data::compileChangeIfBetter(builder, aggregate_data_ptr, argument_values[0]);
         }
         else
         {

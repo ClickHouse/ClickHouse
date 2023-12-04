@@ -19,6 +19,7 @@
 #include "Poco/UTF16Encoding.h"
 #include "Poco/Buffer.h"
 #include "Poco/Exception.h"
+#include <iostream>
 
 
 using Poco::Buffer;

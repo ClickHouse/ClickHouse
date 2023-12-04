@@ -7,13 +7,8 @@ namespace DB
 BackupCoordinationReplicatedSQLObjects::BackupCoordinationReplicatedSQLObjects() = default;
 BackupCoordinationReplicatedSQLObjects::~BackupCoordinationReplicatedSQLObjects() = default;
 
-void BackupCoordinationReplicatedSQLObjects::addDirectory(DirectoryPathForSQLObject && directory_path_for_sql_object)
+void BackupCoordinationReplicatedSQLObjects::addDirectory(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path)
 {
-    const auto & loader_zk_path = directory_path_for_sql_object.loader_zk_path;
-    const auto & object_type = directory_path_for_sql_object.object_type;
-    const auto & host_id = directory_path_for_sql_object.host_id;
-    const auto & dir_path = directory_path_for_sql_object.dir_path;
-
     auto & ref = dir_paths_by_zk_path[std::make_pair(loader_zk_path, object_type)];
     ref.dir_paths.emplace(dir_path);
 

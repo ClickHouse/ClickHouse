@@ -36,6 +36,7 @@ const char * DataTypeEnum<Type>::getFamilyName() const
     return EnumName<FieldType>::value;
 }
 
+
 template <typename Type>
 std::string DataTypeEnum<Type>::generateName(const Values & values)
 {

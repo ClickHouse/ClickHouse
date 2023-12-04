@@ -31,17 +31,19 @@ void registerDiskAzureBlobStorage(DiskFactory & factory, bool global_skip_access
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context));
 
-        String key_prefix;
-        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, key_prefix);
+        uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
+        bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
+
+        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "");
 
         std::shared_ptr<IDisk> azure_blob_storage_disk = std::make_shared<DiskObjectStorage>(
             name,
-            /* no namespaces */ key_prefix,
+            /* no namespaces */"",
             "DiskAzureBlobStorage",
             std::move(metadata_storage),
             std::move(azure_object_storage),
-            config,
-            config_prefix
+            send_metadata,
+            copy_thread_pool_size
         );
 
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
