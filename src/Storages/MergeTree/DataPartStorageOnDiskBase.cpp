@@ -750,8 +750,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
         {
-            if ((file.ends_with(".gin_dict") || file.ends_with(".gin_post") || file.ends_with(".gin_seg") || file.ends_with(".gin_sid"))
-             && (!disk->isFile(fs::path(dir) / file)))
+            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
                 continue;
 
             request.emplace_back(fs::path(dir) / file);
