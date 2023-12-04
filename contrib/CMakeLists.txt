@@ -156,6 +156,7 @@ add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
+add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
