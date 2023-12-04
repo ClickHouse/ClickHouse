@@ -167,16 +167,17 @@ def test_distributed_async_insert_with_replica(started_cluster):
     )
     node1.query("system flush distributed replica_dist;")
 
-    node2_res = int(node2.query("select count() from replica_dist_local where c2 = 'A'"))
-    node3_res = int(node3.query("select count() from replica_dist_local where c2 = 'A'"))
+    node2_res = int(
+        node2.query("select count() from replica_dist_local where c2 = 'A'")
+    )
+    node3_res = int(
+        node3.query("select count() from replica_dist_local where c2 = 'A'")
+    )
 
     assert (
         int(node1.query("select count() from replica_dist_local where c2 = 'A'")) == 5
     )
-    assert (
-        (node2_res == 0 and node3_res == 5) or (node2_res == 5 and node3_res == 0)
-    )
-
+    assert (node2_res == 0 and node3_res == 5) or (node2_res == 5 and node3_res == 0)
 
     # Delete node2
     node1.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config2)
@@ -193,9 +194,15 @@ def test_distributed_async_insert_with_replica(started_cluster):
     )
     node1.query("system flush distributed replica_dist;")
 
-    assert int(node1.query("select count() from replica_dist_local where c2 = 'B'")) == 5
-    assert int(node2.query("select count() from replica_dist_local where c2 = 'B'")) == 0
-    assert int(node3.query("select count() from replica_dist_local where c2 = 'B'")) == 5
+    assert (
+        int(node1.query("select count() from replica_dist_local where c2 = 'B'")) == 5
+    )
+    assert (
+        int(node2.query("select count() from replica_dist_local where c2 = 'B'")) == 0
+    )
+    assert (
+        int(node3.query("select count() from replica_dist_local where c2 = 'B'")) == 5
+    )
 
     # Add node2
     node1.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config1)
@@ -212,12 +219,14 @@ def test_distributed_async_insert_with_replica(started_cluster):
     )
     node1.query("system flush distributed replica_dist;")
 
-    node2_res = int(node2.query("select count() from replica_dist_local where c2 = 'C'"))
-    node3_res = int(node3.query("select count() from replica_dist_local where c2 = 'C'"))
+    node2_res = int(
+        node2.query("select count() from replica_dist_local where c2 = 'C'")
+    )
+    node3_res = int(
+        node3.query("select count() from replica_dist_local where c2 = 'C'")
+    )
 
     assert (
         int(node1.query("select count() from replica_dist_local where c2 = 'C'")) == 5
     )
-    assert (
-        (node2_res == 0 and node3_res == 5) or (node2_res == 5 and node3_res == 0)
-    )
+    assert (node2_res == 0 and node3_res == 5) or (node2_res == 5 and node3_res == 0)
