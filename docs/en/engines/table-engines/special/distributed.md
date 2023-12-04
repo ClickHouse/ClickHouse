@@ -4,6 +4,10 @@ sidebar_position: 10
 sidebar_label: Distributed
 ---
 
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
+
+<SelfManaged />
+
 # Distributed Table Engine
 
 Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
