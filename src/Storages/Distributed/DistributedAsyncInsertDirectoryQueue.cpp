@@ -559,7 +559,16 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
 
         DistributedAsyncInsertBatch batch(*this);
         batch.deserialize();
-        batch.send();
+
+        /// In case of recovery it is possible that some of files will be
+        /// missing, if server had been restarted abnormally
+        /// (between unlink(*.bin) and unlink(current_batch.txt)).
+        ///
+        /// But current_batch_file_path should be removed anyway, since if some
+        /// file was missing, then the batch is not complete and there is no
+        /// point in trying to pretend that it will not break deduplication.
+        if (batch.valid())
+            batch.send();
 
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);
