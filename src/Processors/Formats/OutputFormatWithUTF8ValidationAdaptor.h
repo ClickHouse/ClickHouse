@@ -6,17 +6,15 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferValidUTF8.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
-template <typename Base>
+template <typename Base, typename... Args>
 class OutputFormatWithUTF8ValidationAdaptorBase : public Base
 {
 public:
-    OutputFormatWithUTF8ValidationAdaptorBase(const Block & header, WriteBuffer & out_, bool validate_utf8)
-        : Base(header, out_)
+    OutputFormatWithUTF8ValidationAdaptorBase(bool validate_utf8, const Block & header, WriteBuffer & out_, Args... args)
+        : Base(header, out_, std::forward<Args>(args)...)
     {
         bool values_can_contain_invalid_utf8 = false;
         for (const auto & type : this->getPort(IOutputFormat::PortKind::Main).getHeader().getDataTypes())
@@ -26,39 +24,37 @@ public:
         }
 
         if (validate_utf8 && values_can_contain_invalid_utf8)
-            validating_ostr = std::make_unique<WriteBufferValidUTF8>(*Base::getWriteBufferPtr());
+        {
+            validating_ostr = std::make_unique<WriteBufferValidUTF8>(this->out);
+            ostr = validating_ostr.get();
+        }
+        else
+            ostr = &this->out;
     }
 
     void flush() override
     {
+        ostr->next();
+
         if (validating_ostr)
-            validating_ostr->next();
-        Base::flush();
+            this->out.next();
     }
 
     void finalizeBuffers() override
     {
         if (validating_ostr)
             validating_ostr->finalize();
-        Base::finalizeBuffers();
     }
 
     void resetFormatterImpl() override
     {
-        LOG_DEBUG(&Poco::Logger::get("RowOutputFormatWithExceptionHandlerAdaptor"), "resetFormatterImpl");
-        Base::resetFormatterImpl();
-        if (validating_ostr)
-            validating_ostr = std::make_unique<WriteBufferValidUTF8>(*Base::getWriteBufferPtr());
+        validating_ostr = std::make_unique<WriteBufferValidUTF8>(this->out);
+        ostr = validating_ostr.get();
     }
 
 protected:
-    /// Returns buffer that should be used in derived classes instead of out.
-    WriteBuffer * getWriteBufferPtr() override
-    {
-        if (validating_ostr)
-            return validating_ostr.get();
-        return Base::getWriteBufferPtr();
-    }
+    /// Point to validating_ostr or out from IOutputFormat, should be used in derived classes instead of out.
+    WriteBuffer * ostr;
 
 private:
     /// Validates UTF-8 sequences, replaces bad sequences with replacement character.

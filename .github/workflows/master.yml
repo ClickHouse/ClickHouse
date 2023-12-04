@@ -20,12 +20,7 @@ jobs:
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          echo "Testing the main ci directory"
-          python3 -m unittest discover -s . -p 'test_*.py'
-          for dir in *_lambda/; do
-            echo "Testing $dir"
-            python3 -m unittest discover -s "$dir" -p 'test_*.py'
-          done
+          python3 -m unittest discover -s . -p '*_test.py'
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
@@ -96,7 +91,7 @@ jobs:
       runner_type: style-checker
       run_command: |
           cd "$REPO_COPY/tests/ci"
-          python3 style_check.py --no-push
+          python3 style_check.py
   CompatibilityCheckX86:
     needs: [BuilderDebRelease]
     uses: ./.github/workflows/reusable_test.yml

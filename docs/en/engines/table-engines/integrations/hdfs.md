@@ -230,9 +230,8 @@ libhdfs3 support HDFS namenode HA.
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file. Type: `LowCardinalty(String)`.
-- `_file` — Name of the file. Type: `LowCardinalty(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
 
 ## Storage Settings {#storage-settings}
 

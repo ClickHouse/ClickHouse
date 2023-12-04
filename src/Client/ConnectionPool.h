@@ -30,10 +30,9 @@ public:
     virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
-    virtual Entry get(const ConnectionTimeouts & timeouts) = 0;
     /// If force_connected is false, the client must manually ensure that returned connection is good.
     virtual Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
-                      const Settings & settings,
+                      const Settings * settings = nullptr,
                       bool force_connected = true) = 0;
 
     virtual Priority getPriority() const { return Priority{1}; }
@@ -80,18 +79,15 @@ public:
     {
     }
 
-    Entry get(const ConnectionTimeouts & timeouts) override
-    {
-        Entry entry = Base::get(-1);
-        entry->forceConnected(timeouts);
-        return entry;
-    }
-
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
-              const Settings & settings,
+              const Settings * settings = nullptr,
               bool force_connected = true) override
     {
-        Entry entry = Base::get(settings.connection_pool_max_wait_ms.totalMilliseconds());
+        Entry entry;
+        if (settings)
+            entry = Base::get(settings->connection_pool_max_wait_ms.totalMilliseconds());
+        else
+            entry = Base::get(-1);
 
         if (force_connected)
             entry->forceConnected(timeouts);
@@ -119,7 +115,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password, ssh::SSHKey(), quota_key,
+            default_database, user, password, quota_key,
             cluster, cluster_secret,
             client_name, compression, secure);
     }

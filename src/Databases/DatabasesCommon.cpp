@@ -149,12 +149,6 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                         return nullptr;
                 }
                 ast_column_declaration->type = ast_type;
-
-                if (auto column_default = metadata_ptr->columns.getDefault(column_name_and_type.name))
-                {
-                    ast_column_declaration->default_specifier = toString(column_default->kind);
-                    ast_column_declaration->default_expression = column_default->expression;
-                }
             }
             ast_expression_list->children.emplace_back(ast_column_declaration);
         }
@@ -372,7 +366,6 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
     /// Creates a table by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
-    interpreter.setIsRestoreFromBackup(true);
     interpreter.execute();
 }
 

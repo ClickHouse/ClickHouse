@@ -161,7 +161,7 @@ namespace
                     case GRPCObsoleteTransportCompression::NO_COMPRESSION: res.algorithm = GRPC_COMPRESS_NONE; break;
                     case GRPCObsoleteTransportCompression::DEFLATE: res.algorithm = GRPC_COMPRESS_DEFLATE; break;
                     case GRPCObsoleteTransportCompression::GZIP: res.algorithm = GRPC_COMPRESS_GZIP; break;
-                    case GRPCObsoleteTransportCompression::STREAM_GZIP: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
+                    case GRPCObsoleteTransportCompression::STREAM_GZIP: res.algorithm = GRPC_COMPRESS_STREAM_GZIP; break;
                     default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression algorithm: {}", GRPCObsoleteTransportCompression::CompressionAlgorithm_Name(query_info.obsolete_result_compression().algorithm()));
                 }
 
@@ -206,7 +206,7 @@ namespace
             else if (str == "gzip")
                 algorithm = GRPC_COMPRESS_GZIP;
             else if (str == "stream_gzip")
-                throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
+                algorithm = GRPC_COMPRESS_STREAM_GZIP;
             else
                 throw Exception(error_code, "Unknown compression algorithm: '{}'", str);
         }
@@ -610,7 +610,6 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
-// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
     class Call
     {
     public:
@@ -716,7 +715,6 @@ namespace
 
         ThreadFromGlobalPool call_thread;
     };
-// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
@@ -949,7 +947,7 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context).second;
+        io = ::DB::executeQuery(true, query, query_context);
     }
 
     void Call::processInput()
@@ -1340,7 +1338,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
             }
         }

@@ -293,6 +293,7 @@ ReplxxLineReader::ReplxxLineReader(
     , word_break_characters(word_break_characters_)
     , editor(getEditor())
 {
+    using namespace std::placeholders;
     using Replxx = replxx::Replxx;
 
     if (!history_file_path.empty())
@@ -446,17 +447,6 @@ ReplxxLineReader::ReplxxLineReader(
         /// Reverse search is detected by C-R.
         uint32_t reverse_search = Replxx::KEY::control('R');
         return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
-    });
-
-    /// Change cursor style for overwrite mode to blinking (see console_codes(5))
-    rx.bind_key(Replxx::KEY::INSERT, [this](char32_t)
-    {
-        overwrite_mode = !overwrite_mode;
-        if (overwrite_mode)
-            rx.print("%s", "\033[5 q");
-        else
-            rx.print("%s", "\033[0 q");
-        return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
     });
 }
 

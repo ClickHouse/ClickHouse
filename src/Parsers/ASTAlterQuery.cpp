@@ -201,33 +201,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
             partition->formatImpl(settings, state, frame);
         }
     }
-    else if (type == ASTAlterCommand::ADD_STATISTIC)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTIC " << (if_not_exists ? "IF NOT EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::DROP_STATISTIC)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "STATISTIC "
-                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
-    }
-    else if (type == ASTAlterCommand::MATERIALIZE_STATISTIC)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTIC " << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
-    }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD CONSTRAINT " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -511,11 +484,6 @@ bool ASTAlterQuery::isFetchAlter() const
 bool ASTAlterQuery::isDropPartitionAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
-}
-
-bool ASTAlterQuery::isCommentAlter() const
-{
-    return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
 }
 
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const

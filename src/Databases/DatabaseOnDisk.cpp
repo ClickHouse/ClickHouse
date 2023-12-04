@@ -30,7 +30,6 @@ namespace CurrentMetrics
 {
     extern const Metric DatabaseOnDiskThreads;
     extern const Metric DatabaseOnDiskThreadsActive;
-    extern const Metric DatabaseOnDiskThreadsScheduled;
 }
 
 namespace DB
@@ -74,7 +73,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         auto table_function = factory.get(table_function_ast, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true, false);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.getTable(), storage};
@@ -100,7 +99,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
         else
         {
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true, false);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
             constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
         }
     }
@@ -628,7 +627,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     }
 
     /// Read and parse metadata in parallel
-    ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive, CurrentMetrics::DatabaseOnDiskThreadsScheduled);
+    ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive);
     for (const auto & file : metadata_files)
     {
         pool.scheduleOrThrowOnError([&]()

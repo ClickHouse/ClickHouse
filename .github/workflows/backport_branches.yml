@@ -34,12 +34,7 @@ jobs:
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          echo "Testing the main ci directory"
-          python3 -m unittest discover -s . -p 'test_*.py'
-          for dir in *_lambda/; do
-            echo "Testing $dir"
-            python3 -m unittest discover -s "$dir" -p 'test_*.py'
-          done
+          python3 -m unittest discover -s . -p '*_test.py'
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: CheckLabels
@@ -75,7 +70,7 @@ jobs:
           name: changed_images_amd64
           path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
   DockerHubPush:
-    needs: [DockerHubPushAmd64, DockerHubPushAarch64, PythonUnitTests]
+    needs: [DockerHubPushAmd64, DockerHubPushAarch64]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
