@@ -90,3 +90,21 @@ select count(), countIf(value = key+$mutations_iterations), length(groupArray(_p
 select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
 select partition, count() from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
 "
+
+# no overlapped mutations!
+$CLICKHOUSE_CLIENT -nm -q "
+WITH splitByChar('/', path) AS parts
+SELECT
+    parts[3] AS database,
+    extract(data, 'mutate\n([^\\s]*)\n') AS from_part,
+    groupUniqArray(path) AS paths,
+    groupUniqArray(data) AS mutations,
+    groupUniqArray(extract(data, 'to\n([^\\s]*)\n')) AS to_parts
+FROM system.zookeeper_log
+WHERE (type = 'Response') AND (op_num = 'Create') AND (data LIKE '%mutate%') AND (error = 'ZOK') AND (path LIKE '%/log/%') AND (startsWith(path, '/tables/' || currentDatabase() || '/%'))
+GROUP BY
+    1,
+    2
+HAVING length(mutations) > 1
+LIMIT 10
+"
