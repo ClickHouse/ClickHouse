@@ -9,7 +9,7 @@ namespace DB
 {
 
 /*
- * Calculates global min max indexes for a given set of parts.
+ * Calculates global min max indexes for a given set of parts on given storage.
  * */
 class MergeTreePartitionGlobalMinMaxIdxCalculator
 {
@@ -19,9 +19,8 @@ class MergeTreePartitionGlobalMinMaxIdxCalculator
 
 public:
     static Block calculate(
-        const MergeTreeData & storage,
         const DataPartsVector & parts,
-        const Names & columns_of_interest
+        const MergeTreeData & storage
     );
 };
 

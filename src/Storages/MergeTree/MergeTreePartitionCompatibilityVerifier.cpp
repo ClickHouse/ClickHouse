@@ -131,9 +131,8 @@ void MergeTreePartitionCompatibilityVerifier::verify(
     }
 
     const auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
-        source_storage,
         source_parts,
-        destination_storage.getInMemoryMetadataPtr()->getColumnsRequiredForPartitionKey()
+        destination_storage
     );
 
     assert(src_global_min_max_indexes.columns());
