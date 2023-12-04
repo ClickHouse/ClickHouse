@@ -103,8 +103,8 @@ namespace
             };
 
             const auto * first_column_arg = arguments[0].column.get();
-            const auto * first_column_arg_string = typeid_cast<const ColumnString *>(first_column_arg);
-            const auto * first_column_arg_const = typeid_cast<const ColumnConst *>(first_column_arg);
+            const auto * first_column_arg_string = checkAndGetColumn<ColumnString>(first_column_arg);
+            const auto * first_column_arg_const = checkAndGetColumnConst<ColumnString>(first_column_arg);
 
             if (!first_column_arg_string && !first_column_arg_const)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
@@ -121,8 +121,8 @@ namespace
             for (size_t col_idx = 1; col_idx < arguments.size(); ++col_idx)
             {
                 const auto * column_arg = arguments[col_idx].column.get();
-                const auto * column_arg_string = typeid_cast<const ColumnString *>(column_arg);
-                const auto * column_arg_const = typeid_cast<const ColumnConst *>(column_arg);
+                const auto * column_arg_string = checkAndGetColumn<ColumnString>(column_arg);
+                const auto * column_arg_const = checkAndGetColumnConst<ColumnString>(column_arg);
 
                 if (!column_arg_string && !column_arg_const)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
