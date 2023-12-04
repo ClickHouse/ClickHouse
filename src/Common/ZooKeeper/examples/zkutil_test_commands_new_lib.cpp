@@ -1,7 +1,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Event.h>
-#include "Common/ZooKeeper/ZooKeeperLoadBalancerManager.h"
+#include "Common/ZooKeeper/ZooKeeperLoadBalancer.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -27,10 +27,10 @@ try
     Poco::Logger::root().setChannel(channel);
     Poco::Logger::root().setLevel("trace");
 
-    ZooKeeperLoadBalancerManager lb_manager;
+    auto & zk_lb = ZooKeeperLoadBalancer::instance();
     zkutil::ZooKeeperArgs args(argv[1]);
-    lb_manager.init(args, nullptr);
-    auto  zk = lb_manager.createClient();
+    zk_lb.init(args, nullptr);
+    auto  zk = zk_lb.createClient();
 
     Poco::Event event(true);
 

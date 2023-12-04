@@ -14,6 +14,7 @@
 #include <string_view>
 #include <vector>
 
+#include "Common/ZooKeeper/ZooKeeperLoadBalancer.h"
 #include "Common/logger_useful.h"
 #include <Common/Priority.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -64,18 +65,6 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
-std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
-{
-    std::pair<std::string, bool> result;
-    bool secure = startsWith(raw_host, "secure://");
-    if (secure)
-        result.first = raw_host.substr(strlen("secure://"));
-    else
-        result.first = raw_host;
-    result.second = secure;
-    return result;
-}
-
 
 void ZooKeeper::init(ZooKeeperArgs args_)
 {
@@ -83,8 +72,9 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     log = &Poco::Logger::get("ZooKeeper");
     if (args.implementation == "zookeeper")
     {
-        load_balancer_manager.init(args, zk_log);
-        impl = load_balancer_manager.createClient();
+        auto & zk_load_balancer = Coordination::ZooKeeperLoadBalancer::instance();
+        zk_load_balancer.init(args, zk_log);
+        impl = zk_load_balancer.createClient();
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else

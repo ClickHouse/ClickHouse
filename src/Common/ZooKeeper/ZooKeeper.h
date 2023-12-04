@@ -12,7 +12,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperLoadBalancerManager.h>
+#include <Common/ZooKeeper/ZooKeeperLoadBalancer.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -617,8 +617,6 @@ private:
 
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
-
-    Coordination::ZooKeeperLoadBalancerManager load_balancer_manager;
 
     std::unique_ptr<Coordination::IKeeper> impl;
 

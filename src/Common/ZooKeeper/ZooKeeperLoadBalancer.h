@@ -3,6 +3,7 @@
 #include "Types.h"
 #include <functional>
 #include <unistd.h>
+#include <mutex>
 #include <random>
 #include <memory>
 #include <string>
@@ -24,15 +25,17 @@
 namespace Coordination
 {
 
-class ZooKeeperLoadBalancerManager
+class ZooKeeperLoadBalancer
 {
 public:
     using BetterKeeperHostUpdater = std::function<void (std::unique_ptr<Coordination::IKeeper>)>;
 
+    static ZooKeeperLoadBalancer & instance();
+
     void init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
     std::unique_ptr<Coordination::ZooKeeper> createClient();
 
-    // When ZooKeeperLoadBalancerManager detects that a better Keeper hots is available, it will call this handler.
+    // When ZooKeeperLoadBalancer detects that a better Keeper hots is available, it will call this handler.
     void setBetterKeeperHostUpdater(BetterKeeperHostUpdater handler);
 
 private:
@@ -73,6 +76,9 @@ private:
     zkutil::ZooKeeperArgs args;
     std::shared_ptr<ZooKeeperLog> zk_log;
     BetterKeeperHostUpdater better_keeper_host_updater;
+
+    std::mutex mutex;
+
     Poco::Logger* log;
 };
 

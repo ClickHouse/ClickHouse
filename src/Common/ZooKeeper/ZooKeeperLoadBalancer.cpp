@@ -1,9 +1,10 @@
 #include <memory>
+#include <mutex>
 
 #include <base/types.h>
 #include <base/sort.h>
 #include <Common/logger_useful.h>
-#include <Common/ZooKeeper/ZooKeeperLoadBalancerManager.h>
+#include <Common/ZooKeeper/ZooKeeperLoadBalancer.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/DNSResolver.h>
 
@@ -50,14 +51,21 @@ bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string & address, bo
     return true;
 }
 
+ZooKeeperLoadBalancer & ZooKeeperLoadBalancer::instance()
+{
+    static ZooKeeperLoadBalancer instance;
+    return instance;
+}
 
-void ZooKeeperLoadBalancerManager::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_)
+
+void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_)
 {
     if (args_.hosts.empty())
         throw zkutil::KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts specified in ZooKeeperArgs.");
+    std::lock_guard lock{mutex};
     args = args_;
     zk_log = std::move(zk_log_);
-    log = &Poco::Logger::get("ZooKeeperLoadBalancerManager");
+    log = &Poco::Logger::get("ZooKeeperLoadBalancer");
     for (size_t i = 0; i < args_.hosts.size(); ++i)
     {
         HostInfo host_info;
@@ -69,8 +77,9 @@ void ZooKeeperLoadBalancerManager::init(zkutil::ZooKeeperArgs args_, std::shared
     }
 }
 
-void ZooKeeperLoadBalancerManager::setBetterKeeperHostUpdater(BetterKeeperHostUpdater handler)
+void ZooKeeperLoadBalancer::setBetterKeeperHostUpdater(BetterKeeperHostUpdater handler)
 {
+    std::lock_guard lock{mutex};
     better_keeper_host_updater = handler;
 }
 
@@ -84,7 +93,7 @@ void ZooKeeperLoadBalancerManager::setBetterKeeperHostUpdater(BetterKeeperHostUp
 }
 
 
-void ZooKeeperLoadBalancerManager::shuffleHosts()
+void ZooKeeperLoadBalancer::shuffleHosts()
 {
     std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
     for (size_t i = 0; i < host_info_list.size(); ++i)
@@ -97,8 +106,9 @@ void ZooKeeperLoadBalancerManager::shuffleHosts()
     ::sort(host_info_list.begin(), host_info_list.end(), HostInfo::compare);
 }
 
-void ZooKeeperLoadBalancerManager::recordKeeperHostError(UInt8 original_index)
+void ZooKeeperLoadBalancer::recordKeeperHostError(UInt8 original_index)
 {
+    std::lock_guard lock{mutex};
     for (auto & host_info : host_info_list)
     {
         if (host_info.original_index == original_index)
@@ -111,8 +121,9 @@ void ZooKeeperLoadBalancerManager::recordKeeperHostError(UInt8 original_index)
     LOG_ERROR(log, "Does not find host to record the failure with original index {}", static_cast<UInt32>(original_index));
 }
 
-std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancerManager::createClient()
+std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
 {
+    std::lock_guard lock{mutex};
     shuffleHosts();
     bool dns_error_occurred = false;
     for (size_t i = 0; i < host_info_list.size(); ++i)
@@ -124,21 +135,17 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancerManager::createCli
         try
         {
             auto client  = std::make_unique<Coordination::ZooKeeper>(host_info_list[i].toZooKeeperNode(), args, zk_log);
-
             // Non optimal case: we connected to a keeper host in different availability zone, so set a session deadline.
             if (i != 0)
             {
-                auto session_timeout_seconds = client->setClientSessionDeadline(
-                    args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
+                auto session_timeout_seconds = client->setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
                 LOG_INFO(log, "Connecting to a different az ZooKeeper with session timeout {} seconds", session_timeout_seconds);
             }
-
             // This is the client we expect to be actually used, therefore we set the callback to monitor the potential send/receive errors.
-            client->setSendRecvErrorCallback([this, original_index = host_info_list[i].original_index]() 
+            client->setSendRecvErrorCallback([&, original_index= host_info_list[i].original_index]()
             {
                 recordKeeperHostError(original_index);
             });
-
             return client;
         }
         catch (DB::Exception& ex)
