@@ -404,11 +404,14 @@ private:
                 continue;
             }
 
+            bool is_any_nullable = false;
             Tuple args;
             args.reserve(equals_functions.size());
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
+                is_any_nullable |= equals->getResultType()->isNullable();
+
                 const auto * equals_function = equals->as<FunctionNode>();
                 assert(equals_function && equals_function->getFunctionName() == "equals");
 
@@ -436,8 +439,20 @@ private:
 
             in_function->getArguments().getNodes() = std::move(in_arguments);
             in_function->resolveAsFunction(in_function_resolver);
-
-            or_operands.push_back(std::move(in_function));
+            /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
+              * is replaced with `k IN (1, NULL)` with result type UInt8.
+              * Convert it back to Nullable(UInt8).
+              */
+            if (is_any_nullable && !in_function->getResultType()->isNullable())
+            {
+                auto nullable_result_type = std::make_shared<DataTypeNullable>(in_function->getResultType());
+                auto in_function_nullable = createCastFunction(std::move(in_function), std::move(nullable_result_type), getContext());
+                or_operands.push_back(std::move(in_function_nullable));
+            }
+            else
+            {
+                or_operands.push_back(std::move(in_function));
+            }
         }
 
         if (or_operands.size() == function_node.getArguments().getNodes().size())
