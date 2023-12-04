@@ -103,7 +103,10 @@ using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFin
 TTLDescription::TTLDescription(const TTLDescription & other)
     : mode(other.mode)
     , expression_ast(other.expression_ast ? other.expression_ast->clone() : nullptr)
+    , expression_columns(other.expression_columns)
     , result_column(other.result_column)
+    , where_expression_ast(other.where_expression_ast ? other.where_expression_ast->clone() : nullptr)
+    , where_expression_columns(other.where_expression_columns)
     , where_result_column(other.where_result_column)
     , group_by_keys(other.group_by_keys)
     , set_parts(other.set_parts)
@@ -136,12 +139,20 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     // else
     //     expression.reset();
 
+    expression_columns = other.expression_columns;
     result_column = other.result_column;
+
+    if (other.where_expression_ast)
+        where_expression_ast = other.where_expression_ast->clone();
+    else
+        where_expression_ast.reset();
+
     // if (other.where_expression)
     //     where_expression = other.where_expression->clone();
     // else
     //     where_expression.reset();
 
+    where_expression_columns = other.where_expression_columns;
     where_result_column = other.where_result_column;
     group_by_keys = other.group_by_keys;
     set_parts = other.set_parts;
