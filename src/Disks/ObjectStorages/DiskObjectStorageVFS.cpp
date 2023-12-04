@@ -23,11 +23,12 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         std::move(object_storage_),
         config,
         config_prefix)
+    , traits(name_)
     , zookeeper(std::move(zookeeper_))
 {
-    zookeeper->createAncestors(VFS_LOG_ITEM);
+    zookeeper->createAncestors(traits.VFS_LOG_ITEM);
     // TODO myrrc ugly hack to create locks root node, remove
-    zookeeper->createAncestors(fs::path(VFS_LOCKS_NODE) / "dummy");
+    zookeeper->createAncestors(fs::path(traits.VFS_LOCKS_NODE) / "dummy");
 }
 
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
@@ -62,11 +63,11 @@ String DiskObjectStorageVFS::getStructure() const
     return fmt::format("DiskObjectStorageVFS-{}({})", getName(), object_storage->getName());
 }
 
-String lockPathToFullPath(std::string_view path)
+String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path)
 {
     String lock_path{path};
     std::ranges::replace(lock_path, '/', '_');
-    return fs::path(VFS_LOCKS_NODE) / lock_path;
+    return fs::path(traits.VFS_LOCKS_NODE) / lock_path;
 }
 
 bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
@@ -122,6 +123,6 @@ void DiskObjectStorageVFS::copyFileReverse(
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageVFSTransaction>(*object_storage, *metadata_storage, zookeeper);
+    return std::make_shared<DiskObjectStorageVFSTransaction>(*object_storage, *metadata_storage, zookeeper, traits);
 }
 }

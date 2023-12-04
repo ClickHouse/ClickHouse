@@ -1,14 +1,15 @@
 #pragma once
 #include "Common/ZooKeeper/IKeeper.h"
 #include "Disks/ObjectStorages/StoredObject.h"
+#include "VFSTraits.h"
 #include "base/types.h"
 
 namespace DB
 {
-static constexpr auto VFS_BASE_NODE = "/vfs_log";
-static constexpr auto VFS_LOCKS_NODE = "/vfs_log/locks";
-static const String VFS_LOG_BASE_NODE = "/vfs_log/ops";
-static constexpr auto VFS_LOG_ITEM = "/vfs_log/ops/log-";
+// static const String VFS_BASE_NODE = "/vfs_log";
+// static const String VFS_LOCKS_NODE = VFS_BASE_NODE + "/locks";
+// static const String VFS_LOG_BASE_NODE = VFS_BASE_NODE + "/ops";
+// static const String VFS_LOG_ITEM = VFS_LOG_BASE_NODE + "/log-";
 
 struct VFSTransactionLogItem : StoredObject
 {
@@ -25,7 +26,10 @@ struct VFSTransactionLogItem : StoredObject
 };
 
 // For every object in objects, add a Keeper log entry create request with corresponding type to ops
-void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type, const StoredObjects & objects, Coordination::Requests & ops);
+void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type,
+  const StoredObjects & objects,
+  Coordination::Requests & ops,
+  const VFSTraits & traits);
 
 struct VFSSnapshot
 {

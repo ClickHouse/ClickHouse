@@ -2,9 +2,21 @@
 #include "Common/ZooKeeper/ZooKeeper.h"
 #include "DiskObjectStorage.h"
 #include "ObjectStorageVFSGCThread.h"
+#include "VFSTraits.h"
 
 namespace DB
 {
+
+// class VFSTraits
+// {
+// public:
+//     String VFS_BASE_NODE = "/vfs_log";
+//     String VFS_LOCKS_NODE = VFS_BASE_NODE + "/locks";
+//     String VFS_LOG_BASE_NODE = VFS_BASE_NODE + "/ops";
+//     String VFS_LOG_ITEM = VFS_LOG_BASE_NODE + "/log-";
+// };
+
+
 // A wrapper for object storage (currently only s3 disk is supported) which counts references to objects
 // using a transaction log in Keeper. Disk operations don't remove data from object storage,
 // a separate entity (garbage collector) is responsible for that.
@@ -46,6 +58,8 @@ public:
         const WriteSettings & write_settings,
         const std::function<void()> & cancellation_hook) override;
 
+    VFSTraits traits;
+
 private:
     // TODO myrrc not sure we should couple object storage and garbage collector this way
     // This has a downside that e.g. clickhouse-disks usage spins up a GC each time we issue
@@ -58,5 +72,8 @@ private:
     zkutil::ZooKeeperPtr zookeeper;
 
     DiskTransactionPtr createObjectStorageTransaction() final;
+
+    String lockPathToFullPath(std::string_view path);
+
 };
 }

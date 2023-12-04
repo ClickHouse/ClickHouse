@@ -1,6 +1,7 @@
 #include "VFSTransactionLog.h"
 #include "Common/ZooKeeper/ZooKeeper.h"
 #include "IO/ReadHelpers.h"
+#include "VFSTraits.h"
 #include "base/EnumReflection.h"
 #include "base/defines.h"
 #include "base/find_symbols.h"
@@ -42,13 +43,16 @@ VFSTransactionLogItem VFSTransactionLogItem::deserialize(std::string_view str)
     return out;
 }
 
-void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type, const StoredObjects & objects, Coordination::Requests & ops)
+void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type,
+  const StoredObjects & objects,
+  Coordination::Requests & ops,
+  const VFSTraits & traits)
 {
     for (const StoredObject & object : objects)
     {
         VFSTransactionLogItem item = static_cast<const VFSTransactionLogItem &>(object);
         item.type = type;
-        ops.emplace_back(zkutil::makeCreateRequest(VFS_LOG_ITEM, item.serialize(), zkutil::CreateMode::PersistentSequential));
+        ops.emplace_back(zkutil::makeCreateRequest(traits.VFS_LOG_ITEM, item.serialize(), zkutil::CreateMode::PersistentSequential));
     }
 }
 

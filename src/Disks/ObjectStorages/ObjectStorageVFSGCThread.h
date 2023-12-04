@@ -47,5 +47,7 @@ private:
 
     void writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name);
     void removeLogEntries(size_t start_logpointer, size_t end_logpointer);
+
+    String getNode(size_t id);
 };
 }

@@ -15,16 +15,16 @@ extern const int LOGICAL_ERROR;
 
 static constexpr auto VFS_SNAPSHOT_PREFIX = "vfs_snapshot_";
 
-inline String getNode(size_t id) // Zookeeper's sequential node is 10 digits with padding zeros
+inline String ObjectStorageVFSGCThread::getNode(size_t id) // Zookeeper's sequential node is 10 digits with padding zeros
 {
-    return fmt::format("{}{:010}", VFS_LOG_ITEM, id);
+    return fmt::format("{}{:010}", storage.traits.VFS_LOG_ITEM, id);
 }
 
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
     : storage(storage_)
     , log_name("DiskObjectStorageVFSGC")
     , log(&Poco::Logger::get(log_name))
-    , zookeeper_lock(zkutil::createSimpleZooKeeperLock(storage.zookeeper, VFS_BASE_NODE, "lock", ""))
+    , zookeeper_lock(zkutil::createSimpleZooKeeperLock(storage.zookeeper, storage.traits.VFS_BASE_NODE, "lock", ""))
     , sleep_ms(10'000) // TODO myrrc should pick this from settings
 {
     task = context->getSchedulePool().createTask(
@@ -66,7 +66,7 @@ void ObjectStorageVFSGCThread::run()
         return;
     }
 
-    const Strings batch = storage.zookeeper->getChildren(VFS_LOG_BASE_NODE);
+    const Strings batch = storage.zookeeper->getChildren(storage.traits.VFS_LOG_BASE_NODE);
     constexpr size_t batch_min_size = 1; // TODO myrrc should be a setting
     if (batch.size() < batch_min_size)
         return;

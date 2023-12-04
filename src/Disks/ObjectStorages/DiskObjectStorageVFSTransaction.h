@@ -2,13 +2,19 @@
 #include "Common/ZooKeeper/ZooKeeper.h"
 #include "DiskObjectStorageTransaction.h"
 #include "VFSTransactionLog.h"
+#include "VFSTraits.h"
 
 namespace DB
 {
+
+
 struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransaction
 {
     DiskObjectStorageVFSTransaction(
-        IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, zkutil::ZooKeeperPtr zookeeper_);
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        zkutil::ZooKeeperPtr zookeeper_,
+        const VFSTraits & traits_);
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
@@ -43,6 +49,8 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
 private:
     zkutil::ZooKeeperPtr zookeeper;
     Poco::Logger const * const log;
+    VFSTraits traits;
+
     void addStoredObjectsOp(VFSTransactionLogItem::Type type, StoredObjects && objects);
 };
 }
