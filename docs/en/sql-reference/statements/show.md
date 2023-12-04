@@ -207,7 +207,7 @@ The optional keyword `FULL` causes the output to include the collation, comment 
 
 The statement produces a result table with the following structure:
 - `field` - The name of the column (String)
-- `type` - The column data type. If the query was made through the MySQL wire protocol, then the equivalent type name in MySQL is shown. (String)
+- `type` - The column data type. If setting `[use_mysql_types_in_show_columns](../../operations/settings/settings.md#use_mysql_types_in_show_columns) = 1` (default: 0), then the equivalent type name in MySQL is shown. (String)
 - `null` - `YES` if the column data type is Nullable, `NO` otherwise (String)
 - `key` - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
 - `default` - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))

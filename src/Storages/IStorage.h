@@ -68,8 +68,6 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
-class ConditionEstimator;
-
 struct ColumnSize
 {
     size_t marks = 0;
@@ -136,8 +134,6 @@ public:
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
-
-    virtual ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -568,10 +564,10 @@ public:
       * @see shutdown()
       * @see flushAndPrepareForShutdown()
       */
-    void flushAndShutdown(bool is_drop = false)
+    void flushAndShutdown()
     {
         flushAndPrepareForShutdown();
-        shutdown(is_drop);
+        shutdown();
     }
 
     /** If the table have to do some complicated work when destroying an object - do it in advance.
@@ -579,7 +575,7 @@ public:
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
-    virtual void shutdown(bool is_drop = false) { UNUSED(is_drop); } // NOLINT
+    virtual void shutdown() {}
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
@@ -597,7 +593,6 @@ public:
 
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
-    std::atomic<bool> is_being_restarted{false};
 
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }
@@ -608,7 +603,7 @@ public:
 
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.
-      * E.g. for some storages it's a list of files in filesystem, for others it can be a list of parts.
+      * E.g. for some storages it to check data it need to check a list of files in filesystem, for others it can be a list of parts.
       * Also it may hold resources (e.g. locks) required during check.
       */
     struct DataValidationTasksBase
@@ -621,9 +616,7 @@ public:
 
     using DataValidationTasksPtr = std::shared_ptr<DataValidationTasksBase>;
 
-    /// Specifies to check all data / partition / part
-    using CheckTaskFilter = std::variant<std::monostate, ASTPtr, String>;
-    virtual DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & /* check_task_filter */, ContextPtr /* context */);
+    virtual DataValidationTasksPtr getCheckTaskList(const ASTPtr & /* query */, ContextPtr /* context */);
 
     /** Executes one task from the list.
       * If no tasks left - returns nullopt.
@@ -632,7 +625,7 @@ public:
       *   to process different tasks in parallel.
       * Usage:
       *
-      * auto check_task_list = storage.getCheckTaskList({}, context);
+      * auto check_task_list = storage.getCheckTaskList(query, context);
       * size_t total_tasks = check_task_list->size();
       * while (true)
       * {
@@ -720,9 +713,6 @@ public:
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
-
-    /// Re initialize disks in case the underlying storage policy changed
-    virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
 
     /// A helper to implement read()
     static void readFromPipe(

@@ -282,10 +282,15 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, local_context);
 
     /// start modify query
-    const auto & new_select = new_metadata.select;
-    const auto & old_select = old_metadata.getSelectQuery();
+    if (local_context->getSettingsRef().allow_experimental_alter_materialized_view_structure)
+    {
+        const auto & new_select = new_metadata.select;
+        const auto & old_select = old_metadata.getSelectQuery();
 
-    DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+        DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+
+        new_metadata.setSelectQuery(new_select);
+    }
     /// end modify query
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
@@ -293,13 +298,26 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    for (const auto & command : commands)
+    const auto & settings = local_context->getSettingsRef();
+    if (settings.allow_experimental_alter_materialized_view_structure)
     {
-        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
+        for (const auto & command : commands)
+        {
+            if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getName());
+        }
+    }
+    else
+    {
+        for (const auto & command : commands)
+        {
+            if (!command.isCommentAlter())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getName());
+        }
     }
 }
 
@@ -382,7 +400,7 @@ void StorageMaterializedView::startup()
         DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 }
 
-void StorageMaterializedView::shutdown(bool)
+void StorageMaterializedView::shutdown()
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();

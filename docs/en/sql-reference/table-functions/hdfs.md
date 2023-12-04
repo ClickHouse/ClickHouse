@@ -94,9 +94,8 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## Virtual Columns
 
-- `_path` — Path to the file. Type: `LowCardinalty(String)`.
-- `_file` — Name of the file. Type: `LowCardinalty(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
 
 ## Storage Settings {#storage-settings}
 

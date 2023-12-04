@@ -22,7 +22,6 @@ namespace CurrentMetrics
 {
     extern const Metric QueryPipelineExecutorThreads;
     extern const Metric QueryPipelineExecutorThreadsActive;
-    extern const Metric QueryPipelineExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -300,18 +299,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            try
-            {
-                /// Upscale if possible.
-                spawnThreads();
-            }
-            catch (...)
-            {
-                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                /// We should cancel execution properly before rethrow.
-                cancel();
-                throw;
-            }
+            /// Upscale if possible.
+            spawnThreads();
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
@@ -343,7 +332,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     tasks.fill(queue);
 
     if (num_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, num_threads);
 }
 
 void PipelineExecutor::spawnThreads()

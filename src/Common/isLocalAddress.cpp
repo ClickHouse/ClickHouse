@@ -4,7 +4,6 @@
 #include <cstring>
 #include <optional>
 #include <base/types.h>
-#include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
 #include <Common/levenshteinDistance.h>
 #include <Poco/Net/IPAddress.h>
@@ -22,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-struct NetworkInterfaces : public boost::noncopyable
+struct NetworkInterfaces
 {
     ifaddrs * ifaddr;
     NetworkInterfaces()
@@ -113,8 +112,8 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
         }
     }
 
-    static NetworkInterfaces network_interfaces;
-    return network_interfaces.hasAddress(address);
+    NetworkInterfaces interfaces;
+    return interfaces.hasAddress(address);
 }
 
 

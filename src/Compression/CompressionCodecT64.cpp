@@ -723,7 +723,7 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
 
 void CompressionCodecT64::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash);
     hash.update(type_idx.value_or(TypeIndex::Nothing));
     hash.update(variant);
 }

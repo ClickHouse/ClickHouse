@@ -236,9 +236,6 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
                                                                  "because replicas are created or removed concurrently");
 
-    LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
-              fmt::join(unfiltered_hosts, ", "), fmt::join(hosts, ", "), fmt::join(host_ids, ", "));
-
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
     String current_shard = parseFullReplicaName(hosts.front()).first;
@@ -262,11 +259,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
 
-    UInt16 default_port;
-    if (cluster_auth_info.cluster_secure_connection)
-        default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
-    else
-        default_port = getContext()->getTCPPort();
+    UInt16 default_port = getContext()->getTCPPort();
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
@@ -1083,14 +1076,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
     LOG_INFO(log, "All tables are created successfully");
 
-    chassert(max_log_ptr_at_creation || our_log_ptr);
-    UInt32 first_entry_to_mark_finished = new_replica ? max_log_ptr_at_creation : our_log_ptr;
-    if (first_entry_to_mark_finished)
+    if (max_log_ptr_at_creation != 0)
     {
         /// If the replica is new and some of the queries applied during recovery
         /// where issued after the replica was created, then other nodes might be
         /// waiting for this node to notify them that the query was applied.
-        for (UInt32 ptr = first_entry_to_mark_finished; ptr <= max_log_ptr; ++ptr)
+        for (UInt32 ptr = max_log_ptr_at_creation; ptr <= max_log_ptr; ++ptr)
         {
             auto entry_name = DDLTaskBase::getLogEntryName(ptr);
             auto path = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();

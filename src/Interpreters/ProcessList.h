@@ -345,8 +345,6 @@ public:
 
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
-    /// query_id -> User
-    using QueriesToUser = std::unordered_map<String, String>;
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
@@ -367,9 +365,6 @@ protected:
 
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
-
-    /// Stores query IDs and associated users, used for query ID uniqueness check
-    QueriesToUser queries_to_user;
 
     /// Stores info about queries grouped by their priority
     QueryPriorities priorities;

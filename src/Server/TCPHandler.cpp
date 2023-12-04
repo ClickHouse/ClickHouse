@@ -58,11 +58,11 @@
 #   include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
 
-#include <Core/Protocol.h>
-#include <Storages/MergeTree/RequestResponse.h>
+#include "Core/Protocol.h"
+#include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 using namespace std::literals;
 using namespace DB;
@@ -1452,11 +1452,8 @@ void TCPHandler::receiveHello()
                     getClientAddress(client_info));
                 return;
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED)
-                    throw;
-
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }

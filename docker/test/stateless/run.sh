@@ -19,11 +19,6 @@ dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
-# Check that the tools are available under short names
-ch --query "SELECT 1" || exit 1
-chl --query "SELECT 1" || exit 1
-chc --version || exit 1
-
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # shellcheck disable=SC1091
@@ -67,7 +62,7 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
     mkdir -p /var/run/clickhouse-server
-    # simplest way to forward env variables to server
+    # simpliest way to forward env variables to server
     sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
 else
     sudo clickhouse start
@@ -216,9 +211,6 @@ ls -la /
 /process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 clickhouse-client -q "system flush logs" ||:
-
-# stop logs replication to make it possible to dump logs tables via clickhouse-local
-stop_logs_replication
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?

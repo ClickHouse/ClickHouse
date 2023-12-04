@@ -66,10 +66,8 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
-            /// we need to read statistic when `allow_statistic_optimize` is enabled.
-            bool only_analyze = !data.getContext()->getSettings().allow_statistic_optimize;
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
+                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -538,21 +536,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
-            ContextPtr context = getContext();
+            ContextPtr context;
 
-            if (context->getSettingsRef().allow_experimental_analyzer)
-            {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-                context = interpreter.getContext();
-                plan = std::move(interpreter).extractQueryPlan();
-            }
-            else
-            {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-                context = interpreter.getContext();
-                interpreter.buildQueryPlan(plan);
-            }
-
+            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+            interpreter.buildQueryPlan(plan);
+            context = interpreter.getContext();
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).

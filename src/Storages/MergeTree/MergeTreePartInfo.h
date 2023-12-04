@@ -131,8 +131,6 @@ struct MergeTreePartInfo
 
     static bool contains(const String & outer_part_name, const String & inner_part_name, MergeTreeDataFormatVersion format_version);
 
-    static bool areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates);
-
     static constexpr UInt32 MAX_LEVEL = 999999999;
     static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
 

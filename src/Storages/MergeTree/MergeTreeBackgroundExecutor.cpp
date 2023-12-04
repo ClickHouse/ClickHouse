@@ -14,7 +14,6 @@ namespace CurrentMetrics
 {
     extern const Metric MergeTreeBackgroundExecutorThreads;
     extern const Metric MergeTreeBackgroundExecutorThreadsActive;
-    extern const Metric MergeTreeBackgroundExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -41,7 +40,7 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     , metric(metric_)
     , max_tasks_metric(max_tasks_metric_, 2 * max_tasks_count) // active + pending
     , pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive, CurrentMetrics::MergeTreeBackgroundExecutorThreadsScheduled))
+          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive))
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");

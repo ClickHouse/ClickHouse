@@ -27,7 +27,6 @@ struct ContextSharedPart;
 class Macros;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
-class BlobStorageLog;
 
 /// A small class which owns ContextShared.
 /// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
@@ -116,7 +115,6 @@ public:
 
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
-    std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
     enum class ApplicationType
     {

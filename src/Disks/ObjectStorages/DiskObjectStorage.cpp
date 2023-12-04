@@ -48,14 +48,14 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
-    const String & object_key_prefix_,
+    const String & object_storage_root_path_,
     const String & log_name,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : IDisk(name_, config, config_prefix)
-    , object_key_prefix(object_key_prefix_)
+    , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
@@ -80,7 +80,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
     {
         try
         {
-            paths_map.emplace_back(local_path, getStorageObjects(local_path));
+            paths_map.emplace_back(local_path, metadata_storage->getObjectStorageRootPath(), getStorageObjects(local_path));
         }
         catch (const Exception & e)
         {
@@ -175,9 +175,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     IDisk & to_disk,
     const String & to_file_path,
     const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook
-    )
+    const WriteSettings & write_settings)
 {
     if (this == &to_disk)
     {
@@ -189,7 +187,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     else
     {
         /// Copy through buffers
-        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings);
     }
 }
 
@@ -245,9 +243,9 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
-    if (!id.starts_with(object_key_prefix))
+    if (!id.starts_with(object_storage_root_path))
     {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_key_prefix, StackTrace().toString());
+        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_storage_root_path, StackTrace().toString());
         return false;
     }
 
@@ -472,7 +470,7 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
     const auto config_prefix = "storage_configuration.disks." + name;
     return std::make_shared<DiskObjectStorage>(
         getName(),
-        object_key_prefix,
+        object_storage_root_path,
         getName(),
         metadata_storage,
         object_storage,
@@ -521,7 +519,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 
     return object_storage->readObjects(
         storage_objects,
-        updateResourceLink(settings, getReadResourceName()),
+        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getReadResourceName()), path),
         read_hint,
         file_size);
 }
@@ -534,9 +532,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 {
     LOG_TEST(log, "Write file: {}", path);
 
-    WriteSettings write_settings = updateResourceLink(settings, getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFile(path, buf_size, mode, write_settings);
+    return transaction->writeFile(
+        path,
+        buf_size,
+        mode,
+        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getWriteResourceName()), path));
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const
@@ -585,7 +586,7 @@ void DiskObjectStorage::restoreMetadataIfNeeded(
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_key_prefix);
+        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_storage_root_path);
         if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 

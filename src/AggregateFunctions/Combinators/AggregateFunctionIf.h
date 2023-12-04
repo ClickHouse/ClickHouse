@@ -33,8 +33,6 @@ class AggregateFunctionIf final : public IAggregateFunctionHelper<AggregateFunct
 private:
     AggregateFunctionPtr nested_func;
     size_t num_arguments;
-    /// We accept Nullable(Nothing) as condition, but callees always expect UInt8 so we need to avoid calling them
-    bool only_null_condition = false;
 
 public:
     AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
@@ -44,9 +42,7 @@ public:
         if (num_arguments == 0)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
 
-        only_null_condition = types.back()->onlyNull();
-
-        if (!isUInt8(types.back()) && !only_null_condition)
+        if (!isUInt8(types.back()) && !types.back()->onlyNull())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Last argument for aggregate function {} must be UInt8", getName());
     }
 
@@ -112,8 +108,6 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (only_null_condition)
-            return;
         if (assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num])
             nested_func->add(place, columns, row_num, arena);
     }
@@ -127,8 +121,6 @@ public:
         Arena * arena,
         ssize_t) const override
     {
-        if (only_null_condition)
-            return;
         nested_func->addBatch(row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
     }
 
@@ -140,8 +132,6 @@ public:
         Arena * arena,
         ssize_t) const override
     {
-        if (only_null_condition)
-            return;
         nested_func->addBatchSinglePlace(row_begin, row_end, place, columns, arena, num_arguments - 1);
     }
 
@@ -154,8 +144,6 @@ public:
         Arena * arena,
         ssize_t) const override
     {
-        if (only_null_condition)
-            return;
         nested_func->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, num_arguments - 1);
     }
 

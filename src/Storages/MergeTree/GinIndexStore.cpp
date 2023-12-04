@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
-#include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -82,22 +81,14 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
     {
         rowid_bitmap.runOptimize();
         auto size = rowid_bitmap.getSizeInBytes();
-        auto buf = std::make_unique<char[]>(size);
-        rowid_bitmap.write(buf.get());
-
-        auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
-        Memory<> memory;
-        memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(size)));
-        auto compressed_size = codec->compress(buf.get(), static_cast<UInt32>(size), memory.data());
 
         writeVarUInt(size, buffer);
         written_bytes += getLengthOfVarUInt(size);
 
-        writeVarUInt(compressed_size, buffer);
-        written_bytes += getLengthOfVarUInt(compressed_size);
-
-        buffer.write(memory.data(), compressed_size);
-        written_bytes += compressed_size;
+        auto buf = std::make_unique<char[]>(size);
+        rowid_bitmap.write(buf.get());
+        buffer.write(buf.get(), size);
+        written_bytes += size;
     }
     else
     {
@@ -119,18 +110,11 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     if (postings_list_size == USES_BIT_MAP)
     {
         size_t size = 0;
-        size_t compressed_size = 0;
         readVarUInt(size, buffer);
-        readVarUInt(compressed_size, buffer);
-        auto buf = std::make_unique<char[]>(compressed_size);
-        buffer.readStrict(reinterpret_cast<char *>(buf.get()), compressed_size);
+        auto buf = std::make_unique<char[]>(size);
+        buffer.readStrict(reinterpret_cast<char *>(buf.get()), size);
 
-        Memory<> memory;
-        memory.resize(size);
-        auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
-        codec->decompress(buf.get(), static_cast<UInt32>(compressed_size), memory.data());
-
-        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(memory.data()));
+        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.get()));
 
         return postings_list;
     }

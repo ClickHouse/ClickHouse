@@ -28,7 +28,6 @@ namespace CurrentMetrics
 {
     extern const Metric ParquetDecoderThreads;
     extern const Metric ParquetDecoderThreadsActive;
-    extern const Metric ParquetDecoderThreadsScheduled;
 }
 
 namespace DB
@@ -378,7 +377,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
 {
     if (max_decoding_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, max_decoding_threads);
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()

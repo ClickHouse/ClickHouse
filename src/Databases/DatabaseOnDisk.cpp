@@ -30,7 +30,6 @@ namespace CurrentMetrics
 {
     extern const Metric DatabaseOnDiskThreads;
     extern const Metric DatabaseOnDiskThreadsActive;
-    extern const Metric DatabaseOnDiskThreadsScheduled;
 }
 
 namespace DB
@@ -628,7 +627,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     }
 
     /// Read and parse metadata in parallel
-    ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive, CurrentMetrics::DatabaseOnDiskThreadsScheduled);
+    ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive);
     for (const auto & file : metadata_files)
     {
         pool.scheduleOrThrowOnError([&]()

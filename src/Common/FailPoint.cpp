@@ -37,9 +37,7 @@ static struct InitFiu
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(use_delayed_remote_source) \
     REGULAR(cluster_discovery_faults) \
-    REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
-    REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
     PAUSEABLE(dummy_pausable_failpoint)
 

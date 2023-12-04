@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -113,11 +112,7 @@ void MergeTreeReadTask::initializeRangeReaders(
 UInt64 MergeTreeReadTask::estimateNumRows(const BlockSizeParams & params) const
 {
     if (!size_predictor)
-    {
-        if (params.preferred_block_size_bytes)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Size predictor is not set, it might lead to a performance degradation");
         return static_cast<size_t>(params.max_block_size_rows);
-    }
 
     /// Calculates number of rows will be read using preferred_block_size_bytes.
     /// Can't be less than avg_index_granularity.
