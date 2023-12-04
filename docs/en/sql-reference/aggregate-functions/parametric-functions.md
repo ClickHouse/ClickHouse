@@ -487,14 +487,14 @@ Where:
 
 ## uniqUpTo(N)(x)
 
-Calculates the approximate number of different values of the argument, up to a specified limit `N`. This function is useful when you want to get a rough estimate of the number of unique values in a column, but you're not interested in the exact count due to performance considerations. If the number of different argument values is greater than `N`, this function returns `N` + 1.
+Calculates the approximate number of different values of the argument up to a specified limit, `N`. This function is useful when you want to get a rough estimate of the number of unique values in a column but you're not interested in the exact count due to performance considerations. If the number of different argument values is greater than `N`, this function returns `N` + 1.
 
 Recommended for use with small `N`s, up to 10. The maximum value of `N` is 100.
 
 For the state of an aggregate function, this function uses the amount of memory equal to 1 + `N` \* the size of one value of bytes.
-When dealing with strings this function stores a non-cryptographic hash of 8 bytes; the calculation is approximated for strings.
+When dealing with strings, this function stores a non-cryptographic hash of 8 bytes; the calculation is approximated for strings.
 
-For example: if you had a table that logs every search query made by users on your website. Each row in the table represents a single search query, with columns for the user ID, the search query, and the timestamp of the query. You can use `uniqUpTo` to generate a report that shows only the keywords that produced at least 5 unique users.
+For example, if you had a table that logs every search query made by users on your website. Each row in the table represents a single search query, with columns for the user ID, the search query, and the timestamp of the query. You can use `uniqUpTo` to generate a report that shows only the keywords that produced at least 5 unique users.
 
 ```sql
 SELECT SearchPhrase
