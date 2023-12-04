@@ -53,19 +53,6 @@ namespace
         return monotonicity.is_monotonic && monotonicity.is_positive;
     }
 
-    void validatePartitionIds(
-        const MergeTreeData & destination_storage,
-        const Block & block
-    )
-    {
-        MergeTreePartition()
-            .createAndValidateMinMaxPartitionIds(
-                destination_storage.getInMemoryMetadataPtr(),
-                block,
-                destination_storage.getContext()
-            );
-    }
-
     bool isExpressionDirectSubsetOf(const ASTPtr source, const ASTPtr destination)
     {
         auto source_expression_list = extractKeyExpressionList(source);
@@ -121,7 +108,12 @@ void MergeTreePartitionCompatibilityVerifier::verify(
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Destination table partition expression is not monotonically increasing");
     }
 
-    validatePartitionIds(destination_storage, src_global_min_max_indexes.getBlock(destination_storage));
+    MergeTreePartition()
+        .createAndValidateMinMaxPartitionIds(
+            destination_storage.getInMemoryMetadataPtr(),
+            src_global_min_max_indexes.getBlock(destination_storage),
+            destination_storage.getContext()
+        );
 }
 
 }
