@@ -25,6 +25,10 @@
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
                     <host>node3</host>
                     <port>9000</port>
                 </replica>

@@ -46,6 +46,10 @@ config1 = """<clickhouse>
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
                     <host>node3</host>
                     <port>9000</port>
                 </replica>
@@ -86,10 +90,6 @@ config2 = """<clickhouse>
             </shard>
             <shard>
                 <internal_replication>true</internal_replication>
-                <replica>
-                    <host>node2</host>
-                    <port>9000</port>
-                </replica>
                 <replica>
                     <host>node3</host>
                     <port>9000</port>
@@ -161,20 +161,24 @@ def test_distributed_async_insert(started_cluster):
     assert int(node3.query("select count() from dist_local where c2 = 'C'")) == 5
 
 
-def test_distributed_replica_async_insert(started_cluster):
+def test_distributed_async_insert_with_replica(started_cluster):
     node1.query(
         "insert into replica_dist select number,'A' from system.numbers limit 10;"
     )
     node1.query("system flush distributed replica_dist;")
 
-    assert (
-        int(node3.query("select count() from replica_dist_local where c2 = 'A'")) == 5
-    )
+    node2_res = int(node2.query("select count() from replica_dist_local where c2 = 'A'"))
+    node3_res = int(node3.query("select count() from replica_dist_local where c2 = 'A'"))
+
     assert (
         int(node1.query("select count() from replica_dist_local where c2 = 'A'")) == 5
     )
+    assert (
+        (node2_res == 0 and node3_res == 5) or (node2_res == 5 and node3_res == 0)
+    )
 
-    # Add node2
+
+    # Delete node2
     node1.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config2)
     node1.query("SYSTEM RELOAD CONFIG;")
 
@@ -187,22 +191,13 @@ def test_distributed_replica_async_insert(started_cluster):
     node1.query(
         "insert into replica_dist select number,'B' from system.numbers limit 10;"
     )
-    node1.query(
-        "insert into replica_dist select number,'B' from system.numbers limit 10;"
-    )
-    node1.query(
-        "insert into replica_dist select number,'B' from system.numbers limit 10;"
-    )
-    node1.query(
-        "insert into replica_dist select number,'B' from system.numbers limit 10;"
-    )
     node1.query("system flush distributed replica_dist;")
 
-    assert int(node1.query("select count() from replica_dist_local where c2 = 'B'")) > 0
-    assert int(node2.query("select count() from replica_dist_local where c2 = 'B'")) > 0
-    assert int(node3.query("select count() from replica_dist_local where c2 = 'B'")) > 0
+    assert int(node1.query("select count() from replica_dist_local where c2 = 'B'")) == 5
+    assert int(node2.query("select count() from replica_dist_local where c2 = 'B'")) == 0
+    assert int(node3.query("select count() from replica_dist_local where c2 = 'B'")) == 5
 
-    # Delete node2
+    # Add node2
     node1.replace_config("/etc/clickhouse-server/config.d/remote_servers.xml", config1)
     node1.query("SYSTEM RELOAD CONFIG;")
 
@@ -215,19 +210,14 @@ def test_distributed_replica_async_insert(started_cluster):
     node1.query(
         "insert into replica_dist select number,'C' from system.numbers limit 10;"
     )
-    node1.query(
-        "insert into replica_dist select number,'C' from system.numbers limit 10;"
-    )
-    node1.query(
-        "insert into replica_dist select number,'C' from system.numbers limit 10;"
-    )
-    node1.query(
-        "insert into replica_dist select number,'C' from system.numbers limit 10;"
-    )
     node1.query("system flush distributed replica_dist;")
 
-    assert int(node1.query("select count() from replica_dist_local where c2 = 'C'")) > 0
+    node2_res = int(node2.query("select count() from replica_dist_local where c2 = 'C'"))
+    node3_res = int(node3.query("select count() from replica_dist_local where c2 = 'C'"))
+
     assert (
-        int(node2.query("select count() from replica_dist_local where c2 = 'C'")) == 0
+        int(node1.query("select count() from replica_dist_local where c2 = 'C'")) == 5
     )
-    assert int(node3.query("select count() from replica_dist_local where c2 = 'C'")) > 0
+    assert (
+        (node2_res == 0 and node3_res == 5) or (node2_res == 5 and node3_res == 0)
+    )
