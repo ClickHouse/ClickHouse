@@ -668,15 +668,13 @@ void FileSegment::complete()
 
             if (is_last_holder)
             {
+                bool added_to_download_queue = false;
                 if (background_download_enabled && remote_file_reader)
                 {
-                    LOG_TEST(
-                        log, "Submitting file segment for background download "
-                        "(having {}/{})", downloaded_size, range().size());
-
-                    locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
+                    added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
                 }
-                else
+
+                if (!added_to_download_queue)
                 {
                     locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
                     setDetachedState(segment_lock); /// See comment below.

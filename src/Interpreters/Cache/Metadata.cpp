@@ -134,10 +134,10 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) co
         / CacheMetadata::getFileNameForFileSegment(file_segment.offset(), file_segment.getKind());
 }
 
-CacheMetadata::CacheMetadata(const std::string & path_)
+CacheMetadata::CacheMetadata(const std::string & path_, size_t background_download_queue_size_limit_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
-    , download_queue(std::make_shared<DownloadQueue>())
+    , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , log(&Poco::Logger::get("CacheMetadata"))
 {
 }
@@ -467,17 +467,20 @@ class DownloadQueue
 {
 friend struct CacheMetadata;
 public:
-    void add(FileSegmentPtr file_segment)
+    explicit DownloadQueue(size_t queue_size_limit_) : queue_size_limit(queue_size_limit_) {}
+
+    bool add(FileSegmentPtr file_segment)
     {
         {
             std::lock_guard lock(mutex);
-            if (cancelled)
-                return;
+            if (cancelled || (queue_size_limit && queue.size() == queue_size_limit))
+                return false;
             queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
         cv.notify_one();
+        return true;
     }
 
 private:
@@ -490,6 +493,7 @@ private:
         cv.notify_all();
     }
 
+    const size_t queue_size_limit;
     std::mutex mutex;
     std::condition_variable cv;
     bool cancelled = false;
@@ -507,6 +511,7 @@ private:
         /// before we actually started background download.
         std::weak_ptr<FileSegment> file_segment;
     };
+
     std::queue<DownloadInfo> queue;
 };
 
@@ -847,12 +852,12 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
-void LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)
+bool LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
-    key_metadata->download_queue->add(it->second->file_segment);
+    return key_metadata->download_queue->add(it->second->file_segment);
 }
 
 std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegment::Range & range) const
