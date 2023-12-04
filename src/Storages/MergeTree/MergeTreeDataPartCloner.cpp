@@ -121,11 +121,6 @@ namespace
         return false;
     }
 
-    void reserveSpaceOnDisk(const MergeTreeData::DataPartPtr & src_part)
-    {
-        src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
-    }
-
     DataPartStoragePtr flushPartStorageToDiskIfInMemory(
         MergeTreeData * merge_tree_data,
         const MergeTreeData::DataPartPtr & src_part,
@@ -194,7 +189,7 @@ namespace
 
         auto temporary_directory_lock = merge_tree_data->getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
-        reserveSpaceOnDisk(src_part);
+        src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
 
         scope_guard src_flushed_tmp_dir_lock;
         MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
@@ -304,6 +299,42 @@ namespace
 
         return dst_part;
     }
+
+    std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> cloneAndHandleHardlinksAndProjections(
+        MergeTreeData * merge_tree_data,
+        const DataPartPtr & src_part,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreePartInfo & dst_part_info,
+        const String & tmp_part_prefix,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const IDataPartStorage::ClonePartParams & params
+    ) {
+        if (!doesStoragePolicyAllowSameDisk(merge_tree_data, src_part))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Could not clone and load part {} because disk does not belong to storage policy",
+                quoteString(src_part->getDataPartStorage().getFullPath()));
+
+        auto [destination_part, temporary_directory_lock] = cloneSourcePart(
+            merge_tree_data,
+            src_part,
+            metadata_snapshot,
+            dst_part_info,
+            tmp_part_prefix,
+            read_settings,
+            write_settings,
+            params
+        );
+
+        if (!params.copy_instead_of_hardlink && params.hardlinked_files)
+        {
+            handleHardLinkedParameterFiles(src_part, params);
+            handleProjections(src_part, params);
+        }
+
+        return std::make_pair(destination_part, std::move(temporary_directory_lock));
+    }
 }
 
 std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone(
@@ -318,13 +349,7 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
     const WriteSettings & write_settings
 )
 {
-    if (!doesStoragePolicyAllowSameDisk(merge_tree_data, src_part))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not clone and load part {} because disk does not belong to storage policy",
-            quoteString(src_part->getDataPartStorage().getFullPath()));
-
-    auto [destination_part, temporary_directory_lock] = cloneSourcePart(
+    auto [destination_part, temporary_directory_lock] = cloneAndHandleHardlinksAndProjections(
         merge_tree_data,
         src_part,
         metadata_snapshot,
@@ -334,12 +359,6 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
         write_settings,
         params
     );
-
-    if (!params.copy_instead_of_hardlink && params.hardlinked_files)
-    {
-        handleHardLinkedParameterFiles(src_part, params);
-        handleProjections(src_part, params);
-    }
 
     return std::make_pair(finalizePart(destination_part, params, require_part_metadata), std::move(temporary_directory_lock));
 }
@@ -358,13 +377,7 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
     const IDataPartStorage::ClonePartParams & params
 )
 {
-    if (!doesStoragePolicyAllowSameDisk(merge_tree_data, src_part))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not clone and load part {} because disk does not belong to storage policy",
-            quoteString(src_part->getDataPartStorage().getFullPath()));
-
-    auto [destination_part, temporary_directory_lock] = cloneSourcePart(
+    auto [destination_part, temporary_directory_lock] = cloneAndHandleHardlinksAndProjections(
         merge_tree_data,
         src_part,
         metadata_snapshot,
@@ -374,12 +387,6 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
         write_settings,
         params
     );
-
-    if (!params.copy_instead_of_hardlink && params.hardlinked_files)
-    {
-        handleHardLinkedParameterFiles(src_part, params);
-        handleProjections(src_part, params);
-    }
 
     DistinctPartitionExpression::updateNewPartFiles(
         *merge_tree_data,
