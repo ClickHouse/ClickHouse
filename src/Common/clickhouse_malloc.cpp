@@ -1,5 +1,6 @@
-#include <Common/memory.h>
 #include <cstdlib>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/memory.h>
 
 
 /** These functions can be substituted instead of regular ones when memory tracking is needed.
@@ -8,10 +9,15 @@
 extern "C" void * clickhouse_malloc(size_t size)
 {
     void * res = malloc(size);
-    if (res)
+    if (likely(res))
     {
         AllocationTrace trace;
-        size_t actual_size = Memory::trackMemory(size, trace);
+        size_t actual_size = Memory::trackMemoryNoExcept(size, trace);
+        if (unlikely(trace.isNull()))
+        {
+            free(res);
+            return nullptr;
+        }
         trace.onAlloc(res, actual_size);
     }
     return res;
@@ -20,10 +26,15 @@ extern "C" void * clickhouse_malloc(size_t size)
 extern "C" void * clickhouse_calloc(size_t number_of_members, size_t size)
 {
     void * res = calloc(number_of_members, size);
-    if (res)
+    if (likely(res))
     {
         AllocationTrace trace;
-        size_t actual_size = Memory::trackMemory(number_of_members * size, trace);
+        size_t actual_size = Memory::trackMemoryNoExcept(number_of_members * size, trace);
+        if (unlikely(trace.isNull()))
+        {
+            free(res);
+            return nullptr;
+        }
         trace.onAlloc(res, actual_size);
     }
     return res;
@@ -31,18 +42,34 @@ extern "C" void * clickhouse_calloc(size_t number_of_members, size_t size)
 
 extern "C" void * clickhouse_realloc(void * ptr, size_t size)
 {
-    if (ptr)
+    size_t original_size = 0;
+    if (likely(ptr))
     {
         AllocationTrace trace;
-        size_t actual_size = Memory::untrackMemory(ptr, trace);
-        trace.onFree(ptr, actual_size);
+        original_size = Memory::untrackMemory(ptr, trace);
     }
+
+    AllocationTrace trace;
     void * res = realloc(ptr, size);
-    if (res)
+    if (likely(res))
     {
-        AllocationTrace trace;
-        size_t actual_size = Memory::trackMemory(size, trace);
-        trace.onAlloc(res, actual_size);
+        size_t actual_size = Memory::trackMemoryNoExcept(size, trace);
+        if (unlikely(trace.isNull()))
+            free(res);
+        else
+            trace.onAlloc(res, actual_size);
+    }
+
+    if (unlikely(!res || trace.isNull()))
+    {
+        /// We must recover accounting of the old allocation
+        MemoryTrackerBlockerInThread memory_blocker;
+        original_size = Memory::trackMemoryNoExcept(original_size, trace);
+        return nullptr;
+    }
+    else
+    {
+        free(ptr);
     }
     return res;
 }
@@ -67,10 +94,15 @@ extern "C" void clickhouse_free(void * ptr)
 extern "C" int clickhouse_posix_memalign(void ** memptr, size_t alignment, size_t size)
 {
     int res = posix_memalign(memptr, alignment, size);
-    if (res == 0)
+    if (likely(res == 0))
     {
         AllocationTrace trace;
-        size_t actual_size = Memory::trackMemory(size, trace);
+        size_t actual_size = Memory::trackMemoryNoExcept(size, trace);
+        if (unlikely(trace.isNull()))
+        {
+            free(*memptr);
+            return ENOMEM;
+        }
         trace.onAlloc(*memptr, actual_size);
     }
     return res;
