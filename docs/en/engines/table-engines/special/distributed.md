@@ -1,14 +1,14 @@
 ---
-slug: /en/engines/table-engines/special/distributed
+sidebar_label: "Distributed"
 sidebar_position: 10
-sidebar_label: Distributed
+slug: /en/engines/table-engines/special/distributed
 ---
+
+# Distributed Table Engine
 
 import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
-
-# Distributed Table Engine
 
 Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
