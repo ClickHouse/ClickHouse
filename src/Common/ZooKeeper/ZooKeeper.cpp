@@ -78,19 +78,13 @@ std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
 
 
 void ZooKeeper::init(ZooKeeperArgs args_)
-
 {
     args = std::move(args_);
     log = &Poco::Logger::get("ZooKeeper");
-    LOG_INFO(log, "ZooKeeper::init() arg hosts {}", args.hosts.size());
-    load_balancer_manager = std::make_unique<Coordination::ZooKeeperLoadBalancerManager>(args, nullptr/*TODO: move the zk log.*/);
     if (args.implementation == "zookeeper")
     {
-        if (args.hosts.empty())
-            throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts passed to ZooKeeper constructor.");
-
-        impl = load_balancer_manager->createClient();
-
+        load_balancer_manager.init(args, zk_log);
+        impl = load_balancer_manager.createClient();
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
@@ -130,7 +124,6 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 
 void ZooKeeper::updateWithBetterKeeperHost(std::unique_ptr<Coordination::IKeeper> better_keeper)
 {
-    // TODO: mutex?
     impl = std::move(better_keeper);
 }
 

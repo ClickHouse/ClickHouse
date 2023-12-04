@@ -1,8 +1,10 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Event.h>
+#include "Common/ZooKeeper/ZooKeeperLoadBalancerManager.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
 #include <memory>
@@ -25,32 +27,16 @@ try
     Poco::Logger::root().setChannel(channel);
     Poco::Logger::root().setLevel("trace");
 
-    std::string hosts_arg = argv[1];
-    std::vector<std::string> hosts_strings;
-    splitInto<','>(hosts_strings, hosts_arg);
-    // TODO: we need to change this program as well.
-    ZooKeeper::Nodes nodes;
-    nodes.reserve(hosts_strings.size());
-    for (size_t i = 0; i < hosts_strings.size(); ++i)
-    {
-        std::string host_string = hosts_strings[i];
-        bool secure = bool(startsWith(host_string, "secure://"));
-
-        if (secure)
-            host_string.erase(0, strlen("secure://"));
-
-        nodes.emplace_back(ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, static_cast<UInt8>(i) , secure});
-    }
-
-
-    zkutil::ZooKeeperArgs args;
-    ZooKeeper zk(nodes, args, nullptr);
+    ZooKeeperLoadBalancerManager lb_manager;
+    zkutil::ZooKeeperArgs args(argv[1]);
+    lb_manager.init(args, nullptr);
+    auto  zk = lb_manager.createClient();
 
     Poco::Event event(true);
 
     std::cout << "create\n";
 
-    zk.create("/test", "old", false, false, {},
+    zk->create("/test", "old", false, false, {},
         [&](const CreateResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
@@ -65,7 +51,7 @@ try
 
     std::cout << "get\n";
 
-    zk.get("/test",
+    zk->get("/test",
         [&](const GetResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
@@ -89,7 +75,7 @@ try
 
     std::cout << "set\n";
 
-    zk.set("/test", "new", -1,
+    zk->set("/test", "new", -1,
         [&](const SetResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
@@ -104,7 +90,7 @@ try
 
     std::cout << "list\n";
 
-    zk.list("/",
+    zk->list("/",
         Coordination::ListRequestType::ALL,
         [&](const ListResponse & response)
         {
@@ -133,7 +119,7 @@ try
 
     std::cout << "exists\n";
 
-    zk.exists("/test",
+    zk->exists("/test",
         [&](const ExistsResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
@@ -157,7 +143,7 @@ try
 
     std::cout << "remove\n";
 
-    zk.remove("/test", -1, [&](const RemoveResponse & response)
+    zk->remove("/test", -1, [&](const RemoveResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
                 std::cerr << "Error (remove): " << errorMessage(response.error) << '\n';
@@ -193,7 +179,7 @@ try
         ops.emplace_back(std::make_shared<RemoveRequest>(std::move(remove_request)));
     }
 
-    zk.multi(ops, [&](const MultiResponse & response)
+    zk->multi(ops, [&](const MultiResponse & response)
     {
         if (response.error != Coordination::Error::ZOK)
             std::cerr << "Error (multi): " << errorMessage(response.error) << '\n';

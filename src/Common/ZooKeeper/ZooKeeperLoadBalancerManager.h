@@ -24,29 +24,12 @@
 namespace Coordination
 {
 
-// Changes to include 
-// [x] Connect.
-// [X] Shuffle
-//    - Testing.
-// [X] DNS
-// [x] Disconnect reason and make the host keep track of it.
-//   - Callback.
-// [x] Notify ZooKeeper when the swap can happen.
-//   - Trick part: track the current in-use node. refactor to use shared_ptr or use callback? TBD.
-// [x] Remove the existing AZ code.
-// - Availability zone initialization.
-// 5. (optional) background thread check on the hosts.
 class ZooKeeperLoadBalancerManager
 {
 public:
     using BetterKeeperHostUpdater = std::function<void (std::unique_ptr<Coordination::IKeeper>)>;
 
-    // NOTE: we need to support reconfdigure, see test_keeper_nodes_add test cases.
-    // How this is done before? Check
-    // Add request not necessarily current session tear down.
-    // but how about the new nodes should be considered to load.
-    ZooKeeperLoadBalancerManager(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
-
+    void init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
     std::unique_ptr<Coordination::ZooKeeper> createClient();
 
     // When ZooKeeperLoadBalancerManager detects that a better Keeper hots is available, it will call this handler.
@@ -84,21 +67,12 @@ private:
     };
 
     void shuffleHosts();
-
     void recordKeeperHostError(UInt8 original_index);
 
-    // The list of the hosts, as specified in the configuration file.
-    // String hosts;
-
     std::vector<HostInfo> host_info_list;
-
     zkutil::ZooKeeperArgs args;
-
-    // ZooKeeper just pass-in so totally okay to just let here own this.
     std::shared_ptr<ZooKeeperLog> zk_log;
-
     BetterKeeperHostUpdater better_keeper_host_updater;
-
     Poco::Logger* log;
 };
 

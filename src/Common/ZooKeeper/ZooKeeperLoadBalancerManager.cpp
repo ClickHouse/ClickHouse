@@ -26,7 +26,7 @@ std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
     return result;
 }
 
-bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string& address, bool & dns_error_occurred)
+bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string & address, bool & dns_error_occurred)
 {
     /// We want to resolve all hosts without DNS cache for keeper connection.
     Coordination::DNSResolver::instance().removeHostFromCache(address);
@@ -51,12 +51,13 @@ bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string& address, boo
 }
 
 
-// std::move(args_) not working, later on some how the hosts count is zero. maybe there're a few rounds of init. TBD.
-ZooKeeperLoadBalancerManager::ZooKeeperLoadBalancerManager(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_)
-    : args(args_), zk_log(std::move(zk_log_))
+void ZooKeeperLoadBalancerManager::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_)
 {
+    if (args_.hosts.empty())
+        throw zkutil::KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts specified in ZooKeeperArgs.");
+    args = args_;
+    zk_log = std::move(zk_log_);
     log = &Poco::Logger::get("ZooKeeperLoadBalancerManager");
-    LOG_INFO(log, "Initializing ZooKeeperLoadBalancerManager with hosts {}", args.hosts.size());
     for (size_t i = 0; i < args_.hosts.size(); ++i)
     {
         HostInfo host_info;
@@ -102,7 +103,7 @@ void ZooKeeperLoadBalancerManager::recordKeeperHostError(UInt8 original_index)
     {
         if (host_info.original_index == original_index)
         {
-            LOG_INFO(log, "Load Balancer records a failure on host {}, original index {}", host_info.address, static_cast<UInt32>(original_index));
+            LOG_DEBUG(log, "Load Balancer records a failure on host {}, original index {}", host_info.address, static_cast<UInt32>(original_index));
             // TODO: add the actual implementation to lower the priority/scoring of the host.
             break;
         }
@@ -131,6 +132,7 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancerManager::createCli
                     args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
                 LOG_INFO(log, "Connecting to a different az ZooKeeper with session timeout {} seconds", session_timeout_seconds);
             }
+
             // This is the client we expect to be actually used, therefore we set the callback to monitor the potential send/receive errors.
             client->setSendRecvErrorCallback([this, original_index = host_info_list[i].original_index]() 
             {

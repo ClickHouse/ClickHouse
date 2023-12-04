@@ -1,9 +1,7 @@
 #pragma once
 
 #include "Types.h"
-#include <Poco/Logger.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <optional>
 #include <unordered_set>
 #include <future>
 #include <memory>
@@ -620,9 +618,7 @@ private:
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
 
-    // NOTE: the declaration is before impl to avoid the situation that load_balancer_ is destructed first, and then impl trying to record the callback, it fails.
-    // Maybe we should instead declare it as a field, and use an init method.
-    std::unique_ptr<Coordination::ZooKeeperLoadBalancerManager> load_balancer_manager;
+    Coordination::ZooKeeperLoadBalancerManager load_balancer_manager;
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
