@@ -481,40 +481,30 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 type = ServerType::Type::END;
                 custom_name = "";
-                ParserKeyword except("EXCEPT");
 
                 for (const auto & cur_type : magic_enum::enum_values<ServerType::Type>())
                 {
-                    // Backtracking is required here in the case of TCP, TCP SECURE and TCP WITH PROXY
-                    Pos pos_copy = pos;
-                    ParserKeyword keyword(ServerType::serverTypeToString(cur_type));
-                    if (keyword.ignore(pos_copy, expected))
+                    if (ParserKeyword{ServerType::serverTypeToString(cur_type)}.ignore(pos, expected))
                     {
-                        if (cur_type == ServerType::CUSTOM)
-                        {
-                            ASTPtr ast;
-                            keyword.ignore(pos, expected);
-                            type = cur_type;
-                            if (!ParserStringLiteral{}.parse(pos, ast, expected))
-                                return false;
-
-                            custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
-                            break;
-                        }
-
-                        if (pos_copy.get().type == TokenType::EndOfStream
-                            || pos_copy.get().type == TokenType::Comma
-                            || except.checkWithoutMoving(pos_copy, expected))
-                        {
-                            keyword.ignore(pos, expected);
-                            type = cur_type;
-                            break;
-                        }
-
+                        type = cur_type;
+                        break;
                     }
                 }
 
-                return type != ServerType::Type::END;
+                if (type == ServerType::Type::END)
+                    return false;
+
+                if (type == ServerType::CUSTOM)
+                {
+                    ASTPtr ast;
+
+                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                        return false;
+
+                    custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
+                }
+
+                return true;
             };
 
             ServerType::Type base_type;
