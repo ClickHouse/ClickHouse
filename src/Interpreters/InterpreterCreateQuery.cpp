@@ -1089,10 +1089,14 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
         }
 
-        if (create.refresh_strategy && !internal)
+        if (create.refresh_strategy && database->getEngineName() != "Atomic")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized view requires Atomic database engine");
-                /// ... because it needs to atomically replace the inner table after refresh
+                "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+                /// TODO: Support non-Atomic databases.
+                ///        * Ordinary doesn't work because the view uses atomic table replacement.
+                ///          This is not necessary, change it.
+                ///        * Replicated doesn't work because it tries to replicate the inner table
+                ///          creation/exchange/drop, which creates all sorts of problems.
 
         /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
