@@ -2,10 +2,8 @@
 
 #include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/VersionNumber.h>
 #include <boost/algorithm/string/trim.hpp>
 
 namespace DB
@@ -49,6 +47,7 @@ public:
         INITIAL_QUERY = 1,
         SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
+
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
@@ -97,7 +96,6 @@ public:
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
-    Poco::Net::NameValueCollection headers;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
@@ -137,15 +135,8 @@ public:
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
 
-    bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
-
-    String getVersionStr() const;
-    VersionNumber getVersionNumber() const;
-
 private:
     void fillOSUserHostNameAndVersionInfo();
 };
-
-String toString(ClientInfo::Interface interface);
 
 }

@@ -20,7 +20,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -93,8 +92,6 @@ StorageExecutable::StorageExecutable(
         .command_termination_timeout_seconds = settings.command_termination_timeout,
         .command_read_timeout_milliseconds = settings.command_read_timeout,
         .command_write_timeout_milliseconds = settings.command_write_timeout,
-        .stderr_reaction = settings.stderr_reaction,
-        .check_exit_code = settings.check_exit_code,
 
         .pool_size = settings.pool_size,
         .max_command_execution_time_seconds = settings.max_command_execution_time,
@@ -146,11 +143,8 @@ void StorageExecutable::read(
 
     for (auto & input_query : input_queries)
     {
-        QueryPipelineBuilder builder;
-        if (context->getSettings().allow_experimental_analyzer)
-            builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
-        else
-            builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
+        InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
+        auto builder = interpreter.buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 

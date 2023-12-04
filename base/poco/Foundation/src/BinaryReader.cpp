@@ -274,31 +274,6 @@ void BinaryReader::readRaw(char* buffer, std::streamsize length)
 }
 
 
-void BinaryReader::readCString(std::string& value)
-{
-	value.clear();
-	if (!_istr.good())
-	{
-		return;
-	}
-	value.reserve(256);
-	while (true)
-	{
-		char c;
-		_istr.get(c);
-		if (!_istr.good())
-		{
-			break;
-		}
-		if (c == '\0')
-		{
-			break;
-		}
-		value += c;
-	}
-}
-
-
 void BinaryReader::readBOM()
 {
 	UInt16 bom;

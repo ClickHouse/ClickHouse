@@ -54,10 +54,6 @@ public:
         DROP_PROJECTION,
         MATERIALIZE_PROJECTION,
 
-        ADD_STATISTIC,
-        DROP_STATISTIC,
-        MATERIALIZE_STATISTIC,
-
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
         ATTACH_PARTITION,
@@ -133,8 +129,6 @@ public:
      */
     ASTPtr projection;
 
-    ASTPtr statistic_decl;
-
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
@@ -172,8 +166,6 @@ public:
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
-
-    bool clear_statistic = false;   /// for CLEAR STATISTIC (do not drop statistic from metadata)
 
     bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
 
@@ -216,6 +208,8 @@ public:
 
     ASTPtr clone() const override;
 
+    static const char * typeToString(Type type);
+
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -246,8 +240,6 @@ public:
     bool isDropPartitionAlter() const;
 
     bool isMovePartitionToDiskOrVolumeAlter() const;
-
-    bool isCommentAlter() const;
 
     String getID(char) const override;
 

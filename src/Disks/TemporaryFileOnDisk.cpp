@@ -1,4 +1,5 @@
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Poco/TemporaryFile.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 
@@ -22,6 +23,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
+    : TemporaryFileOnDisk(disk_, "")
+{}
+
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Metric metric_scope)
     : TemporaryFileOnDisk(disk_)
 {
@@ -40,12 +45,20 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 
-    /// A disk can be remote and shared between multiple replicas.
-    /// That's why we must not use Poco::TemporaryFile::tempName() here (Poco::TemporaryFile::tempName() can return the same names for different processes on different nodes).
-    relative_path = prefix + toString(UUIDHelpers::generateV4());
+    /// Do not use default temporaty root path `/tmp/tmpXXXXXX`.
+    /// The `dummy_prefix` is used to know what to replace with the real prefix.
+    String dummy_prefix = "a/";
+    relative_path = Poco::TemporaryFile::tempName(dummy_prefix);
+    dummy_prefix += "tmp";
+    /// a/tmpXXXXX -> <prefix>XXXXX
+    assert(relative_path.starts_with(dummy_prefix));
+    relative_path.replace(0, dummy_prefix.length(), prefix);
+
+    if (relative_path.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file name is empty");
 }
 
-String TemporaryFileOnDisk::getAbsolutePath() const
+String TemporaryFileOnDisk::getPath() const
 {
     return std::filesystem::path(disk->getPath()) / relative_path;
 }

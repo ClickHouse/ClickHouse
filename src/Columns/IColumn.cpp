@@ -62,19 +62,19 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & defa
     return res;
 }
 
-void IColumn::forEachSubcolumn(ColumnCallback callback) const
+void IColumn::forEachSubcolumn(MutableColumnCallback callback)
 {
-    const_cast<IColumn*>(this)->forEachSubcolumn([&callback](WrappedPtr & subcolumn)
+    std::as_const(*this).forEachSubcolumn([&callback](const WrappedPtr & subcolumn)
     {
-        callback(std::as_const(subcolumn));
+        callback(const_cast<WrappedPtr &>(subcolumn));
     });
 }
 
-void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void IColumn::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
-    const_cast<IColumn*>(this)->forEachSubcolumnRecursively([&callback](IColumn & subcolumn)
+    std::as_const(*this).forEachSubcolumnRecursively([&callback](const IColumn & subcolumn)
     {
-        callback(std::as_const(subcolumn));
+        callback(const_cast<IColumn &>(subcolumn));
     });
 }
 

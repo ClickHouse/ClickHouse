@@ -9,7 +9,7 @@ Expression (Projection)
               Distinct
                 Distinct (Preliminary DISTINCT)
                   Expression (Before ORDER BY)
-                    ReadFromSystemNumbers
+                    ReadFromStorage (SystemNumbers)
 -- Enabled query_plan_remove_redundant_distinct
 -- DISTINCT is only in most inner subquery
 -- query
@@ -28,7 +28,7 @@ Expression ((Projection + (Before ORDER BY + (Projection + (Before ORDER BY + Pr
   Distinct
     Distinct (Preliminary DISTINCT)
       Expression (Before ORDER BY)
-        ReadFromSystemNumbers
+        ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -52,12 +52,12 @@ Expression (Projection)
             Distinct
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
           Expression (( + Projection))
             Distinct
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -83,12 +83,12 @@ Expression (Projection)
             Distinct
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
           Expression ((Joined actions + (Rename joined columns + Projection)))
             Distinct
               Distinct (Preliminary DISTINCT)
                 Expression (Before ORDER BY)
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
 -- execute
 0	0
 0	1
@@ -111,7 +111,7 @@ Expression ((Projection + (Before ORDER BY + (Projection + (Before ORDER BY + Pr
   Distinct
     Distinct (Preliminary DISTINCT)
       Expression (Before ORDER BY)
-        ReadFromSystemNumbers
+        ReadFromStorage (SystemNumbers)
 -- execute
 0	0
 1	2
@@ -133,7 +133,7 @@ Expression ((Projection + (Before ORDER BY + (Projection + (Before ORDER BY + Pr
   Distinct
     Distinct (Preliminary DISTINCT)
       Expression (Before ORDER BY)
-        ReadFromSystemNumbers
+        ReadFromStorage (SystemNumbers)
 -- execute
 2	0	0
 2	1	2
@@ -229,9 +229,9 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
     Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
       Join (JOIN FillRightFirst)
         Expression (Before JOIN)
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
         Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-          ReadFromSystemNumbers
+          ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -262,9 +262,9 @@ Expression (Projection)
           Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
             Join (JOIN FillRightFirst)
               Expression (Before JOIN)
-                ReadFromSystemNumbers
+                ReadFromStorage (SystemNumbers)
               Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-                ReadFromSystemNumbers
+                ReadFromStorage (SystemNumbers)
 -- execute
 12
 -- GROUP BY WITH ROLLUP before DISTINCT with on different columns => do _not_ remove DISTINCT
@@ -294,9 +294,9 @@ Expression (Projection)
             Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
               Join (JOIN FillRightFirst)
                 Expression (Before JOIN)
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
                 Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
 -- execute
 12
 36
@@ -324,9 +324,9 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
       Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
         Join (JOIN FillRightFirst)
           Expression (Before JOIN)
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
           Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -359,9 +359,9 @@ Expression (Projection)
             Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
               Join (JOIN FillRightFirst)
                 Expression (Before JOIN)
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
                 Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
 -- execute
 12
 36
@@ -389,9 +389,9 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
       Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
         Join (JOIN FillRightFirst)
           Expression (Before JOIN)
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
           Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -424,9 +424,9 @@ Expression (Projection)
             Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
               Join (JOIN FillRightFirst)
                 Expression (Before JOIN)
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
                 Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-                  ReadFromSystemNumbers
+                  ReadFromStorage (SystemNumbers)
 -- execute
 12
 
@@ -455,9 +455,9 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
       Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
         Join (JOIN FillRightFirst)
           Expression (Before JOIN)
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
           Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 -- execute
 0
 2
@@ -474,35 +474,6 @@ Expression (Projection)
       Expression (Before ORDER BY)
         Aggregating
           Expression (Before GROUP BY)
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 -- execute
-1
--- UNION ALL with DISTINCT => do _not_ remove DISTINCT
--- query
-SELECT DISTINCT number
-FROM
-(
-    SELECT DISTINCT number
-    FROM numbers(1)
-    UNION ALL
-    SELECT DISTINCT number
-    FROM numbers(2)
-)
--- explain
-Expression (Projection)
-  Distinct
-    Distinct (Preliminary DISTINCT)
-      Union
-        Expression ((Before ORDER BY + Projection))
-          Distinct
-            Distinct (Preliminary DISTINCT)
-              Expression (Before ORDER BY)
-                ReadFromSystemNumbers
-        Expression (( + Projection))
-          Distinct
-            Distinct (Preliminary DISTINCT)
-              Expression (Before ORDER BY)
-                ReadFromSystemNumbers
--- execute
-0
 1

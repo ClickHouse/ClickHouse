@@ -22,7 +22,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<CountDistinctVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().count_distinct_optimization)
             return;
@@ -76,8 +76,7 @@ public:
         /// Replace `countDistinct` of initial query into `count`
         auto result_type = function_node->getResultType();
         AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
-        auto aggregate_function = AggregateFunctionFactory::instance().get("count", action, {}, {}, properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
         function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         function_node->getArguments().getNodes().clear();
     }

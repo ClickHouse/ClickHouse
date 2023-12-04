@@ -5,17 +5,21 @@
 
 namespace DB
 {
-
 template <typename... Ts, typename T, typename F>
 static bool castTypeToEither(const T * type, F && f)
 {
-    return ((typeid_cast<const Ts *>(type) && f(*typeid_cast<const Ts *>(type))) || ...);
+    /// XXX can't use && here because gcc-7 complains about parentheses around && within ||
+    return ((typeid_cast<const Ts *>(type) ? f(*typeid_cast<const Ts *>(type)) : false) || ...);
 }
 
 template <class ...Args>
-static bool castTypeToEither(TypeList<Args...>, const auto * type, auto && f)
+constexpr bool castTypeToEither(TypeList<Args...>, const auto * type, auto && f)
 {
-    return ((typeid_cast<const Args *>(type) != nullptr && std::forward<decltype(f)>(f)(*typeid_cast<const Args *>(type))) || ...);
+    return (
+        (typeid_cast<const Args *>(type) != nullptr
+            ? std::forward<decltype(f)>(f)(
+                *typeid_cast<const Args *>(type))
+            : false)
+        || ...);
 }
-
 }

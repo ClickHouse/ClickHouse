@@ -7,7 +7,6 @@ block_numbers
 blocks
 columns
 columns
-creator_info
 failed_parts
 flags
 host
@@ -18,7 +17,6 @@ leader_election
 leader_election-0
 log
 log_pointer
-lost_part_count
 max_processed_insert_time
 metadata
 metadata
@@ -50,7 +48,6 @@ block_numbers
 blocks
 columns
 columns
-creator_info
 failed_parts
 flags
 host
@@ -61,7 +58,6 @@ leader_election
 leader_election-0
 log
 log_pointer
-lost_part_count
 max_processed_insert_time
 metadata
 metadata
