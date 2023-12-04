@@ -46,56 +46,47 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
 
 ObjectStorageVFSGCThread::~ObjectStorageVFSGCThread() = default;
 
-String ObjectStorageVFSGCThread::findInLog(std::string_view path) const
+String ObjectStorageVFSGCThread::findInLog(std::string_view local_path) const
 {
     // TODO myrrc
-    (void)path;
+    (void)local_path;
     return "";
 }
 
 void ObjectStorageVFSGCThread::run()
 {
+    SCOPE_EXIT({
+        zookeeper_lock->unlock();
+        task->scheduleAfter(sleep_ms);
+    });
+
     if (!zookeeper_lock->tryLock())
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
-        task->scheduleAfter(sleep_ms);
         return;
     }
 
     const Strings batch = storage.zookeeper->getChildren(VFS_LOG_BASE_NODE);
-    if (batch.empty()) // ranges::minmax is UB on empty range
-    {
-        zookeeper_lock->unlock();
-        task->scheduleAfter(sleep_ms);
+    constexpr size_t batch_min_size = 1; // TODO myrrc should be a setting
+    if (batch.size() < batch_min_size)
         return;
-    }
 
     const auto [start_str, end_str] = std::ranges::minmax(batch);
-    // log- is a prefix
-    const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4));
+    const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
     const size_t end_logpointer = parseFromString<size_t>(end_str.substr(4));
 
     LOG_DEBUG(log, "Acquired lock for log range [{};{}]", start_logpointer, end_logpointer);
+    auto [snapshot, obsolete_objects] = getSnapshotWithLogEntries(start_logpointer, end_logpointer);
 
-    if (end_logpointer > 0)
-    {
-        auto [snapshot, obsolete_objects] = getSnapshotWithLogEntries(start_logpointer, end_logpointer);
+    const String snapshot_name = fmt::format("{}{}", VFS_SNAPSHOT_PREFIX, end_logpointer);
+    writeSnapshot(std::move(snapshot), snapshot_name);
 
-        const String snapshot_name = fmt::format("{}{}", VFS_SNAPSHOT_PREFIX, end_logpointer);
-        // TODO myrrc sometimes the snapshot is empty, maybe we shouldn't write it and add a special
-        // tombstone CreateInode entry to log (e.g. with empty remote_path)
-        writeSnapshot(std::move(snapshot), snapshot_name);
+    LOG_TRACE(log, "Removing objects from storage: {}", fmt::join(obsolete_objects, "\n"));
+    storage.object_storage->removeObjects(obsolete_objects);
 
-        LOG_DEBUG(log, "Removing objects from storage: {}", fmt::join(obsolete_objects, "\n"));
-        storage.object_storage->removeObjects(obsolete_objects);
-
-        removeLogEntries(start_logpointer, end_logpointer);
-    }
-
-    zookeeper_lock->unlock();
+    removeLogEntries(start_logpointer, end_logpointer);
 
     LOG_DEBUG(log, "Removed lock for log range [{};{}]", start_logpointer, end_logpointer);
-    task->scheduleAfter(sleep_ms);
 }
 
 VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer)

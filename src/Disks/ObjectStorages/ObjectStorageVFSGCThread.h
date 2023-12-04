@@ -27,9 +27,9 @@ public:
     inline void start() { task->activateAndSchedule(); }
     inline void stop() { task->deactivate(); }
 
-    // Tries to find a CreateInode entry where local_path=path. If found, returns this entry's serialized
+    // Tries to find a CreateInode entry with supplied local_path. If found, returns this entry's serialized
     // metadata, returns empty string otherwise
-    String findInLog(std::string_view path) const;
+    String findInLog(std::string_view local_path) const;
 
 private:
     DiskObjectStorageVFS & storage;
