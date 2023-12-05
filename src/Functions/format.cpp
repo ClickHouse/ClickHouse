@@ -1,5 +1,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnStringHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -50,18 +51,6 @@ public:
                 getName(),
                 arguments.size());
 
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const auto * arg = arguments[i].get();
-            if (!isStringOrFixedString(arg))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}",
-                    arg->getName(),
-                    i + 1,
-                    getName());
-        }
-
         return std::make_shared<DataTypeString>();
     }
 
@@ -81,6 +70,7 @@ public:
         std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
         std::vector<size_t> fixed_string_sizes(arguments.size() - 1);
         std::vector<std::optional<String>> constant_strings(arguments.size() - 1);
+        std::vector<ColumnString::MutablePtr> converted_col_ptrs(arguments.size() - 1);
 
         bool has_column_string = false;
         bool has_column_fixed_string = false;
@@ -104,8 +94,29 @@ public:
                 constant_strings[i - 1] = const_col->getValue<String>();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                    column->getName(), getName());
+            {
+                /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
+                auto full_column = column->convertToFullIfNeeded();
+                auto serialization = arguments[i].type->getDefaultSerialization();
+                auto converted_col_str = ColumnString::create();
+                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
+                auto & write_buffer = write_helper.getWriteBuffer();
+                FormatSettings format_settings;
+                for (size_t row = 0; row < column->size(); ++row)
+                {
+                    serialization->serializeText(*full_column, row, write_buffer, format_settings);
+                    write_helper.rowWritten();
+                }
+                write_helper.finalize();
+
+                /// Same as the normal `ColumnString` branch
+                has_column_string = true;
+                data[i - 1] = &converted_col_str->getChars();
+                offsets[i - 1] = &converted_col_str->getOffsets();
+
+                /// Keep the pointer alive
+                converted_col_ptrs[i - 1] = std::move(converted_col_str);
+            }
         }
 
         FormatStringImpl::formatExecute(
