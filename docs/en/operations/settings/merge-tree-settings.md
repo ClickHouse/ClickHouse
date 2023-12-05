@@ -867,3 +867,31 @@ Default value: `Never`
 Persists virtual column `_block_number` on merges.
 
 Default value: false.
+
+## background_part_check_time_to_total_time_ratio
+
+Ratio of time spent by background check to total execution time. For example, 0.01 means background checks can't spent more than 1% of execution time. So, if background part check took 1 second then next background part check can be executed only after 99 seconds. Next actual time for background part check will be maximum of calculated time according this ratio and `background_part_check_delay_seconds` setting value.
+
+Possible values: Floats in range [1.0^-6..1.0]
+
+Default: 0.01
+
+## background_part_check_delay_seconds
+
+Minimal delay between two background part checks (in seconds).
+
+Possible values:
+
+- Positive integer.
+
+Default: 10 * 60 (10 minutes)
+
+## delay_between_background_part_checks_for_individual_part_seconds
+
+Minimal delay between checks for the same part (in seconds).
+
+Possible values:
+
+- Positive integer.
+
+Default: 24 * 60 (24 hours)

@@ -67,8 +67,6 @@ public:
     /// Check part by name
     CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr);
 
-    ReplicatedCheckResult checkPartImpl(const String & part_name);
-
     std::unique_lock<std::mutex> pausePartsCheck();
 
     /// Can be called only while holding a lock returned from pausePartsCheck()
@@ -76,6 +74,8 @@ public:
 
 private:
     void run();
+    ReplicatedCheckResult checkPartImpl(const String & part_name);
+    void checkPartInZookeeper(MergeTreeDataPartPtr part, ReplicatedCheckResult & result);
 
     bool onPartIsLostForever(const String & part_name);
 
@@ -95,8 +95,11 @@ private:
         using TimePoint = std::chrono::steady_clock::time_point;
         String name;
         TimePoint time;
+        bool isBackgroundCheck() const { return name.empty(); }
     };
     using PartsToCheckQueue = std::list<PartToCheck>;
+
+    void enqueuePart(PartToCheck part_to_check);
 
     /** Parts for which you want to check one of two:
       *  - If we have the part, check, its data with its checksums, and them with ZooKeeper.
@@ -110,6 +113,24 @@ private:
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
     BackgroundSchedulePool::TaskHolder task;
+
+    // Background part check:
+    // (1) part for background check should be chosen from active parts but time to execute the check is chosen upfront
+    //     Therefore, background check is scheduled by enqueueing part check with empty part name,
+    //     so the part to check will be chosen among currently active parts at check time
+    // (2) after candidate for background check is chosen, we check latest time the part was checked.
+    //     If the part was checked recently (see delay_between_background_part_checks_for_individual_part_seconds), try to chose another part
+    pcg64_fast rndgen;
+    MergeTreePartInfo last_checked_part;
+    std::chrono::milliseconds background_check_backoff_timeout_ms{0};
+    std::chrono::milliseconds last_check_duration{0};
+
+    MergeTreeDataPartPtr choosePartForBackgroundCheck();
+    void doBackgroundPartCheck();
+    void enqueueBackgroundPartCheck(std::chrono::milliseconds delay_between_checks);
+    ReplicatedCheckResult checkActivePart(MergeTreeDataPartPtr part);
+    std::chrono::milliseconds updateBackgroundCheckBackoffTimeout();
+    std::chrono::milliseconds delayBetweenChecks();
 };
 
 }

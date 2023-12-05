@@ -54,6 +54,7 @@ class ZooKeeperWithFaultInjection
 {
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;
+    friend class ReplicatedMergeTreePartCheckThread;
 
     using zk = zkutil::ZooKeeper;
 
