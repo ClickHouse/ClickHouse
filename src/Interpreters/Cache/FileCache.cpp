@@ -53,15 +53,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
-    : max_file_segment_size(settings.max_file_segment_size)
-    , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
-    , boundary_alignment(settings.boundary_alignment)
-    , background_download_threads(settings.background_download_threads)
-    , metadata_download_threads(settings.load_metadata_threads)
+FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings_)
+    : settings(settings_)
     , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
     , metadata(settings.base_path, settings.background_download_queue_size_limit)
 {
+    settings.bypass_cache_threshold = settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0;
+
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
     if (settings.cache_hits_threshold)
@@ -135,7 +133,7 @@ void FileCache::initialize()
 
     is_initialized = true;
 
-    for (size_t i = 0; i < background_download_threads; ++i)
+    for (size_t i = 0; i < settings.background_download_threads; ++i)
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ metadata.cleanupThreadFunc(); }});
@@ -152,7 +150,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
 
-    if (bypass_cache_threshold && range.size() > bypass_cache_threshold)
+    if (settings.bypass_cache_threshold && range.size() > settings.bypass_cache_threshold)
     {
         auto file_segment = std::make_shared<FileSegment>(
             locked_key.getKey(), range.left, range.size(), FileSegment::State::DETACHED);
@@ -257,7 +255,7 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     FileSegments file_segments;
     while (current_pos < end_pos_non_included)
     {
-        auto current_file_segment_size = std::min(remaining_size, max_file_segment_size);
+        auto current_file_segment_size = std::min(remaining_size, settings.max_file_segment_size);
         ranges.emplace_back(current_pos, current_pos + current_file_segment_size - 1);
 
         remaining_size -= current_file_segment_size;
@@ -273,7 +271,7 @@ FileSegments FileCache::splitRangeIntoFileSegments(
     size_t size,
     FileSegment::State state,
     size_t file_segments_limit,
-    const CreateFileSegmentSettings & settings)
+    const CreateFileSegmentSettings & create_settings)
 {
     assert(size > 0);
 
@@ -286,11 +284,11 @@ FileSegments FileCache::splitRangeIntoFileSegments(
     FileSegments file_segments;
     while (current_pos < end_pos_non_included && (!file_segments_limit || file_segments.size() < file_segments_limit))
     {
-        current_file_segment_size = std::min(remaining_size, max_file_segment_size);
+        current_file_segment_size = std::min(remaining_size, settings.max_file_segment_size);
         remaining_size -= current_file_segment_size;
 
         auto file_segment_metadata_it = addFileSegment(
-            locked_key, current_pos, current_file_segment_size, state, settings, nullptr);
+            locked_key, current_pos, current_file_segment_size, state, create_settings, nullptr);
         file_segments.push_back(file_segment_metadata_it->second->file_segment);
 
         current_pos += current_file_segment_size;
@@ -305,7 +303,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     const FileSegment::Range & range,
     size_t file_segments_limit,
     bool fill_with_detached_file_segments,
-    const CreateFileSegmentSettings & settings)
+    const CreateFileSegmentSettings & create_settings)
 {
     /// There are segments [segment1, ..., segmentN]
     /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
@@ -362,7 +360,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         if (fill_with_detached_file_segments)
         {
             auto file_segment = std::make_shared<FileSegment>(
-                locked_key.getKey(), current_pos, hole_size, FileSegment::State::DETACHED, settings);
+                locked_key.getKey(), current_pos, hole_size, FileSegment::State::DETACHED, create_settings);
 
             file_segments.insert(it, file_segment);
             ++processed_count;
@@ -373,7 +371,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             FileSegments hole;
             for (const auto & r : ranges)
             {
-                auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, settings, nullptr);
+                auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings, nullptr);
                 hole.push_back(metadata_it->second->file_segment);
                 ++processed_count;
 
@@ -418,7 +416,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         if (fill_with_detached_file_segments)
         {
             auto file_segment = std::make_shared<FileSegment>(
-                locked_key.getKey(), current_pos, hole_size, FileSegment::State::DETACHED, settings);
+                locked_key.getKey(), current_pos, hole_size, FileSegment::State::DETACHED, create_settings);
 
             file_segments.insert(file_segments.end(), file_segment);
         }
@@ -428,7 +426,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             FileSegments hole;
             for (const auto & r : ranges)
             {
-                auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, settings, nullptr);
+                auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings, nullptr);
                 hole.push_back(metadata_it->second->file_segment);
                 ++processed_count;
 
@@ -447,7 +445,7 @@ FileSegmentsHolderPtr FileCache::set(
     const Key & key,
     size_t offset,
     size_t size,
-    const CreateFileSegmentSettings & settings)
+    const CreateFileSegmentSettings & create_settings)
 {
     assertInitialized();
 
@@ -458,17 +456,17 @@ FileSegmentsHolderPtr FileCache::set(
     if (!file_segments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Having intersection with already existing cache");
 
-    if (settings.unbounded)
+    if (create_settings.unbounded)
     {
         /// If the file is unbounded, we can create a single file_segment_metadata for it.
         auto file_segment_metadata_it = addFileSegment(
-            *locked_key, offset, size, FileSegment::State::EMPTY, settings, nullptr);
+            *locked_key, offset, size, FileSegment::State::EMPTY, create_settings, nullptr);
         file_segments = {file_segment_metadata_it->second->file_segment};
     }
     else
     {
         file_segments = splitRangeIntoFileSegments(
-            *locked_key, offset, size, FileSegment::State::EMPTY, /* file_segments_limit */0, settings);
+            *locked_key, offset, size, FileSegment::State::EMPTY, /* file_segments_limit */0, create_settings);
     }
 
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
@@ -480,7 +478,7 @@ FileCache::getOrSet(
     size_t offset,
     size_t size,
     size_t file_size,
-    const CreateFileSegmentSettings & settings,
+    const CreateFileSegmentSettings & create_settings,
     size_t file_segments_limit)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
@@ -489,8 +487,8 @@ FileCache::getOrSet(
 
     FileSegment::Range range(offset, offset + size - 1);
 
-    const auto aligned_offset = roundDownToMultiple(range.left, boundary_alignment);
-    auto aligned_end_offset = std::min(roundUpToMultiple(offset + size, boundary_alignment), file_size) - 1;
+    const auto aligned_offset = roundDownToMultiple(range.left, settings.boundary_alignment);
+    auto aligned_end_offset = std::min(roundUpToMultiple(offset + size, settings.boundary_alignment), file_size) - 1;
 
     chassert(aligned_offset <= range.left);
     chassert(aligned_end_offset >= range.right);
@@ -586,7 +584,7 @@ FileCache::getOrSet(
 
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoFileSegments(*locked_key, range.left, range.size(), FileSegment::State::EMPTY, file_segments_limit, settings);
+        file_segments = splitRangeIntoFileSegments(*locked_key, range.left, range.size(), FileSegment::State::EMPTY, file_segments_limit, create_settings);
     }
     else
     {
@@ -594,7 +592,7 @@ FileCache::getOrSet(
         chassert(file_segments.back()->range().left <= range.right);
 
         fillHolesWithEmptyFileSegments(
-            *locked_key, file_segments, range, file_segments_limit, /* fill_with_detached */false, settings);
+            *locked_key, file_segments, range, file_segments_limit, /* fill_with_detached */false, create_settings);
 
         if (!file_segments.front()->range().contains(offset))
         {
@@ -649,7 +647,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t offset,
     size_t size,
     FileSegment::State state,
-    const CreateFileSegmentSettings & settings,
+    const CreateFileSegmentSettings & create_settings,
     const CacheGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
@@ -703,7 +701,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
         result_state = state;
     }
 
-    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, settings, background_download_threads > 0, this, locked_key.getKeyMetadata());
+    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, create_settings, settings.background_download_threads > 0, this, locked_key.getKeyMetadata());
     auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
 
     auto [file_segment_metadata_it, inserted] = locked_key.emplace(offset, file_segment_metadata);
@@ -1051,9 +1049,9 @@ void FileCache::loadMetadataImpl()
     std::mutex set_exception_mutex;
     std::atomic<bool> stop_loading = false;
 
-    LOG_INFO(log, "Loading filesystem cache with {} threads", metadata_download_threads);
+    LOG_INFO(log, "Loading filesystem cache with {} threads", settings.load_metadata_threads);
 
-    for (size_t i = 0; i < metadata_download_threads; ++i)
+    for (size_t i = 0; i < settings.load_metadata_threads; ++i)
     {
         try
         {
@@ -1258,6 +1256,11 @@ FileCache::~FileCache()
 
 void FileCache::deactivateBackgroundOperations()
 {
+    {
+        auto lock = lockCache();
+        shutdown = true;
+    }
+
     metadata.cancelDownload();
     metadata.cancelCleanup();
 
@@ -1349,6 +1352,36 @@ void FileCache::assertCacheCorrectness()
     });
 }
 
+FileCacheSettings FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings)
+{
+    if (!is_initialized)
+        return settings;
+
+    auto lock = lockCache();
+    if (shutdown)
+        return settings;
+
+    if (settings.background_download_queue_size_limit != new_settings.background_download_queue_size_limit)
+    {
+        LOG_DEBUG(log, "Changing background_download_queue_size_limit from {} to {}",
+                  settings.background_download_queue_size_limit, new_settings.background_download_queue_size_limit);
+
+        metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit);
+        settings.background_download_queue_size_limit = new_settings.background_download_queue_size_limit;
+    }
+    if (settings.background_download_threads < new_settings.background_download_threads)
+    {
+        LOG_DEBUG(log, "Changing background_download_threads from {} to {}", settings.background_download_threads, new_settings.background_download_threads);
+
+        size_t threads_to_add = new_settings.background_download_threads - settings.background_download_threads;
+        for (size_t i = 0; i < threads_to_add; ++i)
+            download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
+
+        settings.background_download_threads = new_settings.background_download_threads;
+    }
+    return settings;
+}
+
 FileCache::QueryContextHolder::QueryContextHolder(
     const String & query_id_,
     FileCache * cache_,
@@ -1371,13 +1404,13 @@ FileCache::QueryContextHolder::~QueryContextHolder()
 }
 
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
-    const String & query_id, const ReadSettings & settings)
+    const String & query_id, const ReadSettings & read_settings)
 {
-    if (!query_limit || settings.filesystem_cache_max_download_size == 0)
+    if (!query_limit || read_settings.filesystem_cache_max_download_size == 0)
         return {};
 
     auto lock = lockCache();
-    auto context = query_limit->getOrSetQueryContext(query_id, settings, lock);
+    auto context = query_limit->getOrSetQueryContext(query_id, read_settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, std::move(context));
 }
 

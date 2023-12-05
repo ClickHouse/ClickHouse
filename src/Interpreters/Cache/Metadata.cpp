@@ -473,7 +473,7 @@ public:
     {
         {
             std::lock_guard lock(mutex);
-            if (cancelled || (queue_size_limit && queue.size() == queue_size_limit))
+            if (cancelled || (queue_size_limit && queue.size() >= queue_size_limit))
                 return false;
             queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
@@ -481,6 +481,12 @@ public:
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
         cv.notify_one();
         return true;
+    }
+
+    void setQueueLimit(size_t size)
+    {
+        std::lock_guard lock(mutex);
+        queue_size_limit = size;
     }
 
 private:
@@ -493,7 +499,7 @@ private:
         cv.notify_all();
     }
 
-    const size_t queue_size_limit;
+    size_t queue_size_limit;
     std::mutex mutex;
     std::condition_variable cv;
     bool cancelled = false;
@@ -605,6 +611,11 @@ void CacheMetadata::downloadThreadFunc()
             chassert(false);
         }
     }
+}
+
+void CacheMetadata::setBackgroundDownloadQueueSizeLimit(size_t size)
+{
+    download_queue->setQueueLimit(size);
 }
 
 void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory)

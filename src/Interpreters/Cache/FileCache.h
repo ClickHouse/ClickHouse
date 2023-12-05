@@ -16,6 +16,7 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 #include <filesystem>
 
 
@@ -55,7 +56,7 @@ public:
     using PriorityIterator = IFileCachePriority::Iterator;
     using PriorityIterationResult = IFileCachePriority::IterationResult;
 
-    FileCache(const std::string & cache_name, const FileCacheSettings & settings);
+    FileCache(const std::string & cache_name, const FileCacheSettings & settings_);
 
     ~FileCache();
 
@@ -122,7 +123,7 @@ public:
 
     size_t getFileSegmentsNum() const;
 
-    size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
+    size_t getMaxFileSegmentSize() const { return settings.max_file_segment_size; }
 
     bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
@@ -154,14 +155,12 @@ public:
 
     FileSegments sync();
 
+    FileCacheSettings applySettingsIfPossible(const FileCacheSettings & settings);
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
-    const size_t max_file_segment_size;
-    const size_t bypass_cache_threshold = 0;
-    const size_t boundary_alignment;
-    const size_t background_download_threads; /// 0 means background download is disabled.
-    const size_t metadata_download_threads;
+    FileCacheSettings settings;
 
     Poco::Logger * log;
 
@@ -169,6 +168,7 @@ private:
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
+    size_t shutdown = false;
 
     CacheMetadata metadata;
 
