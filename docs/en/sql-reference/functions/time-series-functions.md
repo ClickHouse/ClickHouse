@@ -8,6 +8,57 @@ sidebar_label: Time Series
 
 Below functions are used for time series analysis.
 
+## seriesOutliersTukey
+
+Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
+
+**Syntax**
+
+``` sql
+seriesOutliersTukey(series);
+```
+
+**Arguments**
+
+- `series` - An array of numeric values
+
+**Returned value**
+
+- Returns an array of the same length where each value represents a modified Z-score of possible anomaly of corresponding element in the series.
+- A value greater than 3 or lesser than -3 indicates a possible anomaly.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+seriesOutliersTukey([-3,2.4,15,3.9,5,6,4.5,5.2,3,4,5,16,7,5,5,4]) AS print_0;
+```
+
+Result:
+
+``` text
+┌───────────print_0──────────────────────────────────────────────────────────────────┐
+│[-2.7121212121212137,0,4.196969696969699,0,0,0,0,0,0,0,0,4.803030303030305,0,0,0,0] │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+seriesOutliersTukey(arrayMap(x -> sin(x / 10), range(30))) AS print_0;
+```
+
+Result:
+
+``` text
+┌───────────print_0────────────────────────────────────────────┐
+│[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] │
+└──────────────────────────────────────────────────────────────┘
+```
+
 ## seriesPeriodDetectFFT
 
 Finds the period of the given time series data using FFT
