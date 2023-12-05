@@ -4908,7 +4908,7 @@ def test_formats_errors(kafka_cluster):
         kafka_produce(
             kafka_cluster,
             format_name,
-            ["Broken message\nBroken message\nBroken message\n"]
+            ["Broken message\nBroken message\nBroken message\n"],
         )
 
         attempt = 0
