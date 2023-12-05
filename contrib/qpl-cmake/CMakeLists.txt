@@ -713,7 +713,8 @@ target_compile_definitions(_qpl
 
 target_link_libraries(_qpl
         PRIVATE ch_contrib::accel-config
-        PRIVATE ch_contrib::isal)
+        PRIVATE ch_contrib::isal
+        PRIVATE ch_contrib::qat)
 
 target_include_directories(_qpl SYSTEM BEFORE
         PUBLIC "${QPL_PROJECT_DIR}/include"

@@ -557,6 +557,10 @@ if (TARGET ch_contrib::accel-config)
     dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
 endif ()
 
+if (TARGET ch_contrib::qatzstd_plugin)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
+endif ()
+
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
 dbms_target_link_libraries(PUBLIC boost::context)
 
