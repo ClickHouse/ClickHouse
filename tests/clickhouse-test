@@ -998,7 +998,11 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif tags and ("atomic-database" in tags) and (args.replicated_database or args.db_engine not in (None, "Atomic")):
+        elif (
+            tags
+            and ("atomic-database" in tags)
+            and (args.replicated_database or args.db_engine not in (None, "Atomic"))
+        ):
             return FailureReason.NON_ATOMIC_DB
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:

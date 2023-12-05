@@ -119,11 +119,12 @@ Differences from regular non-refreshable materialized views:
  * No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
 
 :::note
-Currently refreshable materialized views are not compatible with Replicated database or table engines.
-:::
-
-:::note
-Currently refreshable materialized views require [Atomic database engine](../../../engines/database-engines/atomic.md).
+Refreshable materialized views are a work in progress. Setting `allow_experimental_refreshable_materialized_view = 1` is required for creating one. Current limitataions:
+ * not compatible with Replicated database or table engines,
+ * require [Atomic database engine](../../../engines/database-engines/atomic.md),
+ * each refresh query executes in one thread (max_threads setting is ignored),
+ * no retries for failed refresh - we just skip to the next scheduled refresh time,
+ * no limit on number of concurrent refreshes.
 :::
 
 ### Refresh Schedule
@@ -182,7 +183,7 @@ A few more examples:
    Currently this is not recommended.
 
 :::note
-`DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be reomoved with `ALTER`, see below).
+`DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be removed with `ALTER`, see below).
 :::
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
