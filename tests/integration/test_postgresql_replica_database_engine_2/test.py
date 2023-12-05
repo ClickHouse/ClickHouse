@@ -836,7 +836,7 @@ def test_bad_connection_options(started_cluster):
     )
     assert "test_database" in instance.query("SHOW DATABASES")
     assert "" == instance.query("show tables from test_database").strip()
-    drop_materialized_db("test_database")
+    pg_manager.drop_materialized_db("test_database")
 
 
 if __name__ == "__main__":
