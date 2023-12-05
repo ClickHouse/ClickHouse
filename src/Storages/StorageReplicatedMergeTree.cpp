@@ -10188,25 +10188,33 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 
 void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
-    /// Adjust the create query using values from ZooKeeper.
-    auto zookeeper = getZooKeeper();
-    auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
-    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
-
-    auto current_metadata = getInMemoryMetadataPtr();
-    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
-    auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
-    applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
-
-    /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
-    auto actual_table_shared_id = getTableSharedID();
-    auto expected_table_shared_id = tryGetTableSharedIDFromCreateQuery(*create_query, getContext());
-    if (actual_table_shared_id != expected_table_shared_id)
+    try
     {
-        throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Table {} has its shared ID different from one from the create query: "
-                        "actual shared id = {}, expected shared id = {}, create query = {}",
-                        getStorageID().getNameForLogs(), actual_table_shared_id, expected_table_shared_id.value_or("nullopt"),
-                        create_query);
+        /// Try to adjust the create query using values from ZooKeeper.
+        auto zookeeper = getZooKeeper();
+        auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
+        auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
+
+        auto current_metadata = getInMemoryMetadataPtr();
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
+        auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
+        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
+
+        /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
+        auto actual_table_shared_id = getTableSharedID();
+        auto expected_table_shared_id = tryGetTableSharedIDFromCreateQuery(*create_query, getContext());
+        if (actual_table_shared_id != expected_table_shared_id)
+        {
+            throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Table {} has its shared ID different from one from the create query: "
+                            "actual shared id = {}, expected shared id = {}, create query = {}",
+                            getStorageID().getNameForLogs(), actual_table_shared_id, expected_table_shared_id.value_or("nullopt"),
+                            create_query);
+        }
+    }
+    catch (...)
+    {
+        /// We can continue making a backup with non-adjusted name.
+        tryLogCurrentException(log, "Failed to adjust the create query of this table for backup");
     }
 }
 
