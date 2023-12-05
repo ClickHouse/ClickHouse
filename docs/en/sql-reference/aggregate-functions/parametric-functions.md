@@ -487,7 +487,7 @@ Where:
 
 ## uniqUpTo(N)(x)
 
-Calculates the approximate number of different values of the argument up to a specified limit, `N`. This function is useful when you want to get a rough estimate of the number of unique values in a column but you're not interested in the exact count due to performance considerations. If the number of different argument values is greater than `N`, this function returns `N` + 1.
+Calculates the number of different values of the argument up to a specified limit, `N`. If the number of different argument values is greater than `N`, this function returns `N` + 1, otherwise it calculates the exact value. 
 
 Recommended for use with small `N`s, up to 10. The maximum value of `N` is 100.
 
