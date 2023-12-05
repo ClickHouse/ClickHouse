@@ -34,7 +34,7 @@ INSERT INTO test_max_num_to_warn_9 VALUES (1, 'Hello');
 INSERT INTO test_max_num_to_warn_10 VALUES (1, 'Hello');
 INSERT INTO test_max_num_to_warn_11 VALUES (1, 'Hello');
 
-SELECT * FROM system.warnings where message in ('Attached tables is more than 10', 'Attached databases is more than 10', 'Active parts is more than 10');
+SELECT * FROM system.warnings where message in ('The number of attached tables is more than 10', 'The number of attached databases is more than 10', 'The number of active parts is more than 10');
 
 DROP TABLE test_max_num_to_warn_1;
 DROP TABLE test_max_num_to_warn_2;
