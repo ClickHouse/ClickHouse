@@ -18,6 +18,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -172,10 +173,25 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
     ExpressionAndSets result;
+    auto ttl_string = queryToString(ast);
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
-    result.expression = analyzer.getActions(false);
+    auto dag = analyzer.getActionsDAG(false);
+
+    const auto * col = &dag->findInOutputs(ast->getColumnName());
+    // std::cerr << "buildExpressionAndSets " << ttl_string << std::endl;
+    if (col->result_name != ttl_string)
+        col = &dag->addAlias(*col, ttl_string);
+
+    dag->getOutputs() = {col};
+    dag->removeUnusedActions();
+
+    result.expression = std::make_shared<ExpressionActions>(dag, ExpressionActionsSettings::fromContext(context));
     result.sets = analyzer.getPreparedSets();
+
+    // std::cerr << "--------- buildExpressionAndSets\n";
+    // std::cerr << result.expression->dumpActions() << std::endl;
+    // std::cerr << result.sets->getSubqueries().size() << std::endl;
 
     return result;
 }
@@ -218,7 +234,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     // auto syntax_analyzer_result = TreeRewriter(context).analyze(ttl_ast, columns.getAllPhysical());
     // result.expression = ExpressionAnalyzer(ttl_ast, syntax_analyzer_result, context).getActions(false);
-    result.result_column = ttl_ast->getColumnName();
+    result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
 
     ExpressionActionsPtr where_expression;
 
@@ -244,7 +260,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 // result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, context).getActions(false);
 
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
-                result.where_result_column = where_expr_ast->getColumnName();
+                result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
         }
         else if (ttl_element->mode == TTLMode::GROUP_BY)
