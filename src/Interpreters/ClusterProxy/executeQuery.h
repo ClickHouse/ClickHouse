@@ -68,8 +68,7 @@ void executeQueryWithParallelReplicas(
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits,
-    const ClusterPtr & not_optimized_cluster);
+    std::shared_ptr<const StorageLimitsList> storage_limits);
 }
 
 }
