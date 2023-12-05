@@ -364,7 +364,14 @@
     <background_schedule_pool_size>128</background_schedule_pool_size>
     <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    <tables_loader_foreground_pool_size>0</tables_loader_foreground_pool_size>
+    <tables_loader_background_pool_size>0</tables_loader_background_pool_size>
     -->
+
+    <!-- Enables asynchronous loading of databases and tables to speedup server startup.
+         Queries to not yet loaded entity will be blocked until load is finished.
+      -->
+    <!-- <async_load_databases>true</async_load_databases> -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -1427,6 +1434,10 @@
          The directory will be created if it doesn't exist.
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+    <!-- Directory containing the proto files for the well-known Protobuf types.
+      -->
+    <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 
     <!-- Default query masking rules, matching lines would be replaced with something else in the logs
         (both text logs and system.query_log).

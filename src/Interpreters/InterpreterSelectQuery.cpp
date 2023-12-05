@@ -105,7 +105,6 @@ namespace DB
 {
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
-static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
 
 namespace ErrorCodes
 {
@@ -659,6 +658,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
+                    storage->getConditionEstimatorByPredicate(query_info, storage_snapshot, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};
@@ -1313,19 +1313,19 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context,
 }
 
 
-static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context)
+std::pair<UInt64, UInt64> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
 {
     UInt64 length = 0;
     UInt64 offset = 0;
 
     if (query.limitLength())
     {
-        length = getLimitUIntValue(query.limitLength(), context, "LIMIT");
+        length = getLimitUIntValue(query.limitLength(), context_, "LIMIT");
         if (query.limitOffset() && length)
-            offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
+            offset = getLimitUIntValue(query.limitOffset(), context_, "OFFSET");
     }
     else if (query.limitOffset())
-        offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
+        offset = getLimitUIntValue(query.limitOffset(), context_, "OFFSET");
     return {length, offset};
 }
 

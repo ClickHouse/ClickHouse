@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2646 
+personal_ws-1.1 en 2646
 AArch
 ACLs
 ALTERs
@@ -30,7 +30,6 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowStream
-AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
 AsynchronousInsert
@@ -39,6 +38,11 @@ AsynchronousInsertThreadsActive
 AsynchronousMetricsCalculationTimeSpent
 AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
+AsyncInsertCacheSize
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 Authenticator
 Authenticators
 AutoFDO
@@ -261,6 +265,7 @@ FOSDEM
 FQDN
 Failover
 FarmHash
+FileCluster
 FileLog
 FilesystemCacheBytes
 FilesystemCacheElements
@@ -865,6 +870,7 @@ SystemReplicasThreadsActive
 TABLUM
 TCPConnection
 TCPThreads
+TDigest
 TINYINT
 TKSV
 TLSv
@@ -882,8 +888,6 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
-TablesLoaderThreads
-TablesLoaderThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -1382,6 +1386,7 @@ denormalized
 denormalizing
 denormals
 dequeued
+dequeues
 deserialization
 deserialized
 deserializing
@@ -1441,6 +1446,7 @@ endian
 endianness
 endsWith
 endsWithUTF
+enqueued
 enum
 enum's
 enums
@@ -1471,6 +1477,7 @@ fastops
 fcoverage
 fibonacci
 fifo
+fileCluster
 filelog
 filesystem
 filesystemAvailable
@@ -1502,6 +1509,7 @@ formatRowNoNewline
 formated
 formatschema
 formatter
+formatters
 freezed
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1512,6 +1520,7 @@ fromUnixTimestampInJodaSyntax
 fsync
 func
 fuzzBits
+fuzzJSON
 fuzzer
 fuzzers
 gRPC
@@ -2222,7 +2231,6 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID

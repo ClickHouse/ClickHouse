@@ -694,6 +694,44 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     const auto settings = getSettings();
     if (settings->allow_remote_fs_zero_copy_replication)
     {
+        auto disks = getStoragePolicy()->getDisks();
+        std::set<DataSourceType> disk_types_for_zero_copy;
+        for (auto & disk : disks)
+        {
+            if (!disk->supportZeroCopyReplication())
+                continue;
+
+            disk_types_for_zero_copy.insert(disk->getDataSourceDescription().type);
+        }
+
+        const auto table_shared_id_ = getTableSharedID();
+
+        if (!disk_types_for_zero_copy.empty())
+        {
+            /// create all ancestors of remote_fs_zero_copy_zookeeper_path
+            auto remote_fs_zero_copy_zookeeper_path = fs::path(settings->remote_fs_zero_copy_zookeeper_path.toString());
+            fs::path ancestor = *remote_fs_zero_copy_zookeeper_path.begin();
+            for (auto it = ++remote_fs_zero_copy_zookeeper_path.begin(); it != remote_fs_zero_copy_zookeeper_path.end(); it++)
+            {
+                /// If there is a directory separator after the last file-name in the path,
+                /// the last element before the end iterator is an empty element.
+                /// We do not what to create path with the / at the end
+                if (!it->empty())
+                {
+                    ancestor = ancestor / *it;
+                    futures.push_back(zookeeper->asyncTryCreateNoThrow(ancestor, String(), zkutil::CreateMode::Persistent));
+                }
+            }
+        }
+
+        for (const auto & disk_type: disk_types_for_zero_copy)
+        {
+            auto zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
+            auto zero_copy_path = fs::path(settings->remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy;
+            futures.push_back(zookeeper->asyncTryCreateNoThrow(zero_copy_path, String(), zkutil::CreateMode::Persistent));
+            futures.push_back(zookeeper->asyncTryCreateNoThrow(zero_copy_path / table_shared_id_, String(), zkutil::CreateMode::Persistent));
+        }
+
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_s3", String(), zkutil::CreateMode::Persistent));
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_s3/shared", String(), zkutil::CreateMode::Persistent));
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_hdfs", String(), zkutil::CreateMode::Persistent));
@@ -724,7 +762,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     {
         auto res = future.get();
         if (res.error != Coordination::Error::ZOK && res.error != Coordination::Error::ZNODEEXISTS)
-            throw Coordination::Exception(res.error, "Failed to create new nodes at {}", zookeeper_path);
+            throw Coordination::Exception(res.error, "Failed to create new nodes {} at {}", res.path_created, zookeeper_path);
     }
 }
 
@@ -1803,6 +1841,9 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 
     while (true)
     {
+        if (shutdown_called || partial_shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot commit part because shutdown called");
+
         Coordination::Requests ops;
         size_t num_check_ops;
         getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
@@ -2833,6 +2874,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     /// we can possibly duplicate entries in queue of cloned replica.
     while (true)
     {
+        if (shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot clone replica because shutdown called");
+
         Coordination::Stat log_pointer_stat;
         String raw_log_pointer = zookeeper->get(fs::path(source_path) / "log_pointer", &log_pointer_stat);
 
@@ -3199,6 +3243,9 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
     String source_columns;
     while (true)
     {
+        if (shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot clone metadata because shutdown called");
+
         Coordination::Stat metadata_stat;
         Coordination::Stat columns_stat;
         source_metadata = zookeeper->get(source_path + "/metadata", &metadata_stat);
@@ -4028,6 +4075,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
     while (true)
     {
+        if (shutdown_called || partial_shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot remove part because shutdown called");
 
         Coordination::Requests ops;
 
@@ -4525,6 +4574,9 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 
     while (true)
     {
+        if (shutdown_called || partial_shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot clean last part node because shutdown called");
+
         Coordination::Stat added_parts_stat;
         String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
 
@@ -4991,21 +5043,11 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
     /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
     if (!has_metadata_in_zookeeper.has_value() || !*has_metadata_in_zookeeper)
     {
-        if (!since_metadata_err_incr_readonly_metric)
-        {
-            since_metadata_err_incr_readonly_metric = true;
+        if (!std::exchange(is_readonly_metric_set, true))
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-        }
 
         LOG_TRACE(log, "No connection to ZooKeeper or no metadata in ZooKeeper, will not startup");
         return;
-    }
-
-    if (since_metadata_err_incr_readonly_metric)
-    {
-        since_metadata_err_incr_readonly_metric = false;
-        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
 
     try
@@ -7256,6 +7298,9 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     /// Should work well if the number of concurrent mutation requests is small.
     while (true)
     {
+        if (shutdown_called || partial_shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot assign mutation because shutdown called");
+
         Coordination::Stat mutations_stat;
         zookeeper->get(mutations_path, &mutations_stat);
 
@@ -8526,6 +8571,9 @@ bool StorageReplicatedMergeTree::dropPartImpl(
 
     while (true)
     {
+        if (shutdown_called || partial_shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot drop part because shutdown called");
+
         ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
 
         auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
@@ -9852,6 +9900,9 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
         while (true)
         {
+            if (shutdown_called || partial_shutdown_called)
+                throw Exception(ErrorCodes::ABORTED, "Cannot create an empty part because shutdown called");
+
             /// We should be careful when creating an empty part, because we are not sure that this part is still needed.
             /// For example, it's possible that part (or partition) was dropped (or replaced) concurrently.
             /// We can enqueue part for check from DataPartExchange or SelectProcessor
@@ -10137,25 +10188,33 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 
 void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
-    /// Adjust the create query using values from ZooKeeper.
-    auto zookeeper = getZooKeeper();
-    auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
-    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
-
-    auto current_metadata = getInMemoryMetadataPtr();
-    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
-    auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
-    applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
-
-    /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
-    auto actual_table_shared_id = getTableSharedID();
-    auto expected_table_shared_id = tryGetTableSharedIDFromCreateQuery(*create_query, getContext());
-    if (actual_table_shared_id != expected_table_shared_id)
+    try
     {
-        throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Table {} has its shared ID different from one from the create query: "
-                        "actual shared id = {}, expected shared id = {}, create query = {}",
-                        getStorageID().getNameForLogs(), actual_table_shared_id, expected_table_shared_id.value_or("nullopt"),
-                        create_query);
+        /// Try to adjust the create query using values from ZooKeeper.
+        auto zookeeper = getZooKeeper();
+        auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
+        auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
+
+        auto current_metadata = getInMemoryMetadataPtr();
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
+        auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
+        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
+
+        /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
+        auto actual_table_shared_id = getTableSharedID();
+        auto expected_table_shared_id = tryGetTableSharedIDFromCreateQuery(*create_query, getContext());
+        if (actual_table_shared_id != expected_table_shared_id)
+        {
+            throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Table {} has its shared ID different from one from the create query: "
+                            "actual shared id = {}, expected shared id = {}, create query = {}",
+                            getStorageID().getNameForLogs(), actual_table_shared_id, expected_table_shared_id.value_or("nullopt"),
+                            create_query);
+        }
+    }
+    catch (...)
+    {
+        /// We can continue making a backup with non-adjusted name.
+        tryLogCurrentException(log, "Failed to adjust the create query of this table for backup");
     }
 }
 

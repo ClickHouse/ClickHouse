@@ -28,6 +28,7 @@ struct FileCacheSettings
 
     size_t boundary_alignment = FILECACHE_DEFAULT_FILE_SEGMENT_ALIGNMENT;
     size_t background_download_threads = FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_THREADS;
+    size_t background_download_queue_size_limit = FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_QUEUE_SIZE_LIMIT;
 
     size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
 
