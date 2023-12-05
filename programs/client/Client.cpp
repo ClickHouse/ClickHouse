@@ -306,6 +306,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set path for format schema files
     if (config().has("format_schema_path"))
         global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 

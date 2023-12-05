@@ -36,6 +36,8 @@ public:
 
     static void addColumnsStructureToArguments(ASTs & args, const String & desired_structure, const ContextPtr & context);
 
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override;
+
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override;

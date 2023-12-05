@@ -649,7 +649,7 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
     }
     else
     {
-        LOG_TRACE(logger, "Unable to open token file on path: {}", sso_access_token_path);
+        LOG_TEST(logger, "Unable to open token file on path: {}", sso_access_token_path);
         return "";
     }
 }
