@@ -14,8 +14,9 @@ ExpressionTransform × 16
             AggregatingTransform
               (Expression)
               ExpressionTransform
-                (ReadFromSystemNumbers)
-                NumbersRange 0 → 1
+                (ReadFromStorage)
+                Limit
+                  Numbers 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number;
 (Expression)
 ExpressionTransform × 16
@@ -30,8 +31,8 @@ ExpressionTransform × 16
             AggregatingTransform × 16
               (Expression)
               ExpressionTransform × 16
-                (ReadFromSystemNumbers)
-                NumbersRange × 16 0 → 1
+                (ReadFromStorage)
+                NumbersMt × 16 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number;
 (Expression)
 ExpressionTransform
@@ -47,8 +48,8 @@ ExpressionTransform
               AggregatingTransform × 16
                 (Expression)
                 ExpressionTransform × 16
-                  (ReadFromSystemNumbers)
-                  NumbersRange × 16 0 → 1
+                  (ReadFromStorage)
+                  NumbersMt × 16 0 → 1
 explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 1;
 (Expression)
 ExpressionTransform × 16
@@ -64,8 +65,8 @@ ExpressionTransform × 16
                 AggregatingTransform × 16
                   (Expression)
                   ExpressionTransform × 16
-                    (ReadFromSystemNumbers)
-                    NumbersRange × 16 0 → 1
+                    (ReadFromStorage)
+                    Numbers × 16 0 → 1
               (ReadFromRemote)
 explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 0;
 (Expression)
@@ -80,8 +81,8 @@ ExpressionTransform × 16
             AggregatingTransform × 16
               (Expression)
               ExpressionTransform × 16
-                (ReadFromSystemNumbers)
-                NumbersRange × 16 0 → 1
+                (ReadFromStorage)
+                Numbers × 16 0 → 1
           (ReadFromRemote)
 -- { echoOn }
 
@@ -99,7 +100,7 @@ ExpressionTransform × 16
               (Expression)
               ExpressionTransform
                 (ReadFromMergeTree)
-                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                MergeTreeInOrder 0 → 1
           (ReadFromRemote)
 explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 1;
 (Expression)
@@ -116,7 +117,7 @@ ExpressionTransform × 16
                 (Expression)
                 ExpressionTransform
                   (ReadFromMergeTree)
-                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                  MergeTreeInOrder 0 → 1
               (ReadFromRemote)
 -- { echoOn }
 
@@ -143,6 +144,6 @@ ExpressionTransform × 2
                               (Expression)
                               ExpressionTransform × 2
                                 (ReadFromMergeTree)
-                                MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                                MergeTreeThread × 2 0 → 1
                         (ReadFromRemote)
               (ReadFromRemote)

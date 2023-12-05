@@ -20,7 +20,7 @@ public:
 
 private:
 
-    std::unique_ptr<ReadBuffer> getReadBufferImpl() override;
+    std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
     /// Reference to the file segment in segment_holder if owned by this WriteBufferToFileSegment
     /// or to the external file segment passed to the constructor

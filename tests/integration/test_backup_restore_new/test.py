@@ -4,13 +4,10 @@ import glob
 import re
 import random
 import os.path
-import sys
 from collections import namedtuple
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
 
-
-script_dir = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -1239,7 +1236,6 @@ def test_backup_all(exclude_system_log_tables):
             "transactions_info_log",
             "processors_profile_log",
             "asynchronous_insert_log",
-            "backup_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
@@ -1562,19 +1558,3 @@ def test_tables_dependency():
         )
 
     drop()
-
-
-# Test for the "clickhouse_backupview" utility.
-
-test_backupview_dir = os.path.abspath(
-    os.path.join(script_dir, "../../../utils/backupview/test")
-)
-if test_backupview_dir not in sys.path:
-    sys.path.append(test_backupview_dir)
-import test_backupview as test_backupview_module
-
-
-def test_backupview():
-    if instance.is_built_with_sanitizer():
-        return  # This test is actually for clickhouse_backupview, not for ClickHouse itself.
-    test_backupview_module.test_backupview_1()

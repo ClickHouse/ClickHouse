@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <unordered_map>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
@@ -36,11 +34,6 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
             enable_special_macros = false;
         }
     }
-}
-
-Macros::Macros(std::map<String, String> map)
-{
-    macros = std::move(map);
 }
 
 String Macros::expand(const String & s,

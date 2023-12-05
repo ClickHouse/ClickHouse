@@ -51,7 +51,10 @@ public:
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override;
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
+    {
+        return {"_path", "_file"};
+    }
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
 

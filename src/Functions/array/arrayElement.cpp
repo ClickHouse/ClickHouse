@@ -31,9 +31,6 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
-namespace
-{
-
 namespace ArrayImpl
 {
     class NullMapBuilder;
@@ -133,6 +130,7 @@ class NullMapBuilder
 {
 public:
     explicit operator bool() const { return src_null_map; }
+    bool operator!() const { return !src_null_map; }
 
     void initSource(const UInt8 * src_null_map_)
     {
@@ -195,11 +193,7 @@ struct ArrayElementNumImpl
 
             if (index < array_size)
             {
-                size_t j;
-                if constexpr (negative)
-                    j = offsets[i] - index - 1;
-                else
-                    j = current_offset + index;
+                size_t j = !negative ? (current_offset + index) : (offsets[i] - index - 1);
                 result[i] = data[j];
                 if (builder)
                     builder.update(j);
@@ -264,7 +258,7 @@ struct ArrayElementNumImpl
 
 struct ArrayElementStringImpl
 {
-    template <bool negative, bool used_builder>
+    template <bool negative>
     static void vectorConst(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const ColumnArray::Offset index,
@@ -273,31 +267,21 @@ struct ArrayElementStringImpl
     {
         size_t size = offsets.size();
         result_offsets.resize(size);
+        result_data.reserve(data.size());
 
         ColumnArray::Offset current_offset = 0;
-        /// get the total result bytes at first, and reduce the cost of result_data.resize.
-        size_t total_result_bytes = 0;
-        ColumnString::Chars zero_buf(1);
-        zero_buf.push_back(0);
-        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
-        selected_bufs.reserve(size);
+        ColumnArray::Offset current_result_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
 
             if (index < array_size)
             {
-                size_t adjusted_index;
-                if constexpr (negative)
-                    adjusted_index = array_size - index - 1;
-                else
-                     adjusted_index = index;
+                size_t adjusted_index = !negative ? index : (array_size - index - 1);
 
-                if constexpr (used_builder)
-                {
-                    size_t j = current_offset + adjusted_index;
+                size_t j = current_offset + adjusted_index;
+                if (builder)
                     builder.update(j);
-                }
 
                 ColumnArray::Offset string_pos = current_offset == 0 && adjusted_index == 0
                     ? 0
@@ -305,36 +289,30 @@ struct ArrayElementStringImpl
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
-                total_result_bytes += string_size;
-                selected_bufs.emplace_back(&data[string_pos], string_size);
-                result_offsets[i] = total_result_bytes;
+                result_data.resize(current_result_offset + string_size);
+                memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
+                current_result_offset += string_size;
+                result_offsets[i] = current_result_offset;
             }
             else
             {
                 /// Insert an empty row.
-                total_result_bytes += 1;
-                selected_bufs.emplace_back(zero_buf.data(), 1);
-                result_offsets[i] = total_result_bytes;
+                result_data.resize(current_result_offset + 1);
+                result_data[current_result_offset] = 0;
+                current_result_offset += 1;
+                result_offsets[i] = current_result_offset;
 
-                if constexpr (used_builder)
+                if (builder)
                     builder.update();
             }
 
             current_offset = offsets[i];
         }
-
-        ColumnArray::Offset current_result_offset = 0;
-        result_data.resize(total_result_bytes);
-        for (const auto & buf : selected_bufs)
-        {
-            memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], buf.first, buf.second);
-            current_result_offset += buf.second;
-        }
     }
 
     /** Implementation for non-constant index.
       */
-    template <typename TIndex, bool used_builder>
+    template <typename TIndex>
     static void vector(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const PaddedPODArray<TIndex> & indices,
@@ -343,14 +321,10 @@ struct ArrayElementStringImpl
     {
         size_t size = offsets.size();
         result_offsets.resize(size);
+        result_data.reserve(data.size());
 
-        ColumnString::Chars zero_buf(1);
-        zero_buf.push_back(0);
         ColumnArray::Offset current_offset = 0;
-        /// get the total result bytes at first, and reduce the cost of result_data.resize.
-        size_t total_result_bytes = 0;
-        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
-        selected_bufs.reserve(size);
+        ColumnArray::Offset current_result_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -366,42 +340,34 @@ struct ArrayElementStringImpl
 
             if (adjusted_index < array_size)
             {
-                if constexpr (used_builder)
-                {
-                    size_t j = current_offset + adjusted_index;
+                size_t j = current_offset + adjusted_index;
+                if (builder)
                     builder.update(j);
-                }
 
                 ColumnArray::Offset string_pos = current_offset == 0 && adjusted_index == 0
                     ? 0
                     : string_offsets[current_offset + adjusted_index - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
-                total_result_bytes += string_size;
-                selected_bufs.emplace_back(&data[string_pos], string_size);
 
-                result_offsets[i] = total_result_bytes;
+                result_data.resize(current_result_offset + string_size);
+                memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
+                current_result_offset += string_size;
+                result_offsets[i] = current_result_offset;
             }
             else
             {
                 /// Insert empty string
-                total_result_bytes += 1;
-                selected_bufs.emplace_back(zero_buf.data(), 1);
-                result_offsets[i] = total_result_bytes;
+                result_data.resize(current_result_offset + 1);
+                result_data[current_result_offset] = 0;
+                current_result_offset += 1;
+                result_offsets[i] = current_result_offset;
 
-                if constexpr (used_builder)
+                if (builder)
                     builder.update();
             }
 
             current_offset = offsets[i];
-        }
-
-        ColumnArray::Offset current_result_offset = 0;
-        result_data.resize(total_result_bytes);
-        for (const auto & buf : selected_bufs)
-        {
-            memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], buf.first, buf.second);
-            current_result_offset += buf.second;
         }
     }
 };
@@ -574,47 +540,23 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
 
     if (index.getType() == Field::Types::UInt64
         || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
-    {
-        if (builder)
-            ArrayElementStringImpl::vectorConst<false, true>(
-                col_nested->getChars(),
-                col_array->getOffsets(),
-                col_nested->getOffsets(),
-                index.get<UInt64>() - 1,
-                col_res->getChars(),
-                col_res->getOffsets(),
-                builder);
-        else
-            ArrayElementStringImpl::vectorConst<false, false>(
-                col_nested->getChars(),
-                col_array->getOffsets(),
-                col_nested->getOffsets(),
-                index.get<UInt64>() - 1,
-                col_res->getChars(),
-                col_res->getOffsets(),
-                builder);
-    }
+        ArrayElementStringImpl::vectorConst<false>(
+            col_nested->getChars(),
+            col_array->getOffsets(),
+            col_nested->getOffsets(),
+            index.get<UInt64>() - 1,
+            col_res->getChars(),
+            col_res->getOffsets(),
+            builder);
     else if (index.getType() == Field::Types::Int64)
-    {
-        if (builder)
-            ArrayElementStringImpl::vectorConst<true, true>(
-                col_nested->getChars(),
-                col_array->getOffsets(),
-                col_nested->getOffsets(),
-                -(UInt64(index.get<Int64>()) + 1),
-                col_res->getChars(),
-                col_res->getOffsets(),
-                builder);
-        else
-            ArrayElementStringImpl::vectorConst<true, false>(
-                col_nested->getChars(),
-                col_array->getOffsets(),
-                col_nested->getOffsets(),
-                -(UInt64(index.get<Int64>()) + 1),
-                col_res->getChars(),
-                col_res->getOffsets(),
-                builder);
-    }
+        ArrayElementStringImpl::vectorConst<true>(
+            col_nested->getChars(),
+            col_array->getOffsets(),
+            col_nested->getOffsets(),
+            -(UInt64(index.get<Int64>()) + 1),
+            col_res->getChars(),
+            col_res->getOffsets(),
+            builder);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal type of array index");
 
@@ -637,24 +579,14 @@ ColumnPtr FunctionArrayElement::executeString(
 
     auto col_res = ColumnString::create();
 
-    if (builder)
-        ArrayElementStringImpl::vector<IndexType, true>(
-            col_nested->getChars(),
-            col_array->getOffsets(),
-            col_nested->getOffsets(),
-            indices,
-            col_res->getChars(),
-            col_res->getOffsets(),
-            builder);
-    else
-        ArrayElementStringImpl::vector<IndexType, false>(
-            col_nested->getChars(),
-            col_array->getOffsets(),
-            col_nested->getOffsets(),
-            indices,
-            col_res->getChars(),
-            col_res->getOffsets(),
-            builder);
+    ArrayElementStringImpl::vector<IndexType>(
+        col_nested->getChars(),
+        col_array->getOffsets(),
+        col_nested->getOffsets(),
+        indices,
+        col_res->getChars(),
+        col_res->getOffsets(),
+        builder);
 
     return col_res;
 }
@@ -887,49 +819,11 @@ void FunctionArrayElement::executeMatchKeyToIndex(
     const Offsets & offsets, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher)
 {
     size_t rows = offsets.size();
-    size_t expected_match_pos = 0;
-    bool matched = false;
-    if (!rows)
-        return;
-
-    /// In practice, map keys are usually in the same order, it is worth a try to
-    /// predict the next key position. So it can avoid a lot of unnecessary comparisons.
-    for (size_t j = offsets[-1], end = offsets[0]; j < end; ++j)
+    for (size_t i = 0; i < rows; ++i)
     {
-        if (matcher.match(j, 0))
-        {
-            matched_idxs.push_back(j - offsets[-1] + 1);
-            matched = true;
-            expected_match_pos = end + j - offsets[-1];
-            break;
-        }
-    }
-    if (!matched)
-    {
-        expected_match_pos = offsets[0];
-        matched_idxs.push_back(0);
-    }
-    size_t i = 1;
-    for (; i < rows; ++i)
-    {
-        const auto & begin = offsets[i - 1];
-        const auto & end = offsets[i];
-        if (expected_match_pos < end && matcher.match(expected_match_pos, i))
-        {
-            auto map_key_index = expected_match_pos - begin;
-            matched_idxs.push_back(map_key_index + 1);
-            expected_match_pos = end + map_key_index;
-        }
-        else
-            break;
-    }
-
-    // fallback to linear search
-    for (; i < rows; ++i)
-    {
-        matched = false;
-        const auto & begin = offsets[i - 1];
-        const auto & end = offsets[i];
+        bool matched = false;
+        size_t begin = offsets[i - 1];
+        size_t end = offsets[i];
         for (size_t j = begin; j < end; ++j)
         {
             if (matcher.match(j, i))
@@ -969,7 +863,7 @@ void FunctionArrayElement::executeMatchConstKeyToIndex(
 }
 
 template <typename F>
-bool castColumnString(const IColumn * column, F && f)
+static bool castColumnString(const IColumn * column, F && f)
 {
     return castTypeToEither<ColumnString, ColumnFixedString>(column, std::forward<F>(f));
 }
@@ -1012,13 +906,13 @@ bool FunctionArrayElement::matchKeyToIndexString(
 }
 
 template <typename FromType, typename ToType>
-constexpr bool areConvertibleTypes =
+static constexpr bool areConvertibleTypes =
     std::is_same_v<FromType, ToType>
         || (is_integer<FromType> && is_integer<ToType>
             && std::is_convertible_v<FromType, ToType>);
 
 template <typename F>
-bool castColumnNumeric(const IColumn * column, F && f)
+static bool castColumnNumeric(const IColumn * column, F && f)
 {
     return castTypeToEither<
         ColumnVector<UInt8>,
@@ -1317,8 +1211,6 @@ ColumnPtr FunctionArrayElement::perform(const ColumnsWithTypeAndName & arguments
     }
 
     return res;
-}
-
 }
 
 

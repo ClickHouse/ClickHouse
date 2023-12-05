@@ -150,7 +150,7 @@ def main():
             DOCS_NAME,
             pr_info,
         )
-        sys.exit(0)
+        sys.exit(1)
 
     if description_error:
         print(

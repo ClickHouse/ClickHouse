@@ -34,7 +34,7 @@ static void quoteLiteral(
     copy_from = end;
 }
 
-bool tryQuoteUnrecognizedTokens(String & query)
+bool tryQuoteUnrecognizedTokens(const String & query, String & res)
 {
     Tokens tokens(query.data(), query.data() + query.size());
     IParser::Pos pos(tokens, 0);
@@ -89,7 +89,7 @@ bool tryQuoteUnrecognizedTokens(String & query)
 
     auto size = static_cast<size_t>(pos->end - copy_from);
     rewritten_query.append(copy_from, size);
-    query = rewritten_query;
+    res = rewritten_query;
     return true;
 }
 

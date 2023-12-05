@@ -34,7 +34,6 @@ You can use the [log_formatted_queries](../../operations/settings/settings.md#se
 
 Columns:
 
-- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
     - `'QueryStart' = 1` — Successful start of query execution.
     - `'QueryFinish' = 2` — Successful end of query execution.
@@ -102,8 +101,7 @@ Columns:
 - `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/map.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events)
 - `Settings` ([Map(String, String)](../../sql-reference/data-types/map.md)) — Settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
 - `log_comment` ([String](../../sql-reference/data-types/string.md)) — Log comment. It can be set to arbitrary string no longer than [max_query_size](../../operations/settings/settings.md#settings-max_query_size). An empty string if it is not defined.
-- `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Thread ids that are participating in query execution. These threads may not have run simultaneously.
-- `peak_threads_usage` ([UInt64)](../../sql-reference/data-types/int-uint.md)) — Maximum count of simultaneous threads executing the query.
+- `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Thread ids that are participating in query execution.
 - `used_aggregate_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `aggregate functions`, which were used during query execution.
 - `used_aggregate_function_combinators` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `aggregate functions combinators`, which were used during query execution.
 - `used_database_engines` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `database engines`, which were used during query execution.
@@ -128,7 +126,6 @@ SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_t
 ``` text
 Row 1:
 ──────
-hostname:                              clickhouse.eu-central1.internal
 type:                                  QueryFinish
 event_date:                            2021-11-03
 event_time:                            2021-11-03 16:13:54
@@ -169,7 +166,7 @@ initial_query_start_time:              2021-11-03 16:13:54
 initial_query_start_time_microseconds: 2021-11-03 16:13:54.952325
 interface:                             1
 os_user:                               sevirov
-client_hostname:                       clickhouse.eu-central1.internal
+client_hostname:                       clickhouse.ru-central1.internal
 client_name:                           ClickHouse
 client_revision:                       54449
 client_version_major:                  21

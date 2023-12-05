@@ -1,6 +1,4 @@
 #include "ZooKeeper.h"
-#include "Coordination/KeeperConstants.h"
-#include "Coordination/KeeperFeatureFlags.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
@@ -89,7 +87,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 
                 const Poco::Net::SocketAddress host_socket_addr{host_string};
                 LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, host_socket_addr.toString());
-                nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, host.original_index, secure});
+                nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, secure});
             }
             catch (const Poco::Net::HostNotFoundException & e)
             {
@@ -113,7 +111,12 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
         }
 
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log, [this](size_t node_idx, const Coordination::ZooKeeper::Node & node)
+        {
+            connected_zk_host = node.address.host().toString();
+            connected_zk_port = node.address.port();
+            connected_zk_index = node_idx;
+        });
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
@@ -174,7 +177,6 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
     {
         ShuffleHost shuffle_host;
         shuffle_host.host = args.hosts[i];
-        shuffle_host.original_index = static_cast<UInt8>(i);
         if (get_priority)
             shuffle_host.priority = get_priority(i);
         shuffle_host.randomize();
@@ -351,33 +353,6 @@ void ZooKeeper::createIfNotExists(const std::string & path, const std::string & 
 
 void ZooKeeper::createAncestors(const std::string & path)
 {
-    size_t pos = 1;
-
-    if (isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
-    {
-        Coordination::Requests create_ops;
-
-        while (true)
-        {
-            pos = path.find('/', pos);
-            if (pos == std::string::npos)
-                break;
-
-            auto request = makeCreateRequest(path.substr(0, pos), "", CreateMode::Persistent, true);
-            create_ops.emplace_back(request);
-
-            ++pos;
-        }
-
-        Coordination::Responses responses;
-        Coordination::Error code = multiImpl(create_ops, responses);
-
-        if (code == Coordination::Error::ZOK)
-            return;
-
-        throw KeeperException::fromPath(code, path);
-    }
-
     std::string data;
     std::string path_created; // Ignored
     std::vector<std::string> pending_nodes;
@@ -902,24 +877,6 @@ void ZooKeeper::handleEphemeralNodeExistence(const std::string & path, const std
     }
 }
 
-Coordination::ReconfigResponse ZooKeeper::reconfig(
-    const std::string & joining,
-    const std::string & leaving,
-    const std::string & new_members,
-    int32_t version)
-{
-    auto future_result = asyncReconfig(joining, leaving, new_members, version);
-
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-    {
-        impl->finalize(fmt::format("Operation timeout on {}", Coordination::OpNum::Reconfig));
-        throw KeeperException(Coordination::Error::ZOPERATIONTIMEOUT);
-    }
-
-    return future_result.get();
-}
-
-
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
     return std::make_shared<ZooKeeper>(args, zk_log);
@@ -1269,27 +1226,6 @@ std::future<Coordination::SyncResponse> ZooKeeper::asyncSync(const std::string &
     return future;
 }
 
-std::future<Coordination::ReconfigResponse> ZooKeeper::asyncReconfig(
-    const std::string & joining,
-    const std::string & leaving,
-    const std::string & new_members,
-    int32_t version)
-{
-    auto promise = std::make_shared<std::promise<Coordination::ReconfigResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::ReconfigResponse & response) mutable
-    {
-        if (response.error != Coordination::Error::ZOK)
-            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
-        else
-            promise->set_value(response);
-    };
-
-    impl->reconfig(joining, leaving, new_members, version, std::move(callback));
-    return future;
-}
-
 void ZooKeeper::finalize(const String & reason)
 {
     impl->finalize(reason);
@@ -1308,20 +1244,6 @@ void ZooKeeper::setServerCompletelyStarted()
         zk->setServerCompletelyStarted();
 }
 
-Int8 ZooKeeper::getConnectedHostIdx() const
-{
-    return impl->getConnectedNodeIdx();
-}
-
-String ZooKeeper::getConnectedHostPort() const
-{
-    return impl->getConnectedHostPort();
-}
-
-int32_t ZooKeeper::getConnectionXid() const
-{
-    return impl->getConnectionXid();
-}
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
@@ -1372,14 +1294,13 @@ void KeeperMultiException::check(
 }
 
 
-Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode, bool ignore_if_exists)
+Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode)
 {
     auto request = std::make_shared<Coordination::CreateRequest>();
     request->path = path;
     request->data = data;
     request->is_ephemeral = create_mode == CreateMode::Ephemeral || create_mode == CreateMode::EphemeralSequential;
     request->is_sequential = create_mode == CreateMode::PersistentSequential || create_mode == CreateMode::EphemeralSequential;
-    request->not_exists = ignore_if_exists;
     return request;
 }
 
@@ -1506,7 +1427,7 @@ void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
 
 bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server.raft_configuration") && config.getBool("keeper_server.use_cluster", true));
+    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true));
 }
 
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
@@ -1517,7 +1438,7 @@ String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
     if (config.has("keeper"))
         return "keeper";
 
-    if (config.has("keeper_server.raft_configuration") && config.getBool("keeper_server.use_cluster", true))
+    if (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true))
         return "keeper_server";
 
     throw DB::Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");

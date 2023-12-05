@@ -21,7 +21,7 @@ public:
     ~WriteBufferFromTemporaryFile() override;
 
 private:
-    std::unique_ptr<ReadBuffer> getReadBufferImpl() override;
+    std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
     TemporaryFileOnDiskHolder tmp_file;
 

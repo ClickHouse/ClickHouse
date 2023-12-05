@@ -16,8 +16,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-source /attach_gdb.lib
-source /stress_tests.lib
+source /usr/share/clickhouse-test/ci/attach_gdb.lib
+source /usr/share/clickhouse-test/ci/stress_tests.lib
 
 install_packages package_folder
 
@@ -190,12 +190,6 @@ sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
    | sed "s|<level>trace</level>|<level>test</level>|" \
    > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
 mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
-
-# Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
-    sudo echo "<clickhouse><async_load_databases>true</async_load_databases></clickhouse>" \
-        > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
-fi
 
 start
 

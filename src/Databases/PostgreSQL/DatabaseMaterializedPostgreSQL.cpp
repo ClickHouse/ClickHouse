@@ -7,7 +7,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
-#include <Common/PoolId.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -53,29 +52,10 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
-    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
+    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ startSynchronization(); }))
 {
 }
 
-void DatabaseMaterializedPostgreSQL::tryStartSynchronization()
-{
-    if (shutdown_called)
-        return;
-
-    try
-    {
-        startSynchronization();
-        LOG_INFO(log, "Successfully loaded tables from PostgreSQL and started replication");
-    }
-    catch (...)
-    {
-        LOG_ERROR(log, "Failed to start replication from PostgreSQL, "
-                  "will retry. Error: {}", getCurrentExceptionMessage(true));
-
-        if (!shutdown_called)
-            startup_task->scheduleAfter(5000);
-    }
-}
 
 void DatabaseMaterializedPostgreSQL::startSynchronization()
 {
@@ -84,10 +64,9 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         return;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
+            /* replication_identifier */ TSA_SUPPRESS_WARNING_FOR_READ(database_name),    /// FIXME
             remote_database_name,
-            /* table_name */"",
             TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
-            toString(getUUID()),
             connection_info,
             getContext(),
             is_attach,
@@ -135,29 +114,24 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
 
-    replication_handler->startup(/* delayed */false);
+    try
+    {
+        replication_handler->startup(/* delayed */false);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
+    }
 }
 
 
-LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
+void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
 {
-    auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
-    auto job = makeLoadJob(
-        base->goals(),
-        TablesLoaderBackgroundStartupPoolId,
-        fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
-        [this] (AsyncLoader &, const LoadJobPtr &)
-        {
-            startup_task->activateAndSchedule();
-        });
-    return startup_postgresql_database_task = makeLoadTask(async_loader, {job});
+    DatabaseAtomic::startupTables(thread_pool, mode);
+    startup_task->activateAndSchedule();
 }
 
-void DatabaseMaterializedPostgreSQL::waitDatabaseStarted(bool no_throw) const
-{
-    if (startup_postgresql_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_postgresql_database_task, no_throw);
-}
 
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
@@ -196,9 +170,9 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
 
 StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, ContextPtr local_context) const
 {
-    /// In order to define which table access is needed - to MaterializedPostgreSQL table (only in case of SELECT queries) or
-    /// to its nested ReplacingMergeTree table (in all other cases), the context of a query is modified.
-    /// Also if materialized_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
+    /// In otder to define which table access is needed - to MaterializedPostgreSQL table (only in case of SELECT queries) or
+    /// to its nested ReplacingMergeTree table (in all other cases), the context of a query os modified.
+    /// Also if materialzied_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
     /// replication_handler was shutdown.
     if (local_context->isInternalQuery() || materialized_tables.empty())
     {
@@ -427,7 +401,6 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
 
 void DatabaseMaterializedPostgreSQL::shutdown()
 {
-    shutdown_called = true;
     startup_task->deactivate();
     stopReplication();
     DatabaseAtomic::shutdown();
@@ -436,12 +409,11 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
-    waitDatabaseStarted(/* no_throw = */ true);
-
     std::lock_guard lock(handler_mutex);
     if (replication_handler)
         replication_handler->shutdown();
 
+    shutdown_called = true;
     /// Clear wrappers over nested, all access is not done to nested tables directly.
     materialized_tables.clear();
 }

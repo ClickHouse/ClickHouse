@@ -539,12 +539,8 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
 {
-    std::unordered_set<DiskPtr> read_disks;
     const auto load_snapshot_from_disk = [&](const auto & disk)
     {
-        if (read_disks.contains(disk))
-            return;
-
         LOG_TRACE(log, "Reading from disk {}", disk->getName());
         std::unordered_map<std::string, std::string> incomplete_files;
 
@@ -594,8 +590,6 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
         for (const auto & [name, path] : incomplete_files)
             disk->removeFile(path);
-
-        read_disks.insert(disk);
     };
 
     for (const auto & disk : keeper_context->getOldSnapshotDisks())
@@ -779,7 +773,7 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
     const auto & [path, disk] = itr->second;
-    disk->removeFileIfExists(path);
+    disk->removeFile(path);
     existing_snapshots.erase(itr);
 }
 
@@ -809,16 +803,8 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStor
     disk->removeFile(tmp_snapshot_file_name);
 
     existing_snapshots.emplace(up_to_log_idx, SnapshotFileInfo{snapshot_file_name, disk});
-
-    try
-    {
-        removeOutdatedSnapshotsIfNeeded();
-        moveSnapshotsIfNeeded();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
-    }
+    removeOutdatedSnapshotsIfNeeded();
+    moveSnapshotsIfNeeded();
 
     return {snapshot_file_name, disk};
 }

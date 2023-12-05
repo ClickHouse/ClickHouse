@@ -25,13 +25,7 @@ public:
     explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, Args && ...args)
         : Storage(getConfigurationForDataRead(configuration_, context_), context_, std::forward<Args>(args)...)
         , base_configuration(configuration_)
-        , log(&Poco::Logger::get(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
-
-    template <class ...Args>
-    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, Args && ...args)
-    {
-        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, std::forward<Args>(args)...);
-    }
+        , log(&Poco::Logger::get(getName())) {}
 
     String getName() const override { return name; }
 
@@ -115,7 +109,8 @@ static StoragePtr createDataLakeStorage(const StorageFactory::Arguments & args)
     if (configuration.format == "auto")
         configuration.format = "Parquet";
 
-    return DataLake::create(configuration, args.getContext(), args.table_id, args.columns, args.constraints,
+    return std::make_shared<DataLake>(
+        configuration, args.getContext(), args.table_id, args.columns, args.constraints,
         args.comment, getFormatSettings(args.getContext()));
 }
 

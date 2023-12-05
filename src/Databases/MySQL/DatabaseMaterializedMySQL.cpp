@@ -10,7 +10,6 @@
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Storages/StorageMaterializedMySQL.h>
 #    include <Common/setThreadName.h>
-#    include <Common/PoolId.h>
 #    include <filesystem>
 
 namespace fs = std::filesystem;
@@ -64,29 +63,16 @@ void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exceptio
     exception = exception_;
 }
 
-LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
+void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
 {
-    auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
-    auto job = makeLoadJob(
-        base->goals(),
-        TablesLoaderBackgroundStartupPoolId,
-        fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
-        [this, mode] (AsyncLoader &, const LoadJobPtr &)
-        {
-            LOG_TRACE(log, "Starting MaterializeMySQL database");
-            if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
-                materialize_thread.assertMySQLAvailable();
+    LOG_TRACE(log, "Starting MaterializeMySQL tables");
+    DatabaseAtomic::startupTables(thread_pool, mode);
 
-            materialize_thread.startSynchronization();
-            started_up = true;
-        });
-    return startup_mysql_database_task = makeLoadTask(async_loader, {job});
-}
+    if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+        materialize_thread.assertMySQLAvailable();
 
-void DatabaseMaterializedMySQL::waitDatabaseStarted(bool no_throw) const
-{
-    if (startup_mysql_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_mysql_database_task, no_throw);
+    materialize_thread.startSynchronization();
+    started_up = true;
 }
 
 void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
@@ -174,7 +160,6 @@ void DatabaseMaterializedMySQL::checkIsInternalQuery(ContextPtr context_, const 
 
 void DatabaseMaterializedMySQL::stopReplication()
 {
-    waitDatabaseStarted(/* no_throw = */ true);
     materialize_thread.stopSynchronization();
     started_up = false;
 }

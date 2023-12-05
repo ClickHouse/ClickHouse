@@ -117,14 +117,14 @@ struct RegExpTreeDictionary::RegexTreeNode
     UInt64      id;
     UInt64      parent_id;
     std::string regex;
-    re2::RE2 searcher;
+    re2_st::RE2 searcher;
 
-    RegexTreeNode(UInt64 id_, UInt64 parent_id_, const String & regex_, const re2::RE2::Options & regexp_options):
+    RegexTreeNode(UInt64 id_, UInt64 parent_id_, const String & regex_, const re2_st::RE2::Options & regexp_options):
         id(id_), parent_id(parent_id_), regex(regex_), searcher(regex_, regexp_options) {}
 
     bool match(const char * haystack, size_t size) const
     {
-        return searcher.Match(haystack, 0, size, re2::RE2::Anchor::UNANCHORED, nullptr, 0);
+        return searcher.Match(haystack, 0, size, re2_st::RE2::Anchor::UNANCHORED, nullptr, 0);
     }
 
     struct AttributeValue
@@ -204,10 +204,8 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are invalid id {}", id);
 
 
-        re2::RE2::Options regexp_options;
+        re2_st::RE2::Options regexp_options;
         regexp_options.set_log_errors(false);
-        regexp_options.set_case_sensitive(!flag_case_insensitive);
-        regexp_options.set_dot_nl(flag_dotall);
         RegexTreeNodePtr node = std::make_shared<RegexTreeNode>(id, parent_id, regex, regexp_options);
 
         int num_captures = std::min(node->searcher.NumberOfCapturingGroups() + 1, 10);
@@ -310,7 +308,7 @@ void RegExpTreeDictionary::loadData()
     if (!source_ptr->hasUpdateField())
     {
         QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        PullingPipelineExecutor executor(pipeline);
 
         Block block;
         while (executor.pull(block))
@@ -332,20 +330,11 @@ void RegExpTreeDictionary::loadData()
         std::vector<unsigned int> flags;
         std::vector<size_t> lengths;
 
-        // Notes:
-        // - Always set HS_FLAG_SINGLEMATCH because we only care about whether a pattern matches at least once
-        // - HS_FLAG_CASELESS is supported by hs_compile_lit_multi, so we should set it if flag_case_insensitive is set.
-        // - HS_FLAG_DOTALL is not supported by hs_compile_lit_multi, but the '.' wildcard can't appear in any of the simple regexps
-        //   anyway, so even if flag_dotall is set, we only need to configure the RE2 searcher, and don't need to set any Hyperscan flags.
-        unsigned int flag_bits = HS_FLAG_SINGLEMATCH;
-        if (flag_case_insensitive)
-            flag_bits |= HS_FLAG_CASELESS;
-
         for (const std::string & simple_regexp : simple_regexps)
         {
             patterns.push_back(simple_regexp.data());
             lengths.push_back(simple_regexp.size());
-            flags.push_back(flag_bits);
+            flags.push_back(HS_FLAG_SINGLEMATCH);
         }
 
         hs_database_t * db = nullptr;
@@ -391,16 +380,12 @@ RegExpTreeDictionary::RegExpTreeDictionary(
     const DictionaryStructure & structure_,
     DictionarySourcePtr source_ptr_,
     Configuration configuration_,
-    bool use_vectorscan_,
-    bool flag_case_insensitive_,
-    bool flag_dotall_)
+    bool use_vectorscan_)
     : IDictionary(id_),
       structure(structure_),
       source_ptr(source_ptr_),
       configuration(configuration_),
       use_vectorscan(use_vectorscan_),
-      flag_case_insensitive(flag_case_insensitive_),
-      flag_dotall(flag_dotall_),
       logger(&Poco::Logger::get("RegExpTreeDictionary"))
 {
     if (auto * ch_source = typeid_cast<ClickHouseDictionarySource *>(source_ptr.get()))
@@ -480,11 +465,11 @@ public:
     inline size_t attributesFull() const { return n_full_attributes; }
 };
 
-std::pair<String, bool> processBackRefs(const String & data, const re2::RE2 & searcher, const std::vector<StringPiece> & pieces)
+std::pair<String, bool> processBackRefs(const String & data, const re2_st::RE2 & searcher, const std::vector<StringPiece> & pieces)
 {
     std::string_view matches[10];
     String result;
-    searcher.Match({data.data(), data.size()}, 0, data.size(), re2::RE2::Anchor::UNANCHORED, matches, 10);
+    searcher.Match({data.data(), data.size()}, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
     /// if the pattern is a single '$1' but fails to match, we would use the default value.
     if (pieces.size() == 1 && pieces[0].ref_num >= 0 && pieces[0].ref_num < 10 && matches[pieces[0].ref_num].empty())
         return std::make_pair(result, true);
@@ -867,26 +852,14 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
         String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
+        RegExpTreeDictionary::Configuration configuration{
+            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false), .lifetime = dict_lifetime};
+
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-        const auto * clickhouse_source = typeid_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
 
-        RegExpTreeDictionary::Configuration configuration{
-            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false),
-            .lifetime = dict_lifetime,
-            .use_async_executor = use_async_executor,
-        };
-
-        return std::make_unique<RegExpTreeDictionary>(
-            dict_id,
-            dict_struct,
-            std::move(source_ptr),
-            configuration,
-            context->getSettings().regexp_dict_allow_hyperscan,
-            context->getSettings().regexp_dict_flag_case_insensitive,
-            context->getSettings().regexp_dict_flag_dotall);
+        return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration, context->getSettings().regexp_dict_allow_hyperscan);
     };
 
     factory.registerLayout("regexp_tree", create_layout, true);

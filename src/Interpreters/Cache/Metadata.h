@@ -38,13 +38,12 @@ struct FileSegmentMetadata : private boost::noncopyable
 using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
 
 
-struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
+struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
                      private boost::noncopyable,
                      public std::enable_shared_from_this<KeyMetadata>
 {
     friend struct LockedKey;
     using Key = FileCacheKey;
-    using iterator = iterator;
 
     KeyMetadata(
         const Key & key_,
@@ -76,13 +75,6 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     std::string getFileSegmentPath(const FileSegment & file_segment) const;
 
-    /// This method is used for loadMetadata() on server startup,
-    /// where we know there is no concurrency on Key and we do not want therefore taking a KeyGuard::Lock,
-    /// therefore we use this Unlocked version. This method should not be used anywhere else.
-    template< class... Args >
-    auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
-    size_t sizeUnlocked() const { return size(); }
-
 private:
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
@@ -96,13 +88,13 @@ private:
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 
-struct CacheMetadata
+struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
     using IterateFunc = std::function<void(LockedKey &)>;
 
-    explicit CacheMetadata(const std::string & path_, size_t background_download_queue_size_limit_);
+    explicit CacheMetadata(const std::string & path_);
 
     const String & getBaseDirectory() const { return path; }
 
@@ -115,7 +107,6 @@ public:
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateFunc && func);
-    bool isEmpty() const;
 
     enum class KeyNotFoundPolicy
     {
@@ -155,30 +146,16 @@ public:
     void cancelDownload();
 
 private:
+    CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
-    const CleanupQueuePtr cleanup_queue;
-    const DownloadQueuePtr download_queue;
-
+    mutable CacheMetadataGuard guard;
+    CleanupQueuePtr cleanup_queue;
+    DownloadQueuePtr download_queue;
     std::shared_mutex key_prefix_directory_mutex;
     Poco::Logger * log;
 
-    struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
-    {
-        CacheMetadataGuard::Lock lock() const;
-    private:
-        mutable CacheMetadataGuard guard;
-    };
-
-    static constexpr size_t buckets_num = 1024;
-    std::vector<MetadataBucket> metadata_buckets{buckets_num};
-
-    MetadataBucket & getMetadataBucket(const Key & key);
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
-    MetadataBucket::iterator removeEmptyKey(
-        MetadataBucket & bucket,
-        MetadataBucket::iterator it,
-        LockedKey &,
-        const CacheMetadataGuard::Lock &);
+    iterator removeEmptyKey(iterator it, LockedKey &, const CacheMetadataGuard::Lock &);
 };
 
 
@@ -205,15 +182,7 @@ struct LockedKey : private boost::noncopyable
     const Key & getKey() const { return key_metadata->key; }
 
     auto begin() const { return key_metadata->begin(); }
-    auto rbegin() const { return key_metadata->rbegin(); }
-
     auto end() const { return key_metadata->end(); }
-    auto rend() const { return key_metadata->rend(); }
-
-    bool empty() const { return key_metadata->empty(); }
-    auto lower_bound(size_t size) const { return key_metadata->lower_bound(size); } /// NOLINT
-    template< class... Args >
-    auto emplace(Args &&... args) { return key_metadata->emplace(std::forward<Args>(args)...); }
 
     std::shared_ptr<const FileSegmentMetadata> getByOffset(size_t offset) const;
     std::shared_ptr<FileSegmentMetadata> getByOffset(size_t offset);
@@ -233,7 +202,7 @@ struct LockedKey : private boost::noncopyable
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
-    bool addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
+    void addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 
     bool isLastOwnerOfFileSegment(size_t offset) const;
 
@@ -243,7 +212,7 @@ struct LockedKey : private boost::noncopyable
 
     void markAsRemoved();
 
-    std::vector<FileSegment::Info> sync(FileCache & cache);
+    FileSegments sync();
 
     std::string toString() const;
 
