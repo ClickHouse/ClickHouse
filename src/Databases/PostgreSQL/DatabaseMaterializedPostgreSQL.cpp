@@ -7,6 +7,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
+#include <Common/PoolId.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -138,12 +139,25 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 }
 
 
-void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
+LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
-    DatabaseAtomic::startupTables(thread_pool, mode);
-    startup_task->activateAndSchedule();
+    auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
+    auto job = makeLoadJob(
+        base->goals(),
+        TablesLoaderBackgroundStartupPoolId,
+        fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
+        [this] (AsyncLoader &, const LoadJobPtr &)
+        {
+            startup_task->activateAndSchedule();
+        });
+    return startup_postgresql_database_task = makeLoadTask(async_loader, {job});
 }
 
+void DatabaseMaterializedPostgreSQL::waitDatabaseStarted(bool no_throw) const
+{
+    if (startup_postgresql_database_task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_postgresql_database_task, no_throw);
+}
 
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
@@ -182,9 +196,9 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
 
 StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, ContextPtr local_context) const
 {
-    /// In otder to define which table access is needed - to MaterializedPostgreSQL table (only in case of SELECT queries) or
-    /// to its nested ReplacingMergeTree table (in all other cases), the context of a query os modified.
-    /// Also if materialzied_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
+    /// In order to define which table access is needed - to MaterializedPostgreSQL table (only in case of SELECT queries) or
+    /// to its nested ReplacingMergeTree table (in all other cases), the context of a query is modified.
+    /// Also if materialized_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
     /// replication_handler was shutdown.
     if (local_context->isInternalQuery() || materialized_tables.empty())
     {
@@ -422,6 +436,8 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
+    waitDatabaseStarted(/* no_throw = */ true);
+
     std::lock_guard lock(handler_mutex);
     if (replication_handler)
         replication_handler->shutdown();

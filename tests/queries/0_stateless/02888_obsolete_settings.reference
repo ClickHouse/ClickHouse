@@ -1,5 +1,6 @@
 -- Obsolete server settings
 -- Obsolete general settings
+allow_experimental_alter_materialized_view_structure
 allow_experimental_bigint_types
 allow_experimental_database_atomic
 allow_experimental_geo_types
