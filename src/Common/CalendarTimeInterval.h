@@ -57,6 +57,7 @@ struct CalendarTimeInterval
     std::chrono::sys_seconds floor(std::chrono::system_clock::time_point t) const;
 
     bool operator==(const CalendarTimeInterval & rhs) const;
+    bool operator!=(const CalendarTimeInterval & rhs) const;
 };
 
 }

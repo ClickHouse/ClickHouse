@@ -18,7 +18,7 @@ RefreshSchedule::RefreshSchedule(const ASTRefreshStrategy & strategy)
 bool RefreshSchedule::operator!=(const RefreshSchedule & rhs) const
 {
     static_assert(sizeof(*this) == 7*8, "If fields were added or removed in RefreshSchedule, please update this comparator.");
-    return std::tie(kind, period, offset, spread) == std::tie(rhs.kind, rhs.period, rhs.offset, rhs.spread);
+    return std::tie(kind, period, offset, spread) != std::tie(rhs.kind, rhs.period, rhs.offset, rhs.spread);
 }
 
 static std::chrono::sys_seconds advanceEvery(std::chrono::system_clock::time_point prev, CalendarTimeInterval period, CalendarTimeInterval offset)

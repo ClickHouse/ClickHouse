@@ -73,11 +73,10 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         for (auto && dependency : new_strategy.dependencies->children)
             deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
-    refresh_schedule = new_schedule;
-
     /// Reschedule next refresh.
     if (new_schedule != refresh_schedule)
     {
+        refresh_schedule = new_schedule;
         next_refresh_prescribed = {};
         advanceNextRefreshTime(currentTime());
         refresh_task->schedule();
@@ -93,7 +92,8 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         if (!deps_set.contains(id))
             removed_deps.push_back(id);
     for (const auto & id : removed_deps)
-        arriveDependency(id);
+        if (arriveDependency(id) && !std::exchange(refresh_immediately, true))
+            refresh_task->schedule();
 
     /// TODO: Update settings once we have them.
 }
@@ -180,7 +180,7 @@ void RefreshTask::shutdown()
     set_handle.reset();
 }
 
-void RefreshTask::notify(const StorageID & parent_id, std::chrono::sys_seconds prescribed_time, const RefreshSchedule & parent_schedule)
+void RefreshTask::notify(const StorageID & parent_id, std::chrono::sys_seconds parent_next_prescribed_time, const RefreshSchedule & parent_schedule)
 {
     std::lock_guard guard(mutex);
     if (!set_handle)
@@ -218,7 +218,7 @@ void RefreshTask::notify(const StorageID & parent_id, std::chrono::sys_seconds p
     /// Only accept the dependency's refresh if its next refresh time is after ours.
     /// This takes care of cases (1)-(4), and seems harmless in all other cases.
     /// Might be mildly helpful in weird cases like REFRESH AFTER 3 HOUR depends on REFRESH AFTER 2 HOUR.
-    if (parent_schedule.prescribeNext(prescribed_time, currentTime()) <= next_refresh_prescribed)
+    if (parent_next_prescribed_time <= next_refresh_prescribed)
         return;
 
     if (arriveDependency(parent_id) && !std::exchange(refresh_immediately, true))
@@ -334,7 +334,6 @@ void RefreshTask::refreshTask()
             info.state = RefreshState::Running;
 
             CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-            auto prescribed_time = next_refresh_prescribed;
 
             lock.unlock();
 
@@ -348,9 +347,7 @@ void RefreshTask::refreshTask()
                 finished = executeRefreshUnlocked();
 
                 if (finished)
-                    completeRefreshUnlocked(view, prescribed_time);
-
-                lock.lock();
+                    completeRefreshUnlocked(view);
             }
             catch (...)
             {
@@ -360,7 +357,7 @@ void RefreshTask::refreshTask()
                 LOG_ERROR(log, message);
 
                 /// Don't leave a trash table.
-                if (!finished && refresh_context)
+                if (refresh_context)
                     cancelRefreshUnlocked();
 
                 lock.lock();
@@ -369,19 +366,32 @@ void RefreshTask::refreshTask()
                 info.exception_message = text;
 
                 /// TODO: Do a few retries with exponential backoff.
-                if (!finished)
-                    advanceNextRefreshTime(currentTime());
-            }
-            chassert(lock.owns_lock());
+                advanceNextRefreshTime(currentTime());
 
-            if (finished)
-            {
-                auto now = currentTime();
-                auto secs = std::chrono::floor<std::chrono::seconds>(now);
-                info.last_refresh_time = UInt32(secs.time_since_epoch().count());
-                info.last_refresh_result = LastRefreshResult::Finished;
-                advanceNextRefreshTime(now);
+                continue;
             }
+
+            lock.lock();
+
+            if (!finished)
+                continue;
+
+            auto now = currentTime();
+            auto secs = std::chrono::floor<std::chrono::seconds>(now);
+            info.last_refresh_time = UInt32(secs.time_since_epoch().count());
+            info.last_refresh_result = LastRefreshResult::Finished;
+            info.refresh_count += 1;
+            advanceNextRefreshTime(now);
+
+            auto next_time = next_refresh_prescribed;
+            auto refresh_schedule_copy = refresh_schedule;
+
+            lock.unlock();
+            StorageID my_id = view->getStorageID();
+            auto dependents = view->getContext()->getRefreshSet().getDependents(my_id);
+            for (const RefreshTaskHolder & dep_task : dependents)
+                dep_task->notify(my_id, next_time, refresh_schedule_copy);
+            lock.lock();
         }
     }
     catch (...)
@@ -427,24 +437,13 @@ bool RefreshTask::executeRefreshUnlocked()
     return finished;
 }
 
-void RefreshTask::completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view, std::chrono::sys_seconds prescribed_time)
+void RefreshTask::completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view)
 {
     auto stale_table = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
-
     auto refresh_context_ptr_copy = refresh_context;
     cleanStateUnlocked();
 
-    std::unique_lock lock(mutex);
-    auto refresh_schedule_copy = refresh_schedule;
-    lock.unlock();
-
-    auto global_context = view->getContext();
-    StorageID my_id = view->getStorageID();
-    auto dependents = global_context->getRefreshSet().getDependents(my_id);
-    for (const RefreshTaskHolder & dep_task : dependents)
-        dep_task->notify(my_id, prescribed_time, refresh_schedule_copy);
-
-    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, global_context, refresh_context_ptr_copy, stale_table, /*sync*/ true, /*ignore_sync_setting*/ true);
+    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, view->getContext(), refresh_context_ptr_copy, stale_table, /*sync*/ true, /*ignore_sync_setting*/ true);
 }
 
 void RefreshTask::cancelRefreshUnlocked()
