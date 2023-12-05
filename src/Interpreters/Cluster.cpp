@@ -493,8 +493,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 replica_addresses,
                 /* treat_local_as_remote = */ false,
                 current_shard_num,
-                std::move(insert_paths),
                 weight,
+                std::move(insert_paths),
                 internal_replication);
         }
         else
@@ -531,7 +531,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
         ++current_shard_num;
     }
 
@@ -559,15 +559,21 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
         ++current_shard_num;
     }
 
     initMisc();
 }
 
-void Cluster::addShard(const Settings & settings, Addresses addresses, bool treat_local_as_remote, UInt32 current_shard_num,
-                       ShardInfoInsertPathForInternalReplication && insert_paths, UInt32 weight, bool internal_replication)
+void Cluster::addShard(
+    const Settings & settings,
+    Addresses addresses,
+    bool treat_local_as_remote,
+    UInt32 current_shard_num,
+    UInt32 weight,
+    ShardInfoInsertPathForInternalReplication insert_paths,
+    bool internal_replication)
 {
     Addresses shard_local_addresses;
 

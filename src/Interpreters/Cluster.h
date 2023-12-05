@@ -296,8 +296,8 @@ private:
         Addresses addresses,
         bool treat_local_as_remote,
         UInt32 current_shard_num,
-        ShardInfoInsertPathForInternalReplication && insert_paths = {},
         UInt32 weight = 1,
+        ShardInfoInsertPathForInternalReplication insert_paths = {},
         bool internal_replication = false);
 
     /// Inter-server secret
