@@ -1536,7 +1536,8 @@ private:
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
         {
-            if (command_for_interpreter.type == MutationCommand::DELETE)
+            if (command_for_interpreter.type == MutationCommand::DELETE
+                || command_for_interpreter.type == MutationCommand::APPLY_DELETED_MASK)
             {
                 has_delete = true;
                 break;
