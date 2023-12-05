@@ -1542,7 +1542,6 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
-getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
