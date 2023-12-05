@@ -1346,7 +1346,7 @@ void Planner::buildPlanForQueryNode()
         const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
         for (const auto & it : table_expression_nodes)
         {
-            auto * table_node = it.first.get()->as<TableNode>();
+            auto * table_node = it.first->as<TableNode>();
             if (!table_node)
                 continue;
 
