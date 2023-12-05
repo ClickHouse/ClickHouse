@@ -7,7 +7,7 @@ CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g'`"
+CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --allow_experimental_refreshable_materialized_view=1" | sed 's/--session_timezone[= ][^ ]*//g'`"
 
 $CLICKHOUSE_CLIENT -nq "create view refreshes as select * from system.view_refreshes where database = '$CLICKHOUSE_DATABASE' order by view"
 
