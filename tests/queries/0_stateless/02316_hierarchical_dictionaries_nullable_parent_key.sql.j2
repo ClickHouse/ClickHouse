@@ -56,7 +56,7 @@ SELECT 'Get descendants at first level';
 SELECT dictGetDescendants('hierachical_hashed_dictionary', number, 1) FROM system.numbers LIMIT 6;
 
 DROP DICTIONARY hierachical_hashed_dictionary;
-
+{% for dictionary_config in ['', 'SHARDS 16'] -%}
 DROP DICTIONARY IF EXISTS hierachical_hashed_array_dictionary;
 CREATE DICTIONARY hierachical_hashed_array_dictionary
 (
@@ -64,7 +64,7 @@ CREATE DICTIONARY hierachical_hashed_array_dictionary
     parent_id Nullable(UInt64) HIERARCHICAL
 ) PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'test_hierarhical_table'))
-LAYOUT(HASHED_ARRAY())
+LAYOUT(HASHED_ARRAY({{ dictionary_config }}))
 LIFETIME(0);
 
 SELECT 'HashedArray dictionary';
@@ -81,6 +81,8 @@ SELECT 'Get descendants at first level';
 SELECT dictGetDescendants('hierachical_hashed_array_dictionary', number, 1) FROM system.numbers LIMIT 6;
 
 DROP DICTIONARY hierachical_hashed_array_dictionary;
+
+{% endfor %}
 
 DROP DICTIONARY IF EXISTS hierachical_cache_dictionary;
 CREATE DICTIONARY hierachical_cache_dictionary

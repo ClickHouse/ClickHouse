@@ -7,6 +7,8 @@ CREATE TABLE hierarchy_source_table
 
 INSERT INTO hierarchy_source_table VALUES (1, 0), (2, 1), (3, 1), (4, 2);
 
+{% for dictionary_config in ['', 'SHARDS 16'] -%}
+
 DROP DICTIONARY IF EXISTS hierarchy_hashed_array_dictionary;
 CREATE DICTIONARY hierarchy_hashed_array_dictionary
 (
@@ -15,7 +17,7 @@ CREATE DICTIONARY hierarchy_hashed_array_dictionary
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'hierarchy_source_table'))
-LAYOUT(HASHED_ARRAY())
+LAYOUT(HASHED_ARRAY({{ dictionary_config }}))
 LIFETIME(MIN 1 MAX 1000);
 
 SELECT 'Get hierarchy';
@@ -28,6 +30,8 @@ SELECT 'Get all descendants';
 SELECT dictGetDescendants('hierarchy_hashed_array_dictionary', number) FROM system.numbers LIMIT 6;
 SELECT 'Get descendants at first level';
 SELECT dictGetDescendants('hierarchy_hashed_array_dictionary', number, 1) FROM system.numbers LIMIT 6;
+
+{% endfor %}
 
 DROP DICTIONARY hierarchy_hashed_array_dictionary;
 

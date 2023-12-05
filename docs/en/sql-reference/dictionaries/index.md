@@ -394,7 +394,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(HASHED_ARRAY())
+LAYOUT(HASHED_ARRAY([SHARDS 1]))
 ```
 
 ### complex_key_hashed_array
@@ -412,7 +412,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 ```
 
 ### range_hashed {#range_hashed}
@@ -2415,8 +2415,8 @@ clickhouse client \
     --secure \
     --password MY_PASSWORD \
     --query "
-    INSERT INTO regexp_dictionary_source_table 
-    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)') 
+    INSERT INTO regexp_dictionary_source_table
+    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
     FORMAT CSV" < regexp_dict.csv
 ```
 
