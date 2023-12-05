@@ -1027,7 +1027,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
 
     /// Add _row_exists column if it is present in the part
-    if (source.hasLightweightDeleteMask())
+    if (source.hasLightweightDeleteMask() || deleted_mask_updated)
         all_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
 
     bool has_filters = false;

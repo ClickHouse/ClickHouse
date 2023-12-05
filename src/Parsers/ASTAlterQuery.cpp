@@ -475,12 +475,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
-
-        if (predicate)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-            predicate->formatImpl(settings, state, frame);
-        }
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
