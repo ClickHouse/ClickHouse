@@ -25,6 +25,9 @@ message(STATUS "Intel QPL version: ${QPL_VERSION}")
 # Generate 8 library targets: middle_layer_lib, isal, isal_asm, qplcore_px, qplcore_avx512, qplcore_sw_dispatcher, core_iaa, middle_layer_lib.
 # Output ch_contrib::qpl by linking with 8 library targets.
 
+# The qpl submodule comes with its own version of isal. It contains code which does not exist in upstream isal. It would be nice to link
+# only upstream isal (ch_contrib::isal) but at this point we can't.
+
 include("${QPL_PROJECT_DIR}/cmake/CompileOptions.cmake")
 
 # check nasm compiler
@@ -300,7 +303,7 @@ set_target_properties(middle_layer_lib PROPERTIES CXX_STANDARD 17)
 target_include_directories(middle_layer_lib
         PRIVATE ${UUID_DIR}
         PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/middle-layer>
-        PUBLIC $<TARGET_PROPERTY:qpl,INTERFACE_INCLUDE_DIRECTORIES>
+        PUBLIC $<TARGET_PROPERTY:_qpl,INTERFACE_INCLUDE_DIRECTORIES>
         PUBLIC $<TARGET_PROPERTY:qplcore_sw_dispatcher,INTERFACE_INCLUDE_DIRECTORIES>
         PUBLIC $<TARGET_PROPERTY:isal,INTERFACE_INCLUDE_DIRECTORIES>
         PUBLIC $<TARGET_PROPERTY:core_iaa,INTERFACE_INCLUDE_DIRECTORIES>)
@@ -308,40 +311,40 @@ target_include_directories(middle_layer_lib
 target_compile_definitions(middle_layer_lib PUBLIC -DQPL_LIB)
 
 # [SUBDIR]c_api
-file(GLOB_RECURSE QPL_C_API_SRC 
+file(GLOB_RECURSE QPL_C_API_SRC
         ${QPL_SRC_DIR}/c_api/*.c
         ${QPL_SRC_DIR}/c_api/*.cpp)
 
 get_property(LIB_DEPS GLOBAL PROPERTY QPL_LIB_DEPS)
 
-add_library(qpl STATIC ${QPL_C_API_SRC} ${LIB_DEPS})
+add_library(_qpl STATIC ${QPL_C_API_SRC} ${LIB_DEPS})
 
-target_include_directories(qpl
+target_include_directories(_qpl
         PUBLIC $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include/> $<INSTALL_INTERFACE:include>
         PRIVATE $<TARGET_PROPERTY:middle_layer_lib,INTERFACE_INCLUDE_DIRECTORIES>
         PRIVATE $<BUILD_INTERFACE:${QPL_SRC_DIR}/c_api>)
 
-set_target_properties(qpl PROPERTIES
+set_target_properties(_qpl PROPERTIES
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>
         CXX_STANDARD 17)
 
-target_compile_options(qpl
+target_compile_options(_qpl
         PRIVATE $<$<C_COMPILER_ID:GNU>:${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS};
                                        ${QPL_LINUX_TOOLCHAIN_DYNAMIC_LIBRARY_FLAGS};
                                        $<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>>
         PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,GNU>:${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>)
 
-target_compile_definitions(qpl
+target_compile_definitions(_qpl
         PRIVATE -DQPL_LIB
         PRIVATE -DQPL_BADARG_CHECK
         PRIVATE $<$<BOOL:${DYNAMIC_LOADING_LIBACCEL_CONFIG}>:DYNAMIC_LOADING_LIBACCEL_CONFIG>
         PUBLIC -DENABLE_QPL_COMPRESSION)
 
-target_link_libraries(qpl
+target_link_libraries(_qpl
         PRIVATE accel-config)
 
-target_include_directories(qpl SYSTEM BEFORE
+target_include_directories(_qpl SYSTEM BEFORE
         PUBLIC "${QPL_PROJECT_DIR}/include"
         PUBLIC ${UUID_DIR})
 
-#add_library (ch_contrib::qpl ALIAS qpl)
+add_library (qpl ALIAS _qpl)
