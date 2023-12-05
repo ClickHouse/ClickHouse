@@ -8,16 +8,16 @@ set (SRCS
     "${LIBACCEL_SOURCE_DIR}/util/sysfs.c"
 )
 
-add_library(accel-config ${SRCS})
+add_library(_accel-config ${SRCS})
 
-target_compile_options(accel-config PRIVATE "-D_GNU_SOURCE")
+target_compile_options(_accel-config PRIVATE "-D_GNU_SOURCE")
 
-target_include_directories(accel-config BEFORE
+target_include_directories(_accel-config BEFORE
     PRIVATE ${UUID_DIR}
     PRIVATE ${LIBACCEL_HEADER_DIR}
     PRIVATE ${LIBACCEL_SOURCE_DIR})
 
-target_include_directories(accel-config SYSTEM BEFORE
+target_include_directories(_accel-config SYSTEM BEFORE
     PUBLIC ${LIBACCEL_SOURCE_DIR}/accfg)
 
-#add_library(ch_contrib::accel-config ALIAS accel-config)
+add_library(accel-config ALIAS _accel-config)

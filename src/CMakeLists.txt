@@ -398,6 +398,7 @@ endif()
 
 if (ENABLE_QPL)
     dbms_target_link_libraries(PRIVATE qpl)
+    dbms_target_link_libraries(PRIVATE accel-config)
 endif ()
 
 if (XZ_LIBRARY)
