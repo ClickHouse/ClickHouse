@@ -62,7 +62,7 @@ public:
     void shutdown();
 
     /// Notify dependent task
-    void notify(const StorageID & parent_id, std::chrono::sys_seconds prescribed_time, const RefreshSchedule & parent_schedule);
+    void notify(const StorageID & parent_id, std::chrono::sys_seconds parent_next_prescribed_time, const RefreshSchedule & parent_schedule);
 
     void setFakeTime(std::optional<Int64> t);
 
@@ -145,7 +145,7 @@ private:
     void initializeRefreshUnlocked(std::shared_ptr<const StorageMaterializedView> view);
     bool executeRefreshUnlocked();
     /// Whoever calls complete/cancelRefreshUnlocked() should also assign info.last_refresh_result.
-    void completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view, std::chrono::sys_seconds prescribed_time);
+    void completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view);
     void cancelRefreshUnlocked();
     void cleanStateUnlocked();
 

@@ -130,7 +130,7 @@ Currently refreshable materialized views require [Atomic database engine](../../
 
 Example refresh schedules:
 ```sql
-REFRESH EVERY 1 DAY -- every day, at midnight
+REFRESH EVERY 1 DAY -- every day, at midnight (UTC)
 REFRESH EVERY 1 MONTH -- on 1st day of every month, at midnight
 REFRESH EVERY 1 MONTH OFFSET 5 DAY 2 HOUR -- on 6th day of every month, at 2:00 am
 REFRESH EVERY 2 WEEK OFFSET 5 DAY 15 HOUR 10 MINUTE -- every other Saturday, at 3:10 pm
@@ -180,6 +180,10 @@ A few more examples:
    `destination` is refreshed once after every `source` refresh, i.e. every 2 hours. The `1 MINUTE` is effectively ignored.
  * `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
    Currently this is not recommended.
+
+:::note
+`DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be reomoved with `ALTER`, see below).
+:::
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 

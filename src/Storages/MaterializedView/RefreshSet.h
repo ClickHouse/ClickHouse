@@ -35,6 +35,7 @@ struct RefreshInfo
     LastRefreshResult last_refresh_result = LastRefreshResult::Unknown;
     std::optional<UInt32> last_refresh_time;
     UInt32 next_refresh_time = 0;
+    UInt64 refresh_count = 0;
     String exception_message; // if last_refresh_result is Exception
     std::vector<StorageID> remaining_dependencies;
     ProgressValues progress;
@@ -80,7 +81,7 @@ public:
 
     RefreshSet();
 
-    Handle emplace(StorageID id, std::vector<StorageID> dependencies, RefreshTaskHolder task);
+    Handle emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task);
 
     RefreshTaskHolder getTask(const StorageID & id) const;
 

@@ -136,4 +136,9 @@ bool CalendarTimeInterval::operator==(const CalendarTimeInterval & rhs) const
     return std::tie(months, seconds) == std::tie(rhs.months, rhs.seconds);
 }
 
+bool CalendarTimeInterval::operator!=(const CalendarTimeInterval & rhs) const
+{
+    return !(*this == rhs);
+}
+
 }

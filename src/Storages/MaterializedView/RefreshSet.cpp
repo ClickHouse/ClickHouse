@@ -73,7 +73,7 @@ void RefreshSet::Handle::reset()
 
 RefreshSet::RefreshSet() = default;
 
-RefreshSet::Handle RefreshSet::emplace(StorageID id, std::vector<StorageID> dependencies, RefreshTaskHolder task)
+RefreshSet::Handle RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task)
 {
     std::lock_guard guard(mutex);
     auto [it, is_inserted] = tasks.emplace(id, task);

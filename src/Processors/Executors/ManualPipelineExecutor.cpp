@@ -38,7 +38,7 @@ ManualPipelineExecutor::~ManualPipelineExecutor()
     }
     catch (...)
     {
-        tryLogCurrentException("ManualPipelineExecutor");
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

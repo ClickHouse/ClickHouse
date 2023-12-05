@@ -24,6 +24,7 @@ NamesAndTypesList StorageSystemViewRefreshes::getNamesAndTypes()
         {"next_refresh_time", std::make_shared<DataTypeDateTime>()},
         {"remaining_dependencies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"exception", std::make_shared<DataTypeString>()},
+        {"refresh_count", std::make_shared<DataTypeUInt64>()},
         {"progress", std::make_shared<DataTypeFloat64>()},
         {"elapsed", std::make_shared<DataTypeFloat64>()},
         {"read_rows", std::make_shared<DataTypeUInt64>()},
@@ -68,6 +69,7 @@ void StorageSystemViewRefreshes::fillData(
         res_columns[i++]->insert(Array(deps));
 
         res_columns[i++]->insert(refresh.exception_message);
+        res_columns[i++]->insert(refresh.refresh_count);
         res_columns[i++]->insert(Float64(refresh.progress.read_rows) / refresh.progress.total_rows_to_read);
         res_columns[i++]->insert(refresh.progress.elapsed_ns / 1e9);
         res_columns[i++]->insert(refresh.progress.read_rows);

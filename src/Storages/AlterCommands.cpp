@@ -742,7 +742,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_REFRESH)
     {
-        metadata.refresh = metadata.refresh->clone();
+        metadata.refresh = refresh->clone();
     }
     else if (type == MODIFY_SETTING)
     {
