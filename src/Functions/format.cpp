@@ -4,13 +4,13 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
 
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "formatString.h"
 
 namespace DB
 {
