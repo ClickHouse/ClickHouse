@@ -19,7 +19,8 @@
 namespace fs = std::filesystem;
 
 
-namespace CurrentMetrics {
+namespace CurrentMetrics
+{
     extern const Metric AttachedTable;
 }
 

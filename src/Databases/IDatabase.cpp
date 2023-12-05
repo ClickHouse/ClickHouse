@@ -35,7 +35,8 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist. Maybe you meant {}?", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name), backQuoteIfNeed(names[0]));
 }
 
-IDatabase::IDatabase(String database_name_) : database_name(std::move(database_name_)) {
+IDatabase::IDatabase(String database_name_) : database_name(std::move(database_name_))
+{
     CurrentMetrics::add(CurrentMetrics::AttachedDatabase, 1);
 }
 
