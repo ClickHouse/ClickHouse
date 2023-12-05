@@ -597,28 +597,29 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             if (negative || *istr.position() == '+')
                 ++istr.position();
 
-            /// Consume leading zeroes - we don't want any funny octal business
-            while (!istr.eof() && *istr.position() == '0')
-                ++istr.position();
-
             static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
             char buf[MAX_LENGTH_OF_NUMBER + 1];
             size_t bytes_to_copy = std::min(istr.available(), MAX_LENGTH_OF_NUMBER);
             memcpy(buf, istr.position(), bytes_to_copy);
             buf[bytes_to_copy] = 0;
 
-            char * pos_double = buf;
+            /// Consume leading zeroes - we don't want any funny octal business
+            auto* non_zero_buf = buf;
+            while (*non_zero_buf == '0')
+                ++non_zero_buf;
+
+            char * pos_double = non_zero_buf;
             errno = 0;
-            Float64 float_value = std::strtod(buf, &pos_double);
-            if (pos_double == buf || errno == ERANGE || float_value < 0)
+            Float64 float_value = std::strtod(non_zero_buf, &pos_double);
+            if (pos_double == non_zero_buf || errno == ERANGE || float_value < 0)
                 return false;
 
             if (negative)
                 float_value = -float_value;
 
-            char * pos_integer = buf;
+            char * pos_integer = non_zero_buf;
             errno = 0;
-            UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
+            UInt64 uint_value = std::strtoull(non_zero_buf, &pos_integer, 0);
             if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
             {
                 istr.position() += pos_integer - buf;
