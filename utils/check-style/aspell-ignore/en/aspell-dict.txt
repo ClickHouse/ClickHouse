@@ -1791,7 +1791,6 @@ logTrace
 logagent
 loghouse
 london
-lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -2278,7 +2277,6 @@ splitByRegexp
 splitByString
 splitByWhitespace
 splitby
-sqid
 sql
 sqlalchemy
 sqlinsert
