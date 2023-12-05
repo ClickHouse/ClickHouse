@@ -70,7 +70,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 

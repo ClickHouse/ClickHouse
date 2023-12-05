@@ -42,35 +42,35 @@ extern "C" void * clickhouse_calloc(size_t number_of_members, size_t size)
 
 extern "C" void * clickhouse_realloc(void * ptr, size_t size)
 {
+    AllocationTrace trace_free;
     size_t original_size = 0;
     if (likely(ptr))
-    {
-        AllocationTrace trace;
-        original_size = Memory::untrackMemory(ptr, trace);
-    }
+        original_size = Memory::untrackMemory(ptr, trace_free);
 
-    AllocationTrace trace;
-    void * res = realloc(ptr, size);
-    if (likely(res))
+    AllocationTrace trace_alloc;
+    size_t new_size = Memory::trackMemoryNoExcept(size, trace_alloc);
+    if (unlikely(trace_alloc.isNull()))
     {
-        size_t actual_size = Memory::trackMemoryNoExcept(size, trace);
-        if (unlikely(trace.isNull()))
-            free(res);
-        else
-            trace.onAlloc(res, actual_size);
-    }
-
-    if (unlikely(!res || trace.isNull()))
-    {
-        /// We must recover accounting of the old allocation
+        /// The new request failed. We need to track again the previous one (and ignore any errors)
         MemoryTrackerBlockerInThread memory_blocker;
-        original_size = Memory::trackMemoryNoExcept(original_size, trace);
+        trace_alloc = CurrentMemoryTracker::allocNoThrow(original_size);
         return nullptr;
     }
-    else
+
+    void * res = realloc(ptr, size);
+    if (unlikely(!res))
     {
-        free(ptr);
+        /// Both changes worked but the final allocation failed, so we need to revert them
+        MemoryTrackerBlockerInThread memory_blocker;
+        if (original_size < new_size)
+            trace_alloc = CurrentMemoryTracker::free(new_size - original_size);
+        else if (original_size > new_size)
+            trace_alloc = CurrentMemoryTracker::allocNoThrow(original_size - new_size);
+        return nullptr;
     }
+
+    trace_free.onFree(ptr, original_size);
+    trace_alloc.onAlloc(res, new_size);
     return res;
 }
 

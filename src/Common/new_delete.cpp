@@ -109,7 +109,7 @@ void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemoryNoExcept(size, trace);
-    if (!actual_size)
+    if (trace.isNull())
         return nullptr;
     void * ptr = Memory::newNoExcept(size);
     trace.onAlloc(ptr, actual_size);
