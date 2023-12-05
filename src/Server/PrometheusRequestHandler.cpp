@@ -1,6 +1,7 @@
 #include <Server/PrometheusRequestHandler.h>
 
 #include <IO/HTTPCommon.h>
+#include <Interpreters/Context.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/IServer.h>
@@ -17,9 +18,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 {
     try
     {
-        const auto & config = server.config();
-        unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
-
+        const auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
