@@ -291,9 +291,15 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
 
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
 {
+    auto mut_context = Context::createCopy(context);
+    /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
+    /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
+    mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
+    mut_context->setSetting("transform_null_in", Field(0));
+
     auto builder = InterpreterSelectQuery(
                        query_ast,
-                       context,
+                       mut_context,
                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
