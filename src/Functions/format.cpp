@@ -25,11 +25,10 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Name>
 class FormatFunction : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = "format";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FormatFunction>(); }
 
@@ -127,11 +126,7 @@ public:
 };
 
 
-struct NameFormat
-{
-    static constexpr auto name = "format";
-};
-using FunctionFormat = FormatFunction<NameFormat>;
+using FunctionFormat = FormatFunction;
 
 }
 
