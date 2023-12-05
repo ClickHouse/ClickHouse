@@ -26,6 +26,7 @@ target_include_directories(_qatmgr PRIVATE
     ${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/src/qat_direct/common/include
     ${ClickHouse_SOURCE_DIR}/contrib/sysroot/linux-x86_64-musl/include)
 target_compile_definitions(_qatmgr PRIVATE -DUSER_SPACE)
+target_compile_options(_qatmgr PRIVATE -Wno-error=int-conversion)
 
 #_osal
 SET(LIBOSAL_Sources 
