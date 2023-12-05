@@ -307,6 +307,28 @@ else()
     message(STATUS "Not using QPL")
 endif ()
 
+if (OS_LINUX AND ARCH_AMD64)
+    option (ENABLE_QAT "Enable Intel® QuickAssist Technology (Intel® QAT)" ${ENABLE_LIBRARIES})
+elseif(ENABLE_QAT)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QAT library is only supported on x86_64 arch")
+endif()
+if (ENABLE_QAT)
+    option (ENABLE_USDM_DRV "A User Space DMA-able Memory (USDM) component (kernel driver and corresponding user space library) which allocates/frees DMA-able memory" OFF)
+    option (ENABLE_QAT_OUTOFTREE "Using out-of-tree driver, user needs customize ICP_ROOT variable" ON)
+    set(ICP_ROOT "" CACHE STRING "ICP_ROOT variable to define the path of out-of-tree driver package")
+if (ENABLE_QAT_OUTOFTREE)
+if(ICP_ROOT STREQUAL "")
+    message(FATAL_ERROR "Please define the path of out-of-tree driver package with -DICP_ROOT=xxx or disable out-of-tree build with -DENABLE_QAT_OUTOFTREE=OFF; \
+    If you want out-of-tree build but have no package available, please download and build ICP package from: https://www.intel.com/content/www/us/en/download/765501.html")
+endif ()
+else()
+    add_subdirectory (qatlib-cmake)
+endif ()
+    add_subdirectory (QAT-ZSTD-Plugin-cmake)
+else()
+    message(STATUS "Not using QAT")
+endif ()
+
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
 # in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
