@@ -18,6 +18,8 @@ class DigestConfig:
     exclude_dirs: List[Union[str, Path]] = field(default_factory=list)
     # docker names to include into digest
     docker: List[str] = field(default_factory=list)
+    # git submodules digest
+    git_submodules: bool = False
 
 
 @dataclass
@@ -34,6 +36,7 @@ class JobConfig:
     run_command: str = ""
     timeout: Optional[int] = None
     num_batches: int = 1
+    run_by_label: str = ""
 
 
 @dataclass
@@ -60,6 +63,7 @@ class BuildConfig:
             ],
             exclude_files=[".md"],
             docker=["clickhouse/binary-builder"],
+            git_submodules=True,
         ),
     )
 
@@ -123,9 +127,8 @@ upgrade_check_digest = DigestConfig(
     exclude_files=[".md"],
     docker=["clickhouse/upgrade-check"],
 )
-# FIXME: which tests are INTEGRATON_TEST? just python?
 integration_check_digest = DigestConfig(
-    include_paths=["./tests/ci/integration_test_check.py"],
+    include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
     exclude_files=[".md"],
     docker=[
         "clickhouse/dotnet-client",
@@ -143,6 +146,7 @@ integration_check_digest = DigestConfig(
     ],
 )
 # FIXME: which tests are AST_FUZZER_TEST? just python?
+# FIXME: should ast fuzzer test be non-skipable?
 ast_fuzzer_check_digest = DigestConfig(
     include_paths=["./tests/ci/ast_fuzzer_check.py"],
     exclude_files=[".md"],
@@ -154,7 +158,7 @@ unit_check_digest = DigestConfig(
     docker=["clickhouse/unit-test"],
 )
 perf_check_digest = DigestConfig(
-    include_paths=["./tests/ci/performance_comparison_check.py"],
+    include_paths=["./tests/ci/performance_comparison_check.py", "./tests/performance"],
     exclude_files=[".md"],
     docker=["clickhouse/performance-comparison"],
 )
@@ -565,7 +569,8 @@ CI_CONFIG = CiConfig(
         ),
         "tests bugfix validate check": TestConfig(
             "",
-            job_config=JobConfig(digest=bugfix_validate_check),
+            # we run this check by label - no digest required
+            job_config=JobConfig(run_by_label="pr-bugfix"),
         ),
     },
     test_configs={

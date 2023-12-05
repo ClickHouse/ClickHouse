@@ -61,7 +61,6 @@ def pull_image(image: DockerImage) -> DockerImage:
 
 
 def get_docker_image(image_name: str) -> DockerImage:
-    global DOCKER_TAG
     assert DOCKER_TAG and isinstance(DOCKER_TAG, str), "DOCKER_TAG env must be provided"
     if "{" in DOCKER_TAG:
         tags_map = json.loads(DOCKER_TAG)

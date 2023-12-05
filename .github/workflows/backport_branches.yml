@@ -19,7 +19,6 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
-          ref: ${{ github.event.after }} # no merge commit
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"

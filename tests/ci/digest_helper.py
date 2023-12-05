@@ -10,6 +10,7 @@ from sys import modules
 
 from docker_images_helper import get_images_info
 from ci_config import DigestConfig
+from git_helper import Runner
 
 DOCKER_DIGEST_LEN = 12
 JOB_DIGEST_LEN = 10
@@ -148,24 +149,32 @@ class JobDigester:
     def get_job_digest(self, digest_config: DigestConfig) -> str:
         if not digest_config.include_paths:
             # job is not for digest
-            res = "f" * JOB_DIGEST_LEN
-        else:
-            cache_key = self._get_config_hash(digest_config)
-            if cache_key in self.cache:
-                return self.cache[cache_key]
-            digest_str: List[str] = []
-            if digest_config.include_paths:
-                digest = digest_paths(
-                    digest_config.include_paths,
-                    hash_object=None,
-                    exclude_files=digest_config.exclude_files,
-                    exclude_dirs=digest_config.exclude_dirs,
-                )
-                digest_str += (digest.hexdigest(),)
-            if digest_config.docker:
-                for image_name in digest_config.docker:
-                    image_digest = self.dd.get_image_digest(image_name)
-                    digest_str += (image_digest,)
-            res = digest_string("-".join(digest_str))[0:JOB_DIGEST_LEN]
-            self.cache[cache_key] = res
+            return "f" * JOB_DIGEST_LEN
+
+        cache_key = self._get_config_hash(digest_config)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        digest_str: List[str] = []
+        if digest_config.include_paths:
+            digest = digest_paths(
+                digest_config.include_paths,
+                hash_object=None,
+                exclude_files=digest_config.exclude_files,
+                exclude_dirs=digest_config.exclude_dirs,
+            )
+            digest_str += (digest.hexdigest(),)
+        if digest_config.docker:
+            for image_name in digest_config.docker:
+                image_digest = self.dd.get_image_digest(image_name)
+                digest_str += (image_digest,)
+        if digest_config.git_submodules:
+            submodules_sha = Runner().run(
+                "git submodule | awk '{print $1}' | sed 's/^[+-]//'"
+            )
+            assert submodules_sha and len(submodules_sha) > 10
+            submodules_digest = digest_string("-".join(submodules_sha))
+            digest_str += (submodules_digest,)
+        res = digest_string("-".join(digest_str))[0:JOB_DIGEST_LEN]
+        self.cache[cache_key] = res
         return res

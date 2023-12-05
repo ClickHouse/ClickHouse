@@ -13,7 +13,8 @@ ROOT_DIR = git_root
 CI = bool(os.getenv("CI"))
 TEMP_PATH = os.getenv("TEMP_PATH", p.abspath(p.join(module_dir, "./tmp")))
 REPORT_PATH = f"{TEMP_PATH}/reports"
-DOCKER_TAG = os.getenv("DOCKER_TAG")
+# FIXME: latest should not be used in CI, set temporary for transition to "docker with digest as a tag"
+DOCKER_TAG = os.getenv("DOCKER_TAG", "latest")
 CACHES_PATH = os.getenv("CACHES_PATH", TEMP_PATH)
 CLOUDFLARE_TOKEN = os.getenv("CLOUDFLARE_TOKEN")
 GITHUB_EVENT_PATH = os.getenv("GITHUB_EVENT_PATH", "")

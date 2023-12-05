@@ -44,12 +44,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="check the docs even if there no changes",
     )
-    parser.add_argument(
-        "--tag",
-        required=False,
-        default="",
-        help="tag for docker image",
-    )
     return parser.parse_args()
 
 

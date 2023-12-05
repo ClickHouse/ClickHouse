@@ -108,9 +108,9 @@ def post_commit_status(
         try:
             commit.create_status(
                 state=state,
-                target_url=report_url or NotSet,
-                description=description or NotSet,
-                context=check_name or NotSet,
+                target_url=report_url if report_url is not None else NotSet,
+                description=description if description is not None else NotSet,
+                context=check_name if check_name is not None else NotSet,
             )
             break
         except Exception as ex:

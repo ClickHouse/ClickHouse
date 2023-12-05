@@ -5,7 +5,7 @@ import concurrent.futures
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from github import Github
 from s3_helper import S3Helper
@@ -125,6 +125,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         help="skip fetching docker data from dockerhub, used in --configure action (for debugging)",
     )
     parser.add_argument(
+        "--docker-digest-or-latest",
+        action="store_true",
+        default=False,
+        help="temporary hack to fallback to latest if image with digest as a tag is not on docker hub",
+    )
+    parser.add_argument(
         "--skip-jobs",
         action="store_true",
         default=False,
@@ -223,15 +229,15 @@ def check_missing_images_on_dockerhub(
                 if stderr.startswith("no such manifest"):
                     result[name] = digest
                 else:
-                    print(f"Eror: Unknown error: {stderr}, {name}, {arch}")
+                    print(f"Error: Unknown error: {stderr}, {name}, {arch}")
             elif stdout:
                 if "mediaType" in stdout:
                     pass
                 else:
-                    print(f"Eror: Unknown response: {stdout}")
+                    print(f"Error: Unknown response: {stdout}")
                     assert False, "FIXME"
             else:
-                print(f"Eror: No response for {name}, {digest}, {arch}")
+                print(f"Error: No response for {name}, {digest}, {arch}")
                 assert False, "FIXME"
     return result
 
@@ -252,7 +258,9 @@ def _check_and_update_for_early_style_check(run_config: dict) -> None:
         jobs_to_do[index] = "Style check early"
 
 
-def _configure_docker_jobs(rebuild_all_dockers: bool) -> Dict:
+def _configure_docker_jobs(
+    rebuild_all_dockers: bool, docker_digest_or_latest: bool = False
+) -> Dict:
     # generate docker jobs data
     docker_digester = DockerDigester()
     imagename_digest_dict = (
@@ -267,24 +275,26 @@ def _configure_docker_jobs(rebuild_all_dockers: bool) -> Dict:
     docker_images_helper.docker_login()
     if not rebuild_all_dockers:
         missing_multi_dict = check_missing_images_on_dockerhub(imagename_digest_dict)
-
-        # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
-        # to avoid extra dockerhub api calls
-        missing_amd64 = list(
-            check_missing_images_on_dockerhub(missing_multi_dict, "amd64").keys()
-        )
-        # FIXME: WA until full arm support: skip not supported arm images
-        missing_aarch64 = list(
-            check_missing_images_on_dockerhub(
-                {
-                    im: digest
-                    for im, digest in missing_multi_dict.items()
-                    if not images_info[im]["only_amd64"]
-                },
-                "aarch64",
-            ).keys()
-        )
         missing_multi = list(missing_multi_dict)
+        missing_amd64 = []
+        missing_aarch64 = []
+        if not docker_digest_or_latest:
+            # look for missing arm and amd images only among missing multiarch manifests @missing_multi_dict
+            # to avoid extra dockerhub api calls
+            missing_amd64 = list(
+                check_missing_images_on_dockerhub(missing_multi_dict, "amd64")
+            )
+            # FIXME: WA until full arm support: skip not supported arm images
+            missing_aarch64 = list(
+                check_missing_images_on_dockerhub(
+                    {
+                        im: digest
+                        for im, digest in missing_multi_dict.items()
+                        if not images_info[im]["only_amd64"]
+                    },
+                    "aarch64",
+                )
+            )
     else:
         # add all images to missing
         missing_multi = list(imagename_digest_dict)
@@ -295,6 +305,15 @@ def _configure_docker_jobs(rebuild_all_dockers: bool) -> Dict:
             for name in imagename_digest_dict
             if not images_info[name]["only_amd64"]
         ]
+    # FIXME: temporary hack, remove after transition to docker digest as tag
+    if docker_digest_or_latest:
+        if missing_multi:
+            print(
+                f"WARNING: Missing images {list(missing_multi)} - fallback to latest tag"
+            )
+            for image in missing_multi:
+                imagename_digest_dict[image] = "latest"
+
     print("...checking missing images in dockerhub - done")
     return {
         "images": imagename_digest_dict,
@@ -310,6 +329,7 @@ def _configure_jobs(
     job_digester: JobDigester,
     s3: S3Helper,
     rebuild_all_binaries: bool,
+    pr_labels: Iterable[str],
 ) -> Dict:
     # a. digest each item from the config
     job_digester = JobDigester()
@@ -336,14 +356,24 @@ def _configure_jobs(
     done_files += done_files_docs
     for job in digests:
         digest = digests[job]
-        num_batches: int = CI_CONFIG.get_job_config(job).num_batches
+        job_config = CI_CONFIG.get_job_config(job)
+        num_batches: int = job_config.num_batches
         batches_to_do: List[int] = []
-        for batch in range(num_batches):  # type: ignore
-            success_flag_name = get_file_flag_name(job, digest, batch, num_batches)
-            if success_flag_name not in done_files or (
-                rebuild_all_binaries and is_build_job(job)
-            ):
-                batches_to_do.append(batch)
+
+        if job_config.run_by_label:
+            # this job controled by label, add to todo if it's labe is set in pr
+            if job_config.run_by_label in pr_labels:
+                for batch in range(num_batches):  # type: ignore
+                    batches_to_do.append(batch)
+        else:
+            # this job controled by digest, add to todo if it's not successfully done before
+            for batch in range(num_batches):  # type: ignore
+                success_flag_name = get_file_flag_name(job, digest, batch, num_batches)
+                if success_flag_name not in done_files or (
+                    rebuild_all_binaries and is_build_job(job)
+                ):
+                    batches_to_do.append(batch)
+
         if batches_to_do:
             jobs_to_do.append(job)
             jobs_params[job] = {
@@ -352,6 +382,7 @@ def _configure_jobs(
             }
         else:
             jobs_to_skip += (job,)
+
     return {
         "digests": digests,
         "jobs_to_do": jobs_to_do,
@@ -367,8 +398,7 @@ def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
         temp_path.mkdir(parents=True, exist_ok=True)
 
     # clean up before start
-    ci_files = list(temp_path.glob("*.ci"))
-    for file in ci_files:
+    for file in temp_path.glob("*.ci"):
         file.unlink()
 
     # download all metadata files
@@ -469,7 +499,7 @@ def main() -> int:
         pr_info = PRInfo()
 
         docker_data = {}
-        git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
+        git_ref = os.getenv("GITHUB_REF") or GR.run(f"{GIT_PREFIX} rev-parse HEAD")
 
         # if '#no-merge-commit' is set in commit message - set git ref to PR branch head to avoid merge-commit
         if pr_info.number != 0:
@@ -486,7 +516,9 @@ def main() -> int:
         print(f"Got CH version for this commit: [{version}]")
 
         docker_data = (
-            _configure_docker_jobs(args.rebuild_all_docker)
+            _configure_docker_jobs(
+                args.rebuild_all_docker, args.docker_digest_or_latest
+            )
             if not args.skip_docker
             else {}
         )
@@ -500,7 +532,12 @@ def main() -> int:
         )
         jobs_data = (
             _configure_jobs(
-                build_digest, docs_digest, job_digester, s3, args.rebuild_all_binaries
+                build_digest,
+                docs_digest,
+                job_digester,
+                s3,
+                args.rebuild_all_binaries,
+                pr_info.labels,
             )
             if not args.skip_jobs
             else {}
@@ -513,7 +550,8 @@ def main() -> int:
         result["docs"] = docs_digest
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
-        _check_and_update_for_early_style_check(result)
+        if not args.docker_digest_or_latest:
+            _check_and_update_for_early_style_check(result)
 
     elif args.update_gh_statuses:
         assert indata, "Run config must be provided via --infile"
