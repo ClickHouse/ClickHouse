@@ -157,7 +157,6 @@ namespace ErrorCodes
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
-    extern const int INCORRECT_FILE_NAME;
 }
 
 namespace ActionLocks
@@ -1416,7 +1415,10 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
         if (address.shard_index)
         {
             if (address.shard_index > shards_info.size())
-                throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "No shard with shard_index={} ({})", address.shard_index, name);
+            {
+                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
+                continue;
+            }
 
             const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
             size_t replicas = replicas_addresses.size();
@@ -1429,7 +1431,10 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
             }
 
             if (address.replica_index > replicas)
-                throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "No shard with replica_index={} ({})", address.replica_index, name);
+            {
+                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
+                continue;
+            }
 
             addresses.push_back(replicas_addresses[address.replica_index - 1]);
         }
