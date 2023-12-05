@@ -75,6 +75,28 @@ SELECT L1Normalize((NULL, 1));
 SELECT cosineDistance((NULL, 1), (NULL, NULL));
 SELECT max2(NULL, 1) - min2(NULL, 1);
 
+SELECT L1Norm(());
+SELECT LpNorm((), 2.2);
+SELECT () * ();
+
+SELECT -();
+SELECT () + ();
+SELECT () * 2;
+SELECT () / 2;
+
+SELECT tupleMultiplyByNumber(tuple(), 2);
+SELECT tupleModuloByNumber(tuple(), 2);
+SELECT tupleIntDivByNumber(tuple(), 2);
+SELECT tupleIntDivOrZeroByNumber(tuple(), 2);
+SELECT tupleDivideByNumber(tuple(), 2);
+
+SELECT L1Normalize(());
+
+SELECT tupleNegate(tuple());
+SELECT tuplePlus(tuple(), tuple());
+SELECT tupleMinus(tuple(), tuple());
+SELECT tupleMultiply(tuple(), tuple());
+
 SELECT L1Norm(1); -- { serverError 43 }
 SELECT (1, 1) / toString(1); -- { serverError 43 }
 SELECT -(1, toString(1)); -- { serverError 43 }
@@ -82,9 +104,7 @@ SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError 43 }
 SELECT (1, 2) * toDecimal32(3.1, 8);
 
 SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError 43 }
-
--- TODO: what's the expected value of () + ()? Currently it returns 0.
--- SELECT tuple() + tuple(); -- { serverError 42 }
+SELECT cosineDistance((), ()); -- { serverError 43 }
 
 SELECT LpNorm((1, 2, 3)); -- { serverError 42 }
 SELECT max2(1, 2, -1); -- { serverError 42 }
