@@ -5,7 +5,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
 
 #include <memory>
 #include <string>
@@ -51,15 +50,15 @@ public:
                 getName(),
                 arguments.size());
 
-        for (const auto arg_idx : collections::range(0, arguments.size()))
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const auto * arg = arguments[arg_idx].get();
+            const auto * arg = arguments[i].get();
             if (!isStringOrFixedString(arg))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {} of function {}",
                     arg->getName(),
-                    arg_idx + 1,
+                    i + 1,
                     getName());
         }
 
