@@ -145,6 +145,7 @@ using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
+class AsyncLoader;
 
 /// Scheduling policy can be changed using `background_merges_mutations_scheduling_policy` config option.
 /// By default concurrent merges are scheduled using "round_robin" to ensure fair and starvation-free operation.
@@ -789,6 +790,8 @@ public:
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
+    AsyncLoader & getAsyncLoader() const;
+
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
@@ -1015,7 +1018,7 @@ public:
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
-    void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
+    void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTaskPtrs & startup_after);
     DDLWorker & getDDLWorker() const;
 
     std::map<String, std::shared_ptr<Cluster>> getClusters() const;

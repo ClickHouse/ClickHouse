@@ -156,6 +156,7 @@ add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
+add_contrib (sqids-cpp-cmake sqids-cpp)
 
 if(ENABLE_FDB)
     add_contrib (fdb-c-cmake fdb-c)
