@@ -194,6 +194,7 @@ namespace ErrorCodes
     extern const int SERIALIZATION_ERROR;
     extern const int TOO_MANY_MUTATIONS;
     extern const int CANNOT_SCHEDULE_TASK;
+    extern const int LIMIT_EXCEEDED;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -648,6 +649,10 @@ void MergeTreeData::checkProperties(
         {
             if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
+
+            const auto settings = getSettings();
+            if (projections_names.size() >= settings->max_projections)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", settings->max_projections);
 
             /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
