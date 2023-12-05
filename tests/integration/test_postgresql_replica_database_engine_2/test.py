@@ -831,7 +831,9 @@ def test_bad_connection_options(started_cluster):
     )
 
     instance.wait_for_log_line('role "postrges" does not exist')
-    assert instance.contains_in_log('<Error> void DB::DatabaseMaterializedPostgreSQL::startSynchronization(): std::exception. Code: 1001, type: pqxx::broken_connection')
+    assert instance.contains_in_log(
+        "<Error> void DB::DatabaseMaterializedPostgreSQL::startSynchronization(): std::exception. Code: 1001, type: pqxx::broken_connection"
+    )
     assert "test_database" in instance.query("SHOW DATABASES")
     assert "" == instance.query("show tables from test_database").strip()
     drop_materialized_db("test_database")
