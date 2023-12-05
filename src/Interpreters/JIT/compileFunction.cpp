@@ -67,7 +67,8 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
 {
     const auto & function_argument_types = function.getArgumentTypes();
 
-    llvm::IRBuilder<> b(module.getContext());
+    auto & context = module.getContext();
+    llvm::IRBuilder<> b(context);
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
     auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
@@ -75,6 +76,8 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     /// Create function in module
 
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, function.getName(), module);
+    func->setAttributes(llvm::AttributeList::get(context, {{2, llvm::Attribute::get(context, llvm::Attribute::AttrKind::NoAlias)}}));
+
     auto * args = func->args().begin();
     llvm::Value * rows_count_arg = args++;
     llvm::Value * columns_arg = args++;
@@ -196,6 +199,9 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
     auto * create_aggregate_states_function_type = llvm::FunctionType::get(b.getVoidTy(), { aggregate_data_places_type }, false);
     auto * create_aggregate_states_function = llvm::Function::Create(create_aggregate_states_function_type, llvm::Function::ExternalLinkage, name, module);
 
+    create_aggregate_states_function->setAttributes(
+        llvm::AttributeList::get(context, {{1, llvm::Attribute::get(context, llvm::Attribute::AttrKind::NoAlias)}}));
+
     auto * arguments = create_aggregate_states_function->args().begin();
     llvm::Value * aggregate_data_place_arg = arguments++;
 
@@ -240,6 +246,11 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
 
     auto * add_into_aggregate_states_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, size_type, column_type->getPointerTo(), places_type }, false);
     auto * add_into_aggregate_states_func = llvm::Function::Create(add_into_aggregate_states_func_declaration, llvm::Function::ExternalLinkage, name, module);
+
+    add_into_aggregate_states_func->setAttributes(llvm::AttributeList::get(
+        context,
+        {{3, llvm::Attribute::get(context, llvm::Attribute::AttrKind::NoAlias)},
+         {4, llvm::Attribute::get(context, llvm::Attribute::AttrKind::NoAlias)}}));
 
     auto * arguments = add_into_aggregate_states_func->args().begin();
     llvm::Value * row_start_arg = arguments++;
@@ -354,7 +365,8 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
 
 static void compileMergeAggregatesStates(llvm::Module & module, const std::vector<AggregateFunctionWithOffset> & functions, const std::string & name)
 {
-    llvm::IRBuilder<> b(module.getContext());
+    auto & context = module.getContext();
+    llvm::IRBuilder<> b(context);
 
     auto * aggregate_data_place_type = b.getInt8Ty()->getPointerTo();
     auto * aggregate_data_places_type = aggregate_data_place_type->getPointerTo();
@@ -364,6 +376,11 @@ static void compileMergeAggregatesStates(llvm::Module & module, const std::vecto
         = llvm::FunctionType::get(b.getVoidTy(), {aggregate_data_places_type, aggregate_data_places_type, size_type}, false);
     auto * merge_aggregates_states_func
         = llvm::Function::Create(merge_aggregates_states_func_declaration, llvm::Function::ExternalLinkage, name, module);
+
+    merge_aggregates_states_func->setAttributes(llvm::AttributeList::get(
+        context,
+        {{1, llvm::Attribute::get(context, llvm::Attribute::AttrKind::NoAlias)},
+         {2, llvm::Attribute::get(context, llvm::Attribute::AttrKind::NoAlias)}}));
 
     auto * arguments = merge_aggregates_states_func->args().begin();
     llvm::Value * aggregate_data_places_dst_arg = arguments++;
@@ -425,6 +442,11 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo()->getPointerTo();
     auto * insert_aggregates_into_result_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, size_type, column_type->getPointerTo(), aggregate_data_places_type }, false);
     auto * insert_aggregates_into_result_func = llvm::Function::Create(insert_aggregates_into_result_func_declaration, llvm::Function::ExternalLinkage, name, module);
+
+    insert_aggregates_into_result_func->setAttributes(llvm::AttributeList::get(
+        context,
+        {{3, llvm::Attribute::get(context, llvm::Attribute::AttrKind::NoAlias)},
+         {4, llvm::Attribute::get(context, llvm::Attribute::AttrKind::NoAlias)}}));
 
     auto * arguments = insert_aggregates_into_result_func->args().begin();
     llvm::Value * row_start_arg = arguments++;
