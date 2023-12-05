@@ -316,7 +316,11 @@ Chain buildPushingToViewsChain(
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
             result_chain.addTableLock(lock);
 
-            StoragePtr inner_table = materialized_view->getTargetTable();
+            StoragePtr inner_table = materialized_view->tryGetTargetTable();
+            /// If target table was dropped, ignore this materialized view.
+            if (!inner_table)
+                continue;
+
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
 
