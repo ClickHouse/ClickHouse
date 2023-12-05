@@ -401,6 +401,10 @@ if (ENABLE_QPL)
     dbms_target_link_libraries(PRIVATE accel-config)
 endif ()
 
+if (ENABLE_QAT)
+    dbms_target_link_libraries(PRIVATE qatzstd_plugin)
+endif ()
+
 if (XZ_LIBRARY)
     target_link_libraries (clickhouse_common_io PUBLIC ${XZ_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${XZ_INCLUDE_DIR})

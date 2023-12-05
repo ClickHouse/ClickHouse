@@ -74,6 +74,7 @@ SET(Sources
         "${LIBRARY_DIR}/compress/zstdmt_compress.c"
         "${LIBRARY_DIR}/compress/zstd_opt.c"
         "${LIBRARY_DIR}/decompress/huf_decompress.c"
+        "${LIBRARY_DIR}/decompress/huf_decompress_amd64.S"
         "${LIBRARY_DIR}/decompress/zstd_ddict.c"
         "${LIBRARY_DIR}/decompress/zstd_decompress_block.c"
         "${LIBRARY_DIR}/decompress/zstd_decompress.c"

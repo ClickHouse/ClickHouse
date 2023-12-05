@@ -165,6 +165,7 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
+void registerCodecQATZSTD(CompressionCodecFactory & factory);
 void registerCodecDeflateQpl(CompressionCodecFactory & factory);
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
@@ -178,6 +179,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecLZ4(*this);
     registerCodecNone(*this);
     registerCodecZSTD(*this);
+#ifdef ENABLE_QATZSTD_COMPRESSION
+    registerCodecQATZSTD(*this);
+#endif
     registerCodecLZ4HC(*this);
     registerCodecDelta(*this);
     registerCodecT64(*this);
