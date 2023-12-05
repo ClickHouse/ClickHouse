@@ -24,6 +24,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         config,
         config_prefix)
     , traits(name_)
+    , gc_thread_sleep_ms(config.getUInt64(config_prefix + ".object_storage_vfs_gc_period", 10'000))
     , zookeeper(std::move(zookeeper_))
 {
     zookeeper->createAncestors(traits.VFS_LOG_ITEM);

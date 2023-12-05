@@ -44,6 +44,7 @@ public:
     bool supportZeroCopyReplication() const override { return false; }
     DiskObjectStoragePtr createDiskObjectStorage() override;
     String getStructure() const;
+    UInt64 getGcSleep() const { return gc_thread_sleep_ms; }
 
     bool lock(std::string_view path, bool block) override;
     void unlock(std::string_view path) override;
@@ -68,6 +69,8 @@ private:
     // as log is global (thus all of threads per replica except for one just waste resources).
     friend class ObjectStorageVFSGCThread;
     std::unique_ptr<ObjectStorageVFSGCThread> gc_thread;
+
+    UInt64 gc_thread_sleep_ms;
 
     zkutil::ZooKeeperPtr zookeeper;
 

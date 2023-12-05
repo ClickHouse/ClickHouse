@@ -25,8 +25,9 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
     , log_name("DiskObjectStorageVFSGC")
     , log(&Poco::Logger::get(log_name))
     , zookeeper_lock(zkutil::createSimpleZooKeeperLock(storage.zookeeper, storage.traits.VFS_BASE_NODE, "lock", ""))
-    , sleep_ms(10'000) // TODO myrrc should pick this from settings
+    , sleep_ms(storage_.getGcSleep())
 {
+    LOG_DEBUG(log, "ObjectStorageVFSGCThread with sleep_ms {}", sleep_ms);
     task = context->getSchedulePool().createTask(
         log_name,
         [this]
