@@ -2975,12 +2975,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             columns_alter_type_check_safe_for_partition.insert(col);
     }
 
-    for (const auto & index : old_metadata.getSecondaryIndices())
-    {
-        for (const String & col : index.expression->getRequiredColumns())
-            columns_alter_type_forbidden.insert(col);
-    }
-
     if (old_metadata.hasSortingKey())
     {
         auto sorting_key_expr = old_metadata.getSortingKey().expression;
@@ -3003,6 +2997,20 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     columns_in_keys.insert(columns_alter_type_forbidden.begin(), columns_alter_type_forbidden.end());
     columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
     columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
+
+    std::unordered_map<String, String> columns_in_indices;
+    for (const auto & index : old_metadata.getSecondaryIndices())
+    {
+        for (const String & col : index.expression->getRequiredColumns())
+            columns_in_indices.emplace(col, index.name);
+    }
+
+    std::unordered_map<String, String> columns_in_projections;
+    for (const auto & projection : old_metadata.getProjections())
+    {
+        for (const String & col : projection.getRequiredColumns())
+            columns_in_projections.emplace(col, projection.name);
+    }
 
     NameSet dropped_columns;
 
@@ -3089,6 +3097,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                 "Trying to ALTER RENAME key {} column which is a part of key expression",
                                 backQuoteIfNeed(command.column_name));
             }
+
+            /// Don't check columns in indices here. RENAME works fine with index columns.
+
+            if (auto it = columns_in_projections.find(command.column_name); it != columns_in_projections.end())
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER RENAME {} column which is a part of projection {}",
+                    backQuoteIfNeed(command.column_name),
+                    it->second);
+            }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -3097,6 +3116,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Trying to ALTER DROP key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
             }
+
+            /// Don't check columns in indices or projections here. If required columns of indices
+            /// or projections get dropped, it will be checked later in AlterCommands::apply. This
+            /// allows projections with * to drop columns. One example can be found in
+            /// 02691_drop_column_with_projections_replicated.sql.
 
             if (!command.clear)
             {
@@ -3140,6 +3164,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (columns_alter_type_forbidden.contains(command.column_name))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
                     backQuoteIfNeed(command.column_name));
+
+            if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER {} column which is a part of index {}",
+                    backQuoteIfNeed(command.column_name),
+                    it->second);
+            }
+
+            /// Don't check columns in projections here. If required columns of projections get
+            /// modified, it will be checked later in AlterCommands::apply.
 
             if (command.type == AlterCommand::MODIFY_COLUMN)
             {
@@ -3767,25 +3803,6 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
     if (removed_active_part)
         resetObjectColumnsFromActiveParts(acquired_lock);
-}
-
-void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)
-{
-    auto lock = lockParts();
-
-    for (const auto & part : remove)
-    {
-        auto it_part = data_parts_by_info.find(part->info);
-        if (it_part == data_parts_by_info.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} not found in data_parts", part->getNameWithState());
-
-        assert(part->getState() == MergeTreeDataPartState::PreActive);
-
-        modifyPartState(part, MergeTreeDataPartState::Temporary);
-        /// Erase immediately
-        LOG_TEST(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
-        data_parts_indexes.erase(it_part);
-    }
 }
 
 void MergeTreeData::removePartsFromWorkingSet(
@@ -4855,7 +4872,6 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
 
     if (parts.empty())
     {
-        String no_parts_to_move_message;
         if (moving_part)
             throw Exception(ErrorCodes::UNKNOWN_DISK, "Part '{}' is already on disk '{}'", partition_id, disk->getName());
         else
@@ -4937,7 +4953,6 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
 
     if (parts.empty())
     {
-        String no_parts_to_move_message;
         if (moving_part)
             throw Exception(ErrorCodes::UNKNOWN_DISK, "Part '{}' is already on volume '{}'", partition_id, volume->getName());
         else
@@ -6300,24 +6315,6 @@ MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransact
 {
     if (txn)
         data.transactions_enabled.store(true);
-}
-
-void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
-{
-    if (!isEmpty())
-    {
-        WriteBufferFromOwnString buf;
-        buf << " Rollbacking parts state to temporary and removing from working set:";
-        for (const auto & part : precommitted_parts)
-            buf << " " << part->getDataPartStorage().getPartDirectory();
-        buf << ".";
-        LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
-
-        data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
-            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
-    }
-
-    clear();
 }
 
 TransactionID MergeTreeData::Transaction::getTID() const

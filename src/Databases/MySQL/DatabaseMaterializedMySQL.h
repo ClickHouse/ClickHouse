@@ -46,10 +46,13 @@ protected:
 
     std::atomic_bool started_up{false};
 
+    LoadTaskPtr startup_mysql_database_task;
+
 public:
     String getEngineName() const override { return "MaterializedMySQL"; }
 
-    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
+    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
+    void waitDatabaseStarted(bool no_throw) const override;
 
     void createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 

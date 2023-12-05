@@ -30,7 +30,6 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowStream
-AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
 AsynchronousInsert
@@ -39,6 +38,11 @@ AsynchronousInsertThreadsActive
 AsynchronousMetricsCalculationTimeSpent
 AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
+AsyncInsertCacheSize
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 Authenticator
 Authenticators
 AutoFDO
@@ -261,6 +265,7 @@ FOSDEM
 FQDN
 Failover
 FarmHash
+FileCluster
 FileLog
 FilesystemCacheBytes
 FilesystemCacheElements
@@ -883,8 +888,6 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
-TablesLoaderThreads
-TablesLoaderThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -1383,6 +1386,7 @@ denormalized
 denormalizing
 denormals
 dequeued
+dequeues
 deserialization
 deserialized
 deserializing
@@ -1442,6 +1446,7 @@ endian
 endianness
 endsWith
 endsWithUTF
+enqueued
 enum
 enum's
 enums
@@ -1472,6 +1477,7 @@ fastops
 fcoverage
 fibonacci
 fifo
+fileCluster
 filelog
 filesystem
 filesystemAvailable
@@ -1786,6 +1792,7 @@ logTrace
 logagent
 loghouse
 london
+lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -2272,6 +2279,7 @@ splitByRegexp
 splitByString
 splitByWhitespace
 splitby
+sqid
 sql
 sqlalchemy
 sqlinsert

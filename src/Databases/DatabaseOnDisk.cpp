@@ -163,6 +163,13 @@ DatabaseOnDisk::DatabaseOnDisk(
 }
 
 
+void DatabaseOnDisk::shutdown()
+{
+    waitDatabaseStarted(/* no_throw = */ true);
+    DatabaseWithOwnTablesBase::shutdown();
+}
+
+
 void DatabaseOnDisk::createTable(
     ContextPtr local_context,
     const String & table_name,
@@ -188,6 +195,8 @@ void DatabaseOnDisk::createTable(
     if (isTableExist(table_name, getContext()))
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
+
+    waitDatabaseStarted(false);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
@@ -278,6 +287,8 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const String & table_name)
 {
+    waitDatabaseStarted(false);
+
     auto table = detachTable(query_context, table_name);
 
     fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
@@ -294,6 +305,8 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
 
 void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
 {
+    waitDatabaseStarted(false);
+
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
     String table_data_path_relative = getTableDataPath(table_name);
@@ -377,6 +390,8 @@ void DatabaseOnDisk::renameTable(
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
+
+    waitDatabaseStarted(false);
 
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
@@ -519,6 +534,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
+    waitDatabaseStarted(false);
+
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
     {
