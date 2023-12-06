@@ -69,7 +69,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 namespace
 {
 
-bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::string & disk_config_prefix)
+bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::string & disk_config_prefix, const std::string &)
 {
     const auto disk_type = config.getString(disk_config_prefix + ".type", "local");
 
