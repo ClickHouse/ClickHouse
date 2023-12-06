@@ -294,7 +294,7 @@ void StorageSystemDroppedTablesParts::fillData(MutableColumns & columns, Context
             columns[res_index++]->insert(getRemovalStateDescription(part->removal_state.load(std::memory_order_relaxed)));
 
         }
-        
+
     }
 
 }
