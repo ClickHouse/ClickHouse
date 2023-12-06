@@ -2231,6 +2231,7 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID
