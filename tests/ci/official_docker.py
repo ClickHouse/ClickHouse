@@ -47,9 +47,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="The script to handle tasks for docker-library/official-images",
     )
-    global_args = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter, add_help=False
-    )
+    global_args = argparse.ArgumentParser(add_help=False)
     global_args.add_argument(
         "-v",
         "--verbose",
@@ -80,6 +78,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser_tree = subparsers.add_parser(
         "generate-tree",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         help="generates directory `docker/official`",
         parents=[global_args],
     )
@@ -89,12 +88,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="if not set, only currently supported versions will be used",
     )
+    docker_branch = "origin/master"
     parser_tree.add_argument(
-        "--use-master-docker",
+        "--use-docker-from-branch",
         action="store_true",
         help="by default, the `docker/server` from each branch is used to generate the "
         "directory; if this flag is set, then the `docker/server` from the "
-        "`origin/master` branch is used",
+        "`--docker-branch` value is used",
+    )
+    parser_tree.add_argument(
+        "--docker-branch",
+        default=docker_branch,
+        help="the branch to get the content of `docker/server` directory",
     )
     parser_tree.add_argument(
         "--build-images",
@@ -117,6 +122,7 @@ def parse_args() -> argparse.Namespace:
     )
     subparsers.add_parser(
         "generate-ldf",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         help="generate docker library definition file",
         parents=[global_args],
     )
@@ -153,13 +159,14 @@ def create_versions_dirs(
 
 def generate_docker_directories(
     version_dirs: Dict[ClickHouseVersion, Path],
-    use_master_docker: bool,
+    use_docker_from_branch: bool,
+    docker_branch: str,
     build_images: bool = False,
     image_type: str = "server",
 ) -> None:
     arg_version = "ARG VERSION="
     for version, directory in version_dirs.items():
-        branch = "origin/master" if use_master_docker else version.describe
+        branch = docker_branch if use_docker_from_branch else version.describe
         logging.debug(
             "Checkout directory content from '%s:docker/%s' to %s",
             branch,
@@ -237,7 +244,11 @@ def generate_tree(args: argparse.Namespace) -> None:
             pass
     version_dirs = create_versions_dirs(versions, directory)
     generate_docker_directories(
-        version_dirs, args.use_master_docker, args.build_images, args.image_type
+        version_dirs,
+        args.use_docker_from_branch,
+        args.docker_branch,
+        args.build_images,
+        args.image_type,
     )
     if args.commit and path_is_changed(directory):
         logging.info("Staging and committing content of %s", directory)
