@@ -7,7 +7,6 @@
 namespace DB
 {
 
-
 Range::Range(const FieldRef & point) /// NOLINT
     : left(point), right(point), left_included(true), right_included(true) {}
 
@@ -124,6 +123,27 @@ bool Range::leftThan(const FieldRef & x) const
     return less(x, right) || (right_included && equals(x, right));
 }
 
+bool Range::rightThan(const Range & x) const
+{
+    return less(x.right, left) || (!(left_included && x.right_included) && equals(left, x.right));
+}
+
+bool Range::leftThan(const Range & x) const
+{
+    return less(right, x.left) || (!(x.left_included && right_included) && equals(right, x.left));
+}
+
+bool Range::fullBounded() const
+{
+    return left.getType() != Field::Types::Null && right.getType() != Field::Types::Null;
+}
+
+/// (-inf, +inf)
+bool Range::isInfinite() const
+{
+    return left.isNegativeInfinity() && right.isPositiveInfinity();
+}
+
 bool Range::intersectsRange(const Range & r) const
 {
     /// r to the left of me.
@@ -160,12 +180,176 @@ void Range::invert()
     std::swap(left_included, right_included);
 }
 
+Ranges Range::invertRange() const
+{
+    Ranges ranges;
+    /// For full bounded range will generate two ranges.
+    if (fullBounded()) /// case: [1, 3] -> (-inf, 1), (3, +inf)
+    {
+        ranges.push_back({NEGATIVE_INFINITY, false, left, !left_included});
+        ranges.push_back({right, !right_included, POSITIVE_INFINITY, false});
+    }
+    else if (isInfinite())
+    {
+        /// blank ranges
+    }
+    else /// case: (-inf, 1] or [1, +inf)
+    {
+        Range r = *this;
+        std::swap(r.left, r.right);
+        if (r.left.isPositiveInfinity()) /// [1, +inf)
+        {
+            r.left = NEGATIVE_INFINITY;
+            r.right_included = !r.left_included;
+            r.left_included = false;
+        }
+        else if (r.right.isNegativeInfinity()) /// (-inf, 1]
+        {
+            r.right = POSITIVE_INFINITY;
+            r.left_included = !r.right_included;
+            r.right_included = false;
+        }
+        ranges.push_back(r);
+    }
+    return ranges;
+}
+
+std::optional<Range> Range::intersectWith(const Range & r) const
+{
+    if (!intersectsRange(r))
+        return {};
+
+    bool left_bound_use_mine = true;
+    bool right_bound_use_mine = true;
+
+    if (less(left, r.left) || ((!left_included && r.left_included) && equals(left, r.left)))
+        left_bound_use_mine = false;
+
+    if (less(r.right, right) || ((!r.right_included && right_included) && equals(r.right, right)))
+        right_bound_use_mine = false;
+
+    return Range(
+        left_bound_use_mine ? left : r.left,
+        left_bound_use_mine ? left_included : r.left_included,
+        right_bound_use_mine ? right : r.right,
+        right_bound_use_mine ? right_included : r.right_included);
+}
+
+std::optional<Range> Range::unionWith(const Range & r) const
+{
+    if (!intersectsRange(r) && !nearByWith(r))
+        return {};
+
+    bool left_bound_use_mine = false;
+    bool right_bound_use_mine = false;
+
+    if (less(left, r.left) || ((!left_included && r.left_included) && equals(left, r.left)))
+        left_bound_use_mine = true;
+
+    if (less(r.right, right) || ((!r.right_included && right_included) && equals(r.right, right)))
+        right_bound_use_mine = true;
+
+    return Range(
+        left_bound_use_mine ? left : r.left,
+        left_bound_use_mine ? left_included : r.left_included,
+        right_bound_use_mine ? right : r.right,
+        right_bound_use_mine ? right_included : r.right_included);
+}
+
+bool Range::nearByWith(const Range & r) const
+{
+    /// me locates at left
+    if (((right_included && !r.left_included) || (!right_included && r.left_included)) && equals(right, r.left))
+        return true;
+
+    /// r locate left
+    if (((r.right_included && !left_included) || (r.right_included && !left_included)) && equals(r.right, left))
+        return true;
+
+    return false;
+}
+
+Range intersect(const Range & a, const Range & b)
+{
+    Range res = Range::createWholeUniverse();
+
+    if (Range::less(a.left, b.left))
+    {
+        res.left = b.left;
+        res.left_included = b.left_included;
+    }
+    else if (Range::equals(a.left, b.left))
+    {
+        res.left = a.left;
+        res.left_included = a.left_included && b.left_included;
+    }
+    else
+    {
+        res.left = a.left;
+        res.left_included = a.left_included;
+    }
+
+    if (Range::less(a.right, b.right))
+    {
+        res.right = a.right;
+        res.right_included = a.right_included;
+    }
+    else if (Range::equals(a.right, b.right))
+    {
+        res.right = a.right;
+        res.right_included = a.right_included && b.right_included;
+    }
+    else
+    {
+        res.right = b.right;
+        res.right_included = b.right_included;
+    }
+
+    if (res.empty())
+    {
+        res.right = res.left;
+        res.right_included = false;
+        res.left_included = false;
+    }
+
+    return res;
+}
+
 String Range::toString() const
 {
     WriteBufferFromOwnString str;
 
     str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
     str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+
+    return str.str();
+}
+
+Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b)
+{
+    size_t result_size = std::min(a.size(), b.size());
+
+    Hyperrectangle res;
+    res.reserve(result_size);
+
+    for (size_t i = 0; i < result_size; ++i)
+        res.push_back(intersect(a[i], b[i]));
+
+    return res;
+}
+
+String toString(const Hyperrectangle & x)
+{
+    WriteBufferFromOwnString str;
+
+    bool first = true;
+    for (const auto & range : x)
+    {
+        if (!first)
+            str << " × ";
+        str << range.toString();
+        first = false;
+    }
 
     return str.str();
 }

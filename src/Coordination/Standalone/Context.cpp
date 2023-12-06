@@ -25,6 +25,7 @@ namespace CurrentMetrics
     extern const Metric BackgroundSchedulePoolSize;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
+    extern const Metric IOWriterThreadsScheduled;
 }
 
 namespace DB
@@ -234,6 +235,11 @@ std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetche
     return nullptr;
 }
 
+std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
+{
+    return nullptr;
+}
+
 void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getGlobalLock();
@@ -262,7 +268,7 @@ ThreadPool & Context::getThreadPoolWriter() const
         auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
 
         shared->threadpool_writer = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, pool_size, pool_size, queue_size);
+            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
     });
 
     return *shared->threadpool_writer;

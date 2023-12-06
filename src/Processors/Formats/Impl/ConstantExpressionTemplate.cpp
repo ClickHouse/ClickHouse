@@ -393,7 +393,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     SipHash hash_state;
     hash_state.update(result_column_type->getName());
 
-    expression->updateTreeHash(hash_state);
+    expression->updateTreeHash(hash_state, /*ignore_aliases=*/ true);
 
     for (const auto & info : replaced_literals)
         hash_state.update(info.type->getName());

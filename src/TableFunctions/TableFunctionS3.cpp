@@ -336,7 +336,13 @@ bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context);
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
+std::unordered_set<String> TableFunctionS3::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    auto virtual_column_names = StorageS3::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
+}
+
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
     S3::URI s3_uri (configuration.url);
 
@@ -345,6 +351,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         columns = parseColumnsListFromString(configuration.structure, context);
     else if (!structure_hint.empty())
         columns = structure_hint;
+    else if (!cached_columns.empty())
+        columns = cached_columns;
 
     StoragePtr storage = std::make_shared<StorageS3>(
         configuration,

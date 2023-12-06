@@ -62,7 +62,7 @@ public:
         return buffer;
     }
 
-    inline void rowWritten()
+    void rowWritten()
     {
         if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
         {

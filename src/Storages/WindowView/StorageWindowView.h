@@ -142,7 +142,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     void read(
         QueryPlan & query_plan,
