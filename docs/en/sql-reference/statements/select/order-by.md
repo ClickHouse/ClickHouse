@@ -265,8 +265,9 @@ Consider disabling `optimize_read_in_order` manually, when running queries that 
 
 Optimization is supported in the following table engines:
 
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
-- [Merge](../../../engines/table-engines/special/merge.md), [Buffer](../../../engines/table-engines/special/buffer.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) table engines over `MergeTree`-engine tables
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](../../../sql-reference/statements/create/view.md#materialized-view)),
+- [Merge](../../../engines/table-engines/special/merge.md),
+- [Buffer](../../../engines/table-engines/special/buffer.md)
 
 In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query does not have the `ORDER BY` clause.
 
