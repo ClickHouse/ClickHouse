@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Executors/ManualPipelineExecutor.h>
 
@@ -419,14 +420,28 @@ bool RefreshTask::executeRefreshUnlocked()
     CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
 
     /// TODO: Execute in multiple threads.
+    /// TODO: interrupt_execution is not enough to interrupt the PipelineExecutor reliably quickly,
+    ///       it doesn't interrupt the epoll for async tasks (if any), see async_task_queue.
+    ///       Either do refresh_executor.cancel() (which won't work for pausing) or add a periodic
+    ///       check of the flag in the epoll wait (wake up every e.g. 500 ms).
     if (!refresh_executor)
     {
         refresh_pipeline = InterpreterInsertQuery(refresh_query, refresh_context).execute();
+
         refresh_pipeline->pipeline.setProgressCallback([this](const Progress & prog)
             {
                 /// TODO: Investigate why most fields are not populated. Change columns in system.view_refreshes as needed, update documentation (docs/en/operations/system-tables/view_refreshes.md).
                 progress.incrementPiecewiseAtomically(prog);
             });
+
+        /// Add the query to system.processes and allow it to be killed with KILL QUERY.
+        String query_for_logging = refresh_query->formatForLogging(
+            refresh_context->getSettingsRef().log_queries_cut_to_length);
+        refresh_pipeline->process_list_entry = refresh_context->getProcessList().insert(
+            query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+        refresh_pipeline->pipeline.setProcessListElement(refresh_pipeline->process_list_entry->getQueryStatus());
+        refresh_context->setProcessListElement(refresh_pipeline->process_list_entry->getQueryStatus());
+
         refresh_executor.emplace(refresh_pipeline->pipeline);
     }
 
