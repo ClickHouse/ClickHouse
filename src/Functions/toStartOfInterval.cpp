@@ -405,7 +405,8 @@ private:
 
                     if (scale_on_precision > scale_multiplier)
                         result_data[i] += (origin + res / scale_diff) * scale_diff;
-                    else if (scale_on_precision == scale_multiplier && scale_on_precision != 10) /// scale == 10 is default case
+                    else if (scale_on_precision == scale_multiplier && scale_on_precision % 1000 != 0 && scale_multiplier != 10) /// when it's not a default case with DateTime
+                                                                                                                                /// and when precision is not sub-scale
                         result_data[i] += origin + (res * scale_on_precision);
                     else
                         result_data[i] += origin + res * scale_diff;
