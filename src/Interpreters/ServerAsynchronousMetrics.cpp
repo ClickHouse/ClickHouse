@@ -294,10 +294,8 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
                     // only fetch the parts which are in active state
                     auto all_parts = table_merge_tree->getDataPartsVectorForInternalUsage();
 
-                    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
+                    for (const auto & part : all_parts)
                     {
-                        const auto & part = all_parts[part_number];
-
                         total_primary_key_bytes_memory += part->getIndexSizeInBytes();
                         total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
                     }
