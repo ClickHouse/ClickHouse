@@ -47,26 +47,29 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="The script to handle tasks for docker-library/official-images",
     )
-    parser.add_argument(
+    global_args = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter, add_help=False
+    )
+    global_args.add_argument(
         "-v",
         "--verbose",
         action="count",
         default=0,
         help="set the script verbosity, could be used multiple",
     )
-    parser.add_argument(
+    global_args.add_argument(
         "--directory",
         type=_rel_path,
         default=_rel_path("docker/official"),
         help="a relative to the reporitory root directory",
     )
-    parser.add_argument(
+    global_args.add_argument(
         "--image-type",
         choices=["server", "keeper"],
         default="server",
         help="which image type to process",
     )
-    parser.add_argument(
+    global_args.add_argument(
         "--commit",
         action="store_true",
         help="if set, the directory `docker/official` will be staged and committed "
@@ -76,7 +79,9 @@ def parse_args() -> argparse.Namespace:
         title="commands", dest="command", required=True, help="the command to run"
     )
     parser_tree = subparsers.add_parser(
-        "generate-tree", help="generates directory `docker/official`"
+        "generate-tree",
+        help="generates directory `docker/official`",
+        parents=[global_args],
     )
     parser_tree.add_argument(
         "--min-version",
@@ -111,7 +116,9 @@ def parse_args() -> argparse.Namespace:
         help="if set, the tags will be updated before run",
     )
     subparsers.add_parser(
-        "generate-ldf", help="generate docker library definition file"
+        "generate-ldf",
+        help="generate docker library definition file",
+        parents=[global_args],
     )
     args = parser.parse_args()
     return args
