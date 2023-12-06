@@ -71,7 +71,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && chmod +x ./mc ./minio
 
 
-RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
+RUN wget 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
     && tar -xvf hadoop-3.3.1.tar.gz \
     && rm -rf hadoop-3.3.1.tar.gz
 
