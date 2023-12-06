@@ -189,11 +189,11 @@ class PostgresManager:
         database_name = self.database_or_default(database_name)
         self.drop_postgres_db(database_name)
         self.created_postgres_db_list.add(database_name)
-        self.cursor.execute(f"CREATE DATABASE \"{database_name}\"")
+        self.cursor.execute(f'CREATE DATABASE "{database_name}"')
 
     def drop_postgres_db(self, database_name=""):
         database_name = self.database_or_default(database_name)
-        self.cursor.execute(f"DROP DATABASE IF EXISTS \"{database_name}\" WITH (FORCE)")
+        self.cursor.execute(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
         if database_name in self.created_postgres_db_list:
             self.created_postgres_db_list.remove(database_name)
 
@@ -224,7 +224,7 @@ class PostgresManager:
 
     def drop_clickhouse_postgres_db(self, database_name=""):
         database_name = self.database_or_default(database_name)
-        self.instance.query(f"DROP DATABASE IF EXISTS \"{database_name}\"")
+        self.instance.query(f'DROP DATABASE IF EXISTS "{database_name}"')
         if database_name in self.created_ch_postgres_db_list:
             self.created_ch_postgres_db_list.remove(database_name)
 
