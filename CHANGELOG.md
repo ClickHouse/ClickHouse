@@ -33,9 +33,8 @@
 * Add `hostname` column to all system log tables - it is useful if you make the system tables replicated, shared, or distributed. [#55894](https://github.com/ClickHouse/ClickHouse/pull/55894) ([Bharat Nallan](https://github.com/bharatnc)).
 * Add `CHECK ALL TABLES` query. [#56022](https://github.com/ClickHouse/ClickHouse/pull/56022) ([vdimir](https://github.com/vdimir)).
 * Added function `fromDaysSinceYearZero` which is similar to MySQL's `FROM_DAYS`. E.g. `SELECT fromDaysSinceYearZero(739136)` returns `2023-09-08`. [#56088](https://github.com/ClickHouse/ClickHouse/pull/56088) ([Joanna Hulboj](https://github.com/jh0x)).
-* Implemented a function for series period detect method using FFT. [#56171](https://github.com/ClickHouse/ClickHouse/pull/56171) ([Bhavna Jindal](https://github.com/bhavnajindal)).
 * Add an external Python tool to view backups and to extract information from them without using ClickHouse. [#56268](https://github.com/ClickHouse/ClickHouse/pull/56268) ([Vitaly Baranov](https://github.com/vitlibar)).
-* Implement a new setting called `preferred_projection_name`. If it is set to a non-empty string, the specified projection would be used if possible instead of choosing from all the candidates. [#56309](https://github.com/ClickHouse/ClickHouse/pull/56309) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Implement a new setting called `preferred_optimize_projection_name`. If it is set to a non-empty string, the specified projection would be used if possible instead of choosing from all the candidates. [#56309](https://github.com/ClickHouse/ClickHouse/pull/56309) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * Add 4-letter command for yielding/resigning leadership (https://github.com/ClickHouse/ClickHouse/issues/56352). [#56354](https://github.com/ClickHouse/ClickHouse/pull/56354) ([Pradeep Chhetri](https://github.com/chhetripradeep)). [#56620](https://github.com/ClickHouse/ClickHouse/pull/56620) ([Pradeep Chhetri](https://github.com/chhetripradeep)).
 * Added a new SQL function, `arrayRandomSample(arr, k)` which returns a sample of k elements from the input array. Similar functionality could previously be achieved only with less convenient syntax, e.g. `SELECT arrayReduce('groupArraySample(3)', range(10))`. [#56416](https://github.com/ClickHouse/ClickHouse/pull/56416) ([Robert Schulze](https://github.com/rschu1ze)).
 * Added support for `Float16` type data to use in `.npy` files. Closes [#56344](https://github.com/ClickHouse/ClickHouse/issues/56344). [#56424](https://github.com/ClickHouse/ClickHouse/pull/56424) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
@@ -51,7 +50,6 @@
 * Add support for the [well-known Protobuf types](https://protobuf.dev/reference/protobuf/google.protobuf/) in the Protobuf format. [#56741](https://github.com/ClickHouse/ClickHouse/pull/56741) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
 
 #### Performance Improvement
-* It is now possible to refer to ALIAS column in index (non-primary-key) definitions (issue [#55650](https://github.com/ClickHouse/ClickHouse/issues/55650)). Example: `CREATE TABLE tab(col UInt32, col_alias ALIAS col + 1, INDEX idx (col_alias) TYPE minmax) ENGINE = MergeTree ORDER BY col;`. [#57220](https://github.com/ClickHouse/ClickHouse/pull/57220) ([flynn](https://github.com/ucasfl)).
 * Adaptive timeouts for interacting with S3. The first attempt is made with low send and receive timeouts. [#56314](https://github.com/ClickHouse/ClickHouse/pull/56314) ([Sema Checherinda](https://github.com/CheSema)).
 * Increase the default value of `max_concurrent_queries` from 100 to 1000. This makes sense when there is a large number of connecting clients, which are slowly sending or receiving data, so the server is not limited by CPU, or when the number of CPU cores is larger than 100. Also, enable the concurrency control by default, and set the desired number of query processing threads in total as twice the number of CPU cores. It improves performance in scenarios with a very large number of concurrent queries. [#46927](https://github.com/ClickHouse/ClickHouse/pull/46927) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Support parallel evaluation of window functions. Fixes [#34688](https://github.com/ClickHouse/ClickHouse/issues/34688). [#39631](https://github.com/ClickHouse/ClickHouse/pull/39631) ([Dmitry Novik](https://github.com/novikd)).
@@ -156,7 +154,6 @@
 * Set the max memory usage for clickhouse-client (`1G`) in the CI. [#56873](https://github.com/ClickHouse/ClickHouse/pull/56873) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
-
 * Fix exerimental Analyzer - insertion from select with subquery referencing insertion table should process only insertion block. [#50857](https://github.com/ClickHouse/ClickHouse/pull/50857) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * Fix a bug in `str_to_map` function. [#56423](https://github.com/ClickHouse/ClickHouse/pull/56423) ([Arthur Passos](https://github.com/arthurpassos)).
 * Keeper `reconfig`: add timeout before yielding/taking leadership [#53481](https://github.com/ClickHouse/ClickHouse/pull/53481) ([Mike Kot](https://github.com/myrrc)).
