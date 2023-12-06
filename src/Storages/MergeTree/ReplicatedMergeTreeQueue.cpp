@@ -671,8 +671,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
                 {
                     if (std::find(entry.replicas.begin(), entry.replicas.end(), storage.replica_name) == entry.replicas.end())
                     {
-                        LOG_DEBUG(log, "This replica was not assigned to {} (only on replicas: {})",
-                            entry.getDescriptionForLogs(format_version), fmt::join(entry.replicas, ", "));
+                        LOG_DEBUG(log, "This replica was not assigned to {}", entry.getDescriptionForLogs(format_version));
                         continue;
                     }
                 }
