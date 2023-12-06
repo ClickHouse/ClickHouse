@@ -66,7 +66,7 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
     # Let's have it the same as the other ASG
     # UPDATE THE COMMENT ON CHANGES
     scale_up = 3
-    if runner_type.startswith('private-'):
+    if runner_type.startswith("private-"):
         scale_up = 1
     elif runner_type == "limited-tester":
         # The limited runners should inflate and deflate faster

@@ -91,7 +91,14 @@ class TestSetCapacity(unittest.TestCase):
             ),
             TestCase("lower-min", 10, 5, 20, [Queue("queued", 5, "lower-min")], 10),
             # scale up group with prefix private-
-            TestCase("private-increase", 1, 13, 20, [Queue("queued", 10, "private-increase")], 10),
+            TestCase(
+                "private-increase",
+                1,
+                13,
+                20,
+                [Queue("queued", 10, "private-increase")],
+                10,
+            ),
             # Decrease capacity
             TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 5),
             TestCase(
