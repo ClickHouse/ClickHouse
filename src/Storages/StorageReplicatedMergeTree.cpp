@@ -4021,15 +4021,29 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     if (cluster.has_value())
     {
         const auto & partition = cluster->getClusterPartition(part.info.partition_id);
-        partition_replicas = partition.getAllReplicas();
+        /// NOTE: we cannot use all replicas here, because there is no proper
+        /// sync between queue.load() and queue.pullLogsToQueue(), and so if
+        /// here:
+        /// - we will have partition that is under migration
+        /// - the mutation will be assigned from the replica that is non active
+        /// - and there will be new mutation for it in "mutations" folder (to trigger mutation)
+        /// then it may create completely different mutation, because there is
+        /// no guarantee that queue.load() completes and loads all pending
+        /// mutations (that had been copied during cluster partition migration
+        /// from source replica).
+        Strings partition_active_replicas = partition.getActiveReplicas();
         partition_version = partition.getVersion();
-        if (std::find(partition_replicas.begin(), partition_replicas.end(), replica_name) == partition_replicas.end())
+        if (std::find(partition_active_replicas.begin(), partition_active_replicas.end(), replica_name) == partition_active_replicas.end())
         {
             LOG_DEBUG(log, "This replica is not responsible for {} (only on replicas: {})",
-                part.info.getPartNameForLogs(), fmt::join(partition_replicas, ", "));
+                part.info.getPartNameForLogs(), fmt::join(partition_active_replicas, ", "));
             /// Fallback for the caller
             return CreateMergeEntryResult::Other;
         }
+        /// But MUTATE_PART should be assigned on all replicas, since the
+        /// replica that is under migration will not get new mutations
+        /// otherwise.
+        partition_replicas = partition.getAllReplicas();
     }
 
 
