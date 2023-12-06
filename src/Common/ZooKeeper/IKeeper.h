@@ -212,9 +212,6 @@ struct CreateRequest : virtual Request
     bool is_sequential = false;
     ACLs acls;
 
-    /// should it succeed if node already exists
-    bool not_exists = false;
-
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
@@ -513,18 +510,6 @@ public:
     const Error code;
 };
 
-class SimpleFaultInjection
-{
-public:
-    SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_);
-    ~SimpleFaultInjection() noexcept(false);
-
-private:
-    Float64 probability_after = 0;
-    String description;
-    int exceptions_level = 0;
-};
-
 
 /** Usage scenario:
   * - create an object and issue commands;
@@ -543,15 +528,6 @@ public:
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;
-
-    /// Get the current connected node idx.
-    virtual Int8 getConnectedNodeIdx() const = 0;
-
-    /// Get the current connected host and port.
-    virtual String getConnectedHostPort() const = 0;
-
-    /// Get the xid of current connection.
-    virtual int32_t getConnectionXid() const = 0;
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;

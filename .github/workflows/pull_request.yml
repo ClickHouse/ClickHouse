@@ -14,7 +14,9 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths-ignore:
-      - '**.md'
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - 'SECURITY.md'
       - 'docker/docs/**'
       - 'docs/**'
       - 'utils/check-style/aspell-ignore/**'
@@ -48,10 +50,10 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           echo "Testing the main ci directory"
-          python3 -m unittest discover -s . -p 'test_*.py'
+          python3 -m unittest discover -s . -p '*_test.py'
           for dir in *_lambda/; do
             echo "Testing $dir"
-            python3 -m unittest discover -s "$dir" -p 'test_*.py'
+            python3 -m unittest discover -s "$dir" -p '*_test.py'
           done
   DockerHubPushAarch64:
     needs: CheckLabels
@@ -531,11 +533,6 @@ jobs:
         KILL_TIMEOUT=3600
       run_command: |
         cd "$REPO_COPY/tests/ci"
-
-        mkdir -p "${REPORTS_PATH}/integration"
-        mkdir -p "${REPORTS_PATH}/stateless"
-        cp -r ${REPORTS_PATH}/changed_images* ${REPORTS_PATH}/integration
-        cp -r ${REPORTS_PATH}/changed_images* ${REPORTS_PATH}/stateless
 
         TEMP_PATH="${TEMP_PATH}/integration" \
           REPORTS_PATH="${REPORTS_PATH}/integration" \
@@ -1088,10 +1085,3 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, 'jepsen-test')
     needs: [BuilderBinRelease]
     uses: ./.github/workflows/jepsen.yml
-#############################################################################################
-####################################### libFuzzer ###########################################
-#############################################################################################
-  libFuzzer:
-    if: contains(github.event.pull_request.labels.*.name, 'libFuzzer')
-    needs: [DockerHubPush, StyleCheck]
-    uses: ./.github/workflows/libfuzzer.yml

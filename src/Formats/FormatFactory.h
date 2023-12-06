@@ -71,9 +71,6 @@ public:
         size_t min_bytes,
         size_t max_rows)>;
 
-    using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
-        const FormatSettings & settings)>;
-
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
@@ -135,7 +132,7 @@ private:
         InputCreator input_creator;
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
-        FileSegmentationEngineCreator file_segmentation_engine_creator;
+        FileSegmentationEngine file_segmentation_engine;
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
@@ -170,8 +167,7 @@ public:
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
         // because parallel read after decompression is not possible
-        CompressionMethod compression = CompressionMethod::None,
-        bool need_only_count = false) const;
+        CompressionMethod compression = CompressionMethod::None) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
@@ -205,8 +201,6 @@ public:
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
-
-    void registerFileSegmentationEngineCreator(const String & name, FileSegmentationEngineCreator file_segmentation_engine_creator);
 
     void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 

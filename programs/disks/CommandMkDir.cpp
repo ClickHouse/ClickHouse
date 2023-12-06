@@ -18,10 +18,11 @@ public:
     {
         command_name = "mkdir";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Create a directory";
+        description = "Create directory or directories recursively";
         usage = "mkdir [OPTION]... <PATH>";
         command_option_description->add_options()
-            ("recursive", "recursively create directories");
+            ("recursive", "recursively create directories")
+            ;
     }
 
     void processOptions(

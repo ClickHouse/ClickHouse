@@ -68,7 +68,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addDate
 addDays
 addHours
 addMicroseconds
@@ -126,7 +125,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -231,7 +229,6 @@ dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
-decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
@@ -320,7 +317,6 @@ geoDistance
 geohashDecode
 geohashEncode
 geohashesInBox
-getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -432,9 +428,10 @@ mapUpdate
 match
 materialize
 max2
+meiliMatch
 metroHash64
 min2
-minSampleSizeContinuous
+minSampleSizeContinous
 minSampleSizeConversion
 minus
 modulo
@@ -670,7 +667,6 @@ splitByWhitespace
 sqrt
 startsWith
 subBitmap
-subDate
 substring
 substringIndex
 substringIndexUTF8

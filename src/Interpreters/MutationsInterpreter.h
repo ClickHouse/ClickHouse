@@ -91,8 +91,6 @@ public:
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
-    NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
-
     NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
 
     struct MutationKind
@@ -100,7 +98,7 @@ public:
         enum MutationKindEnum
         {
             MUTATE_UNKNOWN,
-            MUTATE_INDEX_STATISTIC_PROJECTION,
+            MUTATE_INDEX_PROJECTION,
             MUTATE_OTHER,
         } mutation_kind = MUTATE_UNKNOWN;
 
@@ -124,7 +122,6 @@ public:
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;
         bool hasProjection(const String & name) const;
-        bool isCompactPart() const;
 
         void read(
             Stage & first_stage,
@@ -216,7 +213,6 @@ private:
 
     NameSet materialized_indices;
     NameSet materialized_projections;
-    NameSet materialized_statistics;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

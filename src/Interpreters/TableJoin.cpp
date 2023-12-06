@@ -112,7 +112,6 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
-    , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
 {
 }
@@ -936,9 +935,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::PARALLEL_HASH) == join_algorithm.end())
-        return false;
-    if (!right_storage_name.empty())
+    if (!right_storage_name.empty() || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
         return false;
     if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
         return false;
@@ -955,11 +952,5 @@ ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context) const
     auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
-
-size_t TableJoin::getMaxMemoryUsage() const
-{
-    return max_memory_usage;
-}
-
 
 }

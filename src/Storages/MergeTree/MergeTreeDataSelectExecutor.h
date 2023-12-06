@@ -126,7 +126,7 @@ private:
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
-        const std::optional<PartitionPruner> & partition_pruner,
+        std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         PartFilterCounters & counters);
 
@@ -138,7 +138,7 @@ private:
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
-        const std::optional<PartitionPruner> & partition_pruner,
+        std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context,
         PartFilterCounters & counters,
@@ -170,16 +170,10 @@ public:
         const ASTPtr & query,
         ContextPtr context);
 
-    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
-        const MergeTreeData & data,
-        const MergeTreeData::DataPartsVector & parts,
-        const ActionsDAGPtr & filter_dag,
-        ContextPtr context);
-
     /// Filter parts using minmax index and partition key.
     static void filterPartsByPartition(
-        const std::optional<PartitionPruner> & partition_pruner,
-        const std::optional<KeyCondition> & minmax_idx_condition,
+        std::optional<PartitionPruner> & partition_pruner,
+        std::optional<KeyCondition> & minmax_idx_condition,
         MergeTreeData::DataPartsVector & parts,
         std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
