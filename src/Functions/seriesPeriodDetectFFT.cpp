@@ -63,6 +63,11 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        return ColumnFloat64::create(input_rows_count);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
