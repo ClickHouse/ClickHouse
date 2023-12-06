@@ -392,17 +392,11 @@ private:
                 if (unit == IntervalKind::Week || unit == IntervalKind::Month || unit == IntervalKind::Quarter || unit == IntervalKind::Year)
                 {
                     if (isDate(result_type) || isDate32(result_type))
-                    {
                         result_data[i] += origin + res;
-                    }
                     else if (isDateTime64(result_type))
-                    {
                         result_data[i] += origin + (res * SECONDS_PER_DAY * scale_multiplier);
-                    }
                     else
-                    {
                         result_data[i] += origin + res * SECONDS_PER_DAY;
-                    }
                 }
                 else
                 {
@@ -410,13 +404,11 @@ private:
                         res = res / SECONDS_PER_DAY;
 
                     if (scale_on_precision > scale_multiplier)
-                    {
                         result_data[i] += (origin + res / scale_diff) * scale_diff;
-                    }
+                    else if (scale_on_precision == scale_multiplier && scale_on_precision != 10) /// scale == 10 is default case
+                        result_data[i] += origin + (res * scale_on_precision);
                     else
-                    {
                         result_data[i] += origin + res * scale_diff;
-                    }
                 }
             }
         }
