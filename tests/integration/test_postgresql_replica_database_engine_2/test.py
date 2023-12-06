@@ -33,6 +33,7 @@ from helpers.postgres_utility import (
     postgres_table_template_3,
     postgres_table_template_4,
     postgres_table_template_5,
+    postgres_table_template_6,
 )
 from helpers.postgres_utility import queries
 
@@ -623,30 +624,61 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
 def test_table_override(started_cluster):
     table_name = "table_override"
     materialized_database = "test_database"
-    pg_manager.create_postgres_table(table_name, template=postgres_table_template_5)
+
+    pg_manager.create_postgres_table(table_name, template=postgres_table_template_6)
     instance.query(
-        f"create table {table_name}(key Int32, value UUID) engine = PostgreSQL (postgres1, table={table_name})"
+        f"insert into postgres_database.{table_name} select number, 'test' from numbers(10)"
     )
-    instance.query(
-        f"insert into {table_name} select number, generateUUIDv4() from numbers(10)"
-    )
-    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value UUID) PARTITION BY key)"
+
+    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value String) PARTITION BY key)"
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
         settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+        materialized_database=materialized_database,
         table_overrides=table_overrides,
     )
-    assert_nested_table_is_created(instance, table_name, materialized_database)
-    result = instance.query(f"show create table {materialized_database}.{table_name}")
-    print(result)
-    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
-    assert result.strip() == expected
-    time.sleep(5)
-    query = f"select * from {materialized_database}.{table_name} order by key"
-    expected = instance.query(f"select * from {table_name} order by key")
-    instance.query(f"drop table {table_name} sync")
-    assert_eq_with_retry(instance, query, expected)
+
+    check_tables_are_synchronized(
+        instance, table_name, postgres_database=pg_manager.get_default_database()
+    )
+
+    assert 10 == int(instance.query(f"SELECT count() FROM {materialized_database}.{table_name}"))
+
+    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` String,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
+    assert expected == instance.query(f"show create table {materialized_database}.{table_name}").strip()
+
+    assert "test" == instance.query(f"SELECT value FROM {materialized_database}.{table_name} WHERE key = 2").strip()
+
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database_name="postgres_database",
+        database=True,
+        auto_commit=True,
+    )
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT count(*) FROM {table_name}")
+    assert 10 == cursor.fetchall()[0][0]
+
+    pg_manager.execute(f"UPDATE {table_name} SET value='kek' WHERE key=2")
+
+    cursor.execute(f"SELECT value FROM {table_name} WHERE key=2")
+    assert "kek" == cursor.fetchall()[0][0]
+
+    pg_manager.execute(f"DELETE FROM {table_name} WHERE key=2")
+
+    cursor.execute(f"SELECT count(*) FROM {table_name}")
+    assert 9 == cursor.fetchall()[0][0]
+
+    conn.close()
+
+    check_tables_are_synchronized(
+        instance, table_name, postgres_database=pg_manager.get_default_database()
+    )
+
+    assert "" == instance.query(f"SELECT value FROM {materialized_database}.{table_name} WHERE key = 2").strip()
+
 
 
 def test_materialized_view(started_cluster):
