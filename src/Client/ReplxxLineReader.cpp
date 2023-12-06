@@ -504,13 +504,14 @@ void ReplxxLineReader::addToHistory(const String & line)
 
 void ReplxxLineReader::openEditor()
 {
-    TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
-    editor_file.write(rx.get_state().text());
-    editor_file.close();
-
-    char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
     try
     {
+        TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
+        editor_file.write(rx.get_state().text());
+        editor_file.close();
+
+        char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
+
         if (executeCommand(argv) == 0)
         {
             const std::string & new_query = readFile(editor_file.getPath());
@@ -520,6 +521,7 @@ void ReplxxLineReader::openEditor()
     catch (const std::runtime_error & e)
     {
         rx.print(e.what());
+        rx.print("\n");
     }
 
     if (bracketed_paste_enabled)
