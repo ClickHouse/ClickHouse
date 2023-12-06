@@ -291,8 +291,8 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
                         total_number_of_parts_system += parts;
                     }
 
-                    // fetch the list of all parts regardless of their state
-                    auto all_parts = table_merge_tree->getAllDataPartsVector();
+                    // only fetch the parts which are in active state
+                    auto all_parts = table_merge_tree->getDataPartsVectorForInternalUsage();
 
                     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
                     {
