@@ -803,6 +803,8 @@ void ReplicatedMergeTreeClusterBalancer::cleanupOldPartitions(const zkutil::ZooK
         if (std::find(all_replicas.begin(), all_replicas.end(), replica_name) != all_replicas.end())
             continue;
 
+        /// FIXME: no syncronization between queue.load(), this leads to
+        /// LOGICAL_ERROR, due to double call to removePartsFromWorkingSet()
         enqueueDropPartition(zookeeper, replica_name, partition.getPartitionId());
     }
 }
