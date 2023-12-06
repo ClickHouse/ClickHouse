@@ -493,12 +493,6 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
         name,
         [](const StorageFactory::Arguments & args)
         {
-            if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_s3queue)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3Queue is experimental. "
-                                "You can enable it with the `allow_experimental_s3queue` setting.");
-            }
-
             auto & engine_args = args.engine_args;
             if (engine_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
