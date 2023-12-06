@@ -222,39 +222,41 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
         {
             const auto & name_and_type = columns[i];
 
-            /// NOTE: If the relation is empty, then array_ndims returns NULL.
-            /// If this is the case, then assume dimensions=1. This covers most
-            /// use cases, but will be incorrect for empty tables with
-            /// multi-dimension arrays. The other solutions would be to drop
-            /// support for empty tables OR attempt fallback to a discovered
-            /// array_ndims CHECK constraint.
-            int dimensions;
+            /// If the relation is empty, then array_ndims returns NULL.
+            /// ClickHouse cannot support this use case.
             if (isTableEmpty(tx, postgres_table))
-            {
-                dimensions = 1;
-            }
-            else
-            {
-                /// All rows must contain the same number of dimensions.
-                /// 1 is ok. If number of dimensions in all rows is not the same -
-                /// such arrays are not able to be used as ClickHouse Array at all.
-                ///
-                /// Assume dimensions=1 for empty arrays.
-                auto postgres_column = doubleQuoteString(name_and_type.name);
-                pqxx::result result{tx.exec(fmt::format(
-                    "SELECT {} IS NULL, COALESCE(array_ndims({}), 1) "
-                    "FROM {} LIMIT 1;",
-                    postgres_column,
-                    postgres_column,
-                    postgres_table))};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL relation containing arrays cannot be empty: {}", postgres_table);
 
-                /// Nullable(Array) is not supported.
-                auto is_null = result[0][0].as<bool>();
-                if (is_null)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL array cannot be NULL. Column: {}", postgres_column);
+            /// All rows must contain the same number of dimensions.
+            /// 1 is ok. If number of dimensions in all rows is not the same -
+            /// such arrays are not able to be used as ClickHouse Array at all.
+            ///
+            /// For empty arrays, array_ndims([]) will return NULL.
+            auto postgres_column = doubleQuoteString(name_and_type.name);
+            pqxx::result result{tx.exec(fmt::format(
+                "SELECT {} IS NULL, array_ndims({}) "
+                "FROM {} LIMIT 1;",
+                postgres_column,
+                postgres_column,
+                postgres_table))};
 
-                dimensions = result[0][1].as<int>();
+            /// Nullable(Array) is not supported.
+            auto is_null_array = result[0][0].as<bool>();
+            if (is_null_array)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL array cannot be NULL: {}.{}", postgres_table, postgres_column);
+
+            /// Cannot infer dimension of empty arrays.
+            auto is_empty_array = result[0][1].is_null();
+            if (is_empty_array)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}",
+                    postgres_table,
+                    postgres_column);
             }
+
+            int dimensions = result[0][1].as<int>();
 
             /// It is always 1d array if it is in recheck.
             DataTypePtr type = assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType();
