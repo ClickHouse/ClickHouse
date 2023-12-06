@@ -14,7 +14,7 @@
 
 # 2023 Changelog
 
-### <a id="2311"></a> ClickHouse release 23.11, 2023-12-05
+### <a id="2311"></a> ClickHouse release 23.11, 2023-12-06
 
 #### Backward Incompatible Change
 * The default ClickHouse server configuration file has enabled `access_management` (user manipulation by SQL queries) and `named_collection_control` (manipulation of named collection by SQL queries) for the `default` user by default. This closes [#56482](https://github.com/ClickHouse/ClickHouse/issues/56482). [#56619](https://github.com/ClickHouse/ClickHouse/pull/56619) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
