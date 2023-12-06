@@ -189,7 +189,8 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
-    set_and_key->set->fillSetElements();
+    if (!set_and_key->set->hasSetElements())
+        set_and_key->set->fillSetElements();
 
     return buildSetInplace(context);
 }
