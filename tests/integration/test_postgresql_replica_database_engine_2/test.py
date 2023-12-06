@@ -58,6 +58,7 @@ instance2 = cluster.add_instance(
 pg_manager = PostgresManager()
 pg_manager2 = PostgresManager()
 pg_manager_instance2 = PostgresManager()
+pg_manager3 = PostgresManager()
 
 
 @pytest.fixture(scope="module")
@@ -79,6 +80,12 @@ def started_cluster():
         )
         pg_manager2.init(
             instance2, cluster.postgres_ip, cluster.postgres_port, "postgres_database2"
+        )
+        pg_manager3.init(
+            instance,
+            cluster.postgres_ip,
+            cluster.postgres_port,
+            default_database="postgres-postgres",
         )
 
         yield cluster
@@ -808,6 +815,28 @@ def test_replica_consumer(started_cluster):
     for pm in [pg_manager, pg_manager_instance2]:
         pm.drop_materialized_db()
     pg_manager_instance2.clear()
+
+
+def test_symbols_in_publication_name(started_cluster):
+    table = "test_symbols_in_publication_name"
+
+    pg_manager3.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO `{pg_manager3.get_default_database()}`.`{table}` SELECT number, number from numbers(0, 50)"
+    )
+
+    pg_manager3.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_manager3.get_default_database()
+    )
 
 
 if __name__ == "__main__":
