@@ -825,11 +825,14 @@ def test_failed_load_from_snapshot(started_cluster):
     )
 
     # Create a table with wrong table structure
-    assert "pqxx::conversion_error: Could not convert string to i" in instance.query_and_get_error(
-        f"""
+    assert (
+        "pqxx::conversion_error: Could not convert string to i"
+        in instance.query_and_get_error(
+            f"""
         SET allow_experimental_materialized_postgresql_table=1;
         CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', 'mysecretpassword') ORDER BY a
         """
+        )
     )
 
 
