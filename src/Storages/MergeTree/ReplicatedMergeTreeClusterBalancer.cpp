@@ -577,7 +577,12 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
         }
     }
 
-    storage.removePartsFromWorkingSet(NO_TRANSACTION_RAW, parts_to_remove_from_working_set, true);
+    /// NOTE: it is OK not to acquire lock here, since parts for this partition should not be changed:
+    /// - by user, because everything should go via coordinator
+    /// - by clickhouse, because they should not be active
+    ///
+    /// FIXME: but this is not always true, due to deferred DROP_RANGE (enqueueDropPartition())
+    storage.removePartsFromWorkingSet(NO_TRANSACTION_RAW, parts_to_remove_from_working_set, false);
 
     std::unordered_set<String> created_get_parts;
 
