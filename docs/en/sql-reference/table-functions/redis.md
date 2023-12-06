@@ -34,6 +34,7 @@ redis(host:port, key, structure[, db_index[, password[, pool_size]]])
 
 - queries with key equals or in filtering will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
 
+[Named collections](/docs/en/operations/named-collections.md) are not supported for `redis` table function at the moment.
 
 **Returned Value**
 
