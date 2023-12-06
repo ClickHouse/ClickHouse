@@ -4,7 +4,7 @@ sidebar_position: 181
 sidebar_label: S3Queue
 ---
 
-# [experimental] S3Queue Table Engine
+# S3Queue Table Engine
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) engines, but provides S3-specific features.
 
 ## Create Table {#creating-a-table}
