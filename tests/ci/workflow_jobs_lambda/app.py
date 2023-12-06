@@ -160,9 +160,7 @@ def handler(event: dict, context: Any) -> dict:
         steps = 0
     else:
         # We record only finished steps
-        steps = len(
-            [step for step in wf_job["steps"] if step["conclusion"] is not None]
-        )
+        steps = sum(1 for st in wf_job["steps"] if st["conclusion"] is not None)
 
     workflow_job = WorkflowJob(
         wf_job["id"],
