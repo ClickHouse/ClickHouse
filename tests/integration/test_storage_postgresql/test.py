@@ -202,6 +202,53 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(f"DROP TABLE test_types")
     cursor.execute(f"DROP TABLE test_array_dimensions")
 
+def test_postgres_array_ndim_error_messges(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+
+    # cleanup
+    cursor.execute('DROP VIEW  IF EXISTS array_ndim_view;')
+    cursor.execute('DROP TABLE IF EXISTS array_ndim_table;')
+
+    # setup
+    cursor.execute('CREATE TABLE array_ndim_table (x INTEGER, "Mixed-case with spaces" INTEGER[]);')
+    cursor.execute('CREATE VIEW  array_ndim_view AS SELECT * FROM array_ndim_table;')
+    describe_table = """
+    DESCRIBE TABLE postgresql(
+        'postgres1:5432', 'postgres', 'array_ndim_view',
+        'postgres', 'mysecretpassword'
+    )
+    """
+
+    # View with array column cannot be empty. Should throw a useful error message.
+    # (Cannot infer array dimension.)
+    try:
+        node1.query(describe_table)
+        assert False
+    except Exception as error:
+        assert ('PostgreSQL relation containing arrays cannot be empty: array_ndim_view' in str(error))
+
+    # View cannot have empty array. Should throw useful error message.
+    # (Cannot infer array dimension.)
+    cursor.execute('TRUNCATE array_ndim_table;')
+    cursor.execute("INSERT INTO array_ndim_table VALUES (1234, '{}');")
+    try:
+        node1.query(describe_table)
+        assert False
+    except Exception as error:
+        assert ('PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces"' in str(error))
+
+    # View cannot have NULL array value. Should throw useful error message.
+    cursor.execute('TRUNCATE array_ndim_table;')
+    cursor.execute('INSERT INTO array_ndim_table VALUES (1234, NULL);')
+    try:
+        node1.query(describe_table)
+        assert False
+    except Exception as error:
+        assert ('PostgreSQL array cannot be NULL: array_ndim_view."Mixed-case with spaces"' in str(error))
+
+    # cleanup
+    cursor.execute('DROP VIEW  IF EXISTS array_ndim_view;')
+    cursor.execute('DROP TABLE IF EXISTS array_ndim_table;')
 
 def test_non_default_schema(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_pg_table_schema")
