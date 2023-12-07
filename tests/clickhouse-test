@@ -2241,7 +2241,7 @@ def reportLogStats(args):
         GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
-    print("\nTop messages that don't match its format string:\n")
+    print("\nTop messages not matching their format strings:\n")
     print(value)
     print("\n")
 
