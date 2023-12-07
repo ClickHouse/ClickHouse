@@ -1780,12 +1780,11 @@ Result:
 ## sqid
 
 Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).
-To use this function, set setting `allow_experimental_hash_functions = 1`.
 
 **Syntax**
 
 ```sql
-sqid(number1,...)
+sqid(number1, ...)
 ```
 
 **Arguments**

@@ -1349,12 +1349,8 @@ bool StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
 
-    const auto & old_columns = metadata_snapshot->getColumns();
-
-    /// Replicated tables on different replicas must have exactly same column definitions
-    /// We cannot compare column descriptions with `==` here because data types like SimpleAggregateFunction
-    /// may have different aggregate function in 1st argument but still compatible if 2nd argument is same.
-    if (columns_from_zk.identical(old_columns))
+    const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
+    if (columns_from_zk == old_columns)
         return true;
 
     if (!strict_check && metadata_stat.version != 0)

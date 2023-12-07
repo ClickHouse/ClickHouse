@@ -1542,7 +1542,6 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
-getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1573,7 +1572,6 @@ groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
-groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1588,7 +1586,6 @@ grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
-grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
@@ -2235,7 +2232,6 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID

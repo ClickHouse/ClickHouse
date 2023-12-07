@@ -1,9 +1,12 @@
+#include <base/getFQDNOrHostName.h>
 #include <Interpreters/MetricLog.h>
 #include <Common/ThreadPool.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -13,6 +16,7 @@ NamesAndTypesList MetricLogElement::getNamesAndTypes()
 {
     NamesAndTypesList columns_with_type_and_name;
 
+    columns_with_type_and_name.emplace_back("hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     columns_with_type_and_name.emplace_back("event_date", std::make_shared<DataTypeDate>());
     columns_with_type_and_name.emplace_back("event_time", std::make_shared<DataTypeDateTime>());
     columns_with_type_and_name.emplace_back("event_time_microseconds", std::make_shared<DataTypeDateTime64>(6));
@@ -41,6 +45,7 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
 
+    columns[column_idx++]->insert(getFQDNOrHostName());
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
