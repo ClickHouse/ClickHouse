@@ -76,7 +76,7 @@ void registerDisks(bool global_skip_access_check)
     registerDiskLocal(factory, global_skip_access_check);
 
 #if USE_AWS_S3
-    registerDiskS3(factory, global_skip_access_check);
+    registerDiskS3(factory, global_skip_access_check, false, false);
 #endif
 }
 
