@@ -1,8 +1,6 @@
 zero_copy:
 <table_shared_id>
-all_0_0_0
 tables:
 table
-alter_partition_version async_blocks block_numbers blocks columns leader_election log lost_part_count metadata mutations nonincrement_block_numbers part_moves_shard pinned_part_uuids quorum replicas table_shared_id temp zero_copy_hdfs zero_copy_s3
 zero_copy:
 tables:
