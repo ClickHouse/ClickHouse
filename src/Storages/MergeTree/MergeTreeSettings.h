@@ -183,10 +183,10 @@ struct Settings;
     M(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_before_lock, 1ULL * 1024 * 1024 * 1024, "If zero copy replication is enabled sleep random amount of time before trying to lock depending on parts size for merge or mutation", 0) \
     M(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
     M(UInt64, sleep_before_loading_outdated_parts_ms, 0, "For testing. Do not change it.", 0) \
-    M(Bool, always_use_copy_instead_of_hardlinks, false, "Only available in ClickHouse Cloud", 0) \
-    M(Bool, disable_freeze_partition_for_zero_copy_replication, true, "Only available in ClickHouse Cloud", 0) \
-    M(Bool, disable_detach_partition_for_zero_copy_replication, true, "Only available in ClickHouse Cloud", 0) \
-    M(Bool, disable_fetch_partition_for_zero_copy_replication, true, "Only available in ClickHouse Cloud", 0) \
+    M(Bool, always_use_copy_instead_of_hardlinks, false, "Always copy data instead of hardlinking during mutations/replaces/detaches and so on.", 0) \
+    M(Bool, disable_freeze_partition_for_zero_copy_replication, true, "Disable FREEZE PARTITION query for zero copy replication.", 0) \
+    M(Bool, disable_detach_partition_for_zero_copy_replication, true, "Disable DETACH PARTITION query for zero copy replication.", 0) \
+    M(Bool, disable_fetch_partition_for_zero_copy_replication, true, "Disable FETCH PARTITION query for zero copy replication.", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     M(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", 0) \

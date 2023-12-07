@@ -190,6 +190,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int TABLE_IS_DROPPED;
     extern const int CANNOT_BACKUP_TABLE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ActionLocks
@@ -2689,7 +2690,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             IDataPartStorage::ClonePartParams clone_params
             {
-                .copy_instead_of_hardlink = (our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport(),
+                .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
@@ -4778,7 +4779,12 @@ bool StorageReplicatedMergeTree::fetchPart(
         get_part = [&, part_to_clone]()
         {
             chassert(!is_zero_copy_part(part_to_clone));
-            IDataPartStorage::ClonePartParams clone_params{ .keep_metadata_version = true };
+            IDataPartStorage::ClonePartParams clone_params
+            {
+                .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
+                .keep_metadata_version = true,
+            };
+
             auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(
                 part_to_clone,
                 "tmp_clone_",
@@ -4787,6 +4793,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 clone_params,
                 getContext()->getReadSettings(),
                 getContext()->getWriteSettings());
+
             part_directory_lock = std::move(lock);
             return cloned_part;
         };
@@ -6371,6 +6378,18 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "DROP PARTITION cannot be done on this replica because it is not a leader");
 
+    auto settings = getSettings();
+
+    if (detach && settings->disable_detach_partition_for_zero_copy_replication
+        && settings->allow_remote_fs_zero_copy_replication)
+    {
+        for (const auto & disk : getDisks())
+        {
+            if (disk->supportZeroCopyReplication())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DETACH PARTITION queries are disabled.");
+        }
+    }
+
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
 
     const auto * partition_ast = partition->as<ASTPartition>();
@@ -7030,6 +7049,8 @@ void StorageReplicatedMergeTree::fetchPartition(
     bool fetch_part,
     ContextPtr query_context)
 {
+    auto settings = getSettings();
+
     Macros::MacroExpansionInfo info;
     info.expand_special_macros_only = false;
     info.table_id = getStorageID();
@@ -7039,6 +7060,16 @@ void StorageReplicatedMergeTree::fetchPartition(
     String from = zkutil::extractZooKeeperPath(expand_from, /* check_starts_with_slash */ true);
     if (from.empty())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "ZooKeeper path should not be empty");
+
+    if (settings->disable_fetch_partition_for_zero_copy_replication
+        && settings->allow_remote_fs_zero_copy_replication)
+    {
+        for (const auto & disk : getDisks())
+        {
+            if (disk->supportZeroCopyReplication())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FETCH PARTITION queries are disabled.");
+        }
+    }
 
     zkutil::ZooKeeperPtr zookeeper;
     if (from_zookeeper_name != default_zookeeper_name)
@@ -7892,7 +7923,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 || dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
             IDataPartStorage::ClonePartParams clone_params
             {
-                .copy_instead_of_hardlink = zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport(),
+                .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
             auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
@@ -8140,7 +8171,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
             IDataPartStorage::ClonePartParams clone_params
             {
-                .copy_instead_of_hardlink = zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport(),
+                .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
             };
             auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(

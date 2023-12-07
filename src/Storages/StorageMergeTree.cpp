@@ -8,6 +8,7 @@
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
+#include "Common/Exception.h"
 #include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ProfileEventsScope.h>
@@ -2138,7 +2139,12 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
+        IDataPartStorage::ClonePartParams clone_params
+        {
+            .txn = local_context->getCurrentTransaction(),
+            .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
+        };
+
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
             src_part,
             TMP_PREFIX,
@@ -2148,6 +2154,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             local_context->getReadSettings(),
             local_context->getWriteSettings()
         );
+
         dst_parts.emplace_back(std::move(dst_part));
         dst_parts_locks.emplace_back(std::move(part_lock));
     }
