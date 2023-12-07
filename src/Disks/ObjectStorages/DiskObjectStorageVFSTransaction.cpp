@@ -49,14 +49,14 @@ void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & pa
 struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectStorageOperation
 {
     zkutil::ZooKeeperPtr zookeeper;
-    VFSTraits traits;
+    VFSTraits traits;  // not clear if it is safe to have reference, so lets copy so far
 
     RemoveRecursiveObjectStorageVFSOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         const String & path_,
         zkutil::ZooKeeperPtr zookeeper_,
-        VFSTraits traits_)
+        const VFSTraits & traits_)
         : RemoveRecursiveObjectStorageOperation(
             object_storage_,
             metadata_storage_,
@@ -189,7 +189,7 @@ void DiskObjectStorageVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
-            object_storage, metadata_storage, read_settings, write_settings, from_file_path, to_file_path, zookeeper, traits));
+        object_storage, metadata_storage, read_settings, write_settings, from_file_path, to_file_path, zookeeper, traits));
 }
 
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(VFSTransactionLogItem::Type type, StoredObjects && objects)
