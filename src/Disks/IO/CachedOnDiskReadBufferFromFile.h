@@ -60,6 +60,10 @@ public:
         REMOTE_FS_READ_AND_PUT_IN_CACHE,
     };
 
+    bool isSeekCheap() override;
+
+    bool isContentCached(size_t offset, size_t size) override;
+
 private:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 

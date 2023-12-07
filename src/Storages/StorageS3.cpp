@@ -241,10 +241,10 @@ static std::vector<String> filterKeysForPartitionPruning(
 
         auto block = getBlockWithVirtuals(virtual_columns, bucket, result_keys);
 
-        auto filter_actions = VirtualColumnUtils::splitFilterDagForAllowedInputs(block, filter_dag, context);
+        auto filter_actions = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), block);
         if (!filter_actions)
             continue;
-        VirtualColumnUtils::filterBlockWithQuery(filter_actions, block, context);
+        VirtualColumnUtils::filterBlockWithDAG(filter_actions, block, context);
 
         result_keys = VirtualColumnUtils::extractSingleValueFromBlock<String>(block, "_key");
     }
@@ -865,7 +865,7 @@ Chunk StorageS3Source::generate()
             if (const auto * input_format = reader.getInputFormat())
                 chunk_size = reader.getInputFormat()->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath());
+            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath(), reader.getFileSize());
             return chunk;
         }
 
@@ -1143,7 +1143,7 @@ StorageS3::StorageS3(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
@@ -1437,12 +1437,15 @@ bool StorageS3::Configuration::update(ContextPtr context)
 
 void StorageS3::Configuration::connect(ContextPtr context)
 {
+    const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
+    const Settings & local_settings = context->getSettingsRef();
+
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings.region,
         context->getRemoteHostFilter(),
-        static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
-        static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
-        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
+        static_cast<unsigned>(global_settings.s3_max_redirects),
+        static_cast<unsigned>(global_settings.s3_retry_attempts),
+        global_settings.enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         request_settings.get_request_throttler,
         request_settings.put_request_throttler,
@@ -1450,7 +1453,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.http_connection_pool_size = context->getGlobalContext()->getSettingsRef().s3_http_connection_pool_size;
+    client_configuration.http_connection_pool_size = global_settings.s3_http_connection_pool_size;
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
@@ -1461,6 +1464,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
     client = S3::ClientFactory::instance().create(
         client_configuration,
         url.is_virtual_hosted_style,
+        local_settings.s3_disable_checksum,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         auth_settings.server_side_encryption_customer_key_base64,
@@ -1824,6 +1828,11 @@ void registerStorageOSS(StorageFactory & factory)
 NamesAndTypesList StorageS3::getVirtuals() const
 {
     return virtual_columns;
+}
+
+Names StorageS3::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 bool StorageS3::supportsPartitionBy() const

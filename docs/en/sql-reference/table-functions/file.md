@@ -1,4 +1,4 @@
- --
+---
 slug: /en/sql-reference/table-functions/file
 sidebar_position: 60
 sidebar_label: file
@@ -191,12 +191,13 @@ Query the total number of rows from all files `file002` inside any folder in dir
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-## Virtual Columns
+## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file.
-- `_file` — Name of the file.
+- `_path` — Path to the file. Type: `LowCardinalty(String)`.
+- `_file` — Name of the file. Type: `LowCardinalty(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 
-## Settings
+## Settings {#settings}
 
 - [engine_file_empty_if_not_exists](/docs/en/operations/settings/settings.md#engine-file-emptyif-not-exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
 - [engine_file_truncate_on_insert](/docs/en/operations/settings/settings.md#engine-file-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.

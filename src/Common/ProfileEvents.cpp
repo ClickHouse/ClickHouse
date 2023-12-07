@@ -444,8 +444,13 @@ The server successfully detected this situation and will download merged part fr
     M(WaitPrefetchTaskMicroseconds, "Time spend waiting for prefetched reader") \
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
+    M(ThreadpoolReaderPrepareMicroseconds, "Time spent on preparation (e.g. call to reader seek() method)") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
     M(ThreadpoolReaderSubmit, "Bytes read from a threadpool task in asynchronous reading") \
+    M(ThreadpoolReaderSubmitReadSynchronously, "How many times we haven't scheduled a task on the thread pool and read synchronously instead") \
+    M(ThreadpoolReaderSubmitReadSynchronouslyBytes, "How many bytes were read synchronously") \
+    M(ThreadpoolReaderSubmitReadSynchronouslyMicroseconds, "How much time we spent reading synchronously") \
+    M(AsynchronousReaderIgnoredBytes, "Number of bytes ignored during asynchronous reading") \
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
@@ -568,6 +573,8 @@ The server successfully detected this situation and will download merged part fr
     M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.") \
+    \
+    M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.") \
     \
     M(LogTest, "Number of log messages with level Test") \
     M(LogTrace, "Number of log messages with level Trace") \

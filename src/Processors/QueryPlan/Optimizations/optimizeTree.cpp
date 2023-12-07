@@ -41,7 +41,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     std::stack<Frame> stack;
     stack.push({.node = &root});
 
-    size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
@@ -105,7 +105,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t num_applied_projection = 0;
     bool has_reading_from_mt = false;
 
