@@ -3,8 +3,9 @@
 #include <memory>
 #include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/Guards.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 
 namespace DB
@@ -71,7 +72,13 @@ public:
 
     virtual void shuffle(const CacheGuard::Lock &) = 0;
 
-    virtual FileSegments dump(const CacheGuard::Lock &) = 0;
+    struct QueueEntryDump
+    {
+        FileSegmentInfo info;
+        bool is_protected = false;
+    };
+    using QueueEntriesDumps = std::vector<QueueEntryDump>;
+    virtual QueueEntriesDumps dump(FileCache & cache, const CacheGuard::Lock &) = 0;
 
     using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
     virtual bool collectCandidatesForEviction(

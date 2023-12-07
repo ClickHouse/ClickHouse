@@ -1173,10 +1173,10 @@ std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const Key & key)
     return file_segments;
 }
 
-std::vector<FileSegment::Info> FileCache::dumpQueue()
+IFileCachePriority::QueueEntriesDumps FileCache::dumpQueue()
 {
     assertInitialized();
-    return main_priority->dump(lockCache());
+    return main_priority->dump(*this, lockCache());
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)

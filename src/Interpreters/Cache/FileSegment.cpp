@@ -480,7 +480,7 @@ bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve
 
     bool is_file_segment_size_exceeded;
     {
-        auto lock = segment_guard.lock();
+        auto lock = lockFileSegment();
 
         assertNotDetachedUnlocked(lock);
         assertIsDownloaderUnlocked("reserve", lock);

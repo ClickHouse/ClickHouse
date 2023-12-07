@@ -44,7 +44,7 @@ public:
 
     void shuffle(const CacheGuard::Lock &) override;
 
-    FileSegments dump(const CacheGuard::Lock &) override;
+    QueueEntriesDumps dump(FileCache & cache, const CacheGuard::Lock &) override;
 
     void pop(const CacheGuard::Lock & lock) { remove(queue.begin(), lock); }
 

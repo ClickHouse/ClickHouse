@@ -277,12 +277,12 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(LRUIterator & it, L
     return LRUIterator(this, it.iterator);
 }
 
-FileSegments LRUFileCachePriority::dump(const CacheGuard::Lock & lock)
+IFileCachePriority::QueueEntriesDumps LRUFileCachePriority::dump(FileCache & cache, const CacheGuard::Lock & lock)
 {
-    FileSegments res;
+    QueueEntriesDumps res;
     iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
     {
-        res.push_back(FileSegment::getSnapshot(segment_metadata->file_segment));
+        res.emplace_back(FileSegment::getInfo(segment_metadata->file_segment, cache));
         return IterationResult::CONTINUE;
     }, lock);
     return res;

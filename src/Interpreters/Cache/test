@@ -1,0 +1,6 @@
+CREATE DICTIONARY dict (`id` String, `timestamp` DateTime)
+PRIMARY KEY id SOURCE(CLICKHOUSE(QUERY 'SELECT \'test\' as id, now() as timestamp')) LAYOUT(DIRECT());
+
+CREATE table t (id LowCardinality(String)) engine = MergeTree() ORDER BY id;
+
+CREATE VIEW v AS select dictGet(dict, 'timestamp', id) from t;

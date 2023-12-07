@@ -126,7 +126,7 @@ public:
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key);
 
-    std::vector<FileSegment::Info> dumpQueue();
+    IFileCachePriority::QueueEntriesDumps dumpQueue();
 
     void deactivateBackgroundOperations();
 

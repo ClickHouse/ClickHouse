@@ -43,7 +43,7 @@ public:
 
     void shuffle(const CacheGuard::Lock &) override;
 
-    FileSegments dump(const CacheGuard::Lock &) override;
+    QueueEntriesDumps dump(FileCache & cache, const CacheGuard::Lock &) override;
 
 private:
     LRUFileCachePriority protected_queue;

@@ -142,22 +142,49 @@ void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ran
     }
 }
 
-void assertProtectedOrProbationary(const FileSegments & file_segments, const Ranges & expected, bool assert_protected)
+void assertEqual(const IFileCachePriority::QueueEntriesDumps & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+{
+    std::cerr << "File segments: ";
+    for (const auto & f : file_segments)
+    {
+        auto range = FileSegment::Range(f.info.range_left, f.info.range_right);
+        std::cerr << range.toString() << ", ";
+    }
+
+    ASSERT_EQ(file_segments.size(), expected_ranges.size());
+
+    if (!expected_states.empty())
+        ASSERT_EQ(file_segments.size(), expected_states.size());
+
+    auto get_expected_state = [&](size_t i)
+    {
+        if (expected_states.empty())
+            return State::DOWNLOADED;
+        else
+            return expected_states[i];
+    };
+
+    size_t i = 0;
+    for (const auto & f : file_segments)
+    {
+        auto range = FileSegment::Range(f.info.range_left, f.info.range_right);
+        ASSERT_EQ(range, expected_ranges[i]);
+        ASSERT_EQ(f.info.state, get_expected_state(i));
+        ++i;
+    }
+}
+
+void assertProtectedOrProbationary(const IFileCachePriority::QueueEntriesDumps & file_segments, const Ranges & expected, bool assert_protected)
 {
     std::cerr << "File segments: ";
     std::vector<Range> res;
     for (const auto & f : file_segments)
     {
-        std::cerr << f->range().toString() << ", ";
-        if (auto it = f->getQueueIterator())
+        auto range = FileSegment::Range(f.info.range_left, f.info.range_right);
+        std::cerr << range.toString() << ", ";
+        if ((f.is_protected && assert_protected) || (!f.is_protected && !assert_protected))
         {
-            if (auto * slru_it = dynamic_cast<SLRUFileCachePriority::SLRUIterator *>(it.get()))
-            {
-                if ((slru_it->isProtected() && assert_protected) || (!slru_it->isProtected() && !assert_protected))
-                {
-                    res.push_back(f->range());
-                }
-            }
+            res.push_back(range);
         }
     }
 
@@ -168,12 +195,12 @@ void assertProtectedOrProbationary(const FileSegments & file_segments, const Ran
     }
 }
 
-void assertProtected(const FileSegments & file_segments, const Ranges & expected)
+void assertProtected(const IFileCachePriority::QueueEntriesDumps & file_segments, const Ranges & expected)
 {
     assertProtectedOrProbationary(file_segments, expected, true);
 }
 
-void assertProbationary(const FileSegments & file_segments, const Ranges & expected)
+void assertProbationary(const IFileCachePriority::QueueEntriesDumps & file_segments, const Ranges & expected)
 {
     assertProtectedOrProbationary(file_segments, expected, false);
 }
@@ -1151,7 +1178,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         add_range(0, 10);
         add_range(10, 5);
 
-        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
 
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
@@ -1181,7 +1208,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProbationary(cache.dumpQueue(), { Range(17, 20), Range(24, 26), Range(27, 27) });
         assertProtected(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
 
-        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 23);
 
@@ -1201,7 +1228,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProbationary(cache.dumpQueue(), { Range(24, 26), Range(10, 14) });
         assertProtected(cache.dumpQueue(), { Range(0, 9), Range(27, 27), Range(28, 30) });
 
-        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14), Range(24, 26), Range(27, 27), Range(28, 30) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14), Range(24, 26), Range(27, 27), Range(28, 30) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 22);
     }
