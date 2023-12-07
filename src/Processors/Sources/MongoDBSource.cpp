@@ -51,7 +51,7 @@ namespace
     using MongoDocument = Poco::MongoDB::Document;
 
     template <typename T>
-    Field getNumber(const Poco::MongoDB::Element & value, const std::string & name)
+    Field getNumberField(const Poco::MongoDB::Element & value, const std::string & name)
     {
         switch (value.type())
         {
@@ -73,48 +73,42 @@ namespace
         }
     }
 
-    void prepareMongoDBArrayInfo(
-        std::unordered_map<size_t, MongoDBArrayInfo> & array_info, size_t column_idx, const DataTypePtr data_type)
+    Field getValueField(
+        const DataTypePtr & input_data_type,
+        const Poco::MongoDB::Element & value,
+        const std::string & name)
     {
-        const auto * array_type = assert_cast<const DataTypeArray *>(data_type.get());
-        auto nested = array_type->getNestedType();
+        if (value.type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
+            return input_data_type->getDefault();
 
-        size_t count_dimensions = 1;
-        while (isArray(nested))
+        auto [type, _] = ExternalResultDescription::getValueTypeWithNullable(input_data_type);
+        auto data_type = removeNullable(input_data_type);
+
+        switch (type)
         {
-            ++count_dimensions;
-            nested = assert_cast<const DataTypeArray *>(nested.get())->getNestedType();
-        }
+            case ValueType::vtUInt8:
+                return getNumberField<UInt8>(value, name);
+            case ValueType::vtUInt16:
+                return getNumberField<UInt16>(value, name);
+            case ValueType::vtUInt32:
+                return getNumberField<UInt32>(value, name);
+            case ValueType::vtUInt64:
+                return getNumberField<UInt64>(value, name);
+            case ValueType::vtInt8:
+                return getNumberField<Int8>(value, name);
+            case ValueType::vtInt16:
+                return getNumberField<Int16>(value, name);
+            case ValueType::vtInt32:
+                return getNumberField<Int32>(value, name);
+            case ValueType::vtInt64:
+                return getNumberField<Int64>(value, name);
+            case ValueType::vtFloat32:
+                return getNumberField<Float32>(value, name);
+            case ValueType::vtFloat64:
+                return getNumberField<Float64>(value, name);
 
-        Field default_value = nested->getDefault();
-        if (nested->isNullable())
-            nested = assert_cast<const DataTypeNullable *>(nested.get())->getNestedType();
-
-        WhichDataType which(nested);
-        std::function<Field(const Poco::MongoDB::Element & value, const std::string & name)> parser;
-
-        if (which.isUInt8())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<UInt8>(value, name); };
-        else if (which.isUInt16())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<UInt16>(value, name); };
-        else if (which.isUInt32())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<UInt32>(value, name); };
-        else if (which.isUInt64())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<UInt64>(value, name); };
-        else if (which.isInt8())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Int8>(value, name); };
-        else if (which.isInt16())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Int16>(value, name); };
-        else if (which.isInt32())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Int32>(value, name); };
-        else if (which.isInt64())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Int64>(value, name); };
-        else if (which.isFloat32())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Float32>(value, name); };
-        else if (which.isFloat64())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field { return getNumber<Float64>(value, name); };
-        else if (which.isString() || which.isFixedString())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
+            case ValueType::vtString:
+            case ValueType::vtFixedString:
             {
                 if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
                 {
@@ -129,9 +123,8 @@ namespace
 
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String, got type id = {} for column {}",
                                 toString(value.type()), name);
-            };
-        else if (which.isDate())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
+            }
+            case ValueType::vtDate:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
@@ -139,18 +132,16 @@ namespace
 
                 return static_cast<UInt16>(DateLUT::instance().toDayNum(
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime()));
-            };
-        else if (which.isDateTime())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
+            }
+            case ValueType::vtDateTime:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
                                     toString(value.type()), name);
 
                 return static_cast<UInt32>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
-            };
-        else if (which.isUUID())
-            parser = [](const Poco::MongoDB::Element & value, const std::string & name) -> Field
+            }
+            case ValueType::vtUUID:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<String>::TypeId)
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String (UUID), got type id = {} for column {}",
@@ -158,11 +149,74 @@ namespace
 
                 String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
                 return parse<UUID>(string);
-            };
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type {} is not supported inside of Array", nested->getName());
+            }
+            case ValueType::vtArray:
+            {
+                if (value.type() != Poco::MongoDB::ElementTraits<MongoArray::Ptr>::TypeId)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Array, got type id = {} for column {}",
+                                    toString(value.type()), name);
 
-        array_info[column_idx] = {count_dimensions, default_value, parser};
+                const auto nested_type = assert_cast<const DataTypeArray *>(data_type.get())->getNestedType();
+                auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(value).value();
+                const size_t size = parent->size();
+
+                Field field = Array();
+                Array & arr = field.get<Array &>();
+                arr.reserve(size);
+
+                for (size_t child_idx = 0; child_idx < size; ++child_idx)
+                {
+                    Poco::MongoDB::Element::Ptr child = parent->get(static_cast<int>(child_idx));
+                    arr.push_back(getValueField(nested_type, *child, name));
+                }
+                return field;
+            }
+            case ValueType::vtTuple:
+            {
+                if (value.type() != Poco::MongoDB::ElementTraits<MongoDocument::Ptr>::TypeId)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Tuple, got type id = {} for column {}",
+                                    toString(value.type()), name);
+
+                auto document = static_cast<const Poco::MongoDB::ConcreteElement<MongoDocument::Ptr> &>(value).value();
+
+                const auto * tuple_type = assert_cast<const DataTypeTuple *>(data_type.get());
+                const Strings & nested_names = tuple_type->getElementNames();
+                const DataTypes & nested_types = tuple_type->getElements();
+
+                const size_t size = nested_names.size();
+
+                Field field = Tuple();
+                Tuple & tuple = field.get<Tuple &>();
+                tuple.reserve(size);
+
+                for (size_t i = 0; i < size; ++i)
+                {
+                    const auto & nested_name = nested_names[i];
+                    const auto & nested_type = nested_types[i];
+
+                    if (!document->exists(nested_name))
+                    {
+                        tuple.push_back(nested_type->getDefault());
+                        continue;
+                    }
+
+                    const Poco::MongoDB::Element::Ptr nested_value = document->get(nested_name);
+
+                    if (nested_value.isNull() || nested_value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
+                    {
+                        tuple.push_back(nested_type->getDefault());
+                        continue;
+                    }
+
+                    tuple.push_back(getValueField(nested_type, *nested_value, name));
+                }
+
+                return field;
+            }
+            default:
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Value of unsupported type: {}", data_type->getName());
+        }
+
     }
 
     template <typename T>
@@ -203,12 +257,10 @@ namespace
 
     void insertValue(
         IColumn & column,
-        const IColumn & column_default,
         const IDataType & data_type,
         const ValueType type,
         const Poco::MongoDB::Element & value,
         const std::string & name,
-        std::unordered_map<size_t, MongoDBArrayInfo> & array_info,
         size_t idx)
     {
         switch (type)
@@ -244,8 +296,6 @@ namespace
                 insertNumber<Float64>(column, value, name);
                 break;
 
-            case ValueType::vtEnum8:
-            case ValueType::vtEnum16:
             case ValueType::vtString:
             {
                 if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
@@ -304,62 +354,21 @@ namespace
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Array, got type id = {} for column {}",
                                     toString(value.type()), name);
 
-                size_t expected_dimensions = array_info[idx].num_dimensions;
-                const auto parse_value = array_info[idx].parser;
-                std::vector<Row> dimensions(expected_dimensions + 1);
+                const auto nested_type = assert_cast<const DataTypeArray &>(data_type).getNestedType();
+                auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(value).value();
+                const size_t size = parent->size();
 
-                std::vector<std::pair<const Poco::MongoDB::Element *, size_t>> arrays;
-                arrays.emplace_back(&value, 0);
+                Field field = Array();
+                Array & arr = field.get<Array &>();
+                arr.reserve(size);
 
-                while (!arrays.empty())
+                for (size_t child_idx = 0; child_idx < size; ++child_idx)
                 {
-                    size_t dimension_idx = arrays.size() - 1;
-
-                    if (dimension_idx + 1 > expected_dimensions)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
-
-                    auto [parent_ptr, child_idx] = arrays.back();
-                    auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(*parent_ptr).value();
-
-                    if (child_idx >= parent->size())
-                    {
-                        arrays.pop_back();
-
-                        if (dimension_idx == 0)
-                            break;
-
-                        dimensions[dimension_idx].emplace_back(Array(dimensions[dimension_idx + 1].begin(), dimensions[dimension_idx + 1].end()));
-                        dimensions[dimension_idx + 1].clear();
-
-                        continue;
-                    }
-
                     Poco::MongoDB::Element::Ptr child = parent->get(static_cast<int>(child_idx));
-                    arrays.back().second += 1;
-
-                    if (child->type() == Poco::MongoDB::ElementTraits<MongoArray::Ptr>::TypeId)
-                    {
-                        arrays.emplace_back(child.get(), 0);
-                    }
-                    else if (child->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
-                    {
-                        if (dimension_idx + 1 == expected_dimensions)
-                            dimensions[dimension_idx + 1].emplace_back(array_info[idx].default_value);
-                        else
-                            dimensions[dimension_idx + 1].emplace_back(Array());
-                    }
-                    else if (dimension_idx + 1 == expected_dimensions)
-                    {
-                        dimensions[dimension_idx + 1].emplace_back(parse_value(*child, name));
-                    }
-                    else
-                    {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Got less dimensions than expected. ({} instead of {})", dimension_idx + 1, expected_dimensions);
-                    }
+                    arr.push_back(getValueField(nested_type, *child, name));
                 }
 
-                assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
+                assert_cast<ColumnArray &>(column).insert(field);
                 break;
             }
             case ValueType::vtTuple:
@@ -376,12 +385,9 @@ namespace
                 const Strings & names = tuple_type->getElementNames();
                 const DataTypes & nested_types = tuple_type->getElements();
 
-                const ColumnTuple & column_default_tuple = assert_cast<const ColumnTuple &>(column_default);
-
                 for (const auto col_num : collections::range(0, column_tuple.tupleSize()))
                 {
                     IColumn & nested_column = column_tuple.getColumn(col_num);
-                    const IColumn & nested_column_default = column_default_tuple.getColumn(col_num);
                     const DataTypePtr & nested_type = nested_types[col_num];
 
                     const auto & nested_name = names[col_num];
@@ -390,7 +396,7 @@ namespace
                     bool exists_in_current_document = document->exists(nested_name);
                     if (!exists_in_current_document)
                     {
-                        insertDefaultValue(nested_column, nested_column_default);
+                        nested_column.insertDefault();
                         continue;
                     }
 
@@ -398,21 +404,19 @@ namespace
 
                     if (nested_value.isNull() || nested_value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
                     {
-                        insertDefaultValue(nested_column, nested_column_default);
-                    }
-                    else
-                    {
-                        bool is_nullable = nested_external_desc.second;
-                        if (is_nullable)
-                        {
-                            ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(nested_column);
-                            insertValue(column_nullable.getNestedColumn(), nested_column_default, *nested_type, nested_external_desc.first, *nested_value, nested_name, array_info, idx);
-                            column_nullable.getNullMapData().emplace_back(0);
-                        }
-                        else
-                            insertValue(nested_column, nested_column_default, *nested_type, nested_external_desc.first, *nested_value, nested_name, array_info, idx);
+                        nested_column.insertDefault();
+                        continue;
                     }
 
+                    bool is_nullable = nested_external_desc.second;
+                    if (is_nullable)
+                    {
+                        ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(nested_column);
+                        insertValue(column_nullable.getNestedColumn(), *nested_type, nested_external_desc.first, *nested_value, nested_name, idx);
+                        column_nullable.getNullMapData().emplace_back(0);
+                    }
+                    else
+                        insertValue(nested_column, *nested_type, nested_external_desc.first, *nested_value, nested_name, idx);
                 }
 
                 break;
@@ -515,10 +519,6 @@ MongoDBSource::MongoDBSource(
     , max_block_size{max_block_size_}
 {
     description.init(sample_block);
-
-    for (const auto idx : collections::range(0, description.sample_block.columns()))
-        if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
-            prepareMongoDBArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
 }
 
 
@@ -577,11 +577,11 @@ Chunk MongoDBSource::generate()
                     if (is_nullable)
                     {
                         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                        insertValue(column_nullable.getNestedColumn(), *sample_column, *type, description.types[idx].first, *value, name, array_info, idx);
+                        insertValue(column_nullable.getNestedColumn(), *type, description.types[idx].first, *value, name, idx);
                         column_nullable.getNullMapData().emplace_back(0);
                     }
                     else
-                        insertValue(*columns[idx], *sample_column, *type, description.types[idx].first, *value, name, array_info, idx);
+                        insertValue(*columns[idx], *type, description.types[idx].first, *value, name, idx);
                 }
             }
         }

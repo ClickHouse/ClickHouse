@@ -24,13 +24,6 @@ namespace MongoDB
 namespace DB
 {
 
-struct MongoDBArrayInfo
-{
-    size_t num_dimensions;
-    Field default_value;
-    std::function<Field(const Poco::MongoDB::Element & value, const std::string & name)> parser;
-};
-
 void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password);
 
 bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_);
@@ -80,8 +73,6 @@ private:
     const UInt64 max_block_size;
     ExternalResultDescription description;
     bool all_read = false;
-
-    std::unordered_map<size_t, MongoDBArrayInfo> array_info;
 };
 
 }

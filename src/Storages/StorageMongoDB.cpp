@@ -7,6 +7,7 @@
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
+#include <Poco/MongoDB/ObjectId.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -40,12 +41,15 @@ namespace ErrorCodes
     extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int MONGODB_ERROR;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int UNKNOWN_TYPE;
+    extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
 }
 
 namespace
 {
     using MongoArray = Poco::MongoDB::Array;
     using MongoDocument = Poco::MongoDB::Document;
+    using ObjectId = Poco::MongoDB::ObjectId;
 
     DataTypePtr getDataTypeMongoDB(const Poco::MongoDB::Element & value)
     {
@@ -100,8 +104,11 @@ namespace
                 }
                 return std::make_shared<DataTypeTuple>(types, names);
             }
-            default:
+            case Poco::MongoDB::ElementTraits<String>::TypeId:
+            case Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId:
                 return std::make_shared<DataTypeString>();
+            default:
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type id = {}", toString(value.type()));
         }
     }
 
@@ -205,21 +212,23 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSetting
 
             for (auto & key : current_keys)
             {
-                const Poco::MongoDB::Element::Ptr value = document->get(key);
-                auto new_type = getDataTypeMongoDB(*value);
-
-                if (!types.contains(key))
-                {
-                    types[key] = std::move(new_type);
-                    final_keys.push_back(std::move(key));
-                    continue;
-                }
-
-                DataTypePtr common_type;
-
                 try
                 {
+                    const Poco::MongoDB::Element::Ptr value = document->get(key);
+                    auto new_type = getDataTypeMongoDB(*value);
+
+                    if (!types.contains(key))
+                    {
+                        types[key] = std::move(new_type);
+                        final_keys.push_back(std::move(key));
+                        continue;
+                    }
+
+                    DataTypePtr common_type;
+
                     common_type = getLeastSupertype(DataTypes{types[key], new_type});
+
+                    types[key] = common_type;
                 }
                 catch (const Exception & e)
                 {
@@ -228,8 +237,6 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSetting
                         "Cannot extract table structure from MongoDB table: {}",
                         e.what());
                 }
-
-                types[key] = common_type;
             }
 
             current_keys.clear();
@@ -247,6 +254,14 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSetting
     NamesAndTypesList result;
     for (auto & key : final_keys)
     {
+        if (!checkIfTypeIsComplete(types[key]))
+            throw Exception(
+                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                "Cannot determine type for column '{}' by first {} rows "
+                "of data, most likely this column contains only Nulls or empty Arrays/Maps",
+                key,
+                num_rows);
+
         result.push_back({std::move(key), std::move(types[key])});
     }
 
