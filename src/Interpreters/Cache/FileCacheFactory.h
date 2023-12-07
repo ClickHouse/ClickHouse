@@ -30,7 +30,7 @@ public:
     private:
         FileCacheSettings settings;
         mutable std::mutex settings_mutex;
-   };
+    };
 
     using FileCacheDataPtr = std::shared_ptr<FileCacheData>;
     using CacheByName = std::unordered_map<std::string, FileCacheDataPtr>;
