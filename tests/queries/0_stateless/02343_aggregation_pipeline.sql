@@ -1,3 +1,5 @@
+-- Tags: no-s3-storage
+
 -- produces different pipeline if enabled
 set enable_memory_bound_merging_of_aggregation_results = 0;
 
@@ -5,6 +7,8 @@ set max_threads = 16;
 set prefer_localhost_replica = 1;
 set optimize_aggregation_in_order = 0;
 set max_block_size = 65505;
+set allow_prefetched_read_pool_for_remote_filesystem = 0;
+set allow_prefetched_read_pool_for_local_filesystem = 0;
 
 -- { echoOn }
 

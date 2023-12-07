@@ -8,6 +8,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -198,6 +199,12 @@ public:
         for (const auto & [name, value] : create_query.changes)
             result_changes_map.emplace(name, value);
 
+        std::unordered_map<std::string, bool> result_overridability_map;
+        for (const auto & [name, value] : query.overridability)
+            result_overridability_map.emplace(name, value);
+        for (const auto & [name, value] : create_query.overridability)
+            result_overridability_map.emplace(name, value);
+
         for (const auto & delete_key : query.delete_keys)
         {
             auto it = result_changes_map.find(delete_key);
@@ -209,12 +216,24 @@ public:
                     delete_key);
             }
             else
+            {
                 result_changes_map.erase(it);
+                auto it_override = result_overridability_map.find(delete_key);
+                if (it_override != result_overridability_map.end())
+                    result_overridability_map.erase(it_override);
+            }
         }
 
         create_query.changes.clear();
         for (const auto & [name, value] : result_changes_map)
             create_query.changes.emplace_back(name, value);
+        create_query.overridability = std::move(result_overridability_map);
+
+        if (create_query.changes.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Named collection cannot be empty (collection name: {})",
+                query.collection_name);
 
         writeCreateQueryToMetadata(
             create_query,
@@ -225,24 +244,15 @@ public:
 
     void remove(const std::string & collection_name)
     {
-        if (!removeIfExists(collection_name))
+        auto collection_path = getMetadataPath(collection_name);
+        if (!fs::exists(collection_path))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
                 "Cannot remove collection `{}`, because it doesn't exist",
                 collection_name);
         }
-    }
-
-    bool removeIfExists(const std::string & collection_name)
-    {
-        auto collection_path = getMetadataPath(collection_name);
-        if (fs::exists(collection_path))
-        {
-            fs::remove(collection_path);
-            return true;
-        }
-        return false;
+        fs::remove(collection_path);
     }
 
 private:
@@ -252,8 +262,7 @@ private:
         const ASTCreateNamedCollectionQuery & query)
     {
         const auto & collection_name = query.collection_name;
-        const auto config = NamedCollectionConfiguration::createConfiguration(
-            collection_name, query.changes);
+        const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, query.changes, query.overridability);
 
         std::set<std::string, std::less<>> keys;
         for (const auto & [name, _] : query.changes)
@@ -393,40 +402,74 @@ void loadIfNot()
     return loadIfNotUnlocked(lock);
 }
 
-void removeFromSQL(const std::string & collection_name, ContextPtr context)
+void removeFromSQL(const ASTDropNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
     loadIfNotUnlocked(lock);
-    LoadFromSQL(context).remove(collection_name);
-    NamedCollectionFactory::instance().remove(collection_name);
-}
-
-void removeIfExistsFromSQL(const std::string & collection_name, ContextPtr context)
-{
-    auto lock = lockNamedCollectionsTransaction();
-    loadIfNotUnlocked(lock);
-    LoadFromSQL(context).removeIfExists(collection_name);
-    NamedCollectionFactory::instance().removeIfExists(collection_name);
+    auto & instance = NamedCollectionFactory::instance();
+    if (!instance.exists(query.collection_name))
+    {
+        if (!query.if_exists)
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
+                "Cannot remove collection `{}`, because it doesn't exist",
+                query.collection_name);
+        }
+        return;
+    }
+    LoadFromSQL(context).remove(query.collection_name);
+    instance.remove(query.collection_name);
 }
 
 void createFromSQL(const ASTCreateNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
     loadIfNotUnlocked(lock);
-    NamedCollectionFactory::instance().add(query.collection_name, LoadFromSQL(context).create(query));
+    auto & instance = NamedCollectionFactory::instance();
+    if (instance.exists(query.collection_name))
+    {
+        if (!query.if_not_exists)
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+                "A named collection `{}` already exists",
+                query.collection_name);
+        }
+        return;
+    }
+    instance.add(query.collection_name, LoadFromSQL(context).create(query));
 }
 
 void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
     loadIfNotUnlocked(lock);
+    auto & instance = NamedCollectionFactory::instance();
+    if (!instance.exists(query.collection_name))
+    {
+        if (!query.if_exists)
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
+                "Cannot remove collection `{}`, because it doesn't exist",
+                query.collection_name);
+        }
+        return;
+    }
     LoadFromSQL(context).update(query);
 
-    auto collection = NamedCollectionFactory::instance().getMutable(query.collection_name);
+    auto collection = instance.getMutable(query.collection_name);
     auto collection_lock = collection->lock();
 
     for (const auto & [name, value] : query.changes)
-        collection->setOrUpdate<String, true>(name, convertFieldToString(value));
+    {
+        auto it_override = query.overridability.find(name);
+        if (it_override != query.overridability.end())
+            collection->setOrUpdate<String, true>(name, convertFieldToString(value), it_override->second);
+        else
+            collection->setOrUpdate<String, true>(name, convertFieldToString(value), {});
+    }
 
     for (const auto & key : query.delete_keys)
         collection->remove<true>(key);

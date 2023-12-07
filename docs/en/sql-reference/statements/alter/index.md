@@ -16,6 +16,7 @@ Most `ALTER TABLE` queries modify table settings or data:
 - [INDEX](/docs/en/sql-reference/statements/alter/skipping-index.md)
 - [CONSTRAINT](/docs/en/sql-reference/statements/alter/constraint.md)
 - [TTL](/docs/en/sql-reference/statements/alter/ttl.md)
+- [STATISTIC](/docs/en/sql-reference/statements/alter/statistic.md)
 
 :::note    
 Most `ALTER TABLE` queries are supported only for [\*MergeTree](/docs/en/engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](/docs/en/engines/table-engines/special/merge.md) and [Distributed](/docs/en/engines/table-engines/special/distributed.md).
@@ -35,6 +36,8 @@ These `ALTER` statements modify entities related to role-based access control:
 - [SETTINGS PROFILE](/docs/en/sql-reference/statements/alter/settings-profile.md)
 
 [ALTER TABLE ... MODIFY COMMENT](/docs/en/sql-reference/statements/alter/comment.md) statement adds, modifies, or removes comments to the table, regardless if it was set before or not.
+
+[ALTER NAMED COLLECTION](/docs/en/sql-reference/statements/alter/named-collection.md) statement modifies [Named Collections](/docs/en/operations/named-collections.md).
 
 ## Mutations
 

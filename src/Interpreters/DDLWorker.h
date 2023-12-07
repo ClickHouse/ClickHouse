@@ -13,7 +13,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <shared_mutex>
 #include <thread>
+#include <unordered_set>
 
 namespace zkutil
 {
@@ -79,6 +81,33 @@ public:
     ZooKeeperPtr getAndSetZooKeeper();
 
 protected:
+
+    class ConcurrentSet
+    {
+    public:
+        bool contains(const String & key) const
+        {
+            std::shared_lock lock(mtx);
+            return set.contains(key);
+        }
+
+        bool insert(const String & key)
+        {
+            std::unique_lock lock(mtx);
+            return set.emplace(key).second;
+        }
+
+        bool remove(const String & key)
+        {
+            std::unique_lock lock(mtx);
+            return set.erase(key);
+        }
+
+    private:
+        std::unordered_set<String> set;
+        mutable std::shared_mutex mtx;
+    };
+
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);
 
@@ -160,6 +189,9 @@ protected:
     size_t max_tasks_in_queue = 1000;
 
     std::atomic<UInt32> max_id = 0;
+
+    ConcurrentSet entries_to_skip;
+
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
 };

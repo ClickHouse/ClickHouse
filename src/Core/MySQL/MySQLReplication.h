@@ -33,8 +33,10 @@ namespace MySQLReplication
     inline void readBigEndianStrict(ReadBuffer & payload, char * to, size_t n)
     {
         payload.readStrict(to, n);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         char *start = to, *end = to + n;
         std::reverse(start, end);
+#endif
     }
 
     inline void readTimeFractionalPart(ReadBuffer & payload, UInt32 & factional, UInt16 meta)

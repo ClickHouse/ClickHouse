@@ -6,29 +6,27 @@ FROM clickhouse/test-util:latest AS cctools
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# DO NOT PUT ANYTHING BEFORE THREE NEXT `RUN` DIRECTIVES
+# DO NOT PUT ANYTHING BEFORE THE NEXT TWO `RUN` DIRECTIVES
 # THE MOST HEAVY OPERATION MUST BE THE FIRST IN THE CACHE
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # libtapi is required to support .tbh format from recent MacOS SDKs
-RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
+RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
+    && git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9 \
     && INSTALLPREFIX=/cctools ./build.sh \
     && ./install.sh \
     && cd .. \
     && rm -rf apple-libtapi
 
 # Build and install tools for cross-linking to Darwin (x86-64)
-RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
+# Build and install tools for cross-linking to Darwin (aarch64)
+RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
+    && git checkout 2a3e1c2a6ff54a30f898b70cfb9ba1692a55fad7 \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
     && make install -j$(nproc) \
-    && cd ../.. \
-    && rm -rf cctools-port
-
-# Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
-    && cd cctools-port/cctools \
+    && make clean \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=aarch64-apple-darwin \
     && make install -j$(nproc) \
@@ -52,60 +50,39 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     rustup toolchain install nightly-2023-07-04 && \
     rustup default nightly-2023-07-04 && \
     rustup component add rust-src && \
+    rustup target add x86_64-unknown-linux-gnu && \
     rustup target add aarch64-unknown-linux-gnu && \
     rustup target add x86_64-apple-darwin && \
     rustup target add x86_64-unknown-freebsd && \
     rustup target add aarch64-apple-darwin && \
-    rustup target add powerpc64le-unknown-linux-gnu
+    rustup target add powerpc64le-unknown-linux-gnu && \
+    rustup target add x86_64-unknown-linux-musl && \
+    rustup target add aarch64-unknown-linux-musl && \
+    rustup target add riscv64gc-unknown-linux-gnu
 
-# Create vendor cache for cargo.
-#
-# Note, that the config.toml for the root is used, you will not be able to
-# install any other crates, except those which had been vendored (since if
-# there is "replace-with" for some source, then cargo will not look to other
-# remotes except this).
-#
-# Notes for the command itself:
-# - --chown is required to preserve the rights
-# - unstable-options for -C
-# - chmod is required to fix the permissions, since builds are running from a different user
-# - copy of the Cargo.lock is required for proper dependencies versions
-# - cargo vendor --sync is requried to overcome [1] bug.
-#
-#   [1]: https://github.com/rust-lang/wg-cargo-std-aware/issues/23
-COPY --chown=root:root /rust /rust/packages
-RUN cargo -Z unstable-options -C /rust/packages vendor > $CARGO_HOME/config.toml && \
-    cp "$(rustc --print=sysroot)"/lib/rustlib/src/rust/Cargo.lock "$(rustc --print=sysroot)"/lib/rustlib/src/rust/library/test/ && \
-    cargo -Z unstable-options -C /rust/packages vendor --sync "$(rustc --print=sysroot)"/lib/rustlib/src/rust/library/test/Cargo.toml && \
-    rm "$(rustc --print=sysroot)"/lib/rustlib/src/rust/library/test/Cargo.lock && \
-    sed -i "s#\"vendor\"#\"/rust/vendor\"#" $CARGO_HOME/config.toml && \
-    cat $CARGO_HOME/config.toml && \
-    mv /rust/packages/vendor /rust/vendor && \
-    chmod -R o=r+X /rust/vendor && \
-    ls -R -l /rust/packages && \
-    rm -r /rust/packages
-
-# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
         binutils-riscv64-linux-gnu \
         build-essential \
-        g++-11 \
-        gcc-11 \
-        gcc-aarch64-linux-gnu \
-        libc6 \
-        libc6-dev \
-        libc6-dev-arm64-cross \
         python3-boto3 \
         yasm \
         zstd \
+        zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists
 
 # Download toolchain and SDK for Darwin
 RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
+
+# Download and install mold 2.0 for s390x build
+RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz" \
+    && mkdir /tmp/mold \
+    && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
+    && cp -r /tmp/mold/mold*/* /usr \
+    && rm -rf /tmp/mold \
+    && rm /tmp/mold.tar.gz
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH

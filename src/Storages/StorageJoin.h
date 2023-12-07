@@ -49,7 +49,7 @@ public:
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
-    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const;
+    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const;
 
     /// Get result type for function "joinGet(OrNull)"
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -84,6 +84,8 @@ public:
     bool useNulls() const { return use_nulls; }
 
     const Names & getKeyNames() const { return key_names; }
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     Block sample_block;

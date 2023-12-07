@@ -5,9 +5,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProfileEventsExt.h>
 
 
 namespace DB
@@ -29,6 +31,7 @@ NamesAndTypesList StorageSystemBackups::getNamesAndTypes()
         {"compressed_size", std::make_shared<DataTypeUInt64>()},
         {"files_read", std::make_shared<DataTypeUInt64>()},
         {"bytes_read", std::make_shared<DataTypeUInt64>()},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
     };
     return names_and_types;
 }
@@ -50,8 +53,9 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_compressed_size = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_read_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_read_bytes = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
+    auto & column_profile_events = assert_cast<ColumnMap &>(*res_columns[column_index++]);
 
-    auto add_row = [&](const BackupsWorker::Info & info)
+    auto add_row = [&](const BackupOperationInfo & info)
     {
         column_id.insertData(info.id.data(), info.id.size());
         column_name.insertData(info.name.data(), info.name.size());
@@ -66,6 +70,10 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
         column_compressed_size.insertValue(info.compressed_size);
         column_num_read_files.insertValue(info.num_read_files);
         column_num_read_bytes.insertValue(info.num_read_bytes);
+        if (info.profile_counters)
+            ProfileEvents::dumpToMapColumn(*info.profile_counters, &column_profile_events, true);
+        else
+            column_profile_events.insertDefault();
     };
 
     for (const auto & entry : context->getBackupsWorker().getAllInfos())

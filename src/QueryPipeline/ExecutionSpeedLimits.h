@@ -25,7 +25,8 @@ public:
     Poco::Timespan timeout_before_checking_execution_speed = 0;
 
     /// Pause execution in case if speed limits were exceeded.
-    void throttle(size_t read_rows, size_t read_bytes, size_t total_rows_to_read, UInt64 total_elapsed_microseconds) const;
+    void throttle(size_t read_rows, size_t read_bytes, size_t total_rows_to_read, UInt64 total_elapsed_microseconds,
+        OverflowMode timeout_overflow_mode) const;
 
     bool checkTimeLimit(const Stopwatch & stopwatch, OverflowMode overflow_mode) const;
 };

@@ -17,6 +17,13 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int KEEPER_EXCEPTION;
+}
+}
 
 namespace Coordination
 {
@@ -136,6 +143,8 @@ using ResponseCallback = std::function<void(const Response &)>;
 struct Response
 {
     Error error = Error::ZOK;
+    int64_t zxid = 0;
+
     Response() = default;
     Response(const Response &) = default;
     Response & operator=(const Response &) = default;
@@ -156,6 +165,10 @@ struct WatchResponse : virtual Response
 };
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
+/// Passing watch callback as a shared_ptr allows to
+///  - avoid copying of the callback
+///  - registering the same callback only once per path
+using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 
 struct SetACLRequest : virtual Request
 {
@@ -198,6 +211,9 @@ struct CreateRequest : virtual Request
     bool is_ephemeral = false;
     bool is_sequential = false;
     ACLs acls;
+
+    /// should it succeed if node already exists
+    bool not_exists = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -448,17 +464,46 @@ class Exception : public DB::Exception
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
     Exception(const std::string & msg, const Error code_, int); /// NOLINT
+    Exception(PreformattedMessage && msg, const Error code_);
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    Exception(T && message, const Error code_) : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::forward<T>(message)), code(code_)
+    {
+        incrementErrorMetrics(code);
+    }
+
+    static void incrementErrorMetrics(const Error code_);
 
 public:
     explicit Exception(const Error code_); /// NOLINT
-    Exception(const std::string & msg, const Error code_); /// NOLINT
-    Exception(const Error code_, const std::string & path); /// NOLINT
     Exception(const Exception & exc);
 
     template <typename... Args>
-    Exception(const Error code_, fmt::format_string<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code_)
+    Exception(const Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
+        : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
+        , code(code_)
     {
+        incrementErrorMetrics(code);
+    }
+
+    inline static Exception createDeprecated(const std::string & msg, const Error code_)
+    {
+        return Exception(msg, code_, 0);
+    }
+
+    inline static Exception fromPath(const Error code_, const std::string & path)
+    {
+        return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
+    }
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    inline static Exception fromMessage(const Error code_, T && message)
+    {
+        return Exception(std::forward<T>(message), code_);
     }
 
     const char * name() const noexcept override { return "Coordination::Exception"; }
@@ -466,6 +511,18 @@ public:
     Exception * clone() const override { return new Exception(*this); }
 
     const Error code;
+};
+
+class SimpleFaultInjection
+{
+public:
+    SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_);
+    ~SimpleFaultInjection() noexcept(false);
+
+private:
+    Float64 probability_after = 0;
+    String description;
+    int exceptions_level = 0;
 };
 
 
@@ -487,10 +544,17 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;
 
+    /// Get the current connected node idx.
+    virtual Int8 getConnectedNodeIdx() const = 0;
+
+    /// Get the current connected host and port.
+    virtual String getConnectedHostPort() const = 0;
+
+    /// Get the xid of current connection.
+    virtual int32_t getConnectionXid() const = 0;
+
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
-
-    virtual Poco::Net::SocketAddress getConnectedAddress() const = 0;
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
@@ -521,12 +585,12 @@ public:
     virtual void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void set(
         const String & path,
@@ -538,7 +602,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void check(
         const String & path,
@@ -563,6 +627,10 @@ public:
     virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
+
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    virtual bool hasReachedDeadline() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;

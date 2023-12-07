@@ -53,12 +53,12 @@ bool ASTPair::hasSecretParts() const
 }
 
 
-void ASTPair::updateTreeHashImpl(SipHash & hash_state) const
+void ASTPair::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(first.size());
     hash_state.update(first);
     hash_state.update(second_with_brackets);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -92,12 +92,12 @@ void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & setting
 }
 
 
-void ASTFunctionWithKeyValueArguments::updateTreeHashImpl(SipHash & hash_state) const
+void ASTFunctionWithKeyValueArguments::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
     hash_state.update(has_brackets);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 }

@@ -108,6 +108,15 @@ sidebar_label: "Ограничения на сложность запроса"
 
 Значение по умолчанию — 0.
 
+## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
+
+Включает или отключает выполнение `ORDER BY` во внешней памяти. См. [Детали реализации ORDER BY](../../sql-reference/statements/select/order-by.md#implementation-details)
+
+- Максимальный объем оперативной памяти (в байтах), который может использоваться одной операцией [ORDER BY](../../sql-reference/statements/select/order-by.md). Рекомендуемое значение — половина доступной системной памяти.
+- 0 — `ORDER BY` во внешней памяти отключен.
+
+Значение по умолчанию: 0.
+
 ## max_rows_to_sort {#max-rows-to-sort}
 
 Максимальное количество строк до сортировки. Позволяет ограничить потребление оперативки при сортировке.
@@ -311,6 +320,52 @@ FORMAT Null;
 
 **Подробности**
 
-При вставке данных, ClickHouse вычисляет количество партиций во вставленном блоке. Если число партиций больше, чем `max_partitions_per_insert_block`, ClickHouse генерирует исключение со следующим текстом:
+При вставке данных ClickHouse проверяет количество партиций во вставляемом блоке. Если количество разделов превышает число `max_partitions_per_insert_block`, ClickHouse либо логирует предупреждение, либо выбрасывает исключение в зависимости от значения `throw_on_max_partitions_per_insert_block`.  Исключения имеют следующий текст:
 
-> «Too many partitions for single INSERT block (more than» + toString(max_parts) + «). The limit is controlled by ‘max_partitions_per_insert_block’ setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).»
+> “Too many partitions for a single INSERT block (`partitions_count` partitions, limit is ” + toString(max_partitions) + “). The limit is controlled by the ‘max_partitions_per_insert_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
+
+## throw_on_max_partitions_per_insert_block {#settings-throw_on_max_partition_per_insert_block}
+
+Позволяет контролировать поведение при достижении `max_partitions_per_insert_block`
+
+- `true`  - Когда вставляемый блок достигает `max_partitions_per_insert_block`, возникает исключение.
+- `false` - Записывает предупреждение при достижении `max_partitions_per_insert_block`.
+
+Значение по умолчанию: `true`
+
+## max_sessions_for_user {#max-sessions-per-user}
+
+Максимальное количество одновременных сессий на одного аутентифицированного пользователя.
+
+Пример:
+
+``` xml
+<profiles>
+    <single_session_profile>
+        <max_sessions_for_user>1</max_sessions_for_user>
+    </single_session_profile>
+    <two_sessions_profile>
+        <max_sessions_for_user>2</max_sessions_for_user>
+    </two_sessions_profile>
+    <unlimited_sessions_profile>
+        <max_sessions_for_user>0</max_sessions_for_user>
+    </unlimited_sessions_profile>
+</profiles>
+<users>
+     <!-- Пользователь Alice может одновременно подключаться не
+          более одного раза к серверу ClickHouse. -->
+    <Alice>
+        <profile>single_session_profile</profile>
+    </Alice>
+    <!-- Пользователь Bob может использовать 2 одновременных сессии. -->
+    <Bob>
+        <profile>two_sessions_profile</profile>
+    </Bob>
+    <!-- Пользователь Charles может иметь любое количество одновременных сессий. -->
+    <Charles>
+       <profile>unlimited_sessions_profile</profile>
+    </Charles>
+</users>
+```
+
+Значение по умолчанию: 0 (неограниченное количество сессий).

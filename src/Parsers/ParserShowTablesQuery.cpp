@@ -27,6 +27,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_dictionaries("DICTIONARIES");
     ParserKeyword s_caches("FILESYSTEM CACHES");
     ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_merges("MERGES");
     ParserKeyword s_changed("CHANGED");
     ParserKeyword s_from("FROM");
     ParserKeyword s_in("IN");
@@ -36,7 +37,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_where("WHERE");
     ParserKeyword s_limit("LIMIT");
     ParserStringLiteral like_p;
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
@@ -78,6 +79,29 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     else if (s_clusters.ignore(pos, expected))
     {
         query->clusters = true;
+
+        if (s_not.ignore(pos, expected))
+            query->not_like = true;
+
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
+        {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else if (query->not_like)
+            return false;
+        if (s_limit.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, query->limit_length, expected))
+                return false;
+        }
+    }
+    else if (s_merges.ignore(pos, expected))
+    {
+        query->merges = true;
 
         if (s_not.ignore(pos, expected))
             query->not_like = true;
@@ -174,7 +198,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 return false;
     }
 
-    tryGetIdentifierNameInto(database, query->from);
+    query->set(query->from, database);
 
     if (like)
         query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();

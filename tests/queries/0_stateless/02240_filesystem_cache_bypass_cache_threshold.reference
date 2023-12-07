@@ -12,9 +12,9 @@ SETTINGS min_bytes_for_wide_part = 10485760,
          disk = disk(
             type = cache,
             max_size = '128Mi',
-            path = '/var/lib/clickhouse/${CLICKHOUSE_TEST_UNIQUE_NAME}_cache',
-            enable_bypass_cache_with_threashold = 1,
-            bypass_cache_threashold = 100,
+            path = 'filesystem_cache_bypass_cache_threshold/',
+            enable_bypass_cache_with_threshold = 1,
+            bypass_cache_threshold = 100,
             delayed_cleanup_interval_ms = 100,
             disk = 's3_disk');
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);

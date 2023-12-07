@@ -47,6 +47,7 @@ enum class CompressionMethodByte : uint8_t
     AES_256_GCM_SIV = 0x97,
     FPC             = 0x98,
     DeflateQpl      = 0x99,
+    GCD             = 0x9a,
 };
 
 }

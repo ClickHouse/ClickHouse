@@ -62,7 +62,7 @@ public:
 
     ~StorageDictionary() override;
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
     void checkTableCanBeDetached() const override;
 
     Pipe read(
@@ -81,10 +81,9 @@ public:
     std::shared_ptr<const IDictionary> getDictionary() const;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
-    static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
     bool isDictionary() const override { return true; }
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
     void startup() override;
 
     void renameInMemory(const StorageID & new_table_id) override;

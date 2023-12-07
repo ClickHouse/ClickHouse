@@ -490,7 +490,8 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
                 continue;
 
             auto & task = list_tasks[list_task_idx];
-            context->getProcessListElement()->checkTimeLimit();
+            if (auto elem = context->getProcessListElement())
+                elem->checkTimeLimit();
 
             Strings nodes = std::move(list_result.names);
 
@@ -525,7 +526,8 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns)
 
             auto & get_task = get_tasks[i];
             auto & list_task = list_tasks[get_task.list_task_idx];
-            context->getProcessListElement()->checkTimeLimit();
+            if (auto elem = context->getProcessListElement())
+                elem->checkTimeLimit();
 
             // Deduplication
             String key = list_task.path_part + '/' + get_task.node;

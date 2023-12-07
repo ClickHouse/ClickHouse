@@ -70,6 +70,8 @@ ThreadGroup::ThreadGroup()
 ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
     : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
 {
+    chassert(!current_thread);
+
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
@@ -123,6 +125,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
 
 ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
+    chassert(current_thread == this);
     return thread_group;
 }
 
@@ -185,6 +188,15 @@ void ThreadStatus::flushUntrackedMemory()
 
     memory_tracker.adjustWithUntrackedMemory(untracked_memory);
     untracked_memory = 0;
+}
+
+bool ThreadStatus::isQueryCanceled() const
+{
+    if (!thread_group)
+        return false;
+
+    chassert(local_data.query_is_canceled_predicate);
+    return local_data.query_is_canceled_predicate();
 }
 
 ThreadStatus::~ThreadStatus()

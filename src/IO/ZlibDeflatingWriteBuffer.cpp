@@ -72,7 +72,11 @@ void ZlibDeflatingWriteBuffer::nextImpl()
     }
 }
 
-ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer() = default;
+ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
+{
+    /// It is OK to call deflateEnd() twice (one from the finalizeAfter() that does the proper error checking)
+    deflateEnd(&zstr);
+}
 
 void ZlibDeflatingWriteBuffer::finalizeBefore()
 {

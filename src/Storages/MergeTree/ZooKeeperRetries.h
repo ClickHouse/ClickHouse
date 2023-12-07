@@ -159,7 +159,7 @@ public:
 
     void setKeeperError(Coordination::Error code, std::string message)
     {
-        setKeeperError(std::make_exception_ptr(zkutil::KeeperException(message, code)), code, message);
+        setKeeperError(std::make_exception_ptr(zkutil::KeeperException::createDeprecated(message, code)), code, message);
     }
 
     template <typename... Args>

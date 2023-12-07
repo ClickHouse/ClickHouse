@@ -1,4 +1,0 @@
-# Just in case ignore any cargo stuff (and just in case someone will run this
-# docker build locally with build context using folder root):
-target
-vendor

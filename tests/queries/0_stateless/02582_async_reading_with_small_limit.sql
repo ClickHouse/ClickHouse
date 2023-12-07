@@ -1,3 +1,7 @@
+-- Tags: no-s3-storage
+
+drop table if exists t;
+
 create table t(a UInt64) engine=MergeTree order by tuple();
 
 system stop merges t;

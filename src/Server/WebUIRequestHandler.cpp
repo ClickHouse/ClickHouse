@@ -7,7 +7,14 @@
 
 #include <IO/HTTPCommon.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 #include <incbin.h>
 
@@ -30,7 +37,7 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_)
 
 void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
+    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
     response.setContentType("text/html; charset=UTF-8");
 

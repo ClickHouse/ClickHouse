@@ -113,11 +113,19 @@ class PostgresManager:
         self.created_materialized_postgres_db_list = set()
         self.created_ch_postgres_db_list = set()
 
-    def init(self, instance, ip, port, default_database="postgres_database"):
+    def init(
+        self,
+        instance,
+        ip,
+        port,
+        default_database="postgres_database",
+        postgres_db_exists=False,
+    ):
         self.instance = instance
         self.ip = ip
         self.port = port
         self.default_database = default_database
+        self.postgres_db_exists = postgres_db_exists
         self.prepare()
 
     def get_default_database(self):
@@ -138,7 +146,8 @@ class PostgresManager:
         self.conn = get_postgres_conn(ip=self.ip, port=self.port)
         self.cursor = self.conn.cursor()
         if self.default_database != "":
-            self.create_postgres_db(self.default_database)
+            if not self.postgres_db_exists:
+                self.create_postgres_db(self.default_database)
             self.conn = get_postgres_conn(
                 ip=self.ip,
                 port=self.port,
@@ -184,7 +193,7 @@ class PostgresManager:
 
     def drop_postgres_db(self, database_name=""):
         database_name = self.database_or_default(database_name)
-        self.cursor.execute(f"DROP DATABASE IF EXISTS {database_name}")
+        self.cursor.execute(f"DROP DATABASE IF EXISTS {database_name} WITH (FORCE)")
         if database_name in self.created_postgres_db_list:
             self.created_postgres_db_list.remove(database_name)
 
@@ -227,12 +236,14 @@ class PostgresManager:
         postgres_database="",
         settings=[],
         table_overrides="",
+        user="postgres",
+        password="mysecretpassword",
     ):
         postgres_database = self.database_or_default(postgres_database)
         self.created_materialized_postgres_db_list.add(materialized_database)
         self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database}")
 
-        create_query = f"CREATE DATABASE {materialized_database} ENGINE = MaterializedPostgreSQL('{ip}:{port}', '{postgres_database}', 'postgres', 'mysecretpassword')"
+        create_query = f"CREATE DATABASE {materialized_database} ENGINE = MaterializedPostgreSQL('{ip}:{port}', '{postgres_database}', '{user}', '{password}')"
         if len(settings) > 0:
             create_query += " SETTINGS "
             for i in range(len(settings)):
@@ -364,6 +375,12 @@ def check_tables_are_synchronized(
             time.sleep(1)
         result = instance.query(result_query)
 
+    if result != expected:
+        count = int(instance.query(f"select count() from {table_path}"))
+        expected_count = int(
+            instance.query(f"select count() from {postgres_database}.{table_name}")
+        )
+        print(f"Having {count}, expected {expected_count}")
     assert result == expected
 
 

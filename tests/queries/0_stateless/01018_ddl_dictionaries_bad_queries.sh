@@ -9,21 +9,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF  EXISTS dict1"
 
-# Simple layout, but with two keys
-$CLICKHOUSE_CLIENT -q "
-    CREATE DICTIONARY dict1
-    (
-        key1 UInt64,
-        key2 UInt64,
-        value String
-    )
-    PRIMARY KEY key1, key2
-    LAYOUT(HASHED())
-    SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict1' DB '$CLICKHOUSE_DATABASE'))
-    LIFETIME(MIN 1 MAX 10)
-" 2>&1 | grep -c 'Primary key for simple dictionary must contain exactly one element'
-
-
 # Simple layout, but with non existing key
 $CLICKHOUSE_CLIENT -q "
     CREATE DICTIONARY dict1

@@ -15,7 +15,7 @@ namespace DB
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    getContext()->checkSettingsConstraints(ast.changes);
+    getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(ast.changes);
     session_context->addQueryParameters(ast.query_parameters);
@@ -28,7 +28,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     if (!ignore_setting_constraints)
-        getContext()->checkSettingsConstraints(ast.changes);
+        getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }

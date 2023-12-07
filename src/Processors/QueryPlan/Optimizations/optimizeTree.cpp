@@ -41,7 +41,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     std::stack<Frame> stack;
     stack.push({.node = &root});
 
-    size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
@@ -105,7 +105,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t num_applied_projection = 0;
     bool has_reading_from_mt = false;
 
@@ -181,7 +181,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 }
 
-void optimizeTreeThirdPass(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -205,7 +205,7 @@ void optimizeTreeThirdPass(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
             source_step_with_filter->applyFilters();
         }
 
-        addPlansForSets(*frame.node, nodes);
+        addPlansForSets(plan, *frame.node, nodes);
 
         stack.pop_back();
     }

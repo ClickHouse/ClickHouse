@@ -31,14 +31,14 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
     /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
     /// because of drop query. And drop() method is not suitable at all, because it will not only require to reopen connection, but also
     /// it can be called considerable time after table is dropped (for example, in case of Atomic database), which is not appropriate for the case.
-    void checkTableCanBeDropped() const override { drop_table = true; }
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
     void read(

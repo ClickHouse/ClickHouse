@@ -26,7 +26,6 @@
 #include "Poco/CountingStream.h"
 #include "Poco/RegularExpression.h"
 #include <sstream>
-#include <iostream>
 
 
 using Poco::NumberFormatter;
@@ -419,7 +418,7 @@ void HTTPClientSession::reconnect()
 
 std::string HTTPClientSession::proxyRequestPrefix() const
 {
-	std::string result("http://");
+	std::string result(_proxyConfig.originalRequestProtocol + "://");
 	result.append(_host);
 	/// Do not append default by default, since this may break some servers.
 	/// One example of such server is GCS (Google Cloud Storage).

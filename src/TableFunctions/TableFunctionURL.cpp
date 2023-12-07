@@ -118,7 +118,7 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.http_method);
 }
 
-ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
@@ -132,6 +132,12 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context)
     }
 
     return parseColumnsListFromString(structure, context);
+}
+
+std::unordered_set<String> TableFunctionURL::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    auto virtual_column_names = StorageURL::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
 String TableFunctionURL::getFormatFromFirstArgument()

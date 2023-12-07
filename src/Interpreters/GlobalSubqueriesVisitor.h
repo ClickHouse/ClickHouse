@@ -114,8 +114,8 @@ public:
             String external_table_name;
             if (alias.empty())
             {
-                auto hash = subquery_or_table_name->getTreeHash();
-                external_table_name = fmt::format("_data_{}_{}", hash.first, hash.second);
+                auto hash = subquery_or_table_name->getTreeHash(/*ignore_aliases=*/ true);
+                external_table_name = fmt::format("_data_{}", toString(hash));
             }
             else
                 external_table_name = alias;
@@ -164,7 +164,7 @@ public:
             StoragePtr external_storage = external_storage_holder->getTable();
             external_tables.emplace(external_table_name, external_storage_holder);
 
-            auto set_key = database_and_table_name->getTreeHash();
+            auto set_key = database_and_table_name->getTreeHash(/*ignore_aliases=*/ true);
 
             if (!prepared_sets->findSubquery(set_key))
             {

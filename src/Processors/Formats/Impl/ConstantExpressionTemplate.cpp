@@ -393,7 +393,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     SipHash hash_state;
     hash_state.update(result_column_type->getName());
 
-    expression->updateTreeHash(hash_state);
+    expression->updateTreeHash(hash_state, /*ignore_aliases=*/ true);
 
     for (const auto & info : replaced_literals)
         hash_state.update(info.type->getName());
@@ -402,11 +402,10 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
 
-    IAST::Hash res128;
-    hash_state.get128(res128);
+    const auto res128 = getSipHash128AsPair(hash_state);
     size_t res = 0;
-    boost::hash_combine(res, res128.first);
-    boost::hash_combine(res, res128.second);
+    boost::hash_combine(res, res128.low64);
+    boost::hash_combine(res, res128.high64);
     return res;
 }
 

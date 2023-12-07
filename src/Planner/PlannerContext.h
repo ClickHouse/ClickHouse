@@ -132,10 +132,9 @@ public:
     using SetKey = std::string;
 
     /// Create set key for set source node
-    static SetKey createSetKey(const QueryTreeNodePtr & set_source_node);
+    static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
-
 private:
     /// Query context
     ContextMutablePtr query_context;

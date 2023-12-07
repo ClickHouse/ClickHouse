@@ -30,7 +30,7 @@ public:
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
@@ -43,6 +43,7 @@ public:
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity) override;
@@ -57,7 +58,7 @@ public:
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
-    String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
+    std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
     ~MergeTreeDataPartCompact() override;
 

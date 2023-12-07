@@ -1,0 +1,26 @@
+name: libFuzzer
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
+on: # yamllint disable-line rule:truthy
+  #  schedule:
+  #    - cron: '0 0 2 31 1' # never for now
+  workflow_call:
+jobs:
+  BuilderFuzzers:
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: fuzzers
+  libFuzzerTest:
+    needs: [BuilderFuzzers]
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: libFuzzer tests
+      runner_type: func-tester
+      additional_envs: |
+        KILL_TIMEOUT=10800
+      run_command: |
+        cd "$REPO_COPY/tests/ci"
+        python3 libfuzzer_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"

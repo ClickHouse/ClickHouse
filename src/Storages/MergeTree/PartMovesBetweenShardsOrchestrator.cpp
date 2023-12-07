@@ -684,7 +684,7 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
             continue;
         }
         else
-            throw Coordination::Exception(code, entry.znode_path);
+            throw Coordination::Exception::fromPath(code, entry.znode_path);
     }
 }
 

@@ -8,7 +8,7 @@ INSERT INTO 语句主要用于向系统中添加数据.
 查询的基本格式:
 
 ``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
 您可以在查询中指定要插入的列的列表，如：`[(c1, c2, c3)]`。您还可以使用列[匹配器](../../sql-reference/statements/select/index.md#asterisk)的表达式，例如`*`和/或[修饰符](../../sql-reference/statements/select/index.md#select-modifiers)，例如 [APPLY](../../sql-reference/statements/select/index.md#apply-modifier)， [EXCEPT](../../sql-reference/statements/select/index.md#apply-modifier)， [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier)。
@@ -71,7 +71,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 例如，下面的查询所使用的输入格式就与上面INSERT … VALUES的中使用的输入格式相同：
 
 ``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
 ```
 
 ClickHouse会清除数据前所有的空白字符与一个换行符（如果有换行符的话）。所以在进行查询时，我们建议您将数据放入到输入输出格式名称后的新的一行中去（如果数据是以空白字符开始的，这将非常重要）。
@@ -93,7 +93,7 @@ INSERT INTO t FORMAT TabSeparated
 ### 使用`SELECT`的结果写入 {#inserting-the-results-of-select}
 
 ``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
 ```
 
 写入与SELECT的列的对应关系是使用位置来进行对应的，尽管它们在SELECT表达式与INSERT中的名称可能是不同的。如果需要，会对它们执行对应的类型转换。

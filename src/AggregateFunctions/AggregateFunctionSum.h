@@ -142,6 +142,7 @@ struct AggregateFunctionSumData
     ), addManyConditionalInternalImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
+        condition_map += start;
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
@@ -258,12 +259,12 @@ struct AggregateFunctionSumData
 
     void write(WriteBuffer & buf) const
     {
-        writeBinary(sum, buf);
+        writeBinaryLittleEndian(sum, buf);
     }
 
     void read(ReadBuffer & buf)
     {
-        readBinary(sum, buf);
+        readBinaryLittleEndian(sum, buf);
     }
 
     T get() const

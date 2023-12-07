@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import pytest
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from os.path import join, dirname, realpath
 import time
 import helpers.keeper_utils as ku
-from kazoo.client import KazooClient, KazooState
+import typing as tp
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = join(dirname(realpath(__file__)), "configs")
@@ -31,6 +31,7 @@ def started_cluster():
         yield cluster
 
     finally:
+        conn: tp.Optional[ku.KeeperClient]
         for conn in [zk1, zk2, zk3, zk4]:
             if conn:
                 conn.stop()
@@ -39,8 +40,37 @@ def started_cluster():
         cluster.shutdown()
 
 
+# can't use create_client as clickhouse-keeper-client 's reconfig doesn't support
+# joining and adding in single reconfig command, thus duplication
+# TODO myrrc this should be removed once keeper-client is updated
+
+
 def get_fake_zk(node):
     return ku.get_fake_zk(cluster, node)
+
+
+def get_config_str(zk):
+    return ku.get_config_str(zk)[0].decode("utf-8")
+
+
+def wait_configs_equal(
+    left_config: str, right_zk: ku.KeeperClient, timeout: float = 30.0
+):
+    """
+    Check whether get /keeper/config result in left_config is equal
+    to get /keeper/config on right_zk ZK connection.
+    """
+    elapsed: float = 0.0
+    while sorted(left_config.split("\n")) != sorted(
+        get_config_str(right_zk).split("\n")
+    ):
+        time.sleep(1)
+        elapsed += 1
+        if elapsed >= timeout:
+            raise Exception(
+                f"timeout while checking nodes configs to get equal. "
+                f"Left: {left_config}, right: {get_config_str(right_zk)}"
+            )
 
 
 def test_reconfig_replace_leader_in_one_command(started_cluster):
@@ -49,7 +79,7 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
     """
 
     zk1 = get_fake_zk(node1)
-    config = ku.get_config_str(zk1)
+    config = get_config_str(zk1)
 
     assert len(config.split("\n")) == 3
     assert "node1" in config
@@ -62,11 +92,11 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
 
     zk2 = get_fake_zk(node2)
     zk2.sync("/test_four_0")
-    ku.wait_configs_equal(config, zk2)
+    wait_configs_equal(config, zk2)
 
     zk3 = get_fake_zk(node3)
     zk3.sync("/test_four_0")
-    ku.wait_configs_equal(config, zk3)
+    wait_configs_equal(config, zk3)
 
     for i in range(100):
         assert zk2.exists(f"/test_four_{i}") is not None
@@ -91,7 +121,8 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
 
     zk4 = get_fake_zk(node4)
     zk4.sync("/test_four_0")
-    ku.wait_configs_equal(config, zk4)
+    # we have an additional 20s timeout for removing leader
+    wait_configs_equal(config, zk4, timeout=50)
 
     for i in range(100):
         assert zk4.exists(f"test_four_{i}") is not None
@@ -107,13 +138,13 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
     zk2.close()
     zk2 = get_fake_zk(node2)
     zk2.sync("/test_four_0")
-    ku.wait_configs_equal(config, zk2)
+    wait_configs_equal(config, zk2)
 
     zk3.stop()
     zk3.close()
     zk3 = get_fake_zk(node3)
     zk3.sync("/test_four_0")
-    ku.wait_configs_equal(config, zk3)
+    wait_configs_equal(config, zk3)
 
     for i in range(200):
         assert zk2.exists(f"test_four_{i}") is not None

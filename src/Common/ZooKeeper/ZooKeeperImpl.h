@@ -15,6 +15,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -103,6 +105,7 @@ public:
     struct Node
     {
         Poco::Net::SocketAddress address;
+        UInt8 original_index;
         bool secure;
     };
 
@@ -123,10 +126,16 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 
+    Int8 getConnectedNodeIdx() const override { return original_index; }
+    String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
+    int32_t getConnectionXid() const override { return next_xid.load(); }
+
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    bool hasReachedDeadline() const override;
+
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
-
-    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
@@ -150,12 +159,12 @@ public:
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void set(
         const String & path,
@@ -167,7 +176,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void check(
         const String & path,
@@ -213,9 +222,9 @@ public:
 
 private:
     ACLs default_acls;
-    Poco::Net::SocketAddress connected_zk_address;
 
     zkutil::ZooKeeperArgs args;
+    Int8 original_index = -1;
 
     /// Fault injection
     void maybeInjectSendFault();
@@ -232,8 +241,13 @@ private:
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
     Poco::Net::SocketAddress socket_address;
+
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
+    std::optional<CompressedReadBuffer> compressed_in;
+    std::optional<CompressedWriteBuffer> compressed_out;
+
+    bool use_compression = false;
 
     int64_t session_id = 0;
 
@@ -248,10 +262,11 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallback watch;
+        WatchCallbackPtr watch;
         clock::time_point time;
     };
 
+    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
@@ -262,7 +277,7 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::vector<WatchCallback>;
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);
@@ -320,9 +335,15 @@ private:
     template <typename T>
     void read(T &);
 
+    WriteBuffer & getWriteBuffer();
+    void flushWriteBuffer();
+    ReadBuffer & getReadBuffer();
+
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
     void initFeatureFlags();
+
+    void checkSessionDeadline() const;
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;

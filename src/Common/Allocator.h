@@ -20,12 +20,6 @@
 #include <sys/mman.h>
 
 #include <Core/Defines.h>
-#if defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
-    /// Thread and memory sanitizers do not intercept mremap. The usage of
-    /// mremap will lead to false positives.
-    #define DISABLE_MREMAP 1
-#endif
-#include <base/mremap.h>
 #include <base/getPageSize.h>
 
 #include <Common/CurrentMemoryTracker.h>
@@ -35,6 +29,12 @@
 
 #include <Common/Allocator_fwd.h>
 
+#include <base/errnoToString.h>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
+
+extern const size_t POPULATE_THRESHOLD;
 
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
 
@@ -53,7 +53,7 @@ namespace ErrorCodes
   * Most modern allocators (including jemalloc) don't use mremap, so the idea was to take advantage from mremap system call for large reallocs.
   * Actually jemalloc had support for mremap, but it was intentionally removed from codebase https://github.com/jemalloc/jemalloc/commit/e2deab7a751c8080c2b2cdcfd7b11887332be1bb.
   * Our performance tests also shows that without manual mmap/mremap/munmap clickhouse is overall faster for about 1-2% and up to 5-7x for some types of queries.
-  * That is why we don't do manuall mmap/mremap/munmap here and completely rely on jemalloc for allocations of any size.
+  * That is why we don't do manual mmap/mremap/munmap here and completely rely on jemalloc for allocations of any size.
   */
 
 /** Responsible for allocating / freeing memory. Used, for example, in PODArray, Arena.
@@ -64,7 +64,7 @@ namespace ErrorCodes
   * - by the presence of the `alignment` argument;
   * - the possibility of zeroing memory (used in hash tables);
   */
-template <bool clear_memory_>
+template <bool clear_memory_, bool populate>
 class Allocator
 {
 public:
@@ -72,8 +72,10 @@ public:
     void * alloc(size_t size, size_t alignment = 0)
     {
         checkSize(size);
-        CurrentMemoryTracker::alloc(size);
-        return allocNoTrack(size, alignment);
+        auto trace = CurrentMemoryTracker::alloc(size);
+        void * ptr = allocNoTrack(size, alignment);
+        trace.onAlloc(ptr, size);
+        return ptr;
     }
 
     /// Free memory range.
@@ -83,7 +85,8 @@ public:
         {
             checkSize(size);
             freeNoTrack(buf);
-            CurrentMemoryTracker::free(size);
+            auto trace = CurrentMemoryTracker::free(size);
+            trace.onFree(buf, size);
         }
         catch (...)
         {
@@ -108,7 +111,9 @@ public:
         else if (alignment <= MALLOC_MIN_ALIGNMENT)
         {
             /// Resize malloc'd memory region with no special alignment requirement.
-            CurrentMemoryTracker::realloc(old_size, new_size);
+            auto trace_free = CurrentMemoryTracker::free(old_size);
+            auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
+            trace_free.onFree(buf, old_size);
 
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
@@ -118,6 +123,8 @@ public:
             }
 
             buf = new_buf;
+            trace_alloc.onAlloc(buf, new_size);
+
             if constexpr (clear_memory)
                 if (new_size > old_size)
                     memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
@@ -130,6 +137,9 @@ public:
             free(buf, old_size);
             buf = new_buf;
         }
+
+        if constexpr (populate)
+            prefaultPages(buf, new_size);
 
         return buf;
     }
@@ -168,6 +178,10 @@ private:
             if constexpr (clear_memory)
                 memset(buf, 0, size);
         }
+
+        if constexpr (populate)
+            prefaultPages(buf, size);
+
         return buf;
     }
 
@@ -181,6 +195,33 @@ private:
         /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
         if (size >= 0x8000000000000000ULL)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
+    }
+
+    /// Address passed to madvise is required to be aligned to the page boundary.
+    auto adjustToPageSize(void * buf, size_t len, size_t page_size)
+    {
+        const uintptr_t address_numeric = reinterpret_cast<uintptr_t>(buf);
+        const size_t next_page_start = ((address_numeric + page_size - 1) / page_size) * page_size;
+        return std::make_pair(reinterpret_cast<void *>(next_page_start), len - (next_page_start - address_numeric));
+    }
+
+    void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
+    {
+#if defined(MADV_POPULATE_WRITE)
+        if (len_ < POPULATE_THRESHOLD)
+            return;
+
+        static const size_t page_size = ::getPageSize();
+        if (len_ < page_size) /// Rounded address should be still within [buf, buf + len).
+            return;
+
+        auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
+        if (auto res = ::madvise(buf, len, MADV_POPULATE_WRITE); res < 0)
+            LOG_TRACE(
+                LogFrequencyLimiter(&Poco::Logger::get("Allocator"), 1),
+                "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
+                errnoToString(res));
+#endif
     }
 };
 
@@ -257,5 +298,7 @@ constexpr size_t allocatorInitialBytes<AllocatorWithStackMemory<
 
 /// Prevent implicit template instantiation of Allocator
 
-extern template class Allocator<false>;
-extern template class Allocator<true>;
+extern template class Allocator<false, false>;
+extern template class Allocator<true, false>;
+extern template class Allocator<false, true>;
+extern template class Allocator<true, true>;

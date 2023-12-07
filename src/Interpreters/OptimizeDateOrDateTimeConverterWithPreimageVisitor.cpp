@@ -118,35 +118,37 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
         {"greaterOrEquals", "lessOrEquals"},
     };
 
-    if (!swap_relations.contains(function.name)) return;
+    if (!swap_relations.contains(function.name))
+        return;
 
-    if (!function.arguments || function.arguments->children.size() != 2) return;
+    if (!function.arguments || function.arguments->children.size() != 2)
+        return;
 
     size_t func_id = function.arguments->children.size();
 
     for (size_t i = 0; i < function.arguments->children.size(); i++)
-    {
         if (const auto * func = function.arguments->children[i]->as<ASTFunction>())
-        {
             func_id = i;
-        }
-    }
 
-    if (func_id == function.arguments->children.size()) return;
+    if (func_id == function.arguments->children.size())
+        return;
 
     size_t literal_id = 1 - func_id;
     const auto * literal = function.arguments->children[literal_id]->as<ASTLiteral>();
 
-    if (!literal || literal->value.getType() != Field::Types::UInt64) return;
+    if (!literal || literal->value.getType() != Field::Types::UInt64)
+        return;
 
     String comparator = literal_id > func_id ? function.name : swap_relations.at(function.name);
 
     const auto * ast_func = function.arguments->children[func_id]->as<ASTFunction>();
     /// Currently we only handle single-argument functions.
-    if (!ast_func || !ast_func->arguments || ast_func->arguments->children.size() != 1) return;
+    if (!ast_func || !ast_func->arguments || ast_func->arguments->children.size() != 1)
+        return;
 
     const auto * column_id = ast_func->arguments->children.at(0)->as<ASTIdentifier>();
-    if (!column_id) return;
+    if (!column_id)
+        return;
 
     auto pos = IdentifierSemantic::getMembership(*column_id);
     if (!pos)
@@ -158,21 +160,30 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
         return;
 
     auto data_type_and_name = data.tables[*pos].columns.tryGetByName(column_id->shortName());
-    if (!data_type_and_name) return;
+    if (!data_type_and_name)
+        return;
+
+    const auto column_type = data_type_and_name->type;
+    if (!column_type || (!isDateOrDate32(*column_type) && !isDateTime(*column_type) && !isDateTime64(*column_type)))
+        return;
 
     const auto & converter = FunctionFactory::instance().tryGet(ast_func->name, data.context);
-    if (!converter) return;
+    if (!converter)
+        return;
 
     ColumnsWithTypeAndName args;
-    args.emplace_back(data_type_and_name->type, "tmp");
+    args.emplace_back(column_type, "tmp");
     auto converter_base = converter->build(args);
-    if (!converter_base || !converter_base->hasInformationAboutPreimage()) return;
+    if (!converter_base || !converter_base->hasInformationAboutPreimage())
+        return;
 
-    auto preimage_range = converter_base->getPreimage(*(data_type_and_name->type), literal->value);
-    if (!preimage_range) return;
+    auto preimage_range = converter_base->getPreimage(*column_type, literal->value);
+    if (!preimage_range)
+        return;
 
     const auto new_ast = generateOptimizedDateFilterAST(comparator, *data_type_and_name, *preimage_range);
-    if (!new_ast) return;
+    if (!new_ast)
+        return;
 
     ast = new_ast;
 }

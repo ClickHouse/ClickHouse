@@ -86,12 +86,18 @@ public:
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override
     {
         IPv x = field.get<IPv>();
-        writeBinary(x, ostr);
+        if constexpr (std::is_same_v<IPv, IPv6>)
+            writeBinary(x, ostr);
+        else
+            writeBinaryLittleEndian(x, ostr);
     }
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override
     {
         IPv x;
-        readBinary(x.toUnderType(), istr);
+        if constexpr (std::is_same_v<IPv, IPv6>)
+            readBinary(x, istr);
+        else
+            readBinaryLittleEndian(x, istr);
         field = NearestFieldType<IPv>(x);
     }
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
