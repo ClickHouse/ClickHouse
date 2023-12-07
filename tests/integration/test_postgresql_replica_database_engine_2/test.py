@@ -842,6 +842,35 @@ def test_replica_consumer(started_cluster):
     pg_manager_instance2.clear()
 
 
+def test_bad_connection_options(started_cluster):
+    table = "test_bad_connection_options"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        user="postrges",
+        password="kek",
+    )
+
+    instance.wait_for_log_line('role "postrges" does not exist')
+    assert instance.contains_in_log(
+        "<Error> void DB::DatabaseMaterializedPostgreSQL::startSynchronization(): std::exception. Code: 1001, type: pqxx::broken_connection"
+    )
+    assert "test_database" in instance.query("SHOW DATABASES")
+    assert "" == instance.query("show tables from test_database").strip()
+    pg_manager.drop_materialized_db("test_database")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
