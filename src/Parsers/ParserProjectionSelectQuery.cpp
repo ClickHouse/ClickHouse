@@ -1,4 +1,3 @@
-#include <iostream>
 #include <memory>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
