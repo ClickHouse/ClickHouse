@@ -37,7 +37,7 @@ namespace
             if (timepoint.length() < 5)
                 timepoint.insert(0, 5 - timepoint.length(), ' ');
             std::lock_guard lock{mutex};
-            std::cout << timepoint << " : " << event << std::endl;
+            //std::cout << timepoint << " : " << event << std::endl;
             events.emplace_back(std::move(event));
         }
 

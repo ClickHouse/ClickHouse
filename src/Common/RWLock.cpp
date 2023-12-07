@@ -177,6 +177,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
     /// Lock is free to acquire
     if (rdlock_owner == readers_queue.end() && wrlock_owner == writers_queue.end())
     {
+        /// Set `rdlock_owner` or `wrlock_owner` and make it owner.
         (type == Read ? rdlock_owner : wrlock_owner) = it_group;  /// SM2: nothrow
         grantOwnership(it_group);
     }
@@ -341,13 +342,21 @@ void RWLockImpl::grantOwnershipToAllReaders() noexcept
 {
     if (rdlock_owner != readers_queue.end())
     {
+        size_t num_new_owners = 0;
+
         for (;;)
         {
+            if (!rdlock_owner->ownership)
+                ++num_new_owners;
             grantOwnership(rdlock_owner);
             if (std::next(rdlock_owner) == readers_queue.end())
                 break;
             ++rdlock_owner;
         }
+
+        /// There couldn't be more than one reader group which is not an owner.
+        /// (Because we add a new reader group only if the last reader group is already an owner - see the `can_use_last_group` variable.)
+        chassert(num_new_owners <= 1);
     }
 }
 
