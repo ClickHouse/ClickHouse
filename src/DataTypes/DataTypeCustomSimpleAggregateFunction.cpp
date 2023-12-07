@@ -169,4 +169,19 @@ void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
     factory.registerDataTypeCustom("SimpleAggregateFunction", create);
 }
 
+bool DataTypeCustomSimpleAggregateFunction::identical(const IDataTypeCustomName & rhs_) const
+{
+    if (const auto * rhs = typeid_cast<decltype(this)>(&rhs_))
+    {
+        if (parameters != rhs->parameters)
+            return false;
+        if (argument_types.size() != rhs->argument_types.size())
+            return false;
+        for (size_t i = 0; i < argument_types.size(); ++i)
+            if (!argument_types[i]->identical(*rhs->argument_types[i]))
+                return false;
+        return function->getName() == rhs->function->getName();
+    }
+    return false;
+}
 }

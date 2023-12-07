@@ -91,6 +91,7 @@ struct ColumnDescription
     ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
 
+    bool identical(const ColumnDescription & other) const;
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
@@ -125,6 +126,7 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
+    bool identical(const ColumnsDescription & other) const;
     bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
