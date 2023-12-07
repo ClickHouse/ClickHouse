@@ -51,6 +51,27 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, bool releasable)
+{
+    auto & local_stat = stat_by_kind[kind];
+    if (releasable)
+    {
+        stat.releasable_size += size;
+        ++stat.releasable_count;
+
+        local_stat.releasable_size += size;
+        ++local_stat.releasable_count;
+    }
+    else
+    {
+        stat.non_releasable_size += size;
+        ++stat.non_releasable_count;
+
+        local_stat.non_releasable_size += size;
+        ++local_stat.non_releasable_count;
+    }
+}
+
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)

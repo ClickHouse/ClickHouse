@@ -38,26 +38,7 @@ struct FileCacheReserveStat
     Stat stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
-    void update(size_t size, FileSegmentKind kind, bool releasable)
-    {
-        auto & local_stat = stat_by_kind[kind];
-        if (releasable)
-        {
-            stat.releasable_size += size;
-            ++stat.releasable_count;
-
-            local_stat.releasable_size += size;
-            ++local_stat.releasable_count;
-        }
-        else
-        {
-            stat.non_releasable_size += size;
-            ++stat.non_releasable_count;
-
-            local_stat.non_releasable_size += size;
-            ++local_stat.non_releasable_count;
-        }
-    }
+    void update(size_t size, FileSegmentKind kind, bool releasable);
 };
 
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
