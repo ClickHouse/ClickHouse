@@ -34,7 +34,10 @@ void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_acce
 
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
-void registerDisks(bool global_skip_access_check, bool allow_vfs, bool allow_vfs_gc)
+void registerDisks(
+    bool global_skip_access_check,
+    [[maybe_unused]] bool allow_vfs,
+    [[maybe_unused]] bool allow_vfs_gc)
 {
     auto & factory = DiskFactory::instance();
 
