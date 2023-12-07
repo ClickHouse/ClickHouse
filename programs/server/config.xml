@@ -364,7 +364,14 @@
     <background_schedule_pool_size>128</background_schedule_pool_size>
     <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    <tables_loader_foreground_pool_size>0</tables_loader_foreground_pool_size>
+    <tables_loader_background_pool_size>0</tables_loader_background_pool_size>
     -->
+
+    <!-- Enables asynchronous loading of databases and tables to speedup server startup.
+         Queries to not yet loaded entity will be blocked until load is finished.
+      -->
+    <!-- <async_load_databases>true</async_load_databases> -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -478,7 +485,6 @@
                         <max_data_part_size_bytes></max_data_part_size_bytes>
                         <max_data_part_size_ratio></max_data_part_size_ratio>
                         <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
-                        <prefer_not_to_merge>false</prefer_not_to_merge>
                         <load_balancing>round_robin</load_balancing>
                     </main>
                 </volumes>
@@ -830,13 +836,13 @@
                  And also (and which is more important), the initial_user will
                  be used as current user for the query.
 
-                 Right now the protocol is pretty simple and it only takes into account:
+                 Right now the protocol is pretty simple, and it only takes into account:
                  - cluster name
                  - query
 
-                 Also it will be nice if the following will be implemented:
-                 - source hostname (see interserver_http_host), but then it will depends from DNS,
-                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 Also, it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depend on DNS,
+                   it can use IP address instead, but then you need to get correct on the initiator node.
                  - target hostname / ip address (same notes as for source hostname)
                  - time-based security tokens
             -->
@@ -1291,10 +1297,10 @@
     <dictionaries_lazy_load>true</dictionaries_lazy_load>
 
     <!-- Wait at startup until all the dictionaries finish their loading (successfully or not)
-         before listening to connections. Setting this to 1 can make ClickHouse start slowly,
-         however some queries can be executed faster (because it won't have to wait for the used dictionaries to be load).
+         before receiving any connections. Affects dictionaries only if "dictionaries_lazy_load" is false.
+         Setting this to false can make ClickHouse start faster, however some queries can be executed slower.
     -->
-    <wait_dictionaries_load_at_startup>false</wait_dictionaries_load_at_startup>
+    <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
@@ -1427,6 +1433,10 @@
          The directory will be created if it doesn't exist.
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+    <!-- Directory containing the proto files for the well-known Protobuf types.
+      -->
+    <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 
     <!-- Default query masking rules, matching lines would be replaced with something else in the logs
         (both text logs and system.query_log).

@@ -714,11 +714,9 @@ void PostgreSQLReplicationHandler::shutdownFinal()
                 dropReplicationSlot(tx, /* temporary */false);
         });
     }
-    catch (Exception & e)
+    catch (...)
     {
-        e.addMessage("while dropping replication slot: {}", replication_slot);
-        LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually.", replication_slot);
-        throw;
+        LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually. Error: {}", replication_slot, getCurrentExceptionMessage(true));
     }
 }
 

@@ -306,13 +306,10 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, local_context);
 
     /// start modify query
-    if (local_context->getSettingsRef().allow_experimental_alter_materialized_view_structure)
-    {
-        const auto & new_select = new_metadata.select;
-        const auto & old_select = old_metadata.getSelectQuery();
+    const auto & new_select = new_metadata.select;
+    const auto & old_select = old_metadata.getSelectQuery();
 
-        DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
-    }
+    DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
     /// end modify query
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
@@ -320,10 +317,8 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
 {
-    const auto & settings = local_context->getSettingsRef();
-
     for (const auto & command : commands)
     {
         if (command.type == AlterCommand::MODIFY_SQL_SECURITY)
@@ -333,8 +328,7 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
 
             continue;
         }
-        else if ((command.type == AlterCommand::MODIFY_QUERY && settings.allow_experimental_alter_materialized_view_structure) ||
-                command.isCommentAlter())
+        else if (command.type == AlterCommand::MODIFY_QUERY || command.isCommentAlter())
             continue;
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
