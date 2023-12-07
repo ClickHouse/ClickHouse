@@ -810,9 +810,40 @@ def test_replica_consumer(started_cluster):
     pg_manager_instance2.clear()
 
 
+def test_bad_connection_options(started_cluster):
+    table = "test_bad_connection_options"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        user="postrges",
+        password="kek",
+    )
+
+    instance.wait_for_log_line('role "postrges" does not exist')
+    assert instance.contains_in_log(
+        "<Error> void DB::DatabaseMaterializedPostgreSQL::startSynchronization(): std::exception. Code: 1001, type: pqxx::broken_connection"
+    )
+    assert "test_database" in instance.query("SHOW DATABASES")
+    assert "" == instance.query("show tables from test_database").strip()
+    pg_manager.drop_materialized_db("test_database")
+
+
 def test_failed_load_from_snapshot(started_cluster):
     if instance.is_built_with_sanitizer() or instance.is_debug_build():
-        pytest.skip("Sanitizers and debug mode are skipped, because this test thrown logical error")
+        pytest.skip(
+            "Sanitizers and debug mode are skipped, because this test thrown logical error"
+        )
 
     table = "failed_load"
 
@@ -828,14 +859,11 @@ def test_failed_load_from_snapshot(started_cluster):
     )
 
     # Create a table with wrong table structure
-    assert (
-        "Could not convert string to i"
-        in instance.query_and_get_error(
-            f"""
+    assert "Could not convert string to i" in instance.query_and_get_error(
+        f"""
         SET allow_experimental_materialized_postgresql_table=1;
         CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', 'mysecretpassword') ORDER BY a
         """
-        )
     )
 
 
