@@ -215,14 +215,28 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 }
 
 
-bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, const ZooKeeperPtr & zookeeper)
+bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
 {
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
 
+    auto maybe_secure_port = global_context->getTCPPortSecure();
+
     for (const HostID & host : entry.hosts)
     {
-        auto maybe_secure_port = global_context->getTCPPortSecure();
+        if (config_host_name)
+        {
+            if (host.host_name != *config_host_name)
+                continue;
+
+            if (!(maybe_secure_port && maybe_secure_port == host.port) && !(global_context->getTCPPort() == host.port))
+                continue;
+
+            host_in_hostlist = true;
+            host_id = host;
+            host_id_str = host.toString();
+            break;
+        }
 
         try
         {
