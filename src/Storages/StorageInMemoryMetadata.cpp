@@ -115,29 +115,28 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (!sql_security_type.has_value())
         return Context::createCopy(context);
 
-    switch (*sql_security_type)
-    {
-        case ASTSQLSecurity::Type::NONE:
-        {
-            auto new_context = Context::createCopy(context->getGlobalContext());
-            new_context->setClientInfo(context->getClientInfo());
-            return new_context;
-        }
-        case ASTSQLSecurity::Type::DEFINER:
-        {
-            auto new_context = Context::createCopy(context->getGlobalContext());
-            new_context->setClientInfo(context->getClientInfo());
-            new_context->setUser(getDefinerID(context));
+    if (sql_security_type == ASTSQLSecurity::Type::INVOKER)
+        return Context::createCopy(context);
 
-            auto user = new_context->getUser();
-            new_context->applySettingsChanges(user->settings.toSettingsChanges());
-            return new_context;
-        }
-        case ASTSQLSecurity::Type::INVOKER:
-        {
-            return Context::createCopy(context);
-        }
-    }
+    auto new_context = Context::createCopy(context->getGlobalContext());
+    new_context->setClientInfo(context->getClientInfo());
+    new_context->setQueryContext(std::const_pointer_cast<Context>(context));
+
+    auto query_id = new_context->getCurrentQueryId();
+    new_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    new_context->setInitialQueryStartTime(std::chrono::system_clock::now());
+    new_context->setCurrentQueryId(query_id);
+    new_context->setInitialQueryId(context->getCurrentQueryId());
+
+    if (sql_security_type == ASTSQLSecurity::Type::NONE)
+        return new_context;
+
+    new_context->setUser(getDefinerID(context));
+    auto user = new_context->getUser();
+    new_context->applySettingsChanges(user->settings.toSettingsChanges());
+    new_context->applySettingsChanges(context->getSettings().changes());
+
+    return new_context;
 }
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)

@@ -2168,7 +2168,8 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
 ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
-    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
+    if (!ptr)
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
     return ptr;
 }
 
