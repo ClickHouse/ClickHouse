@@ -86,16 +86,16 @@ fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
 
 
-void assertEqual(FileSegments::const_iterator segments_begin, FileSegments::const_iterator segments_end, size_t segments_size, const Ranges & expected_ranges, const States & expected_states = {})
+void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
     std::cerr << "File segments: ";
-    for (auto it = segments_begin; it != segments_end; ++it)
-        std::cerr << (*it)->range().toString() << ", ";
+    for (const auto & file_segment : *file_segments)
+        std::cerr << file_segment->range().toString() << ", ";
 
-    ASSERT_EQ(segments_size, expected_ranges.size());
+    ASSERT_EQ(file_segments->size(), expected_ranges.size());
 
     if (!expected_states.empty())
-        ASSERT_EQ(segments_size, expected_states.size());
+        ASSERT_EQ(file_segments->size(), expected_states.size());
 
     auto get_expected_state = [&](size_t i)
     {
@@ -106,23 +106,40 @@ void assertEqual(FileSegments::const_iterator segments_begin, FileSegments::cons
     };
 
     size_t i = 0;
-    for (auto it = segments_begin; it != segments_end; ++it)
+    for (const auto & file_segment : *file_segments)
     {
-        const auto & file_segment = *it;
         ASSERT_EQ(file_segment->range(), expected_ranges[i]);
         ASSERT_EQ(file_segment->state(), get_expected_state(i));
         ++i;
     }
 }
 
-void assertEqual(const FileSegments & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
-    assertEqual(file_segments.begin(), file_segments.end(), file_segments.size(), expected_ranges, expected_states);
-}
+    std::cerr << "File segments: ";
+    for (const auto & file_segment : file_segments)
+        std::cerr << FileSegment::Range(file_segment.range_left, file_segment.range_right).toString() << ", ";
 
-void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
-{
-    assertEqual(file_segments->begin(), file_segments->end(), file_segments->size(), expected_ranges, expected_states);
+    ASSERT_EQ(file_segments.size(), expected_ranges.size());
+
+    if (!expected_states.empty())
+        ASSERT_EQ(file_segments.size(), expected_states.size());
+
+    auto get_expected_state = [&](size_t i)
+    {
+        if (expected_states.empty())
+            return State::DOWNLOADED;
+        else
+            return expected_states[i];
+    };
+
+    size_t i = 0;
+    for (const auto & file_segment : file_segments)
+    {
+        ASSERT_EQ(FileSegment::Range(file_segment.range_left, file_segment.range_right), expected_ranges[i]);
+        ASSERT_EQ(file_segment.state, get_expected_state(i));
+        ++i;
+    }
 }
 
 void assertProtectedOrProbationary(const FileSegments & file_segments, const Ranges & expected, bool assert_protected)
@@ -298,7 +315,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [__________]
         ///                   ^          ^
         ///                   0          9
-        assertEqual(cache.getSnapshot(key), { Range(0, 9) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9) });
         assertEqual(cache.dumpQueue(), { Range(0, 9) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 1);
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
@@ -317,7 +334,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [__________][_____]
         ///                   ^          ^^     ^
         ///                   0          910    14
-        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
@@ -342,7 +359,7 @@ TEST_F(FileCacheTest, LRUPolicy)
             increasePriority(holder);
         }
 
-        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
@@ -371,7 +388,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         ///                   ^          ^^     ^   ^    ^    ^   ^^^
         ///                   0          910    14  17   20   24  2627
         ///
-        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14), Range(17, 20), Range(24, 26), Range(27, 27) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 23);
@@ -414,7 +431,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         ///                   ^                            ^    ^
         ///                   0                            20   24
         ///
-        assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14), Range(15, 16), Range(17, 20), Range(24, 26) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(0, 9), Range(10, 14), Range(15, 16), Range(17, 20), Range(24, 26) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14), Range(15, 16), Range(17, 20), Range(24, 26) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 24);
@@ -436,7 +453,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [_____][__][____][_]   [___]
         ///                   ^          ^       ^   ^   ^
         ///                   10         17      21  24  26
-        assertEqual(cache.getSnapshot(key), { Range(10, 14), Range(15, 16), Range(17, 20), Range(21, 21), Range(24, 26) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(10, 14), Range(15, 16), Range(17, 20), Range(21, 21), Range(24, 26) });
         assertEqual(cache.dumpQueue(), { Range(24, 26), Range(10, 14), Range(15, 16), Range(17, 20), Range(21, 21) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
@@ -455,7 +472,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [____][_]  [][___][__]
         ///                   ^       ^  ^^^   ^^  ^
         ///                   17      21 2324  26  27
-        assertEqual(cache.getSnapshot(key), { Range(17, 20), Range(21, 21), Range(23, 23), Range(24, 26), Range(27, 27) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(17, 20), Range(21, 21), Range(23, 23), Range(24, 26), Range(27, 27) });
         assertEqual(cache.dumpQueue(), { Range(17, 20), Range(21, 21), Range(23, 23), Range(24, 26), Range(27, 27) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
@@ -501,7 +518,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [___]       [_][___][_]   [__]
         ///                   ^   ^       ^  ^   ^  ^   ^  ^
         ///                   2   4       23 24  26 27  30 31
-        assertEqual(cache.getSnapshot(key), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
         assertEqual(cache.dumpQueue(), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
 
         std::cerr << "Step 9\n";
@@ -572,7 +589,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Current cache:    [___]       [___][_][__][__]
         ///                   ^   ^       ^   ^  ^^  ^^  ^
         ///                   2   4       24  26 27  2930 31
-        assertEqual(cache.getSnapshot(key), { Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29), Range(30, 31) });
+        assertEqual(cache.getFileSegmentInfos(key), { Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29), Range(30, 31) });
         assertEqual(cache.dumpQueue(), { Range(30, 31), Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29) });
 
         std::cerr << "Step 10\n";
@@ -1023,11 +1040,11 @@ TEST_F(FileCacheTest, CachedReadBuffer)
             file_path, key, cache, read_buffer_creator, modified_settings, "test", s.size(), false, false, std::nullopt, nullptr);
 
         cached_buffer->next();
-        assertEqual(cache->dumpQueue(), { Range(5, 9), Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4) });
+        assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9)});
 
         cached_buffer->position() = cached_buffer->buffer().end();
         cached_buffer->next();
-        assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9) });
+        assertEqual(cache->dumpQueue(), {Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9), Range(10, 14)});
     }
 }
 

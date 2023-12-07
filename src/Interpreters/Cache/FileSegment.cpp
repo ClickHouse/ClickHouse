@@ -668,15 +668,13 @@ void FileSegment::complete()
 
             if (is_last_holder)
             {
+                bool added_to_download_queue = false;
                 if (background_download_enabled && remote_file_reader)
                 {
-                    LOG_TEST(
-                        log, "Submitting file segment for background download "
-                        "(having {}/{})", downloaded_size, range().size());
-
-                    locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
+                    added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
                 }
-                else
+
+                if (!added_to_download_queue)
                 {
                     locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
                     setDetachedState(segment_lock); /// See comment below.
@@ -835,24 +833,23 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
-FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
+FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment, FileCache & cache)
 {
     auto lock = file_segment->lockFileSegment();
-
-    auto snapshot = std::make_shared<FileSegment>(
-        file_segment->key(),
-        file_segment->offset(),
-        file_segment->range().size(),
-        State::DETACHED,
-        CreateFileSegmentSettings(file_segment->getKind(), file_segment->is_unbound),
-        false, file_segment->cache, file_segment->key_metadata, file_segment->queue_iterator);
-
-    snapshot->hits_count = file_segment->getHitsCount();
-    snapshot->downloaded_size = file_segment->getDownloadedSize();
-    snapshot->download_state = file_segment->download_state.load();
-    snapshot->ref_count = file_segment.use_count();
-
-    return snapshot;
+    return Info{
+        .key = file_segment->key(),
+        .offset = file_segment->offset(),
+        .path = cache.getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->segment_kind),
+        .range_left = file_segment->range().left,
+        .range_right = file_segment->range().right,
+        .kind = file_segment->segment_kind,
+        .state = file_segment->download_state,
+        .size = file_segment->range().size(),
+        .downloaded_size = file_segment->downloaded_size,
+        .cache_hits = file_segment->hits_count,
+        .references = static_cast<uint64_t>(file_segment.use_count()),
+        .is_unbound = file_segment->is_unbound,
+    };
 }
 
 bool FileSegment::isDetached() const

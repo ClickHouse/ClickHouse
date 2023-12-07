@@ -212,6 +212,12 @@ if [ "$cache_policy" = "SLRU" ]; then
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
+# Randomize async_load_databases
+if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
+    sudo echo "<clickhouse><async_load_databases>true</async_load_databases></clickhouse>" \
+        > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
+fi
+
 start
 
 stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \

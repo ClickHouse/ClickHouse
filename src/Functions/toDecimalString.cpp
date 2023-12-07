@@ -225,10 +225,10 @@ private:
         if constexpr (is_decimal<T>)
         {
             const auto * from_col = checkAndGetColumn<ColumnDecimal<T>>(arguments[0].column.get());
-            UInt8 from_scale = from_col->getScale();
 
             if (from_col)
             {
+                UInt8 from_scale = from_col->getScale();
                 if (precision_col_const)
                     vectorConstant(from_col->getData(), precision_col_const->template getValue<UInt8>(), result_chars, result_offsets, from_scale);
                 else if (precision_col)

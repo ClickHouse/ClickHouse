@@ -444,7 +444,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
             storage.getContext()->getOpenTelemetrySpanLog());
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+        auto connection = pool->get(timeouts, distributed_header.insert_settings);
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
             connection->getDescription(),

@@ -135,9 +135,11 @@ public:
 
         size_t size() const { return right - left + 1; }
 
-        String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
+        bool contains(size_t point) const { return left <= point && point <= right; }
 
-        bool contains(size_t offset) const { return left <= offset && offset <= right; }
+        bool contains(const Range & other) const { return contains(other.left) && contains(other.right); }
+
+        String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
     };
 
     static String getCallerId();
@@ -203,7 +205,22 @@ public:
     /// exception.
     void detach(const FileSegmentGuard::Lock &, const LockedKey &);
 
-    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
+    struct Info
+    {
+        FileSegment::Key key;
+        size_t offset;
+        std::string path;
+        uint64_t range_left;
+        uint64_t range_right;
+        FileSegmentKind kind;
+        State state;
+        uint64_t size;
+        uint64_t downloaded_size;
+        uint64_t cache_hits;
+        uint64_t references;
+        bool is_unbound;
+    };
+    static Info getInfo(const FileSegmentPtr & file_segment, FileCache & cache);
 
     bool isDetached() const;
 
@@ -339,8 +356,10 @@ struct FileSegmentsHolder : private boost::noncopyable
     void popFront() { completeAndPopFrontImpl(); }
 
     FileSegment & front() { return *file_segments.front(); }
+    const FileSegment & front() const { return *file_segments.front(); }
 
     FileSegment & back() { return *file_segments.back(); }
+    const FileSegment & back() const { return *file_segments.back(); }
 
     FileSegment & add(FileSegmentPtr && file_segment);
 

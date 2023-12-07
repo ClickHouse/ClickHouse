@@ -16,6 +16,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const Block & header_,
     CompressionCodecPtr default_codec,
     const MergeTreeIndices & indices_to_recalc,
+    const Statistics & stats_to_recalc_,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
@@ -36,6 +37,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,
+        stats_to_recalc_,
         default_codec,
         writer_settings,
         index_granularity);
