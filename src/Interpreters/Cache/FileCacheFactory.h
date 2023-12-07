@@ -42,6 +42,8 @@ public:
         const FileCacheSettings & file_cache_settings,
         const std::string & config_path);
 
+    FileCachePtr create(const std::string & cache_name, const FileCacheSettings & file_cache_settings);
+
     CacheByName getAll();
 
     FileCacheDataPtr getByName(const std::string & cache_name);

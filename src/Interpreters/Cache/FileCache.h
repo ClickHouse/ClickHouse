@@ -127,11 +127,11 @@ public:
 
     bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
-    FileSegments getSnapshot();
+    std::vector<FileSegment::Info> getFileSegmentInfos();
 
-    FileSegments getSnapshot(const Key & key);
+    std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key);
 
-    FileSegments dumpQueue();
+    std::vector<FileSegment::Info> dumpQueue();
 
     void deactivateBackgroundOperations();
 
@@ -153,7 +153,7 @@ public:
 
     CacheGuard::Lock lockCache() const;
 
-    FileSegments sync();
+    std::vector<FileSegment::Info> sync();
 
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
