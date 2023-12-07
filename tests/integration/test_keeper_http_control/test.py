@@ -38,25 +38,26 @@ def get_fake_zk(node, timeout=30.0):
     _fake_zk_instance.start()
     return _fake_zk_instance
 
+
 def test_http_readiness(started_cluster):
     leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
     response = requests.get(
-            "http://{host}:{port}/ready".format(host=leader.ip_address, port=9182)
+        "http://{host}:{port}/ready".format(host=leader.ip_address, port=9182)
     )
-    assert(response.status_code == 200)
+    assert response.status_code == 200
 
     readiness_data = response.json()
-    assert(readiness_data["status"] == "ok")
-    assert(readiness_data["details"]["leader"] == True)
-    assert(readiness_data["details"]["follower"] == False)
+    assert readiness_data["status"] == "ok"
+    assert readiness_data["details"]["leader"] == True
+    assert readiness_data["details"]["follower"] == False
 
     follower = keeper_utils.get_follower(cluster, [node1, node2, node3])
     response = requests.get(
-            "http://{host}:{port}/ready".format(host=follower.ip_address, port=9182)
+        "http://{host}:{port}/ready".format(host=follower.ip_address, port=9182)
     )
-    assert(response.status_code == 200)
+    assert response.status_code == 200
 
     readiness_data = response.json()
-    assert(readiness_data["status"] == "ok")
-    assert(readiness_data["details"]["leader"] == False)
-    assert(readiness_data["details"]["follower"] == True)
+    assert readiness_data["status"] == "ok"
+    assert readiness_data["details"]["leader"] == False
+    assert readiness_data["details"]["follower"] == True
