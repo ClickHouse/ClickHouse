@@ -637,19 +637,35 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
 
         /// Optimization leveraging projection feature
-        if(storage
-           && query.where() && !query.prewhere()
-           && context->getSettings().optimize_project_query
+        if(storage && context->getSettings().optimize_project_query
+           && query.where() && !query.hasJoin()
+           && metadata_snapshot->hasProjections()
            && !options.is_projection_optimized
-           && !query.hasJoin()
         )
         {
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
             {
+                // the re-written subquery will use table primary key
+                // insert into required column if it is not there
                 const auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
+                bool contains_pk = false;
+                for (auto & elem: query.select()->children)
+                {
+                    String name = elem->getAliasOrColumnName();
+                    if (name == primary_key)
+                        contains_pk = true;
+                }
+                if (!contains_pk)
+                    query.select()->children.push_back(std::make_shared<ASTIdentifier>(primary_key));
+
                 const auto main_table_name = getTableName(query.tables());
-                auto pkoptimized_where_ast = pkOptimization(metadata_snapshot->getProjections(), query.where(), main_table_name, primary_key);
-                query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(pkoptimized_where_ast));
+                bool optimized = false;
+                auto pkoptimized_where_ast = pkOptimization(metadata_snapshot->getProjections(), query.where(), main_table_name, primary_key, optimized);
+                if (optimized)
+                {
+                    query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(pkoptimized_where_ast));
+                    options.is_projection_optimized = true;
+                }
             }
         }
 
@@ -2162,7 +2178,8 @@ ASTPtr InterpreterSelectQuery::pkOptimization(
     const ProjectionsDescription & projections,
     const ASTPtr & where_ast,
     const String & main_table,
-    const String & main_primary_key) const
+    const String & main_primary_key,
+    bool & optimized) const
 {
     auto where_column_name = where_ast->getColumnName();
     NameSet proj_pks = {};
@@ -2189,41 +2206,48 @@ ASTPtr InterpreterSelectQuery::pkOptimization(
 
     const auto and_function =  makeASTFunction("and");
     //for keys in where_ast
-    bool contains_primay_key = false;
-    analyze_where_ast(where_ast, and_function, proj_pks, main_table, main_primary_key, contains_primay_key);
-    and_function->arguments->children.push_back(where_ast->clone());
-
-    return and_function;
+    NameSet optimized_where_keys = {};
+    analyze_where_ast(where_ast, and_function, proj_pks, optimized_where_keys, main_table, main_primary_key, optimized);
+    if (optimized)
+    {
+        and_function->arguments->children.push_back(where_ast->clone());
+        return and_function;
+    }
+    return where_ast;
 }
 
-void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr & func, NameSet & proj_pks, const String & main_table, const String & main_primary_key, bool & contains_pk) const
+void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr & func, NameSet & proj_pks, NameSet & optimized_where_keys, const String & main_table, const String & main_primary_key, bool & optimized) const
 {
-    if (contains_pk)
+    if (optimized)
         return;
+
     const auto * ast_function_node = ast->as<ASTFunction>();
-    if(ast_function_node->name == "equals" && ast_function_node->arguments->children.size() == 2)
+    auto arg_size = ast_function_node->arguments ? ast_function_node->arguments->children.size() : 0;
+    if(ast_function_node->name == "equals" && arg_size == 2)
     {
-        auto lhs = ast_function_node->arguments->children.at(0)->as<ASTIdentifier>()->name();
-        if (lhs == main_primary_key)
+        auto lhs_argument = ast_function_node->arguments->children.at(0);
+        String lhs = getIdentifier(lhs_argument);
+        if(proj_pks.contains(lhs) && !optimized_where_keys.contains(lhs) && lhs != main_primary_key)
         {
-            contains_pk = true;
-            return;
-        }
-        if(proj_pks.contains(lhs))
-        {
+            optimized_where_keys.insert(lhs);
             ASTPtr new_ast = create_proj_optimized_ast(ast, main_table, main_primary_key);
             auto * function_node = func->as<ASTFunction>();
             function_node->arguments->children.push_back(new_ast);
+            optimized = true;
+            return;
         }
     }
-    else
+    else if (ast_function_node->name == "and" || ast_function_node->name == "or")
     {
-        auto arg_size = ast_function_node->arguments ? ast_function_node->arguments->children.size() : 0;
         for (size_t i = 0; i < arg_size; i++)
         {
             auto argument = ast_function_node->arguments->children[i];
-            analyze_where_ast(argument, func, proj_pks, main_table, main_primary_key, contains_pk);
+            analyze_where_ast(argument, func, proj_pks, optimized_where_keys, main_table, main_primary_key, optimized);
         }
+    }
+    else /* TBD: conditions that are not "=" */
+    {
+        return;
     }
 }
 
@@ -3401,6 +3425,15 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
         result |= info.table_expression_modifiers->hasFinal();
 
     return result;
+}
+
+// if (const auto * lhs_func = lhs_argument->as<ASTFunction>())
+String InterpreterSelectQuery::getIdentifier(ASTPtr & argument) const
+{
+    if (const auto * id = argument->as<ASTIdentifier>())
+        return id->name();
+    else
+        return getIdentifier(argument->children.at(0));
 }
 
 String InterpreterSelectQuery::getTableName(const ASTPtr & tables_in_select_query_ast) const

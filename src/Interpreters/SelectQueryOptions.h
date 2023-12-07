@@ -79,7 +79,6 @@ struct SelectQueryOptions
         out.to_stage = QueryProcessingStage::Complete;
         ++out.subquery_depth;
         out.is_subquery = true;
-        out.is_projection_optimized = true;
         return out;
     }
 
@@ -87,6 +86,13 @@ struct SelectQueryOptions
     {
         SelectQueryOptions out = *this;
         out.is_create_parameterized_view = true;
+        return out;
+    }
+
+    SelectQueryOptions isProjectionOptmized(bool value = false) const
+    {
+        SelectQueryOptions out = *this;
+        out.is_projection_optimized = value;
         return out;
     }
 

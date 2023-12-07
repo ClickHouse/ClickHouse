@@ -42,6 +42,7 @@ public:
         size_t subquery_depth;
         bool is_remote;
         bool is_explain;
+        bool is_projection_optimized;
         TemporaryTablesMapping & external_tables;
         PreparedSetsPtr prepared_sets;
         bool & has_global_subqueries;
@@ -52,6 +53,7 @@ public:
             size_t subquery_depth_,
             bool is_remote_,
             bool is_explain_,
+            bool is_projection_optimized_,
             TemporaryTablesMapping & tables,
             PreparedSetsPtr prepared_sets_,
             bool & has_global_subqueries_,
@@ -60,6 +62,7 @@ public:
             , subquery_depth(subquery_depth_)
             , is_remote(is_remote_)
             , is_explain(is_explain_)
+            , is_projection_optimized(is_projection_optimized_)
             , external_tables(tables)
             , prepared_sets(prepared_sets_)
             , has_global_subqueries(has_global_subqueries_)
@@ -150,7 +153,7 @@ public:
             if (external_tables.contains(external_table_name))
                 return;
 
-            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, required_columns);
+            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, required_columns, is_projection_optimized);
 
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
