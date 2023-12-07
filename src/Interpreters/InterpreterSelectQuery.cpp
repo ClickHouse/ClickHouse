@@ -608,6 +608,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
         }
 
+        if (storage && metadata_snapshot->hasProjections())
+        {
+            // the re-written subquery will use table primary key
+            // insert into required column if it is not there
+            const auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
+            bool contains_pk = false;
+            for (auto & elem: query.select()->children)
+            {
+                String name = elem->getAliasOrColumnName();
+                if (name == primary_key)
+                    contains_pk = true;
+            }
+            if (!contains_pk)
+                query.select()->children.push_back(std::make_shared<ASTIdentifier>(primary_key));
+        }
+
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
@@ -645,19 +661,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
             {
-                // the re-written subquery will use table primary key
-                // insert into required column if it is not there
                 const auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
-                bool contains_pk = false;
-                for (auto & elem: query.select()->children)
-                {
-                    String name = elem->getAliasOrColumnName();
-                    if (name == primary_key)
-                        contains_pk = true;
-                }
-                if (!contains_pk)
-                    query.select()->children.push_back(std::make_shared<ASTIdentifier>(primary_key));
-
                 const auto main_table_name = getTableName(query.tables());
                 bool optimized = false;
                 auto pkoptimized_where_ast = pkOptimization(metadata_snapshot->getProjections(), query.where(), main_table_name, primary_key, optimized);
@@ -2296,8 +2300,9 @@ ASTPtr InterpreterSelectQuery::create_proj_optimized_ast(const ASTPtr & ast, con
     auto subquery = std::make_shared<ASTSubquery>();
     subquery->children.push_back(select_with_union_query);
 
-    const auto in_function = makeASTFunction("in", std::make_shared<ASTIdentifier>(main_primary_key), subquery);
+    auto in_function = makeASTFunction("in", std::make_shared<ASTIdentifier>(main_primary_key), subquery);
 
+    const auto indexHintFunc = makeASTFunction("indexHint", in_function);
     return in_function;
 }
 
