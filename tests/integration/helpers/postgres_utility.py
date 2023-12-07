@@ -236,12 +236,14 @@ class PostgresManager:
         postgres_database="",
         settings=[],
         table_overrides="",
+        user="postgres",
+        password="mysecretpassword",
     ):
         postgres_database = self.database_or_default(postgres_database)
         self.created_materialized_postgres_db_list.add(materialized_database)
         self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database}")
 
-        create_query = f"CREATE DATABASE {materialized_database} ENGINE = MaterializedPostgreSQL('{ip}:{port}', '{postgres_database}', 'postgres', 'mysecretpassword')"
+        create_query = f"CREATE DATABASE {materialized_database} ENGINE = MaterializedPostgreSQL('{ip}:{port}', '{postgres_database}', '{user}', '{password}')"
         if len(settings) > 0:
             create_query += " SETTINGS "
             for i in range(len(settings)):
