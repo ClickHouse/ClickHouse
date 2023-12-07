@@ -15,7 +15,6 @@
 
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
