@@ -959,12 +959,18 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 void FileCache::removeKey(const Key & key)
 {
     assertInitialized();
+#ifdef ABORT_ON_LOGICAL_ERROR
+    assertCacheCorrectness();
+#endif
     metadata.removeKey(key, /* if_exists */false, /* if_releasable */true);
 }
 
 void FileCache::removeKeyIfExists(const Key & key)
 {
     assertInitialized();
+#ifdef ABORT_ON_LOGICAL_ERROR
+    assertCacheCorrectness();
+#endif
     metadata.removeKey(key, /* if_exists */true, /* if_releasable */true);
 }
 

@@ -331,30 +331,31 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     if (!size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
 
+    {
+        auto lock = lockFileSegment();
+        assertIsDownloaderUnlocked("write", lock);
+        assertNotDetachedUnlocked(lock);
+    }
+
     const auto file_segment_path = getPathInLocalCache();
 
     {
-        auto lock = lockFileSegment();
-
-        assertIsDownloaderUnlocked("write", lock);
-        assertNotDetachedUnlocked(lock);
-
         if (download_state != State::DOWNLOADING)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
-        size_t first_non_downloaded_offset = getCurrentWriteOffset();
+        const size_t first_non_downloaded_offset = getCurrentWriteOffset();
         if (offset != first_non_downloaded_offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
                 size, offset, first_non_downloaded_offset);
 
-        size_t current_downloaded_size = getDownloadedSize();
+        const size_t current_downloaded_size = getDownloadedSize();
         chassert(reserved_size >= current_downloaded_size);
-        size_t free_reserved_size = reserved_size - current_downloaded_size;
 
+        const size_t free_reserved_size = reserved_size - current_downloaded_size;
         if (free_reserved_size < size)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -363,20 +364,18 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         if (!is_unbound && current_downloaded_size == range().size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
-        if (!cache_writer)
-        {
-            if (current_downloaded_size > 0)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Cache writer was finalized (downloaded size: {}, state: {})",
-                    current_downloaded_size, stateToString(download_state));
-
-            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
-        }
+        if (!cache_writer && current_downloaded_size > 0)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cache writer was finalized (downloaded size: {}, state: {})",
+                current_downloaded_size, stateToString(download_state));
     }
 
     try
     {
+        if (!cache_writer)
+            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
+
         cache_writer->write(from, size);
         cache_writer->next();
 
@@ -385,16 +384,24 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     }
     catch (ErrnoException & e)
     {
+        const int code = e.getErrno();
+        const bool is_no_space_left_error = code == /* No space left on device */28 || code == /* Quota exceeded */122;
+
         auto lock = lockFileSegment();
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lock)));
 
-        int code = e.getErrno();
-        if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+        if (downloaded_size == 0 && fs::exists(file_segment_path))
+        {
+            fs::remove(file_segment_path);
+        }
+        else if (is_no_space_left_error)
         {
             const auto file_size = fs::file_size(file_segment_path);
+
             chassert(downloaded_size <= file_size);
             chassert(reserved_size >= file_size);
             chassert(file_size <= range().size());
+
             if (downloaded_size != file_size)
                 downloaded_size = file_size;
         }
@@ -785,6 +792,13 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         chassert(entry.key == key());
         chassert(entry.offset == offset());
     };
+
+    auto lk = lockFileSegment();
+
+    if (downloaded_size == 0)
+        chassert(!fs::exists(getPathInLocalCache()));
+    else
+        chassert(fs::exists(getPathInLocalCache()));
 
     if (download_state == State::DOWNLOADED)
     {
