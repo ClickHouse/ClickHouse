@@ -1,25 +1,25 @@
 #pragma once
 #include <base/defines.h>
+#include <fmt/format.h>
 
 namespace DB
 {
-
 struct VFSTraits
 {
-    VFSTraits(std::string_view disk_name)
-        : VFS_BASE_NODE(fmt::format("/vfs_log/{}", disk_name))
-        , VFS_LOCKS_NODE(VFS_BASE_NODE + "/locks")
-        , VFS_LOG_BASE_NODE(VFS_BASE_NODE + "/ops")
-        , VFS_LOG_ITEM(VFS_LOG_BASE_NODE + "/log-")
+    explicit VFSTraits(std::string_view disk_name)
+        : base_node(fmt::format("/vfs_log/{}", disk_name))
+        , locks_node(base_node + "/locks")
+        , log_base_node(base_node + "/ops")
+        , log_item(log_base_node + "/log-")
     {
     }
 
-    VFSTraits(const VFSTraits & other) =default;
+    VFSTraits(const VFSTraits & other) = default;
+    VFSTraits(VFSTraits && other) = default;
 
-    String VFS_BASE_NODE;
-    String VFS_LOCKS_NODE;
-    String VFS_LOG_BASE_NODE;
-    String VFS_LOG_ITEM;
+    String base_node;
+    String locks_node;
+    String log_base_node;
+    String log_item;
 };
-
 }

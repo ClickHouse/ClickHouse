@@ -6,11 +6,6 @@
 
 namespace DB
 {
-// static const String VFS_BASE_NODE = "/vfs_log";
-// static const String VFS_LOCKS_NODE = VFS_BASE_NODE + "/locks";
-// static const String VFS_LOG_BASE_NODE = VFS_BASE_NODE + "/ops";
-// static const String VFS_LOG_ITEM = VFS_LOG_BASE_NODE + "/log-";
-
 struct VFSTransactionLogItem : StoredObject
 {
     // For Link and Unlink only remote_path (of StoredObject) is filled
@@ -26,10 +21,8 @@ struct VFSTransactionLogItem : StoredObject
 };
 
 // For every object in objects, add a Keeper log entry create request with corresponding type to ops
-void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type,
-  const StoredObjects & objects,
-  Coordination::Requests & ops,
-  const VFSTraits & traits);
+void getStoredObjectsVFSLogOps(
+    VFSTransactionLogItem::Type type, const StoredObjects & objects, Coordination::Requests & ops, const VFSTraits & traits);
 
 struct VFSSnapshot
 {

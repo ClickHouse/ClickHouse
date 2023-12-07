@@ -78,7 +78,7 @@ private:
 
     DiskTransactionPtr createObjectStorageTransaction() final;
 
-    String lockPathToFullPath(std::string_view path);
+    String lockPathToFullPath(std::string_view path) const;
 
 };
 }

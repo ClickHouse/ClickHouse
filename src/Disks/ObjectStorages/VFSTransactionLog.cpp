@@ -43,16 +43,14 @@ VFSTransactionLogItem VFSTransactionLogItem::deserialize(std::string_view str)
     return out;
 }
 
-void getStoredObjectsVFSLogOps(VFSTransactionLogItem::Type type,
-  const StoredObjects & objects,
-  Coordination::Requests & ops,
-  const VFSTraits & traits)
+void getStoredObjectsVFSLogOps(
+    VFSTransactionLogItem::Type type, const StoredObjects & objects, Coordination::Requests & ops, const VFSTraits & traits)
 {
     for (const StoredObject & object : objects)
     {
         VFSTransactionLogItem item = static_cast<const VFSTransactionLogItem &>(object);
         item.type = type;
-        ops.emplace_back(zkutil::makeCreateRequest(traits.VFS_LOG_ITEM, item.serialize(), zkutil::CreateMode::PersistentSequential));
+        ops.emplace_back(zkutil::makeCreateRequest(traits.log_item, item.serialize(), zkutil::CreateMode::PersistentSequential));
     }
 }
 

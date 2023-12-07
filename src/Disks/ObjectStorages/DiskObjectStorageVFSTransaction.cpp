@@ -10,10 +10,7 @@ namespace DB
 using enum VFSTransactionLogItem::Type;
 
 DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(
-  IObjectStorage & object_storage_,
-  IMetadataStorage & metadata_storage_,
-  zkutil::ZooKeeperPtr zookeeper_,
-  const VFSTraits & traits_)
+    IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, zkutil::ZooKeeperPtr zookeeper_, const VFSTraits & traits_)
     : DiskObjectStorageTransaction(object_storage_, metadata_storage_, nullptr)
     , zookeeper(std::move(zookeeper_))
     , log(&Poco::Logger::get("DiskObjectStorageVFS"))
@@ -41,7 +38,8 @@ void DiskObjectStorageVFSTransaction::removeSharedFile(const String & path, bool
 
 void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & path, bool)
 {
-    if (!metadata_storage.exists(path)) return;
+    if (!metadata_storage.exists(path))
+        return;
     DiskObjectStorageTransaction::removeSharedFileIfExists(path, /*keep_shared_data=*/true);
     addStoredObjectsOp(Unlink, metadata_storage.getStorageObjects(path));
 }
@@ -49,7 +47,7 @@ void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & pa
 struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectStorageOperation
 {
     zkutil::ZooKeeperPtr zookeeper;
-    VFSTraits traits;  // not clear if it is safe to have reference, so lets copy so far
+    VFSTraits traits; // not clear if it is safe to have reference, so lets copy so far
 
     RemoveRecursiveObjectStorageVFSOperation(
         IObjectStorage & object_storage_,
@@ -198,11 +196,12 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(VFSTransactionLogItem::
         return;
     LOG_TRACE(log, "Pushing {} {}", type, fmt::join(objects, ", "));
 
-    auto callback = [zk = this->zookeeper, type, objects_captured = std::move(objects), log_captured = this->log, traits = this->traits]
+    auto callback
+        = [zk = this->zookeeper, type, objects_captured = std::move(objects), log_captured = this->log, &traits_captured = this->traits]
     {
         LOG_TRACE(log_captured, "Executing {} {}", type, fmt::join(objects_captured, "\n"));
         Coordination::Requests requests;
-        getStoredObjectsVFSLogOps(type, objects_captured, requests, traits);
+        getStoredObjectsVFSLogOps(type, objects_captured, requests, traits_captured);
         zk->multi(requests);
     };
 

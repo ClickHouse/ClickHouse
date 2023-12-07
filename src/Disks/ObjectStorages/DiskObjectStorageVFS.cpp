@@ -24,14 +24,14 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         std::move(object_storage_),
         config,
         config_prefix)
-    , traits(name_)
+    , traits(VFSTraits{name_})
     , gc_thread_sleep_ms(config.getUInt64(config_prefix + ".object_storage_vfs_gc_period", 10'000))
     , allow_gc(allow_gc_)
     , zookeeper(std::move(zookeeper_))
 {
-    zookeeper->createAncestors(traits.VFS_LOG_ITEM);
+    zookeeper->createAncestors(traits.log_item);
     // TODO myrrc ugly hack to create locks root node, remove
-    zookeeper->createAncestors(fs::path(traits.VFS_LOCKS_NODE) / "dummy");
+    zookeeper->createAncestors(fs::path(traits.locks_node) / "dummy");
 }
 
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
@@ -62,7 +62,8 @@ void DiskObjectStorageVFS::startupImpl(ContextPtr context)
 void DiskObjectStorageVFS::shutdown()
 {
     DiskObjectStorage::shutdown();
-    gc_thread->stop();
+    if (gc_thread)
+        gc_thread->stop();
 }
 
 String DiskObjectStorageVFS::getStructure() const
@@ -70,11 +71,11 @@ String DiskObjectStorageVFS::getStructure() const
     return fmt::format("DiskObjectStorageVFS-{}({})", getName(), object_storage->getName());
 }
 
-String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path)
+String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path) const
 {
     String lock_path{path};
     std::ranges::replace(lock_path, '/', '_');
-    return fs::path(traits.VFS_LOCKS_NODE) / lock_path;
+    return fs::path(traits.locks_node) / lock_path;
 }
 
 bool DiskObjectStorageVFS::lock(std::string_view path, bool block)

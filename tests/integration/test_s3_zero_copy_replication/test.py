@@ -144,11 +144,13 @@ def test_s3_zero_copy_replication(started_cluster, policy):
 
     node1.query("OPTIMIZE TABLE s3_test FINAL")
 
-    # Based on version 21.x - after merge, two old parts and one merged, for vfs, also a snapshot
-    wait_for_large_objects_count(cluster, 3 + testing_vfs)
+    vfs_objects = 2 * testing_vfs  # VFS adds 2 snapshots, one for a disk
 
-    # Based on version 21.x - after cleanup - only one merged part, for vfs, also a snapshot
-    wait_for_large_objects_count(cluster, 1 + testing_vfs, timeout=60)
+    # Based on version 21.x - after merge, two old parts and one merged
+    wait_for_large_objects_count(cluster, 3 + vfs_objects)
+
+    # Based on version 21.x - after cleanup - only one merged part
+    wait_for_large_objects_count(cluster, 1 + vfs_objects, timeout=60)
 
     node1.query("DROP TABLE IF EXISTS s3_test SYNC")
     node2.query("DROP TABLE IF EXISTS s3_test SYNC")

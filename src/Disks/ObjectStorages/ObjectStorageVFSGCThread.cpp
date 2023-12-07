@@ -15,16 +15,11 @@ extern const int LOGICAL_ERROR;
 
 static constexpr auto VFS_SNAPSHOT_PREFIX = "vfs_snapshot_";
 
-inline String ObjectStorageVFSGCThread::getNode(size_t id) // Zookeeper's sequential node is 10 digits with padding zeros
-{
-    return fmt::format("{}{:010}", storage.traits.VFS_LOG_ITEM, id);
-}
-
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
     : storage(storage_)
     , log_name("DiskObjectStorageVFSGC")
     , log(&Poco::Logger::get(log_name))
-    , zookeeper_lock(zkutil::createSimpleZooKeeperLock(storage.zookeeper, storage.traits.VFS_BASE_NODE, "lock", ""))
+    , zookeeper_lock(zkutil::createSimpleZooKeeperLock(storage.zookeeper, storage.traits.base_node, "lock", ""))
     , sleep_ms(storage_.getGcSleep())
 {
     LOG_DEBUG(log, "ObjectStorageVFSGCThread with sleep_ms {}", sleep_ms);
@@ -67,7 +62,7 @@ void ObjectStorageVFSGCThread::run()
         return;
     }
 
-    const Strings batch = storage.zookeeper->getChildren(storage.traits.VFS_LOG_BASE_NODE);
+    const Strings batch = storage.zookeeper->getChildren(storage.traits.log_base_node);
     constexpr size_t batch_min_size = 1; // TODO myrrc should be a setting
     if (batch.size() < batch_min_size)
         return;
@@ -184,5 +179,11 @@ void ObjectStorageVFSGCThread::removeLogEntries(size_t start_logpointer, size_t 
         requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), -1);
 
     storage.zookeeper->multi(requests);
+}
+
+String ObjectStorageVFSGCThread::getNode(size_t id) const
+{
+    // Zookeeper's sequential node is 10 digits with padding zeros
+    return fmt::format("{}{:010}", storage.traits.log_item, id);
 }
 }

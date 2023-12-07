@@ -81,7 +81,7 @@ bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::
     const bool s3_enable_disk_vfs = config.getBool(key, false);
 
     const auto supported_disk_types = s3_enable_disk_vfs
-        ? std::vector{"s3_plain"sv,  "local"sv}
+        ? std::vector{"s3_plain"sv, "local"sv}
         : std::vector{"s3"sv, "s3_plain"sv, "local"sv};
     if (std::all_of(
             supported_disk_types.begin(),

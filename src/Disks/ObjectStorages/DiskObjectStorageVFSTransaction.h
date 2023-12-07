@@ -1,8 +1,8 @@
 #pragma once
 #include "Common/ZooKeeper/ZooKeeper.h"
 #include "DiskObjectStorageTransaction.h"
-#include "VFSTransactionLog.h"
 #include "VFSTraits.h"
+#include "VFSTransactionLog.h"
 
 namespace DB
 {
@@ -11,10 +11,7 @@ namespace DB
 struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransaction
 {
     DiskObjectStorageVFSTransaction(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        zkutil::ZooKeeperPtr zookeeper_,
-        const VFSTraits & traits_);
+        IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, zkutil::ZooKeeperPtr zookeeper_, const VFSTraits & traits_);
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
