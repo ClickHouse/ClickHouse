@@ -4,6 +4,8 @@ import time
 import logging
 import docker
 
+from .config_cluster import keeper_impl
+
 
 class PartitionManager:
     """Allows introducing failures in the network between docker containers.
@@ -22,7 +24,7 @@ class PartitionManager:
         self._netem_delayed_instances = []
         _NetworkManager.get()
 
-    def drop_instance_zk_connections(self, instance, action="DROP", port=2181):
+    def drop_instance_zk_connections(self, instance, action="DROP", port=(4501 if (keeper_impl=="fdbkeeper") else 2181)):
         self._check_instance(instance)
 
         self._add_rule(
@@ -35,7 +37,7 @@ class PartitionManager:
     def dump_rules(self):
         return _NetworkManager.get().dump_rules()
 
-    def restore_instance_zk_connections(self, instance, action="DROP", port=2181):
+    def restore_instance_zk_connections(self, instance, action="DROP", port=(4501 if (keeper_impl=="fdbkeeper") else 2181)):
         self._check_instance(instance)
 
         self._delete_rule(
