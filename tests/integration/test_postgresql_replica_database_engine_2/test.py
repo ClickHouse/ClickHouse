@@ -643,12 +643,24 @@ def test_table_override(started_cluster):
         instance, table_name, postgres_database=pg_manager.get_default_database()
     )
 
-    assert 10 == int(instance.query(f"SELECT count() FROM {materialized_database}.{table_name}"))
+    assert 10 == int(
+        instance.query(f"SELECT count() FROM {materialized_database}.{table_name}")
+    )
 
     expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` String,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
-    assert expected == instance.query(f"show create table {materialized_database}.{table_name}").strip()
+    assert (
+        expected
+        == instance.query(
+            f"show create table {materialized_database}.{table_name}"
+        ).strip()
+    )
 
-    assert "test" == instance.query(f"SELECT value FROM {materialized_database}.{table_name} WHERE key = 2").strip()
+    assert (
+        "test"
+        == instance.query(
+            f"SELECT value FROM {materialized_database}.{table_name} WHERE key = 2"
+        ).strip()
+    )
 
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
@@ -677,8 +689,12 @@ def test_table_override(started_cluster):
         instance, table_name, postgres_database=pg_manager.get_default_database()
     )
 
-    assert "" == instance.query(f"SELECT value FROM {materialized_database}.{table_name} WHERE key = 2").strip()
-
+    assert (
+        ""
+        == instance.query(
+            f"SELECT value FROM {materialized_database}.{table_name} WHERE key = 2"
+        ).strip()
+    )
 
 
 def test_materialized_view(started_cluster):
