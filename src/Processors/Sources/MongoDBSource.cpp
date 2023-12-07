@@ -40,7 +40,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_TYPE;
     extern const int MONGODB_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace

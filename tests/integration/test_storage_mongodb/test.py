@@ -521,7 +521,7 @@ def test_schema_inference(started_cluster):
                                 "float32": i + 3.750,
                                 "date": datetime.datetime(2002, 10, 27),
                             },
-                        ]
+                        ],
                     },
                     {
                         "int": i,
@@ -534,8 +534,8 @@ def test_schema_inference(started_cluster):
                                 "float32": i + 3.750,
                                 "date": datetime.datetime(2002, 10, 27),
                             },
-                        ]
-                    }
+                        ],
+                    },
                 ],
                 "nullable_int": i if i % 2 == 0 else None,
             }
