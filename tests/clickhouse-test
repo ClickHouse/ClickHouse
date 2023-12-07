@@ -2205,7 +2205,7 @@ def reportLogStats(args):
         GROUP BY message_format_string
         ORDER BY count DESC
         LIMIT 100
-        FORMAT TSVWithNamesAndTypes
+        FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop patterns of log messages:\n")
@@ -2225,7 +2225,7 @@ def reportLogStats(args):
         GROUP BY pattern
         ORDER BY count DESC
         LIMIT 30
-        FORMAT TSVWithNamesAndTypes
+        FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop messages without format string (fmt::runtime):\n")
@@ -2238,7 +2238,7 @@ def reportLogStats(args):
         WHERE (now() - toIntervalMinute(240)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
         AND (message NOT LIKE concat('%Exception: ', s, '%'))
-        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop messages that does not match its format string:\n")
@@ -2275,7 +2275,7 @@ def reportLogStats(args):
             AND (length(message_format_string) < 16
                 OR (message ilike '%DB::Exception%' AND length_without_exception_boilerplate < 30))
             AND message_format_string NOT IN known_short_messages
-        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop short messages:\n")
