@@ -117,9 +117,6 @@ public:
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "The timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
                         getName(), interval_type->getKind().toString());
-
-                if (arguments[0].type.get() != arguments[2].type.get())
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
             }
             else if (isDateOrDate32OrDateTimeOrDateTime64(type_arg3))
             {
@@ -137,7 +134,6 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
                     "This argument is optional and must be a constant String with timezone name or a Date/Date32/DateTime/DateTime64 with a constant origin",
                     type_arg3->getName(), getName());
-
         };
 
         auto check_fourth_argument = [&]
@@ -365,13 +361,19 @@ private:
         result_data.resize(size);
 
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        Int64 scale_on_precision = decideScaleOnPrecision<unit>(scale);
-        Int64 scale_diff = scale_on_precision > scale_multiplier ? scale_on_precision / scale_multiplier : scale_multiplier / scale_on_precision;
+        Int64 scale_on_interval = decideScaleOnPrecision<unit>(scale);
+        Int64 scale_diff = scale_on_interval > scale_multiplier ? scale_on_interval / scale_multiplier : scale_multiplier / scale_on_interval;
 
         if (origin_column.column == nullptr)
         {
             for (size_t i = 0; i != size; ++i)
-                result_data[i] = static_cast<ToFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+            {
+                result_data[i] = 0;
+                if (scale_on_interval < scale_multiplier)
+                    result_data[i] += static_cast<ToFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier)) * scale_diff;
+                else
+                    result_data[i] = static_cast<ToFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+            }
         }
         else
         {
@@ -403,11 +405,10 @@ private:
                     if (isDate(result_type) || isDate32(result_type))
                         res = res / SECONDS_PER_DAY;
 
-                    if (scale_on_precision > scale_multiplier)
+                    if (scale_on_interval > scale_multiplier)
                         result_data[i] += (origin + res / scale_diff) * scale_diff;
-                    else if (scale_on_precision == scale_multiplier && scale_on_precision % 1000 != 0 && scale_multiplier != 10) /// when it's not a default case with DateTime
-                                                                                                                                /// and when precision is not sub-scale
-                        result_data[i] += origin + (res * scale_on_precision);
+                    else if (scale_on_interval == scale_multiplier && scale_on_interval % 1000 != 0 && scale_multiplier != 10)
+                        result_data[i] += origin + (res * scale_on_interval);
                     else
                         result_data[i] += origin + res * scale_diff;
                 }
