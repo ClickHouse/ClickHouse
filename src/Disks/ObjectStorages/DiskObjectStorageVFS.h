@@ -34,7 +34,8 @@ public:
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        zkutil::ZooKeeperPtr zookeeper_);
+        zkutil::ZooKeeperPtr zookeeper_,
+        bool allow_gc);
     ~DiskObjectStorageVFS() override = default;
 
     void startupImpl(ContextPtr context) override;
@@ -71,6 +72,7 @@ private:
     std::unique_ptr<ObjectStorageVFSGCThread> gc_thread;
 
     UInt64 gc_thread_sleep_ms;
+    bool allow_gc;
 
     zkutil::ZooKeeperPtr zookeeper;
 

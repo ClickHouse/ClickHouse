@@ -14,7 +14,8 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    zkutil::ZooKeeperPtr zookeeper_)
+    zkutil::ZooKeeperPtr zookeeper_,
+    bool allow_gc_)
     : DiskObjectStorage( //NOLINT
         name_,
         object_storage_root_path_,
@@ -25,6 +26,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         config_prefix)
     , traits(name_)
     , gc_thread_sleep_ms(config.getUInt64(config_prefix + ".object_storage_vfs_gc_period", 10'000))
+    , allow_gc(allow_gc_)
     , zookeeper(std::move(zookeeper_))
 {
     zookeeper->createAncestors(traits.VFS_LOG_ITEM);
@@ -43,14 +45,18 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
         config_prefix,
-        zookeeper);
+        zookeeper,
+        true /* allow_gc */);
 }
 
 void DiskObjectStorageVFS::startupImpl(ContextPtr context)
 {
     DiskObjectStorage::startupImpl(context);
-    gc_thread = std::make_unique<ObjectStorageVFSGCThread>(*this, context);
-    gc_thread->start();
+    if (allow_gc)
+    {
+        gc_thread = std::make_unique<ObjectStorageVFSGCThread>(*this, context);
+        gc_thread->start();
+    }
 }
 
 void DiskObjectStorageVFS::shutdown()
