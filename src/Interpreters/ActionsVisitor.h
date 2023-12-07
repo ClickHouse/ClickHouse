@@ -133,6 +133,7 @@ public:
         AggregationKeysInfo aggregation_keys_info;
         bool build_expression_with_window_functions;
         bool is_create_parameterized_view;
+        bool is_projection_optimized;
 
         /*
          * Remember the last unique column suffix to avoid quadratic behavior
@@ -153,7 +154,8 @@ public:
             bool only_consts_,
             AggregationKeysInfo aggregation_keys_info_,
             bool build_expression_with_window_functions_ = false,
-            bool is_create_parameterized_view_ = false);
+            bool is_create_parameterized_view_ = false,
+            bool is_projection_optimized_ = false);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;
