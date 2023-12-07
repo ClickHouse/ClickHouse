@@ -233,12 +233,8 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             ///
             /// For empty arrays, array_ndims([]) will return NULL.
             auto postgres_column = doubleQuoteString(name_and_type.name);
-            pqxx::result result{tx.exec(fmt::format(
-                "SELECT {} IS NULL, array_ndims({}) "
-                "FROM {} LIMIT 1;",
-                postgres_column,
-                postgres_column,
-                postgres_table))};
+            pqxx::result result{tx.exec(
+                fmt::format("SELECT {} IS NULL, array_ndims({}) FROM {} LIMIT 1;", postgres_column, postgres_column, postgres_table))};
 
             /// Nullable(Array) is not supported.
             auto is_null_array = result[0][0].as<bool>();
