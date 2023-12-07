@@ -147,6 +147,8 @@ public:
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
+
+    std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
 };
 
 }

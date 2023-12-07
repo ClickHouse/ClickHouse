@@ -34,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 struct ContextSharedPart : boost::noncopyable
@@ -357,6 +358,11 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
         return;
 
     shared->keeper_dispatcher->updateConfiguration(getConfigRef(), getMacros());
+}
+
+std::shared_ptr<zkutil::ZooKeeper> Context::getZooKeeper() const
+{
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot connect to ZooKeeper from Keeper");
 }
 
 }
