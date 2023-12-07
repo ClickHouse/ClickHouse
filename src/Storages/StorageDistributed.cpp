@@ -1425,8 +1425,8 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
 
             if (dirname.ends_with("_all_replicas"))
             {
-                for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
-                    addresses.push_back(replicas_addresses[replica_index - 1]);
+                for (const auto & replica_address : replicas_addresses)
+                    addresses.push_back(replica_address);
                 continue;
             }
 
