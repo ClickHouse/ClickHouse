@@ -55,7 +55,10 @@ FileCachePtr FileCacheFactory::getOrCreate(
     return it->second->cache;
 }
 
-FileCachePtr FileCacheFactory::create(const std::string & cache_name, const FileCacheSettings & file_cache_settings)
+FileCachePtr FileCacheFactory::create(
+    const std::string & cache_name,
+    const FileCacheSettings & file_cache_settings,
+    const std::string & config_path)
 {
     std::lock_guard lock(mutex);
 
@@ -65,7 +68,7 @@ FileCachePtr FileCacheFactory::create(const std::string & cache_name, const File
 
     auto cache = std::make_shared<FileCache>(cache_name, file_cache_settings);
     it = caches_by_name.emplace(
-        cache_name, std::make_unique<FileCacheData>(cache, file_cache_settings)).first;
+        cache_name, std::make_unique<FileCacheData>(cache, file_cache_settings, config_path)).first;
 
     return it->second->cache;
 }
