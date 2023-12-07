@@ -637,7 +637,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
 
         /// Optimization leveraging projection feature
-        if(storage && context->getSettings().optimize_project_query
+        if (storage && context->getSettings().optimize_project_query
            && query.where() && !query.hasJoin()
            && metadata_snapshot->hasProjections()
            && !options.is_projection_optimized
@@ -2185,7 +2185,8 @@ ASTPtr InterpreterSelectQuery::pkOptimization(
     NameSet proj_pks = {};
     for (auto & projection: projections)
     {
-        if (projection.type == ProjectionDescription::Type::Normal){
+        if (projection.type == ProjectionDescription::Type::Normal)
+        {
             //sorting key of projection
             const auto & projection_primary_key = projection.metadata->getSortingKey().column_names.at(0);
             proj_pks.insert(projection_primary_key);
@@ -2196,7 +2197,7 @@ ASTPtr InterpreterSelectQuery::pkOptimization(
             bool proj_col_include_ppk = std::find(projection_columns.begin(), projection_columns.end(), projection_primary_key) != projection_columns.end();
             bool proj_col_include_mpk = std::find(projection_columns.begin(), projection_columns.end(), main_primary_key) != projection_columns.end();
 
-            if(!proj_col_include_ppk || !proj_col_include_mpk)
+            if (!proj_col_include_ppk || !proj_col_include_mpk)
             {
                 return where_ast;
             }
@@ -2223,11 +2224,11 @@ void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr 
 
     const auto * ast_function_node = ast->as<ASTFunction>();
     auto arg_size = ast_function_node->arguments ? ast_function_node->arguments->children.size() : 0;
-    if(ast_function_node->name == "equals" && arg_size == 2)
+    if (ast_function_node->name == "equals" && arg_size == 2)
     {
         auto lhs_argument = ast_function_node->arguments->children.at(0);
         String lhs = getIdentifier(lhs_argument);
-        if(proj_pks.contains(lhs) && !optimized_where_keys.contains(lhs) && lhs != main_primary_key)
+        if (proj_pks.contains(lhs) && !optimized_where_keys.contains(lhs) && lhs != main_primary_key)
         {
             optimized_where_keys.insert(lhs);
             ASTPtr new_ast = create_proj_optimized_ast(ast, main_table, main_primary_key);
