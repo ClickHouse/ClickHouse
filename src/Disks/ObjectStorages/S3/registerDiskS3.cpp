@@ -160,6 +160,9 @@ void registerDiskS3(DiskFactory & factory,
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
+        (void)allow_vfs;
+        (void)allow_vfs_gc;
+
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         S3::URI uri(endpoint);
         // an empty key remains empty
