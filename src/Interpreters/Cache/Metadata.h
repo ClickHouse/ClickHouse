@@ -154,6 +154,7 @@ public:
 
     void cancelDownload();
 
+    size_t getBackgroundDownloadQueueSizeLimit() const;
     void setBackgroundDownloadQueueSizeLimit(size_t size);
 
 private:

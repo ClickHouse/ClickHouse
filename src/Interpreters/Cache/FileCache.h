@@ -56,7 +56,7 @@ public:
     using PriorityIterator = IFileCachePriority::Iterator;
     using PriorityIterationResult = IFileCachePriority::IterationResult;
 
-    FileCache(const std::string & cache_name, const FileCacheSettings & settings_);
+    FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
     ~FileCache();
 
@@ -123,7 +123,7 @@ public:
 
     size_t getFileSegmentsNum() const;
 
-    size_t getMaxFileSegmentSize() const { return settings.max_file_segment_size; }
+    size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
     bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
@@ -155,12 +155,16 @@ public:
 
     FileSegments sync();
 
-    FileCacheSettings applySettingsIfPossible(const FileCacheSettings & settings);
+    void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
-    FileCacheSettings settings;
+    const size_t max_file_segment_size;
+    const size_t bypass_cache_threshold;
+    const size_t boundary_alignment;
+    size_t background_download_threads; /// 0 means background download is disabled.
+    size_t load_metadata_threads;
 
     Poco::Logger * log;
 
@@ -168,7 +172,9 @@ private:
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
-    size_t shutdown = false;
+    std::atomic<bool> shutdown = false;
+
+    std::mutex apply_settings_mutex;
 
     CacheMetadata metadata;
 

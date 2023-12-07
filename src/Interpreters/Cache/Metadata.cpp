@@ -483,6 +483,12 @@ public:
         return true;
     }
 
+    size_t getQueueLimit() const
+    {
+        std::lock_guard lock(mutex);
+        return queue_size_limit;
+    }
+
     void setQueueLimit(size_t size)
     {
         std::lock_guard lock(mutex);
@@ -500,7 +506,7 @@ private:
     }
 
     size_t queue_size_limit;
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::condition_variable cv;
     bool cancelled = false;
 
@@ -611,6 +617,11 @@ void CacheMetadata::downloadThreadFunc()
             chassert(false);
         }
     }
+}
+
+size_t CacheMetadata::getBackgroundDownloadQueueSizeLimit() const
+{
+    return download_queue->getQueueLimit();
 }
 
 void CacheMetadata::setBackgroundDownloadQueueSizeLimit(size_t size)

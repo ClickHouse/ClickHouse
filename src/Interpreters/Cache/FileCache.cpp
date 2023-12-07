@@ -53,13 +53,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings_)
-    : settings(settings_)
+FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
+    : max_file_segment_size(settings.max_file_segment_size)
+    , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
+    , boundary_alignment(settings.boundary_alignment)
+    , background_download_threads(settings.background_download_threads)
+    , load_metadata_threads(settings.load_metadata_threads)
     , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
     , metadata(settings.base_path, settings.background_download_queue_size_limit)
 {
-    settings.bypass_cache_threshold = settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0;
-
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
     if (settings.cache_hits_threshold)
@@ -131,12 +133,12 @@ void FileCache::initialize()
         throw;
     }
 
-    is_initialized = true;
-
-    for (size_t i = 0; i < settings.background_download_threads; ++i)
+    for (size_t i = 0; i < background_download_threads; ++i)
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ metadata.cleanupThreadFunc(); }});
+
+    is_initialized = true;
 }
 
 CacheGuard::Lock FileCache::lockCache() const
@@ -150,7 +152,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
 
-    if (settings.bypass_cache_threshold && range.size() > settings.bypass_cache_threshold)
+    if (bypass_cache_threshold && range.size() > bypass_cache_threshold)
     {
         auto file_segment = std::make_shared<FileSegment>(
             locked_key.getKey(), range.left, range.size(), FileSegment::State::DETACHED);
@@ -255,7 +257,7 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     FileSegments file_segments;
     while (current_pos < end_pos_non_included)
     {
-        auto current_file_segment_size = std::min(remaining_size, settings.max_file_segment_size);
+        auto current_file_segment_size = std::min(remaining_size, max_file_segment_size);
         ranges.emplace_back(current_pos, current_pos + current_file_segment_size - 1);
 
         remaining_size -= current_file_segment_size;
@@ -284,7 +286,7 @@ FileSegments FileCache::splitRangeIntoFileSegments(
     FileSegments file_segments;
     while (current_pos < end_pos_non_included && (!file_segments_limit || file_segments.size() < file_segments_limit))
     {
-        current_file_segment_size = std::min(remaining_size, settings.max_file_segment_size);
+        current_file_segment_size = std::min(remaining_size, max_file_segment_size);
         remaining_size -= current_file_segment_size;
 
         auto file_segment_metadata_it = addFileSegment(
@@ -487,8 +489,8 @@ FileCache::getOrSet(
 
     FileSegment::Range range(offset, offset + size - 1);
 
-    const auto aligned_offset = roundDownToMultiple(range.left, settings.boundary_alignment);
-    auto aligned_end_offset = std::min(roundUpToMultiple(offset + size, settings.boundary_alignment), file_size) - 1;
+    const auto aligned_offset = roundDownToMultiple(range.left, boundary_alignment);
+    auto aligned_end_offset = std::min(roundUpToMultiple(offset + size, boundary_alignment), file_size) - 1;
 
     chassert(aligned_offset <= range.left);
     chassert(aligned_end_offset >= range.right);
@@ -701,7 +703,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
         result_state = state;
     }
 
-    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, create_settings, settings.background_download_threads > 0, this, locked_key.getKeyMetadata());
+    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, create_settings, background_download_threads > 0, this, locked_key.getKeyMetadata());
     auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
 
     auto [file_segment_metadata_it, inserted] = locked_key.emplace(offset, file_segment_metadata);
@@ -1049,9 +1051,9 @@ void FileCache::loadMetadataImpl()
     std::mutex set_exception_mutex;
     std::atomic<bool> stop_loading = false;
 
-    LOG_INFO(log, "Loading filesystem cache with {} threads", settings.load_metadata_threads);
+    LOG_INFO(log, "Loading filesystem cache with {} threads", load_metadata_threads);
 
-    for (size_t i = 0; i < settings.load_metadata_threads; ++i)
+    for (size_t i = 0; i < load_metadata_threads; ++i)
     {
         try
         {
@@ -1352,34 +1354,47 @@ void FileCache::assertCacheCorrectness()
     });
 }
 
-FileCacheSettings FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings)
+void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)
 {
-    if (!is_initialized)
-        return settings;
+    if (!is_initialized || shutdown)
+        return;
 
-    auto lock = lockCache();
-    if (shutdown)
-        return settings;
-
-    if (settings.background_download_queue_size_limit != new_settings.background_download_queue_size_limit)
+    size_t add_download_threads = 0;
     {
-        LOG_DEBUG(log, "Changing background_download_queue_size_limit from {} to {}",
-                  settings.background_download_queue_size_limit, new_settings.background_download_queue_size_limit);
+        std::lock_guard lock(apply_settings_mutex);
 
-        metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit);
-        settings.background_download_queue_size_limit = new_settings.background_download_queue_size_limit;
+        if (new_settings == actual_settings)
+            return;
+
+        size_t background_download_queue_size_limit = metadata.getBackgroundDownloadQueueSizeLimit();
+        if (background_download_queue_size_limit != new_settings.background_download_queue_size_limit)
+        {
+            LOG_DEBUG(log, "Changing background_download_queue_size_limit from {} to {}",
+                      background_download_queue_size_limit, new_settings.background_download_queue_size_limit);
+
+            metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit);
+            actual_settings.background_download_queue_size_limit = new_settings.background_download_queue_size_limit;
+        }
+
+        if (background_download_threads < new_settings.background_download_threads)
+        {
+            LOG_DEBUG(log, "Changing background_download_threads from {} to {}",
+                      background_download_threads, new_settings.background_download_threads);
+
+            add_download_threads = new_settings.background_download_threads - background_download_threads;
+            background_download_threads = actual_settings.background_download_threads = new_settings.background_download_threads;
+        }
     }
-    if (settings.background_download_threads < new_settings.background_download_threads)
-    {
-        LOG_DEBUG(log, "Changing background_download_threads from {} to {}", settings.background_download_threads, new_settings.background_download_threads);
 
-        size_t threads_to_add = new_settings.background_download_threads - settings.background_download_threads;
-        for (size_t i = 0; i < threads_to_add; ++i)
+    if (add_download_threads)
+    {
+        auto lock = lockCache();
+        if (shutdown)
+            return;
+
+        for (size_t i = 0; i < add_download_threads; ++i)
             download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
-
-        settings.background_download_threads = new_settings.background_download_threads;
     }
-    return settings;
 }
 
 FileCache::QueryContextHolder::QueryContextHolder(

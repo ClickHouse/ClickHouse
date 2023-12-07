@@ -16,16 +16,22 @@ namespace DB
 class FileCacheFactory final : private boost::noncopyable
 {
 public:
-    struct FileCacheData
+    class FileCacheData
     {
-        FileCachePtr cache;
-        FileCacheSettings settings;
-        std::string config_path;
+        friend class FileCacheFactory;
+    public:
+        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_, const std::string & config_path_);
 
-        FileCacheData() = default;
-        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_, const std::string & config_path_)
-            : cache(cache_), settings(settings_), config_path(config_path_) {}
-    };
+        FileCacheSettings getSettings() const;
+
+        const FileCachePtr cache;
+        const std::string config_path;
+
+    private:
+        FileCacheSettings settings;
+        mutable std::mutex settings_mutex;
+   };
+
     using FileCacheDataPtr = std::shared_ptr<FileCacheData>;
     using CacheByName = std::unordered_map<std::string, FileCacheDataPtr>;
 
@@ -38,7 +44,7 @@ public:
 
     CacheByName getAll();
 
-    FileCacheData getByName(const std::string & cache_name);
+    FileCacheDataPtr getByName(const std::string & cache_name);
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
