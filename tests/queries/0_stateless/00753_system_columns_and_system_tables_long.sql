@@ -68,8 +68,6 @@ FORMAT PrettyCompactNoEscapes;
 
 DROP TABLE IF EXISTS check_system_tables;
 
-
-
 SELECT 'Check total_bytes/total_rows for TinyLog';
 CREATE TABLE check_system_tables (key UInt8) ENGINE = TinyLog();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
