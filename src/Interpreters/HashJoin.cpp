@@ -32,7 +32,7 @@
 #include <Common/assert_cast.h>
 
 #include <Functions/FunctionHelpers.h>
-
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -217,7 +217,7 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     }
 }
 
-static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable, const ColumnUInt8 & negative_null_map)
+static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable, const IColumn::Filter & negative_null_map)
 {
     if (nullable)
     {
@@ -1548,6 +1548,40 @@ IColumn::Filter switchJoinRightColumns(
     }
 }
 
+/** Since we do not store right key columns,
+  * this function is used to copy left key columns to right key columns.
+  * If the user requests some right columns, we just copy left key columns to right, since they are equal.
+  * Example: SELECT t1.key, t2.key FROM t1 FULL JOIN t2 ON t1.key = t2.key;
+  * In that case for matched rows in t2.key we will use values from t1.key.
+  * However, in some cases we might need to adjust the type of column, e.g. t1.key :: LowCardinality(String) and t2.key :: String
+  * Also, the nullability of the column might be different.
+  * Returns the right column after with necessary adjustments.
+  */
+ColumnWithTypeAndName copyLeftKeyColumnToRight(
+    const DataTypePtr & right_key_type, const String & renamed_right_column, const ColumnWithTypeAndName & left_column, const IColumn::Filter * null_map_filter = nullptr)
+{
+    ColumnWithTypeAndName right_column = left_column;
+    right_column.name = renamed_right_column;
+
+    if (null_map_filter)
+        right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
+
+    bool should_be_nullable = isNullableOrLowCardinalityNullable(right_key_type);
+    if (null_map_filter)
+        correctNullabilityInplace(right_column, should_be_nullable, *null_map_filter);
+    else
+        correctNullabilityInplace(right_column, should_be_nullable);
+
+    if (!right_column.type->equals(*right_key_type))
+    {
+        right_column.column = castColumnAccurate(right_column, right_key_type);
+        right_column.type = right_key_type;
+    }
+
+    right_column.column = right_column.column->convertToFullColumnIfConst();
+    return right_column;
+}
+
 } /// nameless
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
@@ -1614,31 +1648,19 @@ void HashJoin::joinBlockImpl(
             // renamed ???
             if (!block.findByName(right_key.name))
             {
-                const auto & left_name = required_right_keys_sources[i];
-
                 /// asof column is already in block.
                 if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
                     continue;
 
-                const auto & col = block.getByName(left_name);
-                bool is_nullable = JoinCommon::isNullable(right_key.type);
-                auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-                ColumnWithTypeAndName right_col(col.column, col.type, right_col_name);
-                if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
-                    JoinCommon::changeLowCardinalityInplace(right_col);
-                correctNullabilityInplace(right_col, is_nullable);
+                const auto & left_column = block.getByName(required_right_keys_sources[i]);
+                const auto & right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
+                auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column);
                 block.insert(std::move(right_col));
             }
         }
     }
     else if (has_required_right_keys)
     {
-        /// Some trash to represent IColumn::Filter as ColumnUInt8 needed for ColumnNullable::applyNullMap()
-        auto null_map_filter_ptr = ColumnUInt8::create();
-        ColumnUInt8 & null_map_filter = assert_cast<ColumnUInt8 &>(*null_map_filter_ptr);
-        null_map_filter.getData().swap(row_filter);
-        const IColumn::Filter & filter = null_map_filter.getData();
-
         /// Add join key columns from right block if needed.
         for (size_t i = 0; i < required_right_keys.columns(); ++i)
         {
@@ -1646,21 +1668,12 @@ void HashJoin::joinBlockImpl(
             auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
             if (!block.findByName(right_col_name))
             {
-                const auto & left_name = required_right_keys_sources[i];
-
                 /// asof column is already in block.
                 if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
                     continue;
 
-                const auto & col = block.getByName(left_name);
-                bool is_nullable = JoinCommon::isNullable(right_key.type);
-
-                ColumnPtr thin_column = JoinCommon::filterWithBlanks(col.column, filter);
-
-                ColumnWithTypeAndName right_col(thin_column, col.type, right_col_name);
-                if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
-                    JoinCommon::changeLowCardinalityInplace(right_col);
-                correctNullabilityInplace(right_col, is_nullable, null_map_filter);
+                const auto & left_column = block.getByName(required_right_keys_sources[i]);
+                auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, &row_filter);
                 block.insert(std::move(right_col));
 
                 if constexpr (join_features.need_replication)
@@ -2179,7 +2192,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
         for (const auto & sample_column : right_sample_block)
         {
             positions.emplace_back(tmp_block.getPositionByName(sample_column.name));
-            is_nullable.emplace_back(JoinCommon::isNullable(sample_column.type));
+            is_nullable.emplace_back(isNullableOrLowCardinalityNullable(sample_column.type));
         }
     }
 
