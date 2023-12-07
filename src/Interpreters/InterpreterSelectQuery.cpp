@@ -617,7 +617,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             for (auto & elem: query.select()->children)
             {
                 String name = elem->getAliasOrColumnName();
-                if (name == primary_key)
+                if (name == primary_key || name == "*")
                     contains_pk = true;
             }
             if (!contains_pk)

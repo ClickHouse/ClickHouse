@@ -15,7 +15,8 @@ SELECT
     dst,
     other_cols
 FROM test_a
-PREWHERE (dst = \'-42\') AND (src IN (
+PREWHERE dst = \'-42\'
+WHERE (dst = \'-42\') AND indexHint(src IN (
     SELECT src
     FROM test_a
     WHERE dst = \'-42\'
@@ -37,7 +38,8 @@ SELECT
     c3,
     other_cols
 FROM test_b
-PREWHERE (c1 = \'43\') AND (c2 = \'44\') AND (c3 = \'45\') AND (dst = \'-42\') AND (src IN (
+PREWHERE (c1 = \'43\') AND (c2 = \'44\') AND (c3 = \'45\') AND (dst = \'-42\')
+WHERE ((c1 = \'43\') AND (c2 = \'44\') AND (c3 = \'45\') AND (dst = \'-42\')) AND indexHint(src IN (
     SELECT src
     FROM test_b
     WHERE c1 = \'43\'
@@ -47,7 +49,8 @@ SELECT
     c1 AS id,
     c2 AS id2
 FROM test_b
-PREWHERE (lower(id) = \'43\') AND (id2 = \'44\') AND (src IN (
+PREWHERE (lower(id) = \'43\') AND (id2 = \'44\')
+WHERE ((lower(id) = \'43\') AND (id2 = \'44\')) AND indexHint(src IN (
     SELECT src
     FROM test_b
     WHERE lower(c1 AS id) = \'43\'
