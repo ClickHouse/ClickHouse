@@ -22,6 +22,7 @@ REGISTER_FUNCTION(HashingSSL)
     factory.registerFunction<FunctionSHA256>();
     factory.registerFunction<FunctionSHA384>();
     factory.registerFunction<FunctionSHA512>();
+    factory.registerFunction<FunctionSHA512_256>();
 }
 }
 

@@ -318,6 +318,20 @@ struct SHA512Impl
         SHA512_Final(out_char_data, &ctx);
     }
 };
+
+struct SHA512Impl256
+{
+    static constexpr auto name = "SHA512_256";
+    enum { length = SHA512_256_DIGEST_LENGTH };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA512_CTX ctx;
+        SHA512_256_Init(&ctx);
+        SHA512_256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA512_256_Final(out_char_data, &ctx);
+    }
+};
 #endif
 
 struct SipHash64Impl
@@ -1801,6 +1815,7 @@ using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
 using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
 using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
+using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
 #endif
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
 using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key, SipHash128KeyedImpl::KeyColumns>;
