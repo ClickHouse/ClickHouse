@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 CREATE DATABASE IF NOT EXISTS test_max_num_to_warn_02931;
 CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_1 (id Int32, str String) Engine=Memory;
 CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_2 (id Int32, str String) Engine=Memory;
