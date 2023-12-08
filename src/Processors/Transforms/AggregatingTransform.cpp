@@ -289,7 +289,7 @@ public:
 
     void work() override
     {
-        if (!data || data->empty())
+        if (data->empty())
         {
             finished = true;
             return;
@@ -424,7 +424,7 @@ private:
             return Status::Finished;
         }
 
-        return has_rows ? Status::PortFull : Status::Ready;
+        return has_rows ? Status::PortFull : Status::NeedData;
     }
 
     AggregatingTransformParamsPtr params;
