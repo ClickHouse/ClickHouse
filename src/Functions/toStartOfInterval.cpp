@@ -190,8 +190,10 @@ public:
             }
             case ResultType::DateTime64:
             {
-                auto scale_date_time = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
-                UInt32 scale = scale_date_time;
+                UInt32 scale = 0;
+                auto scale_date_time = 0;
+                if (third_argument == ThirdArgument::IsOrigin)
+                    scale_date_time = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
                 if (interval_type->getKind() == IntervalKind::Nanosecond)
                     scale = 9 > scale_date_time ? 9 : scale_date_time;
                 else if (interval_type->getKind() == IntervalKind::Microsecond)
