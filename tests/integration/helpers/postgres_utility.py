@@ -22,6 +22,10 @@ postgres_table_template_5 = """
     CREATE TABLE IF NOT EXISTS "{}" (
     key Integer NOT NULL, value UUID, PRIMARY KEY(key))
     """
+postgres_table_template_6 = """
+    CREATE TABLE IF NOT EXISTS "{}" (
+    key Integer NOT NULL, value Text, PRIMARY KEY(key))
+    """
 
 
 def get_postgres_conn(
@@ -140,7 +144,7 @@ class PostgresManager:
             raise ex
 
     def execute(self, query):
-        self.cursor.execute(query)
+        return self.cursor.execute(query)
 
     def prepare(self):
         self.conn = get_postgres_conn(ip=self.ip, port=self.port)
