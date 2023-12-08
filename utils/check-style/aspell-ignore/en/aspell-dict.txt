@@ -872,7 +872,6 @@ TCPConnection
 TCPThreads
 TDigest
 TINYINT
-TKSV
 TLSv
 TPCH
 TSDB
@@ -1789,6 +1788,7 @@ logTrace
 logagent
 loghouse
 london
+lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -2275,6 +2275,7 @@ splitByRegexp
 splitByString
 splitByWhitespace
 splitby
+sqid
 sql
 sqlalchemy
 sqlinsert

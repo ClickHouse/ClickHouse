@@ -1869,7 +1869,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             }
         }
 
-        throw zkutil::KeeperException(e);
+        throw zkutil::KeeperMultiException(e, ops, responses);
     }
 }
 
