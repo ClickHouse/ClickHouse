@@ -985,7 +985,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     std::optional<bool> join_constant;
 
-    if (join_strictness == JoinStrictness::All)
+    if (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Semi  || join_strictness == JoinStrictness::Anti)
         join_constant = tryExtractConstantFromJoinNode(join_table_expression);
 
     if (join_constant)
