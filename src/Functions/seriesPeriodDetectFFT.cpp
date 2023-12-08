@@ -63,37 +63,34 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        return ColumnFloat64::create(input_rows_count);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
         const IColumn & src_data = array->getData();
 
-        auto res = ColumnFloat64::create(1);
+        auto res = ColumnFloat64::create(input_rows_count);
         auto & res_data = res->getData();
 
         Float64 period;
+        for (size_t i = 0; i < input_rows_count; ++i)
+            if (executeNumber<UInt8>(src_data, period) || executeNumber<UInt16>(src_data, period) || executeNumber<UInt32>(src_data, period)
+                || executeNumber<UInt64>(src_data, period) || executeNumber<Int8>(src_data, period)
+                || executeNumber<Int16>(src_data, period) || executeNumber<Int32>(src_data, period)
+                || executeNumber<Int64>(src_data, period) || executeNumber<Float32>(src_data, period)
+                || executeNumber<Float64>(src_data, period))
+            {
+                res_data[i] = period;
+            }
+            else
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(),
+                    getName());
 
-        if (executeNumber<UInt8>(src_data, period) || executeNumber<UInt16>(src_data, period) || executeNumber<UInt32>(src_data, period)
-            || executeNumber<UInt64>(src_data, period) || executeNumber<Int8>(src_data, period) || executeNumber<Int16>(src_data, period)
-            || executeNumber<Int32>(src_data, period) || executeNumber<Int64>(src_data, period) || executeNumber<Float32>(src_data, period)
-            || executeNumber<Float64>(src_data, period))
-        {
-            res_data[0] = period;
-            return res;
-        }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(),
-                getName());
+        return res;
     }
 
     template <typename T>
@@ -107,7 +104,10 @@ public:
 
         size_t len = src_vec.size();
         if (len < 4)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least four data points are needed for function {}", getName());
+        {
+            period = NAN; // Atleast four data points are required to detect period
+            return true;
+        }
 
         std::vector<Float64> src(src_vec.begin(), src_vec.end());
         std::vector<std::complex<double>> out((len / 2) + 1);
@@ -162,7 +162,43 @@ REGISTER_FUNCTION(SeriesPeriodDetectFFT)
 {
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(FunctionDocumentation{
         .description = R"(
-Detects period in time series data using FFT.)",
+Finds the period of the given time series data using FFT
+Detect Period in time series data using FFT.
+FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transform)
+
+**Syntax**
+
+``` sql
+seriesPeriodDetectFFT(series);
+```
+
+**Arguments**
+
+- `series` - An array of numeric values
+
+**Returned value**
+
+- A real value equal to the period of time series
+- Returns NAN when number of data points are less than four.
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0;
+```
+
+Result:
+
+``` text
+┌───────────print_0──────┐
+│                      3 │
+└────────────────────────┘
+```
+)",
         .categories{"Time series analysis"}});
 }
 }

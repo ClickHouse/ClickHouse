@@ -27,6 +27,7 @@ seriesPeriodDetectFFT(series);
 **Returned value**
 
 - A real value equal to the period of time series
+- Returns NAN when number of data points are less than four.
 
 Type: [Float64](../../sql-reference/data-types/float.md).
 
