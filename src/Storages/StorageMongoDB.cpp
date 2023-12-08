@@ -252,7 +252,7 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSetting
             "Cannot extract table structure from MongoDB table: provided collection is empty");
 
     NamesAndTypesList result;
-    for (auto & key : final_keys)
+    for (const auto & key : final_keys)
     {
         if (!checkIfTypeIsComplete(types[key]))
             throw Exception(
@@ -262,7 +262,7 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSetting
                 key,
                 num_rows);
 
-        result.push_back({std::move(key), std::move(types[key])});
+        result.push_back({key, std::move(types[key])});
     }
 
     return ColumnsDescription(result);
