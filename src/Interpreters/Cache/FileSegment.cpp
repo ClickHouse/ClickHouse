@@ -793,8 +793,6 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         chassert(entry.offset == offset());
     };
 
-    auto lk = lockFileSegment();
-
     if (downloaded_size == 0)
         chassert(!fs::exists(getPathInLocalCache()));
     else
