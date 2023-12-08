@@ -887,6 +887,34 @@ def test_bad_connection_options(started_cluster):
     pg_manager.drop_materialized_db("test_database")
 
 
+def test_failed_load_from_snapshot(started_cluster):
+    if instance.is_built_with_sanitizer() or instance.is_debug_build():
+        pytest.skip(
+            "Sanitizers and debug mode are skipped, because this test thrown logical error"
+        )
+
+    table = "failed_load"
+
+    pg_manager.create_postgres_table(
+        table,
+        template="""
+    CREATE TABLE IF NOT EXISTS "{}" (
+    key text NOT NULL, value text[], PRIMARY KEY(key))
+    """,
+    )
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, [1, 2] from numbers(0, 1000000)"
+    )
+
+    # Create a table with wrong table structure
+    assert "Could not convert string to i" in instance.query_and_get_error(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', 'mysecretpassword') ORDER BY a
+        """
+    )
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
