@@ -1,7 +1,6 @@
 #include <Server/PrometheusRequestHandler.h>
 
 #include <IO/HTTPCommon.h>
-#include <Interpreters/Context.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/IServer.h>
@@ -18,7 +17,12 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 {
     try
     {
-        const auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
+        /// Raw config reference is used here to avoid dependency on Context and ServerSettings.
+        /// This is painful, because this class is also used in a build with CLICKHOUSE_KEEPER_STANDALONE_BUILD=1
+        /// And there ordinary Context is replaced with a tiny clone.
+        const auto & config = server.config();
+        unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
+
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
