@@ -531,6 +531,12 @@ namespace JSONUtils
         }
     }
 
+    void writeException(const String & exception_message, WriteBuffer & out, const FormatSettings & settings, size_t indent)
+    {
+        writeTitle("exception", out, indent, " ");
+        writeJSONString(exception_message, out, settings);
+    }
+
     Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8)
     {
         Strings result;
