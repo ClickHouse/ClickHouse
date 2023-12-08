@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Server/IServer.h>
+#include "config.h"
+
+#if USE_NURAFT
+
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Coordination/KeeperDispatcher.h>
 
 namespace DB
 {
-
-class Context;
-class IServer;
 
 class KeeperReadinessHandler : public HTTPRequestHandler, WithContext
 {
@@ -32,3 +32,5 @@ createKeeperHTTPControlMainHandlerFactory(
     const std::string & name);
 
 }
+
+#endif

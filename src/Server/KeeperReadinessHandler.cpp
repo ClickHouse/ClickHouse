@@ -1,8 +1,11 @@
+#include <Server/KeeperReadinessHandler.h>
+
+#if USE_NURAFT
+
 #include <memory>
 
 #include <IO/HTTPCommon.h>
 #include <Coordination/KeeperDispatcher.h>
-#include <Server/KeeperReadinessHandler.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -84,3 +87,5 @@ HTTPRequestHandlerFactoryPtr createKeeperHTTPControlMainHandlerFactory(
 }
 
 }
+
+#endif
