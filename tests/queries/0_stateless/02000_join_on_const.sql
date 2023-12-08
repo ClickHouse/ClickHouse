@@ -81,6 +81,13 @@ SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS allow_experime
 SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS allow_experimental_analyzer = 1;
 SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS allow_experimental_analyzer = 1;
 
+SELECT * FROM (SELECT 1 as a) as t1 INNER JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
+SELECT * FROM (SELECT 1 as a) as t1 LEFT JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
+SELECT * FROM (SELECT 1 as a) as t1 RIGHT JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
+SELECT * FROM (SELECT 1 as a) as t1 FULL JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
+SELECT * FROM (SELECT 1 as a) as t1 SEMI JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
+SELECT * FROM (SELECT 1 as a) as t1 ANTI JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
+
 -- { echoOff }
 
 DROP TABLE IF EXISTS t1;
