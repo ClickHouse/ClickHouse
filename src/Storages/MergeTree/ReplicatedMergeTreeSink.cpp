@@ -735,15 +735,22 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         log_entry.create_time = time(nullptr);
         log_entry.source_replica = storage.replica_name;
         log_entry.new_part_name = part->name;
-        /// TODO(cluster): should bump the version of the partition znode to ensure that there were no changes
-        if (storage.cluster.has_value())
-            log_entry.replicas = storage.cluster->getOrCreateClusterPartition(part->info.partition_id).getAllReplicas();
         /// TODO maybe add UUID here as well?
         log_entry.quorum = getQuorumSize(replicas_num);
         log_entry.new_part_format = part->getFormat();
 
         if constexpr (!async_insert)
             log_entry.block_id = block_id;
+
+        /// Ensure that the partition had not been migrated.
+        if (storage.cluster.has_value())
+        {
+            const auto & cluster_partition = storage.cluster->getOrCreateClusterPartition(part->info.partition_id);
+            log_entry.replicas = cluster_partition.getAllReplicas();
+            ops.emplace_back(zkutil::makeCheckRequest(
+                storage.zookeeper_path + "/block_numbers/" + cluster_partition.getPartitionId(),
+                cluster_partition.getVersion()));
+        }
 
         /// Prepare an entry for log.
         ops.emplace_back(zkutil::makeCreateRequest(
