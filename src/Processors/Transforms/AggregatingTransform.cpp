@@ -289,7 +289,7 @@ public:
 
     void work() override
     {
-        if (data->empty())
+        if (!data || data->empty())
         {
             finished = true;
             return;
