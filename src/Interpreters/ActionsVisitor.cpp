@@ -977,7 +977,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.no_subqueries,
             data.no_makeset,
             data.only_consts,
-            data.aggregation_keys_info);
+            data.aggregation_keys_info,
+            false,
+            false,
+            data.is_projection_optimized);
 
         NamesWithAliases args;
 

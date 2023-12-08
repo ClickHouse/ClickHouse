@@ -2303,7 +2303,8 @@ ASTPtr InterpreterSelectQuery::create_proj_optimized_ast(const ASTPtr & ast, con
     auto in_function = makeASTFunction("in", std::make_shared<ASTIdentifier>(main_primary_key), subquery);
 
     const auto indexHintFunc = makeASTFunction("indexHint", in_function);
-    return in_function;
+
+    return indexHintFunc;
 }
 
 void InterpreterSelectQuery::addPrewhereAliasActions()
