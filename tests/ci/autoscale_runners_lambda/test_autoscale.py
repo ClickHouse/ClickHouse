@@ -96,8 +96,11 @@ class TestSetCapacity(unittest.TestCase):
                 1,
                 13,
                 20,
-                [Queue("queued", 10, "private-increase")],
-                10,
+                [
+                    Queue("in_progress", 12, "private-increase"),
+                    Queue("queued", 11, "private-increase"),
+                ],
+                20,
             ),
             # Decrease capacity
             TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 5),
