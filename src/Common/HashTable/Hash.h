@@ -2,9 +2,10 @@
 
 #include <city.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
+#include <base/StringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/StringRef.h>
 
 #include <type_traits>
 
@@ -53,33 +54,7 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #endif
 
 #if defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-#include <crc32-s390x.h>
-
-inline uint32_t s390x_crc32_u8(uint32_t crc, uint8_t v)
-{
-    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint32_t s390x_crc32_u16(uint32_t crc, uint16_t v)
-{
-    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint32_t s390x_crc32_u32(uint32_t crc, uint32_t v)
-{
-    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint64_t s390x_crc32(uint64_t crc, uint64_t v)
-{
-    uint64_t _crc = crc;
-    uint32_t value_h, value_l;
-    value_h = (v >> 32) & 0xffffffff;
-    value_l = v & 0xffffffff;
-    _crc = crc32_be(static_cast<uint32_t>(_crc), reinterpret_cast<unsigned char *>(&value_h), sizeof(uint32_t));
-    _crc = crc32_be(static_cast<uint32_t>(_crc), reinterpret_cast<unsigned char *>(&value_l), sizeof(uint32_t));
-    return _crc;
-}
+#include <base/crc32c_s390x.h>
 #endif
 
 /// NOTE: Intel intrinsic can be confusing.
@@ -94,7 +69,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     return crc32_ppc(-1U, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return s390x_crc32(-1U, x);
+    return s390x_crc32c(-1U, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     /// NOTE: consider using intHash32()
@@ -110,7 +85,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     return crc32_ppc(updated_value, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-    return s390x_crc32(updated_value, x);
+    return s390x_crc32c(updated_value, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     return intHash64(x) ^ updated_value;
@@ -312,7 +287,10 @@ requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
     DB::UInt64 out {0};
-    std::memcpy(&out, &key, sizeof(T));
+    if constexpr (std::endian::native == std::endian::little)
+        std::memcpy(&out, &key, sizeof(T));
+    else
+        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
     return intHashCRC32(out, updated_value);
 }
 
@@ -357,7 +335,7 @@ struct UInt128Hash
 {
     size_t operator()(UInt128 x) const
     {
-        return CityHash_v1_0_2::Hash128to64({x.items[0], x.items[1]});
+        return CityHash_v1_0_2::Hash128to64({x.items[UInt128::_impl::little(0)], x.items[UInt128::_impl::little(1)]});
     }
 };
 
@@ -395,6 +373,18 @@ struct UInt128HashCRC32
     }
 };
 
+#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+
+struct UInt128HashCRC32
+{
+    size_t operator()(UInt128 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = s390x_crc32c(crc, x.items[UInt128::_impl::little(0)]);
+        crc = s390x_crc32c(crc, x.items[UInt128::_impl::little(1)]);
+        return crc;
+    }
+};
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -404,12 +394,12 @@ struct UInt128HashCRC32 : public UInt128Hash {};
 
 struct UInt128TrivialHash
 {
-    size_t operator()(UInt128 x) const { return x.items[0]; }
+    size_t operator()(UInt128 x) const { return x.items[UInt128::_impl::little(0)]; }
 };
 
 struct UUIDTrivialHash
 {
-    size_t operator()(DB::UUID x) const { return x.toUnderType().items[0]; }
+    size_t operator()(DB::UUID x) const { return DB::UUIDHelpers::getHighBytes(x); }
 };
 
 struct UInt256Hash
@@ -453,6 +443,19 @@ struct UInt256HashCRC32
     }
 };
 
+#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+struct UInt256HashCRC32
+{
+    size_t operator()(UInt256 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(0)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(1)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(2)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(3)]);
+        return crc;
+    }
+};
 #else
 
 /// We do not need to use CRC32 on other platforms. NOTE This can be confusing.
@@ -531,7 +534,10 @@ struct IntHash32
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
             DB::UInt64 out {0};
-            std::memcpy(&out, &key, sizeof(T));
+            if constexpr (std::endian::native == std::endian::little)
+                std::memcpy(&out, &key, sizeof(T));
+            else
+                std::memcpy(reinterpret_cast<char*>(&out) + sizeof(DB::UInt64) - sizeof(T), &key, sizeof(T));
             return intHash32<salt>(out);
         }
 

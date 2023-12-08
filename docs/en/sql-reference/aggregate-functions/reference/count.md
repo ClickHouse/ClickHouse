@@ -34,6 +34,10 @@ The `SELECT count() FROM table` query is optimized by default using metadata fro
 
 However `SELECT count(nullable_column) FROM table` query can be optimized by enabling the [optimize_functions_to_subcolumns](../../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
 
+**Improving COUNT(DISTINCT expr) performance**
+
+If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](../../../sql-reference/statements/select/group-by.md) clause as this improves parallelization. You can also use a [projection](../../../sql-reference/statements/alter/projection.md) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
+
 **Examples**
 
 Example 1:

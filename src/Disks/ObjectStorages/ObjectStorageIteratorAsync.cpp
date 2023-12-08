@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 
+
 namespace DB
 {
 
@@ -98,6 +99,22 @@ RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
 
     std::lock_guard lock(mutex);
     return current_batch;
+}
+
+std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrrentBatchAndScheduleNext()
+{
+    std::lock_guard lock(mutex);
+    if (!is_initialized)
+        nextBatch();
+
+    if (current_batch_iterator != current_batch.end())
+    {
+        auto temp_current_batch = current_batch;
+        nextBatch();
+        return temp_current_batch;
+    }
+
+    return std::nullopt;
 }
 
 size_t IObjectStorageIteratorAsync::getAccumulatedSize() const

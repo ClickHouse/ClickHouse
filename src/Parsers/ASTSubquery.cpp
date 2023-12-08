@@ -19,11 +19,9 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else
     {
-        Hash hash = getTreeHash();
+        const auto hash = getTreeHash(/*ignore_aliases=*/ true);
         writeCString("__subquery_", ostr);
-        writeText(hash.first, ostr);
-        ostr.write('_');
-        writeText(hash.second, ostr);
+        writeString(toString(hash), ostr);
     }
 }
 
@@ -53,11 +51,11 @@ void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, Format
     settings.ostr << nl_or_nothing << indent_str << ")";
 }
 
-void ASTSubquery::updateTreeHashImpl(SipHash & hash_state) const
+void ASTSubquery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     if (!cte_name.empty())
         hash_state.update(cte_name);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 String ASTSubquery::getAliasOrColumnName() const

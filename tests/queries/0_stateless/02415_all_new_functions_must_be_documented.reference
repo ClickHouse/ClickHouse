@@ -68,6 +68,7 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
+addDate
 addDays
 addHours
 addMicroseconds
@@ -112,6 +113,7 @@ arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
 arrayIntersect
+arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -124,6 +126,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -228,6 +231,7 @@ dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
+decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
@@ -237,10 +241,6 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
-detectCharset
-detectLanguageUnknown
-detectProgrammingLanguage
-detectTonality
 divide
 dotProduct
 dumpColumnStructure
@@ -305,6 +305,7 @@ formatRowNoNewline
 fragment
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
+fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
@@ -343,9 +344,12 @@ has
 hasAll
 hasAny
 hasColumnInTable
+hasSubsequence
+hasSubsequenceCaseInsensitive
+hasSubsequenceCaseInsensitiveUTF8
+hasSubsequenceUTF8
 hasSubstr
 hasThreadFuzzer
-hashid
 hex
 hiveHash
 hop
@@ -363,6 +367,8 @@ in
 inIgnoreSet
 indexHint
 indexOf
+initcap
+initcapUTF8
 initialQueryID
 initializeAggregation
 intDiv
@@ -425,10 +431,9 @@ mapUpdate
 match
 materialize
 max2
-meiliMatch
 metroHash64
 min2
-minSampleSizeContinous
+minSampleSizeContinuous
 minSampleSizeConversion
 minus
 modulo
@@ -664,7 +669,10 @@ splitByWhitespace
 sqrt
 startsWith
 subBitmap
+subDate
 substring
+substringIndex
+substringIndexUTF8
 substringUTF8
 subtractDays
 subtractHours
@@ -686,7 +694,6 @@ throwIf
 tid
 timeSlot
 timeSlots
-timezone
 timezoneOf
 timezoneOffset
 toBool
@@ -846,6 +853,7 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
+toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
@@ -878,11 +886,18 @@ tumble
 tumbleEnd
 tumbleStart
 tuple
+tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement
 tupleHammingDistance
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
 tupleMinus
+tupleModulo
+tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
 tupleNegate

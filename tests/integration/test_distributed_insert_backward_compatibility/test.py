@@ -11,9 +11,10 @@ node_dist = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml"],
     image="yandex/clickhouse-server",
-    tag="21.11.9.1",
+    tag="21.6",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

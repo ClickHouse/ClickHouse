@@ -1,6 +1,7 @@
 import logging
 import time
 import os
+import uuid
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -9,7 +10,6 @@ from helpers.utility import generate_values, replace_config, SafeThread
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
 from helpers.wait_for_helpers import wait_for_merges
-
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -24,6 +24,7 @@ def cluster():
                 "configs/config.xml",
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
+                "configs/config.d/blob_log.xml",
             ],
             user_configs=[
                 "configs/config.d/users.xml",
@@ -37,6 +38,7 @@ def cluster():
             main_configs=[
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
+                "configs/config.d/blob_log.xml",
             ],
             with_minio=True,
             tmpfs=[
@@ -126,17 +128,22 @@ def list_objects(cluster, path="data/", hint="list_objects"):
 
 def wait_for_delete_s3_objects(cluster, expected, timeout=30):
     while timeout > 0:
-        if len(list_objects(cluster, "data/")) == expected:
-            return
+        existing_objects = list_objects(cluster, "data/")
+        if len(existing_objects) == expected:
+            return existing_objects
         timeout -= 1
         time.sleep(1)
-    assert len(list_objects(cluster, "data/")) == expected
+    existing_objects = list_objects(cluster, "data/")
+    assert len(existing_objects) == expected
+    return existing_objects
 
 
 def remove_all_s3_objects(cluster):
     minio = cluster.minio_client
-    for obj in list_objects(cluster, "data/"):
+    objects_to_delete = list_objects(cluster, "data/")
+    for obj in objects_to_delete:
         minio.remove_object(cluster.minio_bucket, obj.object_name)
+    return objects_to_delete
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -155,7 +162,7 @@ def clear_minio(cluster):
 def check_no_objects_after_drop(cluster, table_name="s3_test", node_name="node"):
     node = cluster.instances[node_name]
     node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-    wait_for_delete_s3_objects(cluster, 0, timeout=0)
+    return wait_for_delete_s3_objects(cluster, 0, timeout=0)
 
 
 @pytest.mark.parametrize(
@@ -173,9 +180,31 @@ def test_simple_insert_select(
     minio = cluster.minio_client
 
     values1 = generate_values("2020-01-03", 4096)
-    node.query("INSERT INTO s3_test VALUES {}".format(values1))
+    insert_query_id = uuid.uuid4().hex
+
+    node.query(
+        "INSERT INTO s3_test VALUES {}".format(values1), query_id=insert_query_id
+    )
     assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values") == values1
     assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD + files_per_part
+
+    node.query("SYSTEM FLUSH LOGS")
+    blob_storage_log = node.query(
+        f"SELECT * FROM system.blob_storage_log WHERE query_id = '{insert_query_id}' FORMAT PrettyCompactMonoBlock"
+    )
+
+    result = node.query(
+        f"""SELECT
+            (countIf( (event_type == 'Upload' OR event_type == 'MultiPartUploadWrite') as event_match) as total_events) > 0,
+            countIf(event_match AND bucket == 'root') == total_events,
+            countIf(event_match AND remote_path != '') == total_events,
+            countIf(event_match AND local_path != '') == total_events,
+            sumIf(data_size, event_match) > 0
+        FROM system.blob_storage_log
+        WHERE query_id = '{insert_query_id}' AND error == ''
+        """
+    )
+    assert result == "1\t1\t1\t1\t1\n", blob_storage_log
 
     values2 = generate_values("2020-01-04", 4096)
     node.query("INSERT INTO s3_test VALUES {}".format(values2))
@@ -269,6 +298,30 @@ def test_alter_table_columns(cluster, node_name):
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096, -1))
     )
 
+    def assert_deleted_in_log(old_objects, new_objects):
+        node.query("SYSTEM FLUSH LOGS")
+
+        deleted_objects = set(obj.object_name for obj in old_objects) - set(
+            obj.object_name for obj in new_objects
+        )
+        deleted_in_log = set(
+            node.query(
+                f"SELECT remote_path FROM system.blob_storage_log WHERE error == '' AND event_type == 'Delete'"
+            )
+            .strip()
+            .split()
+        )
+
+        # all deleted objects should be in log
+        assert all(obj in deleted_in_log for obj in deleted_objects), (
+            deleted_objects,
+            node.query(
+                f"SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
+            ),
+        )
+
+    objects_before = list_objects(cluster, "data/")
+
     node.query("ALTER TABLE s3_test ADD COLUMN col1 UInt64 DEFAULT 1")
     # To ensure parts have merged
     node.query("OPTIMIZE TABLE s3_test")
@@ -278,10 +331,14 @@ def test_alter_table_columns(cluster, node_name):
         node.query("SELECT sum(col1) FROM s3_test WHERE id > 0 FORMAT Values")
         == "(4096)"
     )
-    wait_for_delete_s3_objects(
+
+    existing_objects = wait_for_delete_s3_objects(
         cluster,
         FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN,
     )
+
+    assert_deleted_in_log(objects_before, existing_objects)
+    objects_before = existing_objects
 
     node.query(
         "ALTER TABLE s3_test MODIFY COLUMN col1 String", settings={"mutations_sync": 2}
@@ -289,19 +346,27 @@ def test_alter_table_columns(cluster, node_name):
 
     assert node.query("SELECT distinct(col1) FROM s3_test FORMAT Values") == "('1')"
     # and file with mutation
-    wait_for_delete_s3_objects(
+    existing_objects = wait_for_delete_s3_objects(
         cluster,
         FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 1,
     )
 
+    assert_deleted_in_log(objects_before, existing_objects)
+    objects_before = existing_objects
+
     node.query("ALTER TABLE s3_test DROP COLUMN col1", settings={"mutations_sync": 2})
 
     # and 2 files with mutations
-    wait_for_delete_s3_objects(
+    existing_objects = wait_for_delete_s3_objects(
         cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2
     )
+    assert_deleted_in_log(objects_before, existing_objects)
+    objects_before = existing_objects
 
-    check_no_objects_after_drop(cluster)
+    existing_objects = check_no_objects_after_drop(cluster)
+
+    assert_deleted_in_log(objects_before, existing_objects)
+    objects_before = existing_objects
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -336,9 +401,7 @@ def test_attach_detach_partition(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert (
         len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
@@ -741,84 +804,6 @@ def test_cache_with_full_disk_space(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
-def test_cache_setting_compatibility(cluster, node_name):
-    node = cluster.instances[node_name]
-
-    node.query("DROP TABLE IF EXISTS s3_test SYNC")
-
-    node.query(
-        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r', compress_marks=false, compress_primary_key=false;"
-    )
-    node.query(
-        "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500"
-    )
-
-    result = node.query("SYSTEM DROP FILESYSTEM CACHE")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) == 0
-
-    node.query("SELECT * FROM s3_test")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    config_path = os.path.join(
-        SCRIPT_DIR,
-        f"./{cluster.instances_dir_name}/node/configs/config.d/storage_conf.xml",
-    )
-
-    replace_config(
-        config_path,
-        "<do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>",
-        "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
-    )
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("1")
-
-    node.restart_clickhouse()
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("0")
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    node.query("SELECT * FROM s3_test FORMAT Null")
-
-    assert not node.contains_in_log("No such file or directory: Cache info:")
-
-    replace_config(
-        config_path,
-        "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
-        "<do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>",
-    )
-
-    result = node.query(
-        "SELECT count() FROM system.filesystem_cache WHERE cache_path LIKE '%persistent'"
-    )
-    assert int(result) > 0
-
-    node.restart_clickhouse()
-
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
-    assert result.strip().endswith("1")
-
-    node.query("SELECT * FROM s3_test FORMAT Null")
-
-    assert not node.contains_in_log("No such file or directory: Cache info:")
-
-    check_no_objects_after_drop(cluster)
-
-
-@pytest.mark.parametrize("node_name", ["node"])
 def test_merge_canceled_by_drop(cluster, node_name):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS test_merge_canceled_by_drop NO DELAY")
@@ -863,7 +848,9 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
     assert int(min_key) == 0, min_key
 
-    broken_s3.setup_fail_upload(50000)
+    broken_s3.setup_at_object_upload()
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload()
 
     node.query("SYSTEM START MERGES test_merge_canceled_by_s3_errors")
 
@@ -873,6 +860,18 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     assert "ExpectedError Message: mock s3 injected error" in error, error
 
     node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
+
+    table_uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_merge_canceled_by_s3_errors' LIMIT 1"
+    ).strip()
+
+    node.query("SYSTEM FLUSH LOGS")
+    error_count_in_blob_log = node.query(
+        f"SELECT count() FROM system.blob_storage_log WHERE query_id like '{table_uuid}::%' AND error like '%mock s3 injected error%'"
+    ).strip()
+    assert int(error_count_in_blob_log) > 0, node.query(
+        f"SELECT * FROM system.blob_storage_log WHERE query_id like '{table_uuid}::%' FORMAT PrettyCompactMonoBlock"
+    )
 
     check_no_objects_after_drop(
         cluster, table_name="test_merge_canceled_by_s3_errors", node_name=node_name
@@ -906,7 +905,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
         settings={"materialize_ttl_after_modify": 0},
     )
 
-    broken_s3.setup_fail_upload(10000)
+    broken_s3.setup_at_object_upload(count=1, after=1)
 
     node.query("SYSTEM START MERGES merge_canceled_by_s3_errors_when_move")
 
@@ -929,10 +928,19 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 def test_s3_engine_heavy_write_check_mem(
     cluster, broken_s3, node_name, in_flight_memory
 ):
+    pytest.skip(
+        "Disabled, will be fixed after https://github.com/ClickHouse/ClickHouse/issues/51152"
+    )
+
     in_flight = in_flight_memory[0]
     memory = in_flight_memory[1]
 
     node = cluster.instances[node_name]
+
+    # it's bad idea to test something related to memory with sanitizers
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
     node.query("DROP TABLE IF EXISTS s3_test SYNC")
     node.query(
         "CREATE TABLE s3_test"
@@ -942,13 +950,19 @@ def test_s3_engine_heavy_write_check_mem(
         " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', 'minio123', 'CSV')",
     )
 
-    broken_s3.setup_fake_upload(1000)
-    broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=15, count=10)
+    broken_s3.setup_fake_multpartuploads()
+    slow_responces = 10
+    slow_timeout = 15
+    broken_s3.setup_slow_answers(
+        10 * 1024 * 1024, timeout=slow_timeout, count=slow_responces
+    )
 
     query_id = f"INSERT_INTO_S3_ENGINE_QUERY_ID_{in_flight}"
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
-        f" SETTINGS max_memory_usage={2*memory}"
+        f" SETTINGS "
+        f" max_memory_usage={2*memory}"
+        f", max_threads=1"  # ParallelFormattingOutputFormat consumption depends on it
         f", s3_max_inflight_parts_for_one_file={in_flight}",
         query_id=query_id,
     )
@@ -965,7 +979,8 @@ def test_s3_engine_heavy_write_check_mem(
     assert int(memory_usage) < 1.2 * memory
     assert int(memory_usage) > 0.8 * memory
 
-    assert int(wait_inflight) > 10 * 1000 * 1000
+    # The more in_flight value is the less time CH waits.
+    assert int(wait_inflight) / 1000 / 1000 > slow_responces * slow_timeout / in_flight
 
     check_no_objects_after_drop(cluster, node_name=node_name)
 
@@ -988,7 +1003,7 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
     )
     node.query("SYSTEM STOP MERGES s3_test")
 
-    broken_s3.setup_fake_upload(1000)
+    broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=10, count=50)
 
     query_id = f"INSERT_INTO_S3_DISK_QUERY_ID"

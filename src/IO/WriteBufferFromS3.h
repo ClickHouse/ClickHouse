@@ -5,11 +5,13 @@
 #if USE_AWS_S3
 
 #include <base/types.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 
 #include <memory>
 #include <vector>
@@ -33,6 +35,7 @@ public:
         const String & key_,
         size_t buf_size_,
         const S3Settings::RequestSettings & request_settings_,
+        BlobStorageLogWriterPtr blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunner<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
@@ -59,7 +62,8 @@ private:
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
-    String getLogDetails() const;
+    String getVerboseLogDetails() const;
+    String getShortLogDetails() const;
 
     struct PartData;
     void hidePartialData();
@@ -88,6 +92,7 @@ private:
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
+    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     IBufferAllocationPolicyPtr buffer_allocation_policy;
 
@@ -115,6 +120,8 @@ private:
 
     class TaskTracker;
     std::unique_ptr<TaskTracker> task_tracker;
+
+    BlobStorageLogWriterPtr blob_log;
 };
 
 }

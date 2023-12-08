@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/redis
-sidebar_position: 43
+sidebar_position: 170
 sidebar_label: redis
 ---
 
@@ -31,7 +31,7 @@ redis(host:port, key, structure[, db_index[, password[, pool_size]]])
 - `primary` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a Redis key.
 
 - columns other than the primary key will be serialized in binary as Redis value in corresponding order.
-  
+
 - queries with key equals or in filtering will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
 
 

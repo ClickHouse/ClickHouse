@@ -2,6 +2,9 @@
 
 #include <Processors/IProcessor.h>
 
+#include <atomic>
+#include <mutex>
+
 
 namespace DB
 {
@@ -9,8 +12,9 @@ namespace DB
 class ISource : public IProcessor
 {
 private:
+    std::mutex read_progress_mutex;
     ReadProgressCounters read_progress;
-    bool read_progress_was_set = false;
+    std::atomic_bool read_progress_was_set = false;
     bool auto_progress;
 
 protected:
@@ -25,7 +29,7 @@ protected:
     virtual Chunk generate();
     virtual std::optional<Chunk> tryGenerate();
 
-    virtual void progress(size_t read_rows, size_t read_bytes);
+    void progress(size_t read_rows, size_t read_bytes);
 
 public:
     explicit ISource(Block header, bool enable_auto_progress = true);
@@ -42,7 +46,8 @@ public:
     /// Default implementation for all the sources.
     std::optional<ReadProgress> getReadProgress() final;
 
-    void addTotalRowsApprox(size_t value) { read_progress.total_rows_approx += value; }
+    void addTotalRowsApprox(size_t value);
+    void addTotalBytes(size_t value);
 };
 
 using SourcePtr = std::shared_ptr<ISource>;

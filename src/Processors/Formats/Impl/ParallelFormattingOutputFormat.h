@@ -21,6 +21,7 @@ namespace CurrentMetrics
 {
     extern const Metric ParallelFormattingOutputFormatThreads;
     extern const Metric ParallelFormattingOutputFormatThreadsActive;
+    extern const Metric ParallelFormattingOutputFormatThreadsScheduled;
 }
 
 namespace DB
@@ -80,13 +81,14 @@ public:
     explicit ParallelFormattingOutputFormat(Params params)
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
-        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, params.max_threads_for_parallel_formatting)
+        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, params.max_threads_for_parallel_formatting)
 
     {
         LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
         save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
+        buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.
@@ -117,6 +119,7 @@ public:
     void writePrefix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::START, /*can_throw_exception*/ true);
+        started_prefix = true;
     }
 
     void onCancel() override
@@ -133,6 +136,7 @@ public:
     void writeSuffix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
+        started_suffix = true;
     }
 
     String getContentType() const override
@@ -140,6 +144,14 @@ public:
         WriteBufferFromOwnString buffer;
         return internal_formatter_creator(buffer)->getContentType();
     }
+
+    bool supportsWritingException() const override
+    {
+        WriteBufferFromOwnString buffer;
+        return internal_formatter_creator(buffer)->supportsWritingException();
+    }
+
+    void setException(const String & exception_message_) override { exception_message = exception_message_; }
 
 private:
     void consume(Chunk chunk) override final
@@ -213,6 +225,7 @@ private:
         Memory<> segment;
         size_t actual_memory_size{0};
         Statistics statistics;
+        size_t rows_num;
     };
 
     Poco::Event collector_finished{};
@@ -240,11 +253,20 @@ private:
     std::condition_variable writer_condvar;
 
     size_t rows_consumed = 0;
+    size_t rows_collected = 0;
     std::atomic_bool are_totals_written = false;
 
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
+
+    String exception_message;
+    bool exception_is_rethrown = false;
+    bool started_prefix = false;
+    bool collected_prefix = false;
+    bool started_suffix = false;
+    bool collected_suffix = false;
+    bool collected_finalize = false;
 
     void finishAndWait();
 
@@ -258,6 +280,17 @@ private:
         emergency_stop = true;
         writer_condvar.notify_all();
         collector_condvar.notify_all();
+    }
+
+    void rethrowBackgroundException()
+    {
+        /// Rethrow background exception only once, because
+        /// OutputFormat can be used after it to write an exception.
+        if (!exception_is_rethrown)
+        {
+            exception_is_rethrown = true;
+            std::rethrow_exception(background_exception);
+        }
     }
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)

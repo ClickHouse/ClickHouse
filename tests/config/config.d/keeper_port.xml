@@ -3,7 +3,7 @@
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
 
-        <create_snapshot_on_exit>true</create_snapshot_on_exit>
+        <create_snapshot_on_exit>1</create_snapshot_on_exit>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
@@ -19,6 +19,10 @@
             <heart_beat_interval_ms>0</heart_beat_interval_ms>
             <election_timeout_lower_bound_ms>0</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>0</election_timeout_upper_bound_ms>
+
+            <compress_logs>0</compress_logs>
+
+            <async_replication>1</async_replication>
         </coordination_settings>
 
         <raft_configuration>
@@ -28,5 +32,12 @@
                 <port>9234</port>
             </server>
         </raft_configuration>
+
+        <feature_flags>
+            <filtered_list>1</filtered_list>
+            <multi_read>1</multi_read>
+            <check_not_exists>1</check_not_exists>
+            <create_if_not_exists>1</create_if_not_exists>
+        </feature_flags>
     </keeper_server>
 </clickhouse>

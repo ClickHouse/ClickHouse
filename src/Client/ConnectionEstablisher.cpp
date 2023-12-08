@@ -24,7 +24,7 @@ namespace ErrorCodes
 ConnectionEstablisher::ConnectionEstablisher(
     IConnectionPool * pool_,
     const ConnectionTimeouts * timeouts_,
-    const Settings * settings_,
+    const Settings & settings_,
     Poco::Logger * log_,
     const QualifiedTableName * table_to_check_)
     : pool(pool_), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_), is_finished(false)
@@ -72,7 +72,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
         result.is_usable = true;
 
-        UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
+        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
         if (!max_allowed_delay)
         {
             result.is_up_to_date = true;
@@ -113,7 +113,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     IConnectionPool * pool_,
     const ConnectionTimeouts * timeouts_,
-    const Settings * settings_,
+    const Settings & settings_,
     Poco::Logger * log_,
     const QualifiedTableName * table_to_check_)
     : AsyncTaskExecutor(std::make_unique<Task>(*this)), connection_establisher(pool_, timeouts_, settings_, log_, table_to_check_)
@@ -170,7 +170,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
 
     epoll_event events[2];
     events[0].data.fd = events[1].data.fd = -1;
-    size_t ready_count = epoll.getManyReady(2, events, false);
+    size_t ready_count = epoll.getManyReady(2, events, 0);
     for (size_t i = 0; i != ready_count; ++i)
     {
         if (events[i].data.fd == socket_fd)
@@ -179,7 +179,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
             is_timeout_alarmed = true;
     }
 
-    if (is_timeout_alarmed && !is_socket_ready)
+    if (is_timeout_alarmed && !is_socket_ready && !haveMoreAddressesToConnect())
     {
         /// In not async case timeout exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
@@ -223,6 +223,11 @@ void ConnectionEstablisherAsync::resetResult()
         result.entry->disconnect();
         result.reset();
     }
+}
+
+bool ConnectionEstablisherAsync::haveMoreAddressesToConnect()
+{
+    return !result.entry.isNull() && result.entry->haveMoreAddressesToConnect();
 }
 
 #endif

@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 #include "Coordination/KeeperConstants.h"
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -29,7 +30,7 @@ public:
         if (distribution(rndgen) || must_fail_before_op)
         {
             must_fail_before_op = false;
-            throw zkutil::KeeperException("Fault injection before operation", Coordination::Error::ZSESSIONEXPIRED);
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED, "Fault injection before operation");
         }
     }
     void afterOperation()
@@ -37,12 +38,12 @@ public:
         if (distribution(rndgen) || must_fail_after_op)
         {
             must_fail_after_op = false;
-            throw zkutil::KeeperException("Fault injection after operation", Coordination::Error::ZOPERATIONTIMEOUT);
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT, "Fault injection after operation");
         }
     }
 
 private:
-    std::mt19937_64 rndgen;
+    pcg64_fast rndgen;
     std::bernoulli_distribution distribution;
 };
 
@@ -242,6 +243,11 @@ public:
         return access("get", !paths.empty() ? paths.front() : "", [&]() { return keeper->get(paths); });
     }
 
+    zkutil::ZooKeeper::MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
+    {
+        return access("tryGet", !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGet(paths); });
+    }
+
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
         return access("exists", path, [&]() { return keeper->exists(path, stat, watch); });
@@ -263,7 +269,7 @@ public:
         auto code = tryCreate(path, data, mode, path_created);
 
         if (code != Coordination::Error::ZOK)
-            throw zkutil::KeeperException(code, path);
+            throw zkutil::KeeperException::fromPath(code, path);
 
         return path_created;
     }
@@ -327,7 +333,7 @@ public:
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
             return;
 
-        throw zkutil::KeeperException(code, path);
+        throw zkutil::KeeperException::fromPath(code, path);
     }
 
     Coordination::Responses multi(const Coordination::Requests & requests)
@@ -402,9 +408,9 @@ public:
         ephemeral_nodes.clear();
     }
 
-    KeeperApiVersion getApiVersion() const
+    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const
     {
-        return keeper->getApiVersion();
+        return keeper->isFeatureEnabled(feature_flag);
     }
 
 private:
@@ -507,8 +513,8 @@ private:
             ++calls_total;
 
             if (!keeper)
-                throw zkutil::KeeperException(
-                    "Session is considered to be expired due to fault injection", Coordination::Error::ZSESSIONEXPIRED);
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED,
+                    "Session is considered to be expired due to fault injection");
 
             if constexpr (inject_failure_before_op)
             {

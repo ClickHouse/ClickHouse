@@ -20,7 +20,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_normalize_count_variants)
             return;
@@ -56,7 +56,7 @@ private:
     static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
     {
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }

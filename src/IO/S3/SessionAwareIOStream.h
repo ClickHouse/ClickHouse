@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iostream>
+#include <iosfwd>
 
 
 namespace DB::S3
@@ -17,6 +17,10 @@ public:
         , session(std::move(session_))
     {
     }
+
+    Session & getSession() { return session; }
+
+    const Session & getSession() const { return session; }
 
 private:
     /// Poco HTTP session is holder of response stream.

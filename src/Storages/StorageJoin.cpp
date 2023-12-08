@@ -14,6 +14,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/JoinUtils.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -146,7 +147,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addJoinedBlock(block, true);
+            new_data->addBlockToJoin(block, true);
             if (persistent)
                 backup_stream.write(block);
         }
@@ -177,7 +178,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -237,8 +238,10 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     /// Qualifies will be added by join implementation (TableJoin contains a rename mapping).
     analyzed_join->setRightKeys(key_names);
     analyzed_join->setLeftKeys(left_key_names_resorted);
-
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getRightSampleBlock());
+    Block right_sample_block;
+    for (const auto & name : required_columns_names)
+        right_sample_block.insert(getRightSampleBlock().getByName(name));
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
 
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     join_clone->setLock(holder);
@@ -257,7 +260,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addJoinedBlock(block_to_insert, true);
+    join->addBlockToJoin(block_to_insert, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const

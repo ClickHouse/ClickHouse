@@ -44,7 +44,7 @@ INSERT INTO map_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
     ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
     ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
-    
+
 SELECT
     timeslot,
     sumMap(status),
@@ -96,6 +96,10 @@ Result:
 ## -State
 
 If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
+
+:::note
+Please notice, that -MapState is not an invariant for the same data due to the fact that order of data in intermediate state can change, though it doesn't impact ingestion of this data.
+:::
 
 To work with these states, use:
 
@@ -296,7 +300,7 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
 
 Consider the results.
 
-`Jonh` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
+`John` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
 
 Now let’s count the total number of people and their average wage in the specified age intervals.
 
@@ -313,6 +317,15 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
+## -ArgMin
+
+The suffix -ArgMin can be appended to the name of any aggregate function. In this case, the aggregate function accepts an additional argument, which should be any comparable expression. The aggregate function processes only the rows that have the minimum value for the specified extra expression.
+
+Examples: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` and so on.
+
+## -ArgMax
+
+Similar to suffix -ArgMin but processes only the rows that have the maximum value for the specified extra expression.
 
 ## Related Content
 

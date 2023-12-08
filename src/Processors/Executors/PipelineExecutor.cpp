@@ -3,16 +3,13 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
-#include <Common/MemoryTracker.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
@@ -25,6 +22,7 @@ namespace CurrentMetrics
 {
     extern const Metric QueryPipelineExecutorThreads;
     extern const Metric QueryPipelineExecutorThreadsActive;
+    extern const Metric QueryPipelineExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -99,7 +97,7 @@ void PipelineExecutor::finish()
     tasks.finish();
 }
 
-void PipelineExecutor::execute(size_t num_threads)
+void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     checkTimeLimit();
     if (num_threads < 1)
@@ -110,7 +108,7 @@ void PipelineExecutor::execute(size_t num_threads)
 
     try
     {
-        executeImpl(num_threads);
+        executeImpl(num_threads, concurrency_control);
 
         /// Execution can be stopped because of exception. Check and rethrow if any.
         for (auto & node : graph->nodes)
@@ -137,12 +135,11 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
     if (!is_execution_initialized)
     {
-        initializeExecution(1);
+        initializeExecution(1, true);
 
         // Acquire slot until we are done
         single_thread_slot = slots->tryAcquire();
-        if (!single_thread_slot)
-            abort(); // Unable to allocate slot for the first thread, but we just allocated at least one slot
+        chassert(single_thread_slot && "Unable to allocate slot for the first thread, but we just allocated at least one slot");
 
         if (yield_flag && *yield_flag)
             return true;
@@ -210,6 +207,27 @@ void PipelineExecutor::finalizeExecution()
             all_processors_finished = false;
             break;
         }
+        else if (node->processor && read_progress_callback)
+        {
+            /// Some executors might have reported progress as part of their finish() call
+            /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it
+            /// enough data (on LIMIT), but as the progress report is asynchronous it might not be reported until the
+            /// connection is cancelled and all packets drained
+            /// To cover these cases we check if there is any pending progress in the processors to report
+            if (auto read_progress = node->processor->getReadProgress())
+            {
+                if (read_progress->counters.total_rows_approx)
+                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
+
+                if (read_progress->counters.total_bytes)
+                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+
+                /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
+                if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
+                    read_progress_callback->onProgress(
+                        read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
+            }
+        }
     }
 
     if (!all_processors_finished)
@@ -272,7 +290,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
                 /// Prepare processor after execution.
                 if (!graph->updateNode(context.getProcessorID(), queue, async_queue))
-                    finish();
+                    cancel();
 
                 /// Push other tasks to global queue.
                 tasks.pushTasks(queue, async_queue, context);
@@ -282,8 +300,18 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            /// Upscale if possible.
-            spawnThreads();
+            try
+            {
+                /// Upscale if possible.
+                spawnThreads();
+            }
+            catch (...)
+            {
+                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                /// We should cancel execution properly before rethrow.
+                cancel();
+                throw;
+            }
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
@@ -297,14 +325,16 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 #endif
 }
 
-void PipelineExecutor::initializeExecution(size_t num_threads)
+void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
 {
     is_execution_initialized = true;
 
+    size_t use_threads = num_threads;
+
     /// Allocate CPU slots from concurrency control
-    constexpr size_t min_threads = 1;
+    size_t min_threads = concurrency_control ? 1uz : num_threads;
     slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-    size_t use_threads = slots->grantedCount();
+    use_threads = slots->grantedCount();
 
     Queue queue;
     graph->initializeExecution(queue);
@@ -313,14 +343,14 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     tasks.fill(queue);
 
     if (num_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, num_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
 }
 
 void PipelineExecutor::spawnThreads()
 {
     while (auto slot = slots->tryAcquire())
     {
-        size_t thread_num = threads++;
+        size_t thread_num = threads.fetch_add(1);
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
@@ -352,9 +382,9 @@ void PipelineExecutor::spawnThreads()
     }
 }
 
-void PipelineExecutor::executeImpl(size_t num_threads)
+void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 {
-    initializeExecution(num_threads);
+    initializeExecution(num_threads, concurrency_control);
 
     bool finished_flag = false;
 

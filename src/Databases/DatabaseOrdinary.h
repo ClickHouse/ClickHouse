@@ -21,16 +21,41 @@ public:
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
     bool supportsLoadingInTopologicalOrder() const override { return true; }
 
     void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata, bool is_startup) override;
 
-    void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast,
+    void loadTableFromMetadata(
+        ContextMutablePtr local_context,
+        const String & file_path,
+        const QualifiedTableName & name,
+        const ASTPtr & ast,
         LoadingStrictnessLevel mode) override;
 
-    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
+    LoadTaskPtr loadTableFromMetadataAsync(
+        AsyncLoader & async_loader,
+        LoadJobSet load_after,
+        ContextMutablePtr local_context,
+        const String & file_path,
+        const QualifiedTableName & name,
+        const ASTPtr & ast,
+        LoadingStrictnessLevel mode) override;
+
+    LoadTaskPtr startupTableAsync(
+        AsyncLoader & async_loader,
+        LoadJobSet startup_after,
+        const QualifiedTableName & name,
+        LoadingStrictnessLevel mode) override;
+
+    void waitTableStarted(const String & name) const override;
+
+    void waitDatabaseStarted(bool no_throw) const override;
+
+    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
+
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
 
     void alterTable(
         ContextPtr context,
@@ -48,6 +73,13 @@ protected:
         ContextPtr query_context);
 
     Strings permanently_detached_tables;
+
+    std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);
+    LoadTaskPtr startup_database_task;
+    std::atomic<size_t> total_tables_to_startup{0};
+    std::atomic<size_t> tables_started{0};
+    AtomicStopwatch startup_watch;
 };
 
 }

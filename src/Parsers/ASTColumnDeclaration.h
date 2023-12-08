@@ -19,8 +19,10 @@ public:
     bool ephemeral_default = false;
     ASTPtr comment;
     ASTPtr codec;
+    ASTPtr stat_type;
     ASTPtr ttl;
     ASTPtr collation;
+    bool primary_key_specifier = false;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 

@@ -8,8 +8,10 @@
 #include <functional>
 #include <iosfwd>
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/simd.h>
 
 #include <city.h>
 
@@ -28,6 +30,15 @@
     #define CRC_INT __crc32cd
 #endif
 
+#if defined(__aarch64__) && defined(__ARM_NEON)
+    #include <arm_neon.h>
+    #pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
+#if defined(__s390x__)
+    #include <base/crc32c_s390x.h>
+    #define CRC_INT s390x_crc32c
+#endif
 
 /**
  * The std::string_view-like container to avoid creating strings to find substrings in the hash table.
@@ -73,14 +84,14 @@ using StringRefs = std::vector<StringRef>;
   * For more information, see hash_map_string_2.cpp
   */
 
-inline bool compareSSE2(const char * p1, const char * p2)
+inline bool compare8(const char * p1, const char * p2)
 {
     return 0xFFFF == _mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(p1)),
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(p2))));
 }
 
-inline bool compareSSE2x4(const char * p1, const char * p2)
+inline bool compare64(const char * p1, const char * p2)
 {
     return 0xFFFF == _mm_movemask_epi8(
         _mm_and_si128(
@@ -100,7 +111,30 @@ inline bool compareSSE2x4(const char * p1, const char * p2)
                     _mm_loadu_si128(reinterpret_cast<const __m128i *>(p2) + 3)))));
 }
 
-inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+
+inline bool compare8(const char * p1, const char * p2)
+{
+    uint64_t mask = getNibbleMask(vceqq_u8(
+            vld1q_u8(reinterpret_cast<const unsigned char *>(p1)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2))));
+    return 0xFFFFFFFFFFFFFFFF == mask;
+}
+
+inline bool compare64(const char * p1, const char * p2)
+{
+    uint64_t mask = getNibbleMask(vandq_u8(
+        vandq_u8(vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(p1)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2))),
+            vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(p1 + 16)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2 + 16)))),
+        vandq_u8(vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(p1 + 32)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2 + 32))),
+            vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(p1 + 48)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2 + 48))))));
+    return 0xFFFFFFFFFFFFFFFF == mask;
+}
+
+#endif
+
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+
+inline bool memequalWide(const char * p1, const char * p2, size_t size)
 {
     /** The order of branches and the trick with overlapping comparisons
       * are the same as in memcpy implementation.
@@ -137,7 +171,7 @@ inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
 
     while (size >= 64)
     {
-        if (compareSSE2x4(p1, p2))
+        if (compare64(p1, p2))
         {
             p1 += 64;
             p2 += 64;
@@ -147,18 +181,17 @@ inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
             return false;
     }
 
-    switch (size / 16)
+    switch (size / 16) // NOLINT(bugprone-switch-missing-default-case)
     {
-        case 3: if (!compareSSE2(p1 + 32, p2 + 32)) return false; [[fallthrough]];
-        case 2: if (!compareSSE2(p1 + 16, p2 + 16)) return false; [[fallthrough]];
-        case 1: if (!compareSSE2(p1, p2)) return false;
+        case 3: if (!compare8(p1 + 32, p2 + 32)) return false; [[fallthrough]];
+        case 2: if (!compare8(p1 + 16, p2 + 16)) return false; [[fallthrough]];
+        case 1: if (!compare8(p1, p2)) return false;
     }
 
-    return compareSSE2(p1 + size - 16, p2 + size - 16);
+    return compare8(p1 + size - 16, p2 + size - 16);
 }
 
 #endif
-
 
 inline bool operator== (StringRef lhs, StringRef rhs)
 {
@@ -168,8 +201,8 @@ inline bool operator== (StringRef lhs, StringRef rhs)
     if (lhs.size == 0)
         return true;
 
-#if defined(__SSE2__)
-    return memequalSSE2Wide(lhs.data, rhs.data, lhs.size);
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    return memequalWide(lhs.data, rhs.data, lhs.size);
 #else
     return 0 == memcmp(lhs.data, rhs.data, lhs.size);
 #endif
@@ -235,8 +268,8 @@ inline size_t hashLessThan8(const char * data, size_t size)
 
     if (size >= 4)
     {
-        UInt64 a = unalignedLoad<uint32_t>(data);
-        return hashLen16(size + (a << 3), unalignedLoad<uint32_t>(data + size - 4));
+        UInt64 a = unalignedLoadLittleEndian<uint32_t>(data);
+        return hashLen16(size + (a << 3), unalignedLoadLittleEndian<uint32_t>(data + size - 4));
     }
 
     if (size > 0)
@@ -256,8 +289,8 @@ inline size_t hashLessThan16(const char * data, size_t size)
 {
     if (size > 8)
     {
-        UInt64 a = unalignedLoad<UInt64>(data);
-        UInt64 b = unalignedLoad<UInt64>(data + size - 8);
+        UInt64 a = unalignedLoadLittleEndian<UInt64>(data);
+        UInt64 b = unalignedLoadLittleEndian<UInt64>(data + size - 8);
         return hashLen16(a, rotateByAtLeast1(b + size, static_cast<UInt8>(size))) ^ b;
     }
 
@@ -274,6 +307,8 @@ struct CRC32Hash
         if (size == 0)
             return 0;
 
+        chassert(pos);
+
         if (size < 8)
         {
             return static_cast<unsigned>(hashLessThan8(x.data, x.size));
@@ -284,13 +319,13 @@ struct CRC32Hash
 
         do
         {
-            UInt64 word = unalignedLoad<UInt64>(pos);
+            UInt64 word = unalignedLoadLittleEndian<UInt64>(pos);
             res = static_cast<unsigned>(CRC_INT(res, word));
 
             pos += 8;
         } while (pos + 8 < end);
 
-        UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
+        UInt64 word = unalignedLoadLittleEndian<UInt64>(end - 8);    /// I'm not sure if this is normal.
         res = static_cast<unsigned>(CRC_INT(res, word));
 
         return res;

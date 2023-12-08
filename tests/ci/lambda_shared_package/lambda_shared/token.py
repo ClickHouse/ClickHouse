@@ -8,6 +8,8 @@ import boto3  # type: ignore
 import jwt
 import requests  # type: ignore
 
+from . import cached_value_is_valid
+
 
 def get_key_and_app_from_aws() -> Tuple[str, int]:
     secret_name = "clickhouse_github_secret_key"
@@ -68,7 +70,7 @@ def get_access_token_by_key_app(private_key: str, app_id: int) -> str:
 
 @dataclass
 class CachedToken:
-    time: int
+    time: float
     value: str
     updating: bool = False
 
@@ -81,10 +83,9 @@ def get_cached_access_token() -> str:
         return _cached_token.value
     # Indicate that the value is updating now, so the cached value can be
     # used. The first setting and close-to-ttl are not counted as update
-    if _cached_token.time != 0 or time.time() - 590 < _cached_token.time:
-        _cached_token.updating = True
+    _cached_token.updating = cached_value_is_valid(_cached_token.time, 590)
     private_key, app_id = get_key_and_app_from_aws()
-    _cached_token.time = int(time.time())
+    _cached_token.time = time.time()
     _cached_token.value = get_access_token_by_key_app(private_key, app_id)
     _cached_token.updating = False
     return _cached_token.value

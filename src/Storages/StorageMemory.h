@@ -76,6 +76,8 @@ public:
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
@@ -132,6 +134,8 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     bool compress;
+
+    friend class ReadFromMemoryStorageStep;
 };
 
 }

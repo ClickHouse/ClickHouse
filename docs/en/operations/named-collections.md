@@ -18,7 +18,15 @@ function, table engine, database, etc. In the examples below the parameter list 
 linked to for each type.
 
 Parameters set in a named collection can be overridden in SQL, this is shown in the examples
-below.
+below. This ability can be limited using `[NOT] OVERRIDABLE` keywords and XML attributes
+and/or the configuration option `allow_named_collection_override_by_default`.
+
+:::warning
+If override is allowed, it may be possible for users without administrative access to
+figure out the credentials that you are trying to hide.
+If you are using named collections with that purpose, you should disable
+`allow_named_collection_override_by_default` (which is enabled by default).
+:::
 
 ## Storing named collections in the system database
 
@@ -26,10 +34,16 @@ below.
 
 ```sql
 CREATE NAMED COLLECTION name AS
-key_1 = 'value',
-key_2 = 'value2',
+key_1 = 'value' OVERRIDABLE,
+key_2 = 'value2' NOT OVERRIDABLE,
 url = 'https://connection.url/'
 ```
+
+In the above example:
+
+ * `key_1` can always be overridden.
+ * `key_2` can never be overridden.
+ * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ### Permissions to create named collections with DDL
 
@@ -50,7 +64,7 @@ To manage named collections with DDL a user must have the `named_control_collect
 ```
 
 :::tip
-In the above example the `passowrd_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user. 
+In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user. 
 :::
 
 ## Storing named collections in configuration files
@@ -61,13 +75,19 @@ In the above example the `passowrd_sha256_hex` value is the hexadecimal represen
 <clickhouse>
      <named_collections>
         <name>
-            <key_1>value</key_1>
-            <key_2>value_2</key_2>
+            <key_1 overridable="true">value</key_1>
+            <key_2 overridable="false">value_2</key_2>
             <url>https://connection.url/</url>
         </name>
      </named_collections>
 </clickhouse>
 ```
+
+In the above example:
+
+ * `key_1` can always be overridden.
+ * `key_2` can never be overridden.
+ * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ## Modifying named collections
 
@@ -75,9 +95,15 @@ Named collections that are created with DDL queries can be altered or dropped wi
 
 ### Alter a DDL named collection
 
-Change or add the keys `key1` and `key3` of the collection `collection2`:
+Change or add the keys `key1` and `key3` of the collection `collection2`
+(this will not change the value of the `overridable` flag for those keys):
 ```sql
 ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'
+```
+
+Change or add the key `key1` and allow it to be always overridden:
+```sql
+ALTER NAMED COLLECTION collection2 SET key1=4 OVERRIDABLE
 ```
 
 Remove the key `key2` from `collection2`:
@@ -88,6 +114,13 @@ ALTER NAMED COLLECTION collection2 DELETE key2
 Change or add the key `key1` and delete the key `key3` of the collection `collection2`:
 ```sql
 ALTER NAMED COLLECTION collection2 SET key1=4, DELETE key3
+```
+
+To force a key to use the default settings for the `overridable` flag, you have to
+remove and re-add the key.
+```sql
+ALTER NAMED COLLECTION collection2 DELETE key1;
+ALTER NAMED COLLECTION collection2 SET key1=4;
 ```
 
 ### Drop the DDL named collection `collection2`:
@@ -169,7 +202,6 @@ host = '127.0.0.1',
 port = 3306,
 database = 'test',
 connection_pool_size = 8,
-on_duplicate_clause = 1,
 replace_query = 1
 ```
 
@@ -185,7 +217,6 @@ replace_query = 1
             <port>3306</port>
             <database>test</database>
             <connection_pool_size>8</connection_pool_size>
-            <on_duplicate_clause>1</on_duplicate_clause>
             <replace_query>1</replace_query>
         </mymysql>
     </named_collections>

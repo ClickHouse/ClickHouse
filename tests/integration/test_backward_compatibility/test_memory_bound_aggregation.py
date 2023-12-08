@@ -7,19 +7,21 @@ node1 = cluster.add_instance(
     "node1",
     with_zookeeper=False,
     image="yandex/clickhouse-server",
-    tag="21.1",
+    tag="20.8.11.17",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=False,
     image="yandex/clickhouse-server",
-    tag="21.1",
+    tag="20.8.11.17",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False)
+node3 = cluster.add_instance("node3", with_zookeeper=False, allow_analyzer=False)
 
 
 @pytest.fixture(scope="module")

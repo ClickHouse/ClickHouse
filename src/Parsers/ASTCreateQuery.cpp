@@ -6,6 +6,8 @@
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -458,6 +460,51 @@ bool ASTCreateQuery::isParameterizedView() const
     if (is_ordinary_view && select && select->hasQueryParameters())
         return true;
     return false;
+}
+
+
+ASTCreateQuery::UUIDs::UUIDs(const ASTCreateQuery & query)
+    : uuid(query.uuid)
+    , to_inner_uuid(query.to_inner_uuid)
+{
+}
+
+String ASTCreateQuery::UUIDs::toString() const
+{
+    WriteBufferFromOwnString out;
+    out << "{" << uuid << "," << to_inner_uuid << "}";
+    return out.str();
+}
+
+ASTCreateQuery::UUIDs ASTCreateQuery::UUIDs::fromString(const String & str)
+{
+    ReadBufferFromString in{str};
+    ASTCreateQuery::UUIDs res;
+    in >> "{" >> res.uuid >> "," >> res.to_inner_uuid >> "}";
+    return res;
+}
+
+ASTCreateQuery::UUIDs ASTCreateQuery::generateRandomUUID(bool always_generate_new_uuid)
+{
+    if (always_generate_new_uuid)
+        setUUID({});
+
+    if (uuid == UUIDHelpers::Nil)
+        uuid = UUIDHelpers::generateV4();
+
+    /// If destination table (to_table_id) is not specified for materialized view,
+    /// then MV will create inner table. We should generate UUID of inner table here.
+    bool need_uuid_for_inner_table = !attach && is_materialized_view && !to_table_id;
+    if (need_uuid_for_inner_table && (to_inner_uuid == UUIDHelpers::Nil))
+        to_inner_uuid = UUIDHelpers::generateV4();
+
+    return UUIDs{*this};
+}
+
+void ASTCreateQuery::setUUID(const UUIDs & uuids)
+{
+    uuid = uuids.uuid;
+    to_inner_uuid = uuids.to_inner_uuid;
 }
 
 }

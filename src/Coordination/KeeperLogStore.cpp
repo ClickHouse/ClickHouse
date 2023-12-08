@@ -1,14 +1,13 @@
 #include <Coordination/KeeperLogStore.h>
 #include <IO/CompressionMethod.h>
+#include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
 
-KeeperLogStore::KeeperLogStore(
-    const std::string & changelogs_path, LogFileSettings log_file_settings)
-    : log(&Poco::Logger::get("KeeperLogStore"))
-    , changelog(changelogs_path, log, log_file_settings)
+KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, KeeperContextPtr keeper_context)
+    : log(&Poco::Logger::get("KeeperLogStore")), changelog(log, log_file_settings, flush_settings, keeper_context)
 {
     if (log_file_settings.force_sync)
         LOG_INFO(log, "force_sync enabled");
@@ -128,7 +127,8 @@ void KeeperLogStore::shutdownChangelog()
 bool KeeperLogStore::flushChangelogAndShutdown()
 {
     std::lock_guard lock(changelog_lock);
-    changelog.flush();
+    if (changelog.isInitialized())
+        changelog.flush();
     changelog.shutdown();
     return true;
 }

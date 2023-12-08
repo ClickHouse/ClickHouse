@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/hdfs
-sidebar_position: 6
+sidebar_position: 80
 sidebar_label: HDFS
 ---
 
@@ -63,7 +63,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
     - `ALTER` and `SELECT...SAMPLE` operations.
     - Indexes.
     - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
-  
+
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
   :::
@@ -230,8 +230,9 @@ libhdfs3 support HDFS namenode HA.
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file.
-- `_file` — Name of the file.
+- `_path` — Path to the file. Type: `LowCardinalty(String)`.
+- `_file` — Name of the file. Type: `LowCardinalty(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 
 ## Storage Settings {#storage-settings}
 

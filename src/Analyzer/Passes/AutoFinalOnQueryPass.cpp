@@ -20,7 +20,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<AutoFinalOnQueryPassVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().final)
             return;

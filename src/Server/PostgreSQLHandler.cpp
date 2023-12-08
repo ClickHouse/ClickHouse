@@ -7,11 +7,11 @@
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
 #include <Server/TCPServer.h>
+#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <base/scope_guard.h>
-#include <random>
-
-#include "config_version.h"
+#include <pcg_random.hpp>
+#include <Common/config_version.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -58,7 +58,7 @@ void PostgreSQLHandler::run()
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
 
-    session->getClientInfo().connection_id = connection_id;
+    session->setClientConnectionId(connection_id);
 
     try
     {
@@ -284,8 +284,7 @@ void PostgreSQLHandler::processQuery()
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
-        std::random_device rd;
-        std::mt19937 gen(rd());
+        pcg64_fast gen{randomSeed()};
         std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
 
         for (const auto & spl_query : queries)

@@ -276,3 +276,12 @@ private:
             return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }
 };
+
+namespace DB
+{
+template <typename T>
+void readBinary(std::pair<T, UInt32> & x, ReadBuffer & buf)
+{
+    readPODBinary(x, buf);
+}
+}

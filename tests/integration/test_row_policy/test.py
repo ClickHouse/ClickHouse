@@ -420,7 +420,7 @@ def test_introspection():
             "mydb",
             "local",
             "5b23c389-7e18-06bf-a6bc-dd1afbbc0a97",
-            "users.xml",
+            "users_xml",
             "a = 1",
             0,
             0,
@@ -433,7 +433,7 @@ def test_introspection():
             "mydb",
             "filtered_table1",
             "9e8a8f62-4965-2b5e-8599-57c7b99b3549",
-            "users.xml",
+            "users_xml",
             "a = 1",
             0,
             0,
@@ -446,7 +446,7 @@ def test_introspection():
             "mydb",
             "filtered_table2",
             "cffae79d-b9bf-a2ef-b798-019c18470b25",
-            "users.xml",
+            "users_xml",
             "a + b < 1 or c - d > 5",
             0,
             0,
@@ -459,7 +459,7 @@ def test_introspection():
             "mydb",
             "filtered_table3",
             "12fc5cef-e3da-3940-ec79-d8be3911f42b",
-            "users.xml",
+            "users_xml",
             "c = 1",
             0,
             0,
@@ -636,7 +636,9 @@ def test_grant_create_row_policy():
     assert node.query("SHOW POLICIES") == ""
     node.query("CREATE USER X")
 
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
@@ -644,12 +646,16 @@ def test_grant_create_row_policy():
     node.query(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table2 FOR SELECT USING a<b", user="X"
     )
 
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
@@ -657,25 +663,33 @@ def test_grant_create_row_policy():
     node.query(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table2 FOR SELECT USING a==b", user="X"
     )
 
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table1", user="X"
     )
     node.query("GRANT DROP POLICY ON mydb.filtered_table1 TO X")
     node.query("DROP POLICY pA ON mydb.filtered_table1", user="X")
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table2"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table2"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table2", user="X"
     )
 
     node.query("REVOKE ALL ON *.* FROM X")
 
-    expected_error = "necessary to have grant CREATE ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant CREATE ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
@@ -684,7 +698,9 @@ def test_grant_create_row_policy():
         "CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b", user="X"
     )
 
-    expected_error = "necessary to have grant ALTER ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant ALTER ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
@@ -693,7 +709,9 @@ def test_grant_create_row_policy():
         "ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a==b", user="X"
     )
 
-    expected_error = "necessary to have grant DROP ROW POLICY ON mydb.filtered_table1"
+    expected_error = (
+        "necessary to have the grant DROP ROW POLICY ON mydb.filtered_table1"
+    )
     assert expected_error in node.query_and_get_error(
         "DROP POLICY pA ON mydb.filtered_table1", user="X"
     )

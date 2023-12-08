@@ -26,6 +26,7 @@ namespace DB
 {
 
 class ReadBufferFromFileBase;
+struct FileCacheReserveStat;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -36,11 +37,6 @@ enum class FileSegmentKind
      * (unless there're some holders).
      */
     Regular,
-
-    /* `Persistent` file segment can't be evicted from cache,
-     * it should be removed manually.
-     */
-    Persistent,
 
     /* `Temporary` file segment is removed right after releasing.
      * Also corresponding files are removed during cache loading (if any).
@@ -114,6 +110,7 @@ public:
         size_t size_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings = {},
+        bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
         Priority::Iterator queue_iterator_ = Priority::Iterator{});
@@ -130,11 +127,17 @@ public:
         size_t left;
         size_t right;
 
-        Range(size_t left_, size_t right_) : left(left_), right(right_) {}
+        Range(size_t left_, size_t right_);
 
         bool operator==(const Range & other) const { return left == other.left && right == other.right; }
 
+        bool operator<(const Range & other) const { return right < other.left; }
+
         size_t size() const { return right - left + 1; }
+
+        bool contains(size_t point) const { return left <= point && point <= right; }
+
+        bool contains(const Range & other) const { return contains(other.left) && contains(other.right); }
 
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
     };
@@ -155,11 +158,11 @@ public:
 
     FileSegmentKind getKind() const { return segment_kind; }
 
-    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
-
     bool isUnbound() const { return is_unbound; }
 
     String getPathInLocalCache() const;
+
+    int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
 
     /**
      * ========== Methods for _any_ file segment's owner ========================
@@ -180,13 +183,9 @@ public:
 
     size_t getRefCount() const { return ref_count; }
 
-    void incrementHitsCount() { ++hits_count; }
+    size_t getCurrentWriteOffset() const;
 
-    size_t getCurrentWriteOffset(bool sync) const;
-
-    size_t getFirstNonDownloadedOffset(bool sync) const;
-
-    size_t getDownloadedSize(bool sync) const;
+    size_t getDownloadedSize() const;
 
     size_t getReservedSize() const;
 
@@ -206,7 +205,22 @@ public:
     /// exception.
     void detach(const FileSegmentGuard::Lock &, const LockedKey &);
 
-    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
+    struct Info
+    {
+        FileSegment::Key key;
+        size_t offset;
+        std::string path;
+        uint64_t range_left;
+        uint64_t range_right;
+        FileSegmentKind kind;
+        State state;
+        uint64_t size;
+        uint64_t downloaded_size;
+        uint64_t cache_hits;
+        uint64_t references;
+        bool is_unbound;
+    };
+    static Info getInfo(const FileSegmentPtr & file_segment, FileCache & cache);
 
     bool isDetached() const;
 
@@ -248,12 +262,7 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(size_t size_to_reserve);
-
-    /// Try to reserve at max `size_to_reserve` bytes.
-    /// Returns actual size reserved. It can be less than size_to_reserve in non strict mode.
-    /// In strict mode throws an error on attempt to reserve space too much space.
-    size_t tryReserve(size_t size_to_reserve, bool strict = false);
+    bool reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
@@ -272,6 +281,8 @@ public:
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
     void setDownloadedSize(size_t delta);
+
+    void setDownloadFailed();
 
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
@@ -293,6 +304,7 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
+    FileSegmentGuard::Lock lockFileSegment() const;
 
     Key file_key;
     Range segment_range;
@@ -300,6 +312,7 @@ private:
     /// Size of the segment is not known until it is downloaded and
     /// can be bigger than max_file_segment_size.
     const bool is_unbound = false;
+    const bool background_download_enabled;
 
     std::atomic<State> download_state;
     DownloaderId downloader_id; /// The one who prepares the download
@@ -310,7 +323,6 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-    mutable std::mutex download_mutex;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
@@ -331,8 +343,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 {
     FileSegmentsHolder() = default;
 
-    explicit FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_ = true)
-        : file_segments(std::move(file_segments_)), complete_on_dtor(complete_on_dtor_) {}
+    explicit FileSegmentsHolder(FileSegments && file_segments_);
 
     ~FileSegmentsHolder();
 
@@ -345,14 +356,12 @@ struct FileSegmentsHolder : private boost::noncopyable
     void popFront() { completeAndPopFrontImpl(); }
 
     FileSegment & front() { return *file_segments.front(); }
+    const FileSegment & front() const { return *file_segments.front(); }
 
     FileSegment & back() { return *file_segments.back(); }
+    const FileSegment & back() const { return *file_segments.back(); }
 
-    FileSegment & add(FileSegmentPtr && file_segment)
-    {
-        file_segments.push_back(file_segment);
-        return *file_segments.back();
-    }
+    FileSegment & add(FileSegmentPtr && file_segment);
 
     FileSegments::iterator begin() { return file_segments.begin(); }
     FileSegments::iterator end() { return file_segments.end(); }
@@ -362,7 +371,6 @@ struct FileSegmentsHolder : private boost::noncopyable
 
 private:
     FileSegments file_segments{};
-    const bool complete_on_dtor = true;
 
     FileSegments::iterator completeAndPopFrontImpl();
 };

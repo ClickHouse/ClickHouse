@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/mongodb
-sidebar_position: 42
+sidebar_position: 135
 sidebar_label: mongodb
 ---
 
@@ -30,6 +30,14 @@ mongodb(host:port, database, collection, user, password, structure [, options])
 
 - `options` - MongoDB connection string options (optional parameter).
 
+:::tip
+If you are using the MongoDB Atlas cloud offering please add these options:
+
+```
+'connectTimeoutMS=10000&ssl=true&authSource=admin'
+```
+
+:::
 
 **Returned Value**
 

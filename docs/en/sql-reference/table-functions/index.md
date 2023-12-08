@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/table-functions/
 sidebar_label: Table Functions
-sidebar_position: 34
+sidebar_position: 1
 ---
 
-# Table Functions 
+# Table Functions
 
 Table functions are methods for constructing tables.
 

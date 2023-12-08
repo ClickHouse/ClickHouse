@@ -93,7 +93,6 @@ private:
         const MarkRanges & ranges,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        size_t & granules_dropped,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         Poco::Logger * log);
@@ -105,8 +104,6 @@ private:
         const MarkRanges & ranges,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        size_t & total_granules,
-        size_t & granules_dropped,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         Poco::Logger * log);
@@ -129,7 +126,7 @@ private:
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
-        std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         PartFilterCounters & counters);
 
@@ -141,7 +138,7 @@ private:
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
-        std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context,
         PartFilterCounters & counters,
@@ -173,14 +170,21 @@ public:
         const ASTPtr & query,
         ContextPtr context);
 
+    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+        const MergeTreeData & data,
+        const MergeTreeData::DataPartsVector & parts,
+        const ActionsDAGPtr & filter_dag,
+        ContextPtr context);
+
     /// Filter parts using minmax index and partition key.
     static void filterPartsByPartition(
+        const std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<KeyCondition> & minmax_idx_condition,
         MergeTreeData::DataPartsVector & parts,
         std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
-        const SelectQueryInfo & query_info,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         Poco::Logger * log,
@@ -193,9 +197,9 @@ public:
         MergeTreeData::DataPartsVector && parts,
         std::vector<AlterConversionsPtr> && alter_conversions,
         StorageMetadataPtr metadata_snapshot,
-        const SelectQueryInfo & query_info,
         const ContextPtr & context,
         const KeyCondition & key_condition,
+        const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log,
         size_t num_streams,

@@ -182,6 +182,11 @@ void StorageMaterializedView::read(
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
                                                                         ActionsDAG::MatchColumnsMode::Name);
+            /* Leave columns outside from materialized view structure as is.
+             * They may be added in case of distributed query with JOIN.
+             * In that case underlying table returns joined columns as well.
+             */
+            converting_actions->projectInput(false);
             auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
             converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
             query_plan.addStep(std::move(converting_step));
@@ -228,10 +233,13 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
 {
     /// We will use `sync` argument wneh this function is called from a DROP query
     /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
-    /// See the comment in StorageMaterializedView::drop
+    /// See the comment in StorageMaterializedView::drop.
+    /// DDL queries with StorageMaterializedView are fundamentally broken.
+    /// Best-effort to make them work: the inner table name is almost always less than the MV name (so it's safe to lock DDLGuard)
+    bool may_lock_ddl_guard = getStorageID().getQualifiedName() < target_table_id.getQualifiedName();
     if (has_inner_table && tryGetTargetTable())
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id,
-                                               sync, /* ignore_sync_setting */ true);
+                                               sync, /* ignore_sync_setting */ true, may_lock_ddl_guard);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -274,15 +282,10 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, local_context);
 
     /// start modify query
-    if (local_context->getSettingsRef().allow_experimental_alter_materialized_view_structure)
-    {
-        const auto & new_select = new_metadata.select;
-        const auto & old_select = old_metadata.getSelectQuery();
+    const auto & new_select = new_metadata.select;
+    const auto & old_select = old_metadata.getSelectQuery();
 
-        DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
-
-        new_metadata.setSelectQuery(new_select);
-    }
+    DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
     /// end modify query
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
@@ -290,26 +293,13 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
 {
-    const auto & settings = local_context->getSettingsRef();
-    if (settings.allow_experimental_alter_materialized_view_structure)
+    for (const auto & command : commands)
     {
-        for (const auto & command : commands)
-        {
-            if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                    command.type, getName());
-        }
-    }
-    else
-    {
-        for (const auto & command : commands)
-        {
-            if (!command.isCommentAlter())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                    command.type, getName());
-        }
+        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
     }
 }
 
@@ -327,10 +317,11 @@ Pipe StorageMaterializedView::alterPartition(
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot,
+    const Settings & settings, ContextPtr local_context) const
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, local_context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
@@ -391,7 +382,7 @@ void StorageMaterializedView::startup()
         DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 }
 
-void StorageMaterializedView::shutdown()
+void StorageMaterializedView::shutdown(bool)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
@@ -428,7 +419,13 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 {
     /// We backup the target table's data only if it's inner.
     if (hasInnerTable())
-        getTargetTable()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    {
+        if (auto table = tryGetTargetTable())
+            table->backupData(backup_entries_collector, data_path_in_backup, partitions);
+        else
+            LOG_WARNING(&Poco::Logger::get("StorageMaterializedView"),
+                        "Inner table does not exist, will not backup any data");
+    }
 }
 
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
@@ -472,6 +469,13 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
             return target_table->getActionLock(type);
     }
     return ActionLock{};
+}
+
+bool StorageMaterializedView::isRemote() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->isRemote();
+    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

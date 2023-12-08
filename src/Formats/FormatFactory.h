@@ -71,6 +71,9 @@ public:
         size_t min_bytes,
         size_t max_rows)>;
 
+    using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
+        const FormatSettings & settings)>;
+
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
@@ -90,9 +93,6 @@ private:
             const FormatSettings & settings)>;
 
     // Incompatible with FileSegmentationEngine.
-    //
-    // In future we may also want to pass some information about WHERE conditions (SelectQueryInfo?)
-    // and get some information about projections (min/max/count per column per row group).
     using RandomAccessInputCreator = std::function<InputFormatPtr(
             ReadBuffer & buf,
             const Block & header,
@@ -126,21 +126,24 @@ private:
     /// and the name of the message.
     using AdditionalInfoForSchemaCacheGetter = std::function<String(const FormatSettings & settings)>;
 
+    /// Some formats can support reading subset of columns depending on settings.
+    /// The checker should return true if format support append.
+    using SubsetOfColumnsSupportChecker = std::function<bool(const FormatSettings & settings)>;
+
     struct Creators
     {
         InputCreator input_creator;
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
-        FileSegmentationEngine file_segmentation_engine;
+        FileSegmentationEngineCreator file_segmentation_engine_creator;
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
-        bool supports_subcolumns{false};
-        bool supports_subset_of_columns{false};
         bool prefers_large_blocks{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
+        SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -153,6 +156,7 @@ public:
     ///  * Parallel reading.
     ///    To enable it, make sure `buf` is a SeekableReadBuffer implementing readBigAt().
     ///  * Parallel parsing.
+    /// `buf` must outlive the returned IInputFormat.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
@@ -166,7 +170,8 @@ public:
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
         // because parallel read after decompression is not possible
-        CompressionMethod compression = CompressionMethod::None) const;
+        CompressionMethod compression = CompressionMethod::None,
+        bool need_only_count = false) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
@@ -201,6 +206,8 @@ public:
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
 
+    void registerFileSegmentationEngineCreator(const String & name, FileSegmentationEngineCreator file_segmentation_engine_creator);
+
     void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 
     void registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker);
@@ -227,11 +234,10 @@ public:
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markOutputFormatPrefersLargeBlocks(const String & name);
-    void markFormatSupportsSubcolumns(const String & name);
-    void markFormatSupportsSubsetOfColumns(const String & name);
 
-    bool checkIfFormatSupportsSubcolumns(const String & name) const;
-    bool checkIfFormatSupportsSubsetOfColumns(const String & name) const;
+    void markFormatSupportsSubsetOfColumns(const String & name);
+    void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
+    bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkIfFormatHasSchemaReader(const String & name) const;
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;

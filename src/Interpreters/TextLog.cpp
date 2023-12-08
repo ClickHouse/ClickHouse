@@ -1,3 +1,4 @@
+#include <base/getFQDNOrHostName.h>
 #include <Interpreters/TextLog.h>
 
 #include <Common/ClickHouseRevision.h>
@@ -33,10 +34,10 @@ NamesAndTypesList TextLogElement::getNamesAndTypes()
 
     return
     {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
-        {"microseconds", std::make_shared<DataTypeUInt32>()},
 
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
@@ -59,10 +60,10 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
-    columns[i++]->insert(microseconds);
 
     columns[i++]->insertData(thread_name.data(), thread_name.size());
     columns[i++]->insert(thread_id);
@@ -80,15 +81,10 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(message_format_string);
 }
 
-TextLog::TextLog(ContextPtr context_, const String & database_name_,
-        const String & table_name_, const String & storage_def_,
-        size_t flush_interval_milliseconds_)
-  : SystemLog<TextLogElement>(context_, database_name_, table_name_,
-        storage_def_, flush_interval_milliseconds_)
+TextLog::TextLog(ContextPtr context_,
+                 const SystemLogSettings & settings)
+    : SystemLog<TextLogElement>(context_, settings, getLogQueue(settings.queue_settings))
 {
-    // SystemLog methods may write text logs, so we disable logging for the text
-    // log table to avoid recursion.
-    log->setLevel(0);
 }
 
 }
