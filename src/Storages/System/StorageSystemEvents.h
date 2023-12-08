@@ -17,8 +17,6 @@ public:
 
     static NamesAndTypesList getNamesAndTypes();
 
-    static NamesAndAliases getNamesAndAliases();
-
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 

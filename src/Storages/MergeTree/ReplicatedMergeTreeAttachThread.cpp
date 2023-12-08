@@ -2,11 +2,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric ReadonlyReplica;
-}
-
 namespace DB
 {
 
@@ -72,9 +67,6 @@ void ReplicatedMergeTreeAttachThread::run()
             LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", getCurrentExceptionMessage(/* with_stacktrace */ true));
             storage.initialization_done = true;
         }
-
-        if (!std::exchange(storage.is_readonly_metric_set, true))
-            CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
     }
 
     if (!first_try_done.exchange(true))
@@ -82,12 +74,6 @@ void ReplicatedMergeTreeAttachThread::run()
 
     if (shutdown_called)
     {
-        if (std::exchange(storage.is_readonly_metric_set, false))
-        {
-            CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-            chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
-        }
-
         LOG_WARNING(log, "Shutdown called, cancelling initialization");
         return;
     }
@@ -163,7 +149,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version);
     if (replica_metadata_version_exists)
     {
-        storage.setInMemoryMetadata(metadata_snapshot->withMetadataVersion(parse<int>(replica_metadata_version)));
+        storage.metadata_version = parse<int>(replica_metadata_version);
     }
     else
     {
@@ -192,6 +178,9 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    storage.clearOldWriteAheadLogs();
+    if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
+        storage.clearOldBrokenPartsFromDetachedDirectory();
 
     storage.createNewZooKeeperNodes();
     storage.syncPinnedPartUUIDs();

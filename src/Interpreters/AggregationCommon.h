@@ -3,6 +3,8 @@
 #include <array>
 
 #include <Common/SipHash.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
@@ -22,8 +24,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-class Arena;
 
 using Sizes = std::vector<size_t>;
 
@@ -90,10 +90,7 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             /// Note: here we violate strict aliasing.
             /// It should be ok as log as we do not reffer to any value from `out` before filling.
             const char * source = static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<sizeof(T)>();
-            size_t offset_to = offset;
-            if constexpr (std::endian::native == std::endian::big)
-                offset_to = sizeof(Key) - sizeof(T) - offset;
-            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset_to);
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
             fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
             offset += sizeof(T);
         }
@@ -256,11 +253,15 @@ static inline T ALWAYS_INLINE packFixed(
 static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
     size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
 {
+    UInt128 key;
     SipHash hash;
+
     for (size_t j = 0; j < keys_size; ++j)
         key_columns[j]->updateHashWithValue(i, hash);
 
-    return hash.get128();
+    hash.get128(key);
+
+    return key;
 }
 
 /** Serialize keys into a continuous chunk of memory.

@@ -1,6 +1,5 @@
 #include <Analyzer/MatcherNode.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>

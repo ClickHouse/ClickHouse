@@ -45,10 +45,6 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
         return false;
 
-    // Currently projection don't support settings which implicitly modify aggregate functions.
-    if (reading->getContext()->getSettingsRef().aggregate_functions_null_for_empty)
-        return false;
-
     return true;
 }
 
@@ -210,7 +206,7 @@ bool analyzeProjectionCandidate(
     const ReadFromMergeTree & reading,
     const MergeTreeDataSelectExecutor & reader,
     const Names & required_column_names,
-    const RangesInDataParts & parts_with_ranges,
+    const MergeTreeData::DataPartsVector & parts,
     const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
@@ -219,20 +215,14 @@ bool analyzeProjectionCandidate(
 {
     MergeTreeData::DataPartsVector projection_parts;
     MergeTreeData::DataPartsVector normal_parts;
-    std::vector<AlterConversionsPtr> alter_conversions;
-    for (const auto & part_with_ranges : parts_with_ranges)
+    for (const auto & part : parts)
     {
-        const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
+        const auto & created_projections = part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end())
-        {
             projection_parts.push_back(it->second);
-        }
         else
-        {
-            normal_parts.push_back(part_with_ranges.data_part);
-            alter_conversions.push_back(part_with_ranges.alter_conversions);
-        }
+            normal_parts.push_back(part);
     }
 
     if (projection_parts.empty())
@@ -258,8 +248,7 @@ bool analyzeProjectionCandidate(
 
     if (!normal_parts.empty())
     {
-        /// TODO: We can reuse existing analysis_result by filtering out projection parts
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), std::move(alter_conversions));
+        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
 
         if (normal_result_ptr->error())
             return false;

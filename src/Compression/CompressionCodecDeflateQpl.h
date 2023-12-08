@@ -3,7 +3,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <map>
 #include <random>
-#include <pcg_random.hpp>
 #include <qpl/qpl.h>
 
 namespace Poco
@@ -25,24 +24,23 @@ public:
     static DeflateQplJobHWPool & instance();
 
     qpl_job * acquireJob(UInt32 & job_id);
-    void releaseJob(UInt32 job_id);
-    const bool & isJobPoolReady() { return job_pool_ready; }
+    static void releaseJob(UInt32 job_id);
+    static const bool & isJobPoolReady() { return job_pool_ready; }
 
 private:
-    bool tryLockJob(UInt32 index);
-    void unLockJob(UInt32 index);
+    static bool tryLockJob(UInt32 index);
+    static void unLockJob(UInt32 index);
 
-    /// size of each job objects
-    UInt32 per_job_size;
     /// Maximum jobs running in parallel supported by IAA hardware
-    UInt32 max_hw_jobs;
+    static constexpr auto MAX_HW_JOB_NUMBER = 1024;
     /// Entire buffer for storing all job objects
-    std::unique_ptr<uint8_t[]> hw_jobs_buffer;
+    static std::unique_ptr<uint8_t[]> hw_jobs_buffer;
+    /// Job pool for storing all job object pointers
+    static std::array<qpl_job *, MAX_HW_JOB_NUMBER> hw_job_ptr_pool;
     /// Locks for accessing each job object pointers
-    std::unique_ptr<std::atomic_bool[]> hw_job_ptr_locks;
-
-    bool job_pool_ready;
-    pcg64_fast random_engine;
+    static std::array<std::atomic_bool, MAX_HW_JOB_NUMBER> hw_job_ptr_locks;
+    static bool job_pool_ready;
+    std::mt19937 random_engine;
     std::uniform_int_distribution<int> distribution;
 };
 
@@ -65,10 +63,8 @@ class HardwareCodecDeflateQpl
 public:
     /// RET_ERROR stands for hardware codec fail, needs fallback to software codec.
     static constexpr Int32 RET_ERROR = -1;
-    /// Maximum times to check if hardware job complete, otherwise fallback to software codec.
-    static constexpr UInt32 MAX_CHECKS = UINT16_MAX;
 
-    HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_);
+    HardwareCodecDeflateQpl();
     ~HardwareCodecDeflateQpl();
 
     Int32 doCompressData(const char * source, UInt32 source_size, char * dest, UInt32 dest_size) const;
@@ -89,8 +85,6 @@ private:
     /// For flush, pop out job ID && job object from this map. Use job ID to release job lock and use job object to check job status till complete.
     std::map<UInt32, qpl_job *> decomp_async_job_map;
     Poco::Logger * log;
-    /// Provides a fallback in case of errors.
-    SoftwareCodecDeflateQpl & sw_codec;
 };
 
 class CompressionCodecDeflateQpl final : public ICompressionCodec
@@ -103,7 +97,7 @@ public:
 protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
-    bool isDeflateQpl() const override { return true; }
+    bool isExperimental() const override { return true; }
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
@@ -114,8 +108,8 @@ protected:
 private:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    std::unique_ptr<SoftwareCodecDeflateQpl> sw_codec;
     std::unique_ptr<HardwareCodecDeflateQpl> hw_codec;
+    std::unique_ptr<SoftwareCodecDeflateQpl> sw_codec;
 };
 
 }

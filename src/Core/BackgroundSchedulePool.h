@@ -14,7 +14,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <base/scope_guard.h>
 
 
@@ -86,7 +86,7 @@ private:
     std::condition_variable delayed_tasks_cond_var;
     std::mutex delayed_tasks_mutex;
     /// Thread waiting for next delayed task.
-    std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> delayed_thread;
+    ThreadFromGlobalPoolNoTracingContextPropagation delayed_thread;
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks;
 

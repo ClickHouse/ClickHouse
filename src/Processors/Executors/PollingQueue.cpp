@@ -65,7 +65,7 @@ static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQue
     return res.str();
 }
 
-PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock, int timeout)
+PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 {
     if (is_finished)
         return {};
@@ -74,12 +74,9 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
     epoll_event event;
     event.data.ptr = nullptr;
-    size_t num_events = epoll.getManyReady(1, &event, timeout);
+    epoll.getManyReady(1, &event, true);
 
     lock.lock();
-
-    if (num_events == 0)
-        return {};
 
     if (event.data.ptr == pipe_fd)
         return {};

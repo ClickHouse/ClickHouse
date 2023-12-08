@@ -59,4 +59,4 @@ For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table
 
 ## See Also
 
-- [system.databases](../../operations/system-tables/databases.md) system table
+-   [system.databases](../../operations/system-tables/databases.md) system table

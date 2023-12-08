@@ -13,8 +13,6 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
 
-#include <QueryPipeline/printPipeline.h>
-
 namespace DB
 {
 
@@ -535,7 +533,7 @@ void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform consuming totals to Pipe because Pipe does not have totals");
 
     if (extremes && !extremes_port)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform consuming extremes to Pipe because Pipe does not have extremes");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform consuming extremes to Pipe because it already has extremes");
 
     if (totals)
     {
@@ -868,6 +866,5 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
-
 
 }
