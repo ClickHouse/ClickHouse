@@ -411,8 +411,13 @@ void PageCache::removeRef(PageChunk * chunk) noexcept
 
 static void logUnexpectedSyscallError(std::string name)
 {
-    LOG_WARNING(&Poco::Logger::get("PageCache"), "{} failed: {}", name, errnoToString());
-    chassert(false);
+    std::string message = fmt::format("{} failed: {}", name, errnoToString());
+    LOG_WARNING(&Poco::Logger::get("PageCache"), "{}", message);
+#if defined(ABORT_ON_LOGICAL_ERROR)
+    volatile bool true_ = true;
+    if (true_) // suppress warning about missing [[noreturn]]
+        abortOnFailedAssertion(message);
+#endif
 }
 
 void PageCache::sendChunkToLimbo(PageChunk * chunk [[maybe_unused]], std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept
