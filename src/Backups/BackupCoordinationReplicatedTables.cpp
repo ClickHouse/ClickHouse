@@ -151,7 +151,7 @@ BackupCoordinationReplicatedTables::~BackupCoordinationReplicatedTables() = defa
 
 void BackupCoordinationReplicatedTables::addPartNames(PartNamesForTableReplica && part_names)
 {
-    const auto & table_shared_id = part_names.table_shared_id;
+    const auto & table_zk_path = part_names.table_zk_path;
     const auto & table_name_for_logs = part_names.table_name_for_logs;
     const auto & replica_name = part_names.replica_name;
     const auto & part_names_and_checksums = part_names.part_names_and_checksums;
@@ -159,7 +159,7 @@ void BackupCoordinationReplicatedTables::addPartNames(PartNamesForTableReplica &
     if (prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after preparing");
 
-    auto & table_info = table_infos[table_shared_id];
+    auto & table_info = table_infos[table_zk_path];
     table_info.table_name_for_logs = table_name_for_logs;
 
     if (!table_info.covered_parts_finder)
@@ -200,11 +200,11 @@ void BackupCoordinationReplicatedTables::addPartNames(PartNamesForTableReplica &
     }
 }
 
-Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_shared_id, const String & replica_name) const
+Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_zk_path, const String & replica_name) const
 {
     prepare();
 
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 
@@ -218,7 +218,7 @@ Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_sh
 
 void BackupCoordinationReplicatedTables::addMutations(MutationsForTableReplica && mutations_for_table_replica)
 {
-    const auto & table_shared_id = mutations_for_table_replica.table_shared_id;
+    const auto & table_zk_path = mutations_for_table_replica.table_zk_path;
     const auto & table_name_for_logs = mutations_for_table_replica.table_name_for_logs;
     const auto & replica_name = mutations_for_table_replica.replica_name;
     const auto & mutations = mutations_for_table_replica.mutations;
@@ -226,7 +226,7 @@ void BackupCoordinationReplicatedTables::addMutations(MutationsForTableReplica &
     if (prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMutations() must not be called after preparing");
 
-    auto & table_info = table_infos[table_shared_id];
+    auto & table_info = table_infos[table_zk_path];
     table_info.table_name_for_logs = table_name_for_logs;
     for (const auto & [mutation_id, mutation_entry] : mutations)
         table_info.mutations.emplace(mutation_id, mutation_entry);
@@ -236,11 +236,11 @@ void BackupCoordinationReplicatedTables::addMutations(MutationsForTableReplica &
 }
 
 std::vector<MutationInfo>
-BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id, const String & replica_name) const
+BackupCoordinationReplicatedTables::getMutations(const String & table_zk_path, const String & replica_name) const
 {
     prepare();
 
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 
@@ -257,16 +257,16 @@ BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id,
 
 void BackupCoordinationReplicatedTables::addDataPath(DataPathForTableReplica && data_path_for_table_replica)
 {
-    const auto & table_shared_id = data_path_for_table_replica.table_shared_id;
+    const auto & table_zk_path = data_path_for_table_replica.table_zk_path;
     const auto & data_path = data_path_for_table_replica.data_path;
 
-    auto & table_info = table_infos[table_shared_id];
+    auto & table_info = table_infos[table_zk_path];
     table_info.data_paths.emplace(data_path);
 }
 
-Strings BackupCoordinationReplicatedTables::getDataPaths(const String & table_shared_id) const
+Strings BackupCoordinationReplicatedTables::getDataPaths(const String & table_zk_path) const
 {
-    auto it = table_infos.find(table_shared_id);
+    auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
 

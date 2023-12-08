@@ -164,7 +164,7 @@ private:
         ASTPtr create_table_query;
         String metadata_path_in_backup;
         std::filesystem::path data_path_in_backup;
-        std::optional<String> replicated_table_shared_id;
+        std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
     };
 

@@ -330,16 +330,13 @@ public:
 
     // Return default or custom zookeeper name for table
     const String & getZooKeeperName() const { return zookeeper_name; }
-
     const String & getZooKeeperPath() const { return zookeeper_path; }
+    const String & getFullZooKeeperPath() const { return full_zookeeper_path; }
 
     // Return table id, common for different replicas
     String getTableSharedID() const override;
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
-
-    /// Returns the same as getTableSharedID(), but extracts it from a create query.
-    static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
 
     static const String & getDefaultZooKeeperName() { return default_zookeeper_name; }
 
@@ -420,9 +417,11 @@ private:
 
     bool is_readonly_metric_set = false;
 
+    const String full_zookeeper_path;
     static const String default_zookeeper_name;
     const String zookeeper_name;
     const String zookeeper_path;
+
     const String replica_name;
     const String replica_path;
 
