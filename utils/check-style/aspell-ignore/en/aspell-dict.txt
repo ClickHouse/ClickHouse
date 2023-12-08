@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543
+personal_ws-1.1 en 2646
 AArch
 ACLs
 ALTERs
@@ -30,7 +30,6 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowStream
-AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
 AsynchronousInsert
@@ -39,6 +38,11 @@ AsynchronousInsertThreadsActive
 AsynchronousMetricsCalculationTimeSpent
 AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
+AsyncInsertCacheSize
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 Authenticator
 Authenticators
 AutoFDO
@@ -148,6 +152,7 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
+Clangd
 ClickBench
 ClickCat
 ClickHouse
@@ -193,7 +198,9 @@ DDLWorker
 DDLWorkerThreads
 DDLWorkerThreadsActive
 DECRYPT
+DELETEs
 DESC
+DIEs
 DOGEFI
 DataGrip
 DataLens
@@ -258,6 +265,8 @@ FOSDEM
 FQDN
 Failover
 FarmHash
+FileCluster
+FileLog
 FilesystemCacheBytes
 FilesystemCacheElements
 FilesystemCacheFiles
@@ -337,6 +346,8 @@ Hudi
 HyperLogLog
 Hypot
 IANA
+IDE
+IDEs
 IMDS
 INFILE
 INSERTed
@@ -350,6 +361,7 @@ IOUringPendingEvents
 IOWriterThreads
 IOWriterThreadsActive
 IPTrie
+IProcessor
 IPv
 Identifiant
 Incrementing
@@ -359,6 +371,7 @@ Instana
 IntN
 Integrations
 IntelliJ
+IntelliSense
 InterserverConnection
 InterserverThreads
 IsPentagon
@@ -432,13 +445,14 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
-Levenshtein
 LGPL
+LIMITs
 LLDB
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
+Levenshtein
 LibFuzzer
 LightHouse
 LineAsString
@@ -563,6 +577,7 @@ NetworkSendPackets
 NodeJs
 NuRaft
 NumHexagons
+NumPy
 NumToString
 NumToStringClassC
 NumberOfDatabases
@@ -579,6 +594,7 @@ OSGuestNiceTimeNormalized
 OSGuestTime
 OSGuestTimeCPU
 OSGuestTimeNormalized
+OSIOWaitMicroseconds
 OSIOWaitTime
 OSIOWaitTimeCPU
 OSIOWaitTimeNormalized
@@ -854,8 +870,8 @@ SystemReplicasThreadsActive
 TABLUM
 TCPConnection
 TCPThreads
+TDigest
 TINYINT
-TKSV
 TLSv
 TPCH
 TSDB
@@ -871,8 +887,6 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
-TablesLoaderThreads
-TablesLoaderThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -1115,6 +1129,7 @@ azureBlobStorageCluster
 backend
 backoff
 backticks
+backupview
 balancer
 basename
 bcrypt
@@ -1181,15 +1196,11 @@ bugfix
 buildId
 buildable
 builtins
+byteHammingDistance
 byteSize
 byteSwap
 bytebase
 bytesToCutForIPv
-editDistance
-byteHammingDistance
-jaccardIndex
-levenshteinDistance
-clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1234,7 +1245,9 @@ cipherList
 ciphertext
 cityHash
 cityhash
+clangd
 cli
+clickcache
 clickcat
 clickhouse
 clickhousedb
@@ -1360,18 +1373,19 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
-deltalake
 deltaLake
-deltasum
 deltaSum
-deltasumtimestamp
 deltaSumTimestamp
+deltalake
+deltasum
+deltasumtimestamp
 demangle
 denormalize
 denormalized
 denormalizing
 denormals
 dequeued
+dequeues
 deserialization
 deserialized
 deserializing
@@ -1410,6 +1424,7 @@ dropoff
 dumpColumnStructure
 durations
 ecto
+editDistance
 embeddings
 emptyArray
 emptyArrayDate
@@ -1430,6 +1445,7 @@ endian
 endianness
 endsWith
 endsWithUTF
+enqueued
 enum
 enum's
 enums
@@ -1460,6 +1476,8 @@ fastops
 fcoverage
 fibonacci
 fifo
+fileCluster
+filelog
 filesystem
 filesystemAvailable
 filesystemCapacity
@@ -1490,7 +1508,9 @@ formatRowNoNewline
 formated
 formatschema
 formatter
+formatters
 freezed
+fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
@@ -1499,6 +1519,7 @@ fromUnixTimestampInJodaSyntax
 fsync
 func
 fuzzBits
+fuzzJSON
 fuzzer
 fuzzers
 gRPC
@@ -1531,6 +1552,7 @@ github
 glibc
 globalIn
 globalNotIn
+globbing
 glushkovds
 golang
 googletest
@@ -1541,6 +1563,7 @@ graphql
 greatCircleAngle
 greatCircleDistance
 greaterOrEquals
+greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
@@ -1580,6 +1603,7 @@ hadoop
 halfMD
 halfday
 hardlink
+hardlinked
 hardlinks
 hasAll
 hasAny
@@ -1639,7 +1663,6 @@ innogames
 inodes
 instantiation
 instantiations
-DIEs
 intDiv
 intDivOrZero
 intExp
@@ -1665,6 +1688,7 @@ isValidUTF
 isZeroOrNull
 iteratively
 jaccard
+jaccardIndex
 javaHash
 javaHashUTF
 jbod
@@ -1672,6 +1696,7 @@ jdbc
 jemalloc
 joinGet
 json
+jsonMergePatch
 jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
@@ -1686,7 +1711,6 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
-jsonMergePatch
 jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
@@ -1725,7 +1749,9 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
+lessorequals
 levenshtein
+levenshteinDistance
 lexicographically
 lgamma
 libFuzzer
@@ -1762,6 +1788,7 @@ logTrace
 logagent
 loghouse
 london
+lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -1833,7 +1860,6 @@ monthName
 moscow
 msgpack
 msgpk
-multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -1847,6 +1873,7 @@ multiSearchAny
 multiSearchFirstIndex
 multiSearchFirstPosition
 multibyte
+multidirectory
 multiline
 multiplyDecimal
 multipolygon
@@ -1902,6 +1929,7 @@ notEquals
 notILike
 notIn
 notLike
+notequals
 notretry
 nowInBlock
 ntile
@@ -2153,9 +2181,9 @@ repo
 representable
 requestor
 requireTLSv
-resolvers
 resharding
 reshards
+resolvers
 resultset
 retentions
 rethrow
@@ -2240,12 +2268,13 @@ sparkbar
 sparsehash
 speedscope
 splitBy
-splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp
 splitByString
 splitByWhitespace
+splitby
+sqid
 sql
 sqlalchemy
 sqlinsert
@@ -2273,6 +2302,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringJaccardIndex
+stringJaccardIndexUTF
 stringToH
 stripelog
 strtod
@@ -2330,6 +2361,7 @@ subtractSeconds
 subtractWeeks
 subtractYears
 subtree
+subtrees
 subtype
 sudo
 sumCount
@@ -2350,6 +2382,7 @@ symlinks
 syntaxes
 syscall
 syscalls
+sysctl
 syslog
 syslogd
 systemd

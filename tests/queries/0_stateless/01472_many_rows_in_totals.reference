@@ -63,8 +63,6 @@ Totals:
 		"s": "6"
 	},
 
-	"rows": 4,
-
-	"rows_before_limit_at_least": 4
+	"rows": 4
 }
 --

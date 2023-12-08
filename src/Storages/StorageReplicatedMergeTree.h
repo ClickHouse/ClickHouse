@@ -139,7 +139,7 @@ public:
     /// In shutdown we completely terminate table -- remove
     /// is_active node and interserver handler. Also optionally
     /// wait until other replicas will download some parts from our replica.
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     ~StorageReplicatedMergeTree() override;
 
@@ -230,7 +230,7 @@ public:
     /// Add a part to the queue of parts whose data you want to check in the background thread.
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
-    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     /// Checks ability to use granularity
@@ -428,10 +428,7 @@ private:
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
 
-    /// during server restart or attach table process, set since_metadata_err_incr_readonly_metric = true and increase readonly metric if has_metadata_in_zookeeper = false.
-    /// during detach or drop table process, decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
-    /// during restore replica process, set since_metadata_err_incr_readonly_metric = false and decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
-    bool since_metadata_err_incr_readonly_metric = false;
+    bool is_readonly_metric_set = false;
 
     static const String default_zookeeper_name;
     const String zookeeper_name;
@@ -621,6 +618,7 @@ private:
       *  But if there are too many, throw an exception just in case - it's probably a configuration error.
       */
     void checkParts(bool skip_sanity_checks);
+    bool checkPartsImpl(bool skip_sanity_checks);
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.
@@ -640,6 +638,10 @@ private:
         NameSet & absent_replicas_paths);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
+
+    bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
+                                             std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
+                                             Coordination::Requests & ops, size_t & num_check_ops);
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
@@ -693,7 +695,7 @@ private:
     /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
 
-    bool executeReplaceRange(const LogEntry & entry);
+    bool executeReplaceRange(LogEntry & entry);
     void executeClonePartFromShard(const LogEntry & entry);
 
     /** Updates the queue.
@@ -778,7 +780,8 @@ private:
       * If not found, returns empty string.
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
-    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
+    bool findReplicaHavingCoveringPart(const String & part_name, bool active);
+    String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
     static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.

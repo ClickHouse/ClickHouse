@@ -35,8 +35,8 @@ struct AggregateFunctionMapCombinatorData
     using SearchType = KeyType;
     std::unordered_map<KeyType, AggregateDataPtr> merged_maps;
 
-    static void writeKey(KeyType key, WriteBuffer & buf) { writeBinary(key, buf); }
-    static void readKey(KeyType & key, ReadBuffer & buf) { readBinary(key, buf); }
+    static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
+    static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
 };
 
 template <>
@@ -447,7 +447,8 @@ public:
             {
                 AggregateFunctionProperties out_properties;
                 auto & aggr_func_factory = AggregateFunctionFactory::instance();
-                return aggr_func_factory.get(nested_func_name + "MappedArrays", arguments, params, out_properties);
+                auto action = NullsAction::EMPTY;
+                return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
             }
             else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays",

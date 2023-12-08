@@ -35,7 +35,7 @@
 
 #include "Core/Defines.h"
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config_tools.h"
 
 
@@ -556,7 +556,8 @@ catch (...)
 {
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
-    throw;
+    auto code = getCurrentExceptionCode();
+    return code ? code : -1;
 }
 
 

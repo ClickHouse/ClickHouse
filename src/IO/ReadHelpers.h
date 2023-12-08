@@ -17,7 +17,7 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/sort.h>
@@ -664,10 +664,19 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     /// Optimistic path, when whole value is in buffer.
     if (!buf.eof() && buf.position() + 10 <= buf.buffer().end())
     {
         char * pos = buf.position();
+
+        auto error = [&]
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date here: {}", String(buf.position(), 10));
+            return ReturnType(false);
+        };
 
         /// YYYY-MM-DD
         /// YYYY-MM-D
@@ -677,6 +686,9 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 
         /// The delimiters can be arbitrary characters, like YYYY/MM!DD, but obviously not digits.
 
+        if (!isNumericASCII(pos[0]) || !isNumericASCII(pos[1]) || !isNumericASCII(pos[2]) || !isNumericASCII(pos[3]))
+            return error();
+
         UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
         UInt8 month;
         UInt8 day;
@@ -685,12 +697,18 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
         if (isNumericASCII(pos[-1]))
         {
             /// YYYYMMDD
+            if (!isNumericASCII(pos[0]) || !isNumericASCII(pos[1]) || !isNumericASCII(pos[2]))
+                return error();
+
             month = (pos[-1] - '0') * 10 + (pos[0] - '0');
             day = (pos[1] - '0') * 10 + (pos[2] - '0');
             pos += 3;
         }
         else
         {
+            if (!isNumericASCII(pos[0]))
+                return error();
+
             month = pos[0] - '0';
             if (isNumericASCII(pos[1]))
             {
@@ -700,8 +718,8 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
             else
                 pos += 2;
 
-            if (isNumericASCII(pos[-1]))
-                return ReturnType(false);
+            if (isNumericASCII(pos[-1]) || !isNumericASCII(pos[0]))
+                return error();
 
             day = pos[0] - '0';
             if (isNumericASCII(pos[1]))
@@ -984,20 +1002,31 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     time_t whole = 0;
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
 
     if (!is_empty)
     {
-        try
+        if constexpr (throw_exception)
         {
-            readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
+            try
+            {
+                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
+            }
+            catch (const DB::ParsingException &)
+            {
+                if (buf.eof() || *buf.position() != '.')
+                    throw;
+            }
         }
-        catch (const DB::ParsingException & exception)
+        else
         {
-            if (buf.eof() || *buf.position() != '.')
-                throw exception;
+            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
+            if (!ok && (buf.eof() || *buf.position() != '.'))
+                return ReturnType(false);
         }
     }
 

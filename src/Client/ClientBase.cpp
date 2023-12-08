@@ -77,7 +77,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config.h"
 
 namespace fs = std::filesystem;
@@ -108,6 +108,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
 }
@@ -721,7 +722,7 @@ void ClientBase::adjustSettings()
     global_context->setSettings(settings);
 }
 
-void ClientBase::initTtyBuffer(ProgressOption progress)
+void ClientBase::initTTYBuffer(ProgressOption progress)
 {
     if (tty_buf)
         return;
@@ -1384,6 +1385,23 @@ void ClientBase::addMultiquery(std::string_view query, Arguments & common_argume
     common_arguments.emplace_back(query);
 }
 
+namespace
+{
+bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
+{
+    try
+    {
+        return !std_in.eof();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR)
+            return false;
+        throw;
+    }
+}
+}
+
 
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
@@ -1403,7 +1421,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
     /// Process the query that requires transferring data blocks to the server.
     const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
+    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(std_in))))
     {
         const auto & settings = global_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
@@ -1460,7 +1478,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
 
     if (need_render_progress)
     {
@@ -1779,7 +1797,12 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     {
         const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
         if (logs_level_field)
-            updateLoggerLevel(logs_level_field->safeGet<String>());
+        {
+            auto logs_level = logs_level_field->safeGet<String>();
+            /// Check that setting value is correct before updating logger level.
+            SettingFieldLogsLevelTraits::fromString(logs_level);
+            updateLoggerLevel(logs_level);
+        }
     }
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
@@ -1851,7 +1874,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
         if (is_async_insert_with_inlined_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
@@ -2543,6 +2566,14 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
+    if (!has_log_comment)
+    {
+        Settings settings = global_context->getSettings();
+        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
+        settings.log_comment = fs::absolute(fs::path(file_name));
+        global_context->setSettings(settings);
+    }
+
     return executeMultiQuery(queries_from_file);
 }
 
@@ -2830,7 +2861,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
-        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
+        ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
@@ -2965,13 +2996,17 @@ void ClientBase::init(int argc, char ** argv)
     clearPasswordFromCommandLine(argc, argv);
 
     /// Limit on total memory usage
-    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
-    if (max_client_memory_usage != 0)
+    std::string max_client_memory_usage = config().getString("max_memory_usage_in_client", "0" /*default value*/);
+    if (max_client_memory_usage != "0")
     {
-        total_memory_tracker.setHardLimit(max_client_memory_usage);
+        UInt64 max_client_memory_usage_int = parseWithSizeSuffix<UInt64>(max_client_memory_usage.c_str(), max_client_memory_usage.length());
+
+        total_memory_tracker.setHardLimit(max_client_memory_usage_int);
         total_memory_tracker.setDescription("(total)");
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
+
+    has_log_comment = config().has("log_comment");
 }
 
 }

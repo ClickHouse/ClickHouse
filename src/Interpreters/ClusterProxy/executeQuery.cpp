@@ -141,6 +141,14 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
             new_settings.allow_experimental_parallel_reading_from_replicas = false;
     }
 
+    if (settings.max_execution_time_leaf.value > 0)
+    {
+        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
+        /// with 'timeout_overflow_mode_leaf'
+        new_settings.max_execution_time = settings.max_execution_time_leaf;
+        new_settings.timeout_overflow_mode = settings.timeout_overflow_mode_leaf;
+    }
+
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;
@@ -177,8 +185,11 @@ void executeQuery(
     QueryProcessingStage::Enum processed_stage,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
-    SelectStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
+    SelectStreamFactory & stream_factory,
+    Poco::Logger * log,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const ClusterPtr & not_optimized_cluster,
@@ -245,9 +256,15 @@ void executeQuery(
         const auto & addresses = cluster->getShardsAddresses().at(i);
         bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
 
-        stream_factory.createForShard(shard_info,
-            query_ast_for_shard, main_table, table_func_ptr,
-            new_context, plans, remote_shards, static_cast<UInt32>(shards),
+        stream_factory.createForShard(
+            shard_info,
+            query_ast_for_shard,
+            main_table,
+            table_func_ptr,
+            new_context,
+            plans,
+            remote_shards,
+            static_cast<UInt32>(shards),
             parallel_replicas_enabled);
     }
 
