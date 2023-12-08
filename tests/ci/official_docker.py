@@ -120,11 +120,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="if set, the tags will be updated before run",
     )
-    subparsers.add_parser(
+    parser_ldf = subparsers.add_parser(
         "generate-ldf",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         help="generate docker library definition file",
         parents=[global_args],
+    )
+    parser_ldf.add_argument("--check-changed", default=True, help=argparse.SUPPRESS)
+    parser_ldf.add_argument(
+        "--no-check-changed",
+        dest="check_changed",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="if set, the directory `docker/official` won't be checked to be "
+        "uncommitted",
     )
     args = parser.parse_args()
     return args
@@ -336,7 +345,8 @@ def generate_ldf(args: argparse.Namespace) -> None:
     directory = Path(git_runner.cwd) / args.directory / args.image_type
     versions = sorted([get_version_from_string(d.name) for d in directory.iterdir()])
     assert versions
-    assert not path_is_changed(directory)
+    if args.check_changed:
+        assert not path_is_changed(directory)
     git = Git(True)
     lines = ldf_header(git, directory)
     tag_attrs = TagAttrs(versions[-1], {}, None)
