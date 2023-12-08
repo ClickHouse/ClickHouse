@@ -897,18 +897,31 @@ void StorageDistributed::read(
                 [&, my_custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    shard_count, shard_num - 1, my_custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
+                    shard_count,
+                    shard_num - 1,
+                    my_custom_key_ast,
+                    settings.parallel_replicas_custom_key_filter_type,
+                    this->getInMemoryMetadataPtr()->columns,
+                    local_context);
             };
         }
     }
 
     ClusterProxy::executeQuery(
-        query_plan, header, processed_stage,
-        main_table, remote_table_function_ptr,
-        select_stream_factory, log, modified_query_ast,
-        local_context, query_info,
-        sharding_key_expr, sharding_key_column_name,
-        query_info.cluster, additional_shard_filter_generator);
+        query_plan,
+        header,
+        processed_stage,
+        main_table,
+        remote_table_function_ptr,
+        select_stream_factory,
+        log,
+        modified_query_ast,
+        local_context,
+        query_info,
+        sharding_key_expr,
+        sharding_key_column_name,
+        query_info.cluster,
+        additional_shard_filter_generator);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -1036,7 +1049,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         else
         {
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-            auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
+            auto connections = shard_info.pool->getMany(timeouts, settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
                     shard_info.shard_num);

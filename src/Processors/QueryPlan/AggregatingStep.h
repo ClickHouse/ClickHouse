@@ -91,7 +91,7 @@ private:
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;
 
-    /// Both sort descriptions are needed for aggregate-in-order optimisation.
+    /// Both sort descriptions are needed for aggregate-in-order optimization.
     /// Both sort descriptions are subset of GROUP BY key columns (or monotonic functions over it).
     /// Sort description for merging is a sort description for input and a prefix of group_by_sort_description.
     /// group_by_sort_description contains all GROUP BY keys and is used for final merging of aggregated data.

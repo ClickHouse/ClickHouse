@@ -628,6 +628,8 @@ SELECT
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
+Alias: `FORMAT_BYTES`.
+
 ``` text
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
@@ -1556,7 +1558,7 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 
 - Result of aggregation for every row passed to the function.
 
-The return type is the same as the return type of function, that `initializeAgregation` takes as first argument.
+The return type is the same as the return type of function, that `initializeAggregation` takes as first argument.
 
 **Example**
 
