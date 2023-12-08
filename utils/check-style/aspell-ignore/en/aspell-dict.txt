@@ -872,7 +872,6 @@ TCPConnection
 TCPThreads
 TDigest
 TINYINT
-TKSV
 TLSv
 TPCH
 TSDB
@@ -1572,7 +1571,6 @@ groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
-groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1587,7 +1585,6 @@ grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
-grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
@@ -1791,6 +1788,7 @@ logTrace
 logagent
 loghouse
 london
+lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -2233,7 +2231,6 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID
@@ -2277,6 +2274,7 @@ splitByRegexp
 splitByString
 splitByWhitespace
 splitby
+sqid
 sql
 sqlalchemy
 sqlinsert
