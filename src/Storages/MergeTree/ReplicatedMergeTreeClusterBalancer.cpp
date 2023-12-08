@@ -741,12 +741,7 @@ void ReplicatedMergeTreeClusterBalancer::revert(const zkutil::ZooKeeperPtr & zoo
     const auto & new_partition = target;
     String partition_path = cluster.zookeeper_path / "block_numbers" / new_partition.getPartitionId();
 
-    Coordination::Requests ops;
-    Coordination::Responses responses;
-
-    ops.emplace_back(zkutil::makeSetRequest(partition_path, new_partition.toString(), target.getVersion()));
-
-    auto error = zookeeper->tryMulti(ops, responses);
+    auto error = zookeeper->trySet(partition_path, new_partition.toString(), target.getVersion());
     if (error == Coordination::Error::ZOK)
     {
         cluster.updateClusterPartition(new_partition);
