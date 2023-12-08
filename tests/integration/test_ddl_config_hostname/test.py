@@ -40,11 +40,11 @@ def test_ddl_queue_delete_add_replica(started_cluster):
 
     value = (
         node1.query(
-            "select value from system.zookeeper where path='/clickhouse/task_queue/ddl' and name='{}' format TSVRaw".format(
-                query_znode
-            )
+            f"select value from system.zookeeper where path='/clickhouse/task_queue/ddl' and name='{query_znode}' format TSVRaw"
         )[:-1]
-        .replace("hosts: ['node1:9000']", "hosts: ['finished_node:9000','deleted_node:9000']")
+        .replace(
+            "hosts: ['node1:9000']", "hosts: ['finished_node:9000','deleted_node:9000']"
+        )
         .replace("initiator: node1:9000", "initiator: finished_node:9000")
         .replace("\\'", "#")
         .replace("'", "\\'")
@@ -53,24 +53,20 @@ def test_ddl_queue_delete_add_replica(started_cluster):
     )
 
     finished_znode = node1.query(
-        "select name from system.zookeeper where path='/clickhouse/task_queue/ddl/{}/finished' and name like '%node1%'".format(
-            query_znode
-        )
+        f"select name from system.zookeeper where path='/clickhouse/task_queue/ddl/{query_znode}/finished' and name like '%node1%'"
     )[:-1]
 
     node1.query(
-        "insert into system.zookeeper (name, path, value) values ('{}', '/clickhouse/task_queue/ddl', '{}')".format(
-            query_znode, value
-        )
+        f"insert into system.zookeeper (name, path, value) values ('{query_znode}', '/clickhouse/task_queue/ddl', '{value}')"
     )
     started_cluster.get_kazoo_client("zoo1").delete(
-        "/clickhouse/task_queue/ddl/{}/finished/{}".format(query_znode, finished_znode)
+        f"/clickhouse/task_queue/ddl/{query_znode}/finished/{finished_znode}"
     )
 
+    finished_znode = finished_znode.replace("node1", "finished_node")
+
     node1.query(
-        "insert into system.zookeeper (name, path, value) values ('{}', '/clickhouse/task_queue/ddl/{}/finished', '0\\n')".format(
-            finished_znode.replace("node1", "finished_node"), query_znode
-        )
+        f"insert into system.zookeeper (name, path, value) values ('{finished_znode}', '/clickhouse/task_queue/ddl/{query_znode}/finished', '0\\n')"
     )
 
     node1.restart_clickhouse(kill=True)

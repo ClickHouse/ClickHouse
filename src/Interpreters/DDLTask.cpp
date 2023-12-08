@@ -226,10 +226,10 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
     {
         if (config_host_name)
         {
-            if (host.host_name != *config_host_name)
+            if (config_host_name != host.host_name)
                 continue;
 
-            if (!(maybe_secure_port && maybe_secure_port == host.port) && !(global_context->getTCPPort() == host.port))
+            if (maybe_secure_port != host.port && global_context->getTCPPort() != host.port)
                 continue;
 
             host_in_hostlist = true;
