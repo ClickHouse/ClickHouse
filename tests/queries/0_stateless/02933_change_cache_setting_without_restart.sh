@@ -21,5 +21,5 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-sleep 3
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
