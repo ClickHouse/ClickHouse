@@ -2008,7 +2008,6 @@ bool MutateTask::prepare()
             ctx->temporary_directory_lock = std::move(lock);
         }
 
-        ctx->temporary_directory_lock = std::move(lock);
         promise.set_value(std::move(part));
         return false;
     }
