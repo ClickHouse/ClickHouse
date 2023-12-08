@@ -784,7 +784,7 @@ bool FileSegment::assertCorrectness() const
     return assertCorrectnessUnlocked(lockFileSegment());
 }
 
-bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const
+bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const
 {
     auto check_iterator = [this](const Priority::Iterator & it)
     {
@@ -799,12 +799,19 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         chassert(entry.offset == offset());
     };
 
+    const auto file_path = getPathInLocalCache();
     {
-        std::lock_guard lock(write_mutex);
+        std::lock_guard lk(write_mutex);
         if (downloaded_size == 0)
-            chassert(!fs::exists(getPathInLocalCache()));
+        {
+            if (fs::exists(file_path))
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected file {} not to exist ({})",
+                                file_path, getInfoForLogUnlocked(lock));
+            }
+        }
         else
-            chassert(fs::exists(getPathInLocalCache()));
+            chassert(fs::exists(file_path));
     }
 
     if (download_state == State::DOWNLOADED)
