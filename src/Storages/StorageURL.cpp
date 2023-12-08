@@ -140,7 +140,7 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -308,12 +308,10 @@ StorageURLSource::StorageURLSource(
         curr_uri = uri_and_buf.first;
         auto last_mod_time = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
+        current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
-        {
-            size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
-            file_progress_callback(FileProgress(0, file_size));
-        }
+            file_progress_callback(FileProgress(0, current_file_size.value_or(0)));
 
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
@@ -401,7 +399,7 @@ Chunk StorageURLSource::generate()
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath());
+            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath(), current_file_size);
             return chunk;
         }
 
@@ -1062,6 +1060,11 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
 NamesAndTypesList IStorageURLBase::getVirtuals() const
 {
     return virtual_columns;
+}
+
+Names IStorageURLBase::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)

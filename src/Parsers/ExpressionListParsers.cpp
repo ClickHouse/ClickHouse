@@ -29,6 +29,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 using namespace std::literals;
 
 
@@ -1129,16 +1131,10 @@ public:
                     return false;
             }
 
-            NullsAction nulls_action = NullsAction::EMPTY;
             if (respect_nulls.ignore(pos, expected))
-            {
-                nulls_action = NullsAction::RESPECT_NULLS;
-            }
-            if (ignore_nulls.ignore(pos, expected))
-            {
-                nulls_action = NullsAction::IGNORE_NULLS;
-            }
-            function_node->name = transformFunctionNameForRepectNulls(function_node->name, nulls_action);
+                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+            else if (ignore_nulls.ignore(pos, expected))
+                function_node->nulls_action = NullsAction::IGNORE_NULLS;
 
             if (over.ignore(pos, expected))
             {
@@ -1172,30 +1168,6 @@ private:
 
     bool allow_function_parameters;
     bool is_compound_name;
-
-    enum NullsAction
-    {
-        EMPTY = 0,
-        RESPECT_NULLS = 1,
-        IGNORE_NULLS = 2,
-    };
-    static String transformFunctionNameForRepectNulls(const String & original_function_name, NullsAction nulls_action)
-    {
-        static std::unordered_map<String, std::vector<String>> renamed_functions_with_nulls = {
-            {"first_value", {"first_value", "first_value_respect_nulls", "first_value"}},
-            {"last_value", {"last_value", "last_value_respect_nulls", "last_value"}},
-        };
-        auto it = renamed_functions_with_nulls.find(original_function_name);
-        if (it == renamed_functions_with_nulls.end())
-        {
-            if (nulls_action == NullsAction::EMPTY)
-                return original_function_name;
-            else
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "Function {} does not support RESPECT NULLS or IGNORE NULLS", original_function_name);
-        }
-        return it->second[nulls_action];
-    }
 };
 
 /// Layer for priority brackets and tuple function
@@ -2602,6 +2574,12 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         {
             pos = old_pos;
         }
+    }
+
+    /// ignore all leading plus
+    while (pos->type == TokenType::Plus)
+    {
+        ++pos;
     }
 
     /// Try to find any unary operators

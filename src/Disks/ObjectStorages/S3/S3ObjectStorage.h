@@ -50,9 +50,11 @@ private:
         const S3Capabilities & s3_capabilities_,
         String bucket_,
         String connection_string,
-        String object_key_prefix_)
+        String object_key_prefix_,
+        const String & disk_name_)
         : bucket(std::move(bucket_))
         , object_key_prefix(std::move(object_key_prefix_))
+        , disk_name(disk_name_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
@@ -173,7 +175,7 @@ private:
 private:
     std::string bucket;
     String object_key_prefix;
-
+    std::string disk_name;
 
     MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;

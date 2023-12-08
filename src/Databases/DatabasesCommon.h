@@ -52,6 +52,7 @@ protected:
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
     StoragePtr detachTableUnlocked(const String & table_name)  TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
+    StoragePtr tryGetTableNoWait(const String & table_name) const;
 };
 
 }
