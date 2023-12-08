@@ -43,6 +43,7 @@ private:
         const StoragePtr storage;
         const ExternalResultDescription table_description;
         const PostgreSQLTableStructure::Attributes columns_attributes;
+        const Names column_names;
         const ArrayInfo array_info;
 
         struct Buffer

@@ -79,6 +79,7 @@ MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & sto
     : storage(storage_info.storage)
     , table_description(storage_info.storage->getInMemoryMetadataPtr()->getSampleBlock())
     , columns_attributes(storage_info.attributes)
+    , column_names(storage_info.storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical())
     , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
@@ -548,34 +549,88 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
             }
 
-            Int16 num_columns = readInt16(replication_message, pos, size);
+            auto log_table_structure_changed = [&](std::string_view reason)
+            {
+                LOG_INFO(log, "Table structure of the table {} changed ({}), "
+                         "will mark it as skipped from replication. "
+                         "Please perform manual DETACH and ATTACH of the table to bring it back",
+                         table_name, reason);
+            };
 
-            Int32 data_type_id;
-            Int32 type_modifier; /// For example, n in varchar(n)
+            Int16 num_columns = readInt16(replication_message, pos, size);
 
             auto & storage_data = storage_iter->second;
             const auto & description = storage_data.table_description;
 
+            const size_t actual_columns_num = storage_data.getColumnsNum();
+            if (size_t(num_columns) > actual_columns_num - 2)
+            {
+                log_table_structure_changed(fmt::format("received {} columns, expected {}", num_columns, actual_columns_num - 2));
+                markTableAsSkipped(relation_id, table_name);
+                return;
+            }
+
+            Int32 data_type_id;
+            Int32 type_modifier; /// For example, n in varchar(n)
+
+            std::set<std::string> all_columns(storage_data.column_names.begin(), storage_data.column_names.end());
+            std::set<std::string> received_columns;
             ColumnsWithTypeAndName columns;
+
             for (uint16_t i = 0; i < num_columns; ++i)
             {
                 String column_name;
                 readInt8(replication_message, pos, size); /// Marks column as part of replica identity index
                 readString(replication_message, pos, size, column_name);
 
+                if (!all_columns.contains(column_name))
+                {
+                    log_table_structure_changed(fmt::format("column {} is not known", column_name));
+                    markTableAsSkipped(relation_id, table_name);
+                    return;
+                }
+
                 data_type_id = readInt32(replication_message, pos, size);
                 type_modifier = readInt32(replication_message, pos, size);
 
                 columns.push_back(description.sample_block.getByName(column_name));
+                received_columns.emplace(column_name);
 
                 const auto & attributes_it = storage_data.columns_attributes.find(column_name);
                 if (attributes_it == storage_data.columns_attributes.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column: {}", column_name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No column {} in attributes", column_name);
 
                 const auto & attributes = attributes_it->second;
                 if (attributes.atttypid != data_type_id || attributes.atttypmod != type_modifier)
                 {
-                    LOG_TEST(log, "Column {} has a different type", column_name);
+                    log_table_structure_changed(fmt::format("column {} has a different type", column_name));
+                    markTableAsSkipped(relation_id, table_name);
+                    return;
+                }
+            }
+
+
+            if (size_t(num_columns) < actual_columns_num)
+            {
+                std::vector<std::string> absent_columns;
+                std::set_difference(
+                    all_columns.begin(), all_columns.end(),
+                    received_columns.begin(), received_columns.end(), std::back_inserter(absent_columns));
+
+                for (const auto & name : absent_columns)
+                {
+                    if (name == "_sign" || name == "_version")
+                        continue;
+
+                    const auto & attributes_it = storage_data.columns_attributes.find(name);
+                    if (attributes_it == storage_data.columns_attributes.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "No column {} in attributes", name);
+
+                    /// Column has a default value or it is a GENERATED columns.
+                    if (!attributes_it->second.attr_def.empty())
+                        continue;
+
+                    log_table_structure_changed(fmt::format("column {} was not found", name));
                     markTableAsSkipped(relation_id, table_name);
                     return;
                 }
