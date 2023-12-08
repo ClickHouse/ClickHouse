@@ -849,6 +849,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment, File
         .cache_hits = file_segment->hits_count,
         .references = static_cast<uint64_t>(file_segment.use_count()),
         .is_unbound = file_segment->is_unbound,
+        .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
     };
 }
 
@@ -913,10 +914,6 @@ void FileSegment::increasePriority()
         chassert(isDetached());
         return;
     }
-
-    /// Priority can be increased only for downloaded file segments.
-    if (download_state != State::DOWNLOADED)
-        return;
 
     auto it = getQueueIterator();
     if (it)

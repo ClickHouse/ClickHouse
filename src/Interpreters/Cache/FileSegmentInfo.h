@@ -53,6 +53,14 @@ namespace DB
         Temporary,
     };
 
+    enum class FileCacheQueueEntryType
+    {
+        None,
+        LRU,
+        SLRU_Protected,
+        SLRU_Probationary,
+    };
+
     std::string toString(FileSegmentKind kind);
 
     struct FileSegmentInfo
@@ -69,5 +77,6 @@ namespace DB
         uint64_t cache_hits;
         uint64_t references;
         bool is_unbound;
+        FileCacheQueueEntryType queue_entry_type;
     };
 }

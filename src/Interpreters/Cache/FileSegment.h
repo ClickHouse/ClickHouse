@@ -54,6 +54,7 @@ public:
     using Priority = IFileCachePriority;
     using State = FileSegmentState;
     using Info = FileSegmentInfo;
+    using QueueEntryType = FileCacheQueueEntryType;
 
     FileSegment(
         const Key & key_,

@@ -17,6 +17,7 @@ class IFileCachePriority : private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
+    using QueueEntryType = FileCacheQueueEntryType;
 
     struct Entry
     {
@@ -45,6 +46,8 @@ public:
         virtual void remove(const CacheGuard::Lock &) = 0;
 
         virtual void invalidate() = 0;
+
+        virtual QueueEntryType getType() const = 0;
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
 
@@ -72,13 +75,7 @@ public:
 
     virtual void shuffle(const CacheGuard::Lock &) = 0;
 
-    struct QueueEntryDump
-    {
-        FileSegmentInfo info;
-        bool is_protected = false;
-    };
-    using QueueEntriesDumps = std::vector<QueueEntryDump>;
-    virtual QueueEntriesDumps dump(FileCache & cache, const CacheGuard::Lock &) = 0;
+    virtual std::vector<FileSegmentInfo> dump(FileCache & cache, const CacheGuard::Lock &) = 0;
 
     using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
     virtual bool collectCandidatesForEviction(

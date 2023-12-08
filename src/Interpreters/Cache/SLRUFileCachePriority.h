@@ -43,7 +43,7 @@ public:
 
     void shuffle(const CacheGuard::Lock &) override;
 
-    QueueEntriesDumps dump(FileCache & cache, const CacheGuard::Lock &) override;
+    std::vector<FileSegmentInfo> dump(FileCache & cache, const CacheGuard::Lock &) override;
 
 private:
     LRUFileCachePriority protected_queue;
@@ -72,7 +72,7 @@ public:
 
     void updateSize(int64_t size) override;
 
-    bool isProtected() const { return is_protected; }
+    QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
 
 private:
     void assertValid() const;

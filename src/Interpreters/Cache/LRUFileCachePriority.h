@@ -44,7 +44,7 @@ public:
 
     void shuffle(const CacheGuard::Lock &) override;
 
-    QueueEntriesDumps dump(FileCache & cache, const CacheGuard::Lock &) override;
+    std::vector<FileSegmentInfo> dump(FileCache & cache, const CacheGuard::Lock &) override;
 
     void pop(const CacheGuard::Lock & lock) { remove(queue.begin(), lock); }
 
@@ -98,6 +98,8 @@ public:
     void invalidate() override;
 
     void updateSize(int64_t size) override;
+
+    QueueEntryType getType() const override { return QueueEntryType::LRU; }
 
 private:
     void assertValid() const;
