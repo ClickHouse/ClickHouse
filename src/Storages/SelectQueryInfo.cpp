@@ -13,4 +13,9 @@ bool SelectQueryInfo::isFinal() const
     return select.final();
 }
 
+
+bool SelectQueryInfo::isStream() const {
+    return table_expression_modifiers && table_expression_modifiers->hasStream();
+}
+
 }

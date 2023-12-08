@@ -1,6 +1,8 @@
+#include <mutex>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Common/scope_guard_safe.h>
+#include "Storages/SubscriptionQueue.hpp"
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -822,10 +824,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
 
-                if (!table_expression_query_info.table_expression_modifiers.has_value()) {
-                    LOG_DEBUG(&Poco::Logger::get("Planner"), "table_expression_modifiers is none");
-                } else if (table_expression_query_info.table_expression_modifiers->hasStream()) {
-                    LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is ON");
+                if (table_expression_query_info.isStream()) {
+                    SubscriberPtr sub = storage->subscribeForChanges();
+                    LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is ON: {}", (uint64_t)sub.get());
+                } else {
+                    LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is OFF");
                 }
 
                 for (const auto & filter_info_and_description : where_filters)

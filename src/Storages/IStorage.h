@@ -17,9 +17,12 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
+#include "Storages/SubscriptionQueue.hpp"
 
+#include <mutex>
 #include <optional>
 #include <compare>
+#include <shared_mutex>
 
 
 namespace DB
@@ -127,6 +130,9 @@ public:
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
+
+    /// Returns true if the storage supports queries with the STREAM section.
+    virtual bool supportsStreaming() const { return false; }
 
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
@@ -272,6 +278,9 @@ private:
     /// without locks.
     MultiVersionStorageMetadataPtr metadata;
 
+    /// Structure for managing subscriptions
+    SubscriptionQueue subscription_queue;
+
 protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
@@ -350,6 +359,10 @@ public:
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
+
+    virtual SubscriberPtr subscribeForChanges() {
+        return subscription_queue.subscribe();
+    }
 
 private:
     /** Read a set of columns from the table.

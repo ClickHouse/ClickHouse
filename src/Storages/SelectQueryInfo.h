@@ -268,5 +268,8 @@ struct SelectQueryInfo
     }
 
     bool isFinal() const;
+
+    bool isStream() const;
+
 };
 }
