@@ -376,6 +376,12 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         if (!cache_writer)
             cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
 
+#ifdef ABORT_ON_LOGICAL_ERROR
+        /// This mutex is only needed to have a valid assertion in assertCacheCorrectness(),
+        /// which is only executed in debug/sanitizer builds (under ABORT_ON_LOGICAL_ERROR).
+        std::lock_guard lock(write_mutex);
+#endif
+
         cache_writer->write(from, size);
         cache_writer->next();
 
@@ -793,10 +799,13 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         chassert(entry.offset == offset());
     };
 
-    if (downloaded_size == 0)
-        chassert(!fs::exists(getPathInLocalCache()));
-    else
-        chassert(fs::exists(getPathInLocalCache()));
+    {
+        std::lock_guard lock(write_mutex);
+        if (downloaded_size == 0)
+            chassert(!fs::exists(getPathInLocalCache()));
+        else
+            chassert(fs::exists(getPathInLocalCache()));
+    }
 
     if (download_state == State::DOWNLOADED)
     {
