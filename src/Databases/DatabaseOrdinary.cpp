@@ -229,7 +229,8 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Ordinary database {}", getDatabaseName()),
         ignoreDependencyFailure,
-        [] (AsyncLoader &, const LoadJobPtr &) {
+        [] (AsyncLoader &, const LoadJobPtr &)
+        {
             // NOTE: this job is no-op, but it is required for correct dependency handling
             // 1) startup should be done after tables loading
             // 2) load or startup errors for tables should not lead to not starting up the whole database
