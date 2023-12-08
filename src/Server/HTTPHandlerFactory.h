@@ -5,7 +5,6 @@
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
-#include <Coordination/KeeperDispatcher.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
