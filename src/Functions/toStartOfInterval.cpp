@@ -191,15 +191,14 @@ public:
             case ResultType::DateTime64:
             {
                 UInt32 scale = 0;
-                auto scale_date_time = 0;
-                if (third_argument == ThirdArgument::IsOrigin)
-                    scale_date_time = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
+                if (isDate32(arguments[0].type) || isDateTime(arguments[0].type) || isDateTime64(arguments[0].type)) 
+                    scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
                 if (interval_type->getKind() == IntervalKind::Nanosecond)
-                    scale = 9 > scale_date_time ? 9 : scale_date_time;
+                    scale = 9 > scale ? 9 : scale;
                 else if (interval_type->getKind() == IntervalKind::Microsecond)
-                    scale = 6 > scale_date_time ? 6 : scale_date_time;
+                    scale = 6 > scale ? 6 : scale;
                 else if (interval_type->getKind() == IntervalKind::Millisecond)
-                    scale = 3 > scale_date_time ? 3 : scale_date_time;
+                    scale = 3 > scale ? 3 : scale;
 
                 const size_t time_zone_arg_num = (arguments.size() == 2 || (arguments.size() == 3 && third_argument == ThirdArgument::IsTimezone)) ? 2 : 3;
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
