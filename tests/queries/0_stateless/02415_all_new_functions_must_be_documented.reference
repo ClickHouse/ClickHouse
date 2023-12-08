@@ -51,7 +51,6 @@ LpNormalize
 MACNumToString
 MACStringToNum
 MACStringToOUI
-SHA512_256
 URLHash
 URLHierarchy
 URLPathHierarchy
