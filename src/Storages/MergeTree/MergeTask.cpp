@@ -165,7 +165,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     std::optional<MergeTreeDataPartBuilder> builder;
     if (global_ctx->parent_part)
     {
-        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename);
+        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
         builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage);
         builder->withParentPart(global_ctx->parent_part);
     }
