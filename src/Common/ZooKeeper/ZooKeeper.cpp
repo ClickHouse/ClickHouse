@@ -877,24 +877,6 @@ void ZooKeeper::handleEphemeralNodeExistence(const std::string & path, const std
     }
 }
 
-Coordination::ReconfigResponse ZooKeeper::reconfig(
-    const std::string & joining,
-    const std::string & leaving,
-    const std::string & new_members,
-    int32_t version)
-{
-    auto future_result = asyncReconfig(joining, leaving, new_members, version);
-
-    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-    {
-        impl->finalize(fmt::format("Operation timeout on {}", Coordination::OpNum::Reconfig));
-        throw KeeperException(Coordination::Error::ZOPERATIONTIMEOUT);
-    }
-
-    return future_result.get();
-}
-
-
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
     return std::make_shared<ZooKeeper>(args, zk_log);
@@ -1244,27 +1226,6 @@ std::future<Coordination::SyncResponse> ZooKeeper::asyncSync(const std::string &
     return future;
 }
 
-std::future<Coordination::ReconfigResponse> ZooKeeper::asyncReconfig(
-    const std::string & joining,
-    const std::string & leaving,
-    const std::string & new_members,
-    int32_t version)
-{
-    auto promise = std::make_shared<std::promise<Coordination::ReconfigResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::ReconfigResponse & response) mutable
-    {
-        if (response.error != Coordination::Error::ZOK)
-            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
-        else
-            promise->set_value(response);
-    };
-
-    impl->reconfig(joining, leaving, new_members, version, std::move(callback));
-    return future;
-}
-
 void ZooKeeper::finalize(const String & reason)
 {
     impl->finalize(reason);
@@ -1466,7 +1427,7 @@ void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
 
 bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server.raft_configuration") && config.getBool("keeper_server.use_cluster", true));
+    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true));
 }
 
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
@@ -1477,7 +1438,7 @@ String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
     if (config.has("keeper"))
         return "keeper";
 
-    if (config.has("keeper_server.raft_configuration") && config.getBool("keeper_server.use_cluster", true))
+    if (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true))
         return "keeper_server";
 
     throw DB::Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");

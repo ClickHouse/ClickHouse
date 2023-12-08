@@ -448,6 +448,8 @@
                 <account_name>account</account_name>
                 <account_key>pass123</account_key>
                 <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+                <cache_enabled>true</cache_enabled>
+                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
                 <skip_access_check>false</skip_access_check>
             </blob_storage_disk>
         </disks>
@@ -1218,16 +1220,6 @@
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
 
-    <!-- Backup/restore log.
-         Uncomment to write backup/restore log records into a system table.
-    <backup_log>
-        <database>system</database>
-        <table>backup_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>0</flush_interval_milliseconds>
-    </backup_log>
-    -->
-
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
@@ -1493,10 +1485,4 @@
     <!-- On Linux systems this can control the behavior of OOM killer.
     <oom_score>-1000</oom_score>
     -->
-
-    <!-- Delay (in seconds) to wait for unfinished queries before force exit -->
-    <!-- <shutdown_wait_unfinished>5</shutdown_wait_unfinished> -->
-
-    <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
-    <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->
 </clickhouse>

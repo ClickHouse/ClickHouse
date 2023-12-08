@@ -701,7 +701,7 @@ void ZooKeeper::receiveThread()
 
             if (in->poll(max_wait_us))
             {
-                if (finalization_started.test())
+                if (requests_queue.isFinished())
                     break;
 
                 receiveEvent();

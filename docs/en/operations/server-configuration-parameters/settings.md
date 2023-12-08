@@ -88,7 +88,7 @@ Default: 2
 
 ## background_merges_mutations_scheduling_policy
 
-The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
+The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`. 
 
 ## background_merges_mutations_scheduling_policy
 
@@ -583,7 +583,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 
 Type: String
 
-Default:
+Default: 
 
 ## thread_pool_queue_size
 
@@ -640,7 +640,7 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
 ```
 Type: String
 
-Default:
+Default: 
 
 ## uncompressed_cache_policy
 
@@ -835,7 +835,7 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 
 - [Custom settings](../../operations/settings/index.md#custom_settings)
 
-## core_dump {#core_dump}
+## core_dump {#server_configuration_parameters-core_dump}
 
 Configures soft limit for core dump file size.
 
@@ -924,7 +924,7 @@ The path to the table in ZooKeeper.
 <default_replica_name>{replica}</default_replica_name>
 ```
 
-## dictionaries_config {#dictionaries_config}
+## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
 The path to the config file for dictionaries.
 
@@ -941,7 +941,7 @@ See also “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## user_defined_executable_functions_config {#user_defined_executable_functions_config}
+## user_defined_executable_functions_config {#server_configuration_parameters-user_defined_executable_functions_config}
 
 The path to the config file for executable user defined functions.
 
@@ -958,7 +958,7 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-## dictionaries_lazy_load {#dictionaries_lazy_load}
+## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
@@ -974,7 +974,7 @@ The default is `true`.
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format_schema_path {#format_schema_path}
+## format_schema_path {#server_configuration_parameters-format_schema_path}
 
 The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
@@ -985,7 +985,7 @@ The path to the directory with the schemes for the input data, such as schemas f
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## graphite {#graphite}
+## graphite {#server_configuration_parameters-graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -1019,7 +1019,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 </graphite>
 ```
 
-## graphite_rollup {#graphite-rollup}
+## graphite_rollup {#server_configuration_parameters-graphite-rollup}
 
 Settings for thinning data for Graphite.
 
@@ -1051,7 +1051,7 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL](#openssl) must be configured.
+If `https_port` is specified, [openSSL](#server_configuration_parameters-openssl) must be configured.
 
 If `http_port` is specified, the OpenSSL configuration is ignored even if it is set.
 
@@ -1061,7 +1061,7 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 <https_port>9999</https_port>
 ```
 
-## http_server_default_response {#http_server_default_response}
+## http_server_default_response {#server_configuration_parameters-http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
 The default value is “Ok.” (with a line feed at the end)
@@ -1086,7 +1086,7 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## include_from {#include_from}
+## include_from {#server_configuration_parameters-include_from}
 
 The path to the file with substitutions.
 
@@ -1222,7 +1222,7 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
-## listen_host {#listen_host}
+## listen_host {#server_configuration_parameters-listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -1233,7 +1233,7 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## listen_backlog {#listen_backlog}
+## listen_backlog {#server_configuration_parameters-listen_backlog}
 
 Backlog (queue size of pending connections) of the listen socket.
 
@@ -1253,7 +1253,7 @@ Examples:
 <listen_backlog>4096</listen_backlog>
 ```
 
-## logger {#logger}
+## logger {#server_configuration_parameters-logger}
 
 Logging settings.
 
@@ -1357,7 +1357,7 @@ Keys for syslog:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 - format – Message format. Possible values: `bsd` and `syslog.`
 
-## send_crash_reports {#send_crash_reports}
+## send_crash_reports {#server_configuration_parameters-send_crash_reports}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
 Enabling it, especially in pre-production environments, is highly appreciated.
@@ -1629,7 +1629,7 @@ Default value: `0.5`.
 
 
 
-## merge_tree {#merge_tree}
+## merge_tree {#server_configuration_parameters-merge_tree}
 
 Fine tuning for tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -1676,7 +1676,7 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 </clickhouse>
 ```
 
-## replicated_merge_tree {#replicated_merge_tree}
+## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
 
 Fine tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -1692,7 +1692,7 @@ For more information, see the MergeTreeSettings.h header file.
 </replicated_merge_tree>
 ```
 
-## openSSL {#openssl}
+## openSSL {#server_configuration_parameters-openssl}
 
 SSL client/server configuration.
 
@@ -1751,7 +1751,7 @@ Keys for server/client settings:
 </openSSL>
 ```
 
-## part_log {#part-log}
+## part_log {#server_configuration_parameters-part-log}
 
 Logging events that are associated with [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
@@ -1791,7 +1791,7 @@ Default: false.
 </part_log>
 ```
 
-## path {#path}
+## path {#server_configuration_parameters-path}
 
 The path to the directory containing data.
 
@@ -1805,7 +1805,7 @@ The trailing slash is mandatory.
 <path>/var/lib/clickhouse/</path>
 ```
 
-## Prometheus {#prometheus}
+## Prometheus {#server_configuration_parameters-prometheus}
 
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
@@ -1841,7 +1841,7 @@ Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse serve
 curl 127.0.0.1:9363/metrics
 ```
 
-## query_log {#query-log}
+## query_log {#server_configuration_parameters-query-log}
 
 Setting for logging queries received with the [log_queries=1](../../operations/settings/settings.md) setting.
 
@@ -1911,7 +1911,7 @@ Data for the query cache is allocated in DRAM. If memory is scarce, make sure to
 </query_cache>
 ```
 
-## query_thread_log {#query_thread_log}
+## query_thread_log {#server_configuration_parameters-query_thread_log}
 
 Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.
 
@@ -1948,12 +1948,12 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     <max_size_rows>1048576</max_size_rows>
     <reserved_size_rows>8192</reserved_size_rows>
-    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>  
     <flush_on_crash>false</flush_on_crash>
 </query_thread_log>
 ```
 
-## query_views_log {#query_views_log}
+## query_views_log {#server_configuration_parameters-query_views_log}
 
 Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
 
@@ -1995,7 +1995,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_views_log>
 ```
 
-## text_log {#text_log}
+## text_log {#server_configuration_parameters-text_log}
 
 Settings for the [text_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
 
@@ -2037,7 +2037,7 @@ Default: false.
 </clickhouse>
 ```
 
-## trace_log {#trace_log}
+## trace_log {#server_configuration_parameters-trace_log}
 
 Settings for the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
 
@@ -2073,7 +2073,7 @@ The default server configuration file `config.xml` contains the following settin
 </trace_log>
 ```
 
-## asynchronous_insert_log {#asynchronous_insert_log}
+## asynchronous_insert_log {#server_configuration_parameters-asynchronous_insert_log}
 
 Settings for the [asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) system table for logging async inserts.
 
@@ -2112,7 +2112,7 @@ Default: false.
 </clickhouse>
 ```
 
-## crash_log {#crash_log}
+## crash_log {#server_configuration_parameters-crash_log}
 
 Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
 
@@ -2148,47 +2148,6 @@ The default server configuration file `config.xml` contains the following settin
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
-```
-
-## backup_log {#backup_log}
-
-Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
-
-Parameters:
-
-- `database` — Database name.
-- `table` — Table name.
-- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` is defined.
-- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` is defined.
-- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` is defined.
-- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
-- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
-Default: 1048576.
-- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
-Default: 8192.
-- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
-Default: `max_size_rows / 2`.
-- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
-Default: false.
-- `storage_policy` – Name of storage policy to use for the table (optional).
-- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md#settings) that control the behavior of the MergeTree (optional).
-
-**Example**
-
-```xml
-<clickhouse>
-    <backup_log>
-        <database>system</database>
-        <table>backup_log</table>
-        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
-        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
-    </backup_log>
-</clickhouse>
 ```
 
 ## query_masking_rules {#query-masking-rules}
@@ -2236,10 +2195,8 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 **See Also**
 
 - [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
-- [Cluster Discovery](../../operations/cluster-discovery.md)
-- [Replicated database engine](../../engines/database-engines/replicated.md)
 
-## timezone {#timezone}
+## timezone {#server_configuration_parameters-timezone}
 
 The server’s time zone.
 
@@ -2257,7 +2214,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 - [session_timezone](../settings/settings.md#session_timezone)
 
-## tcp_port {#tcp_port}
+## tcp_port {#server_configuration_parameters-tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 
@@ -2267,9 +2224,9 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure {#tcp_port_secure}
+## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
 
-TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) settings.
+TCP port for secure communication with clients. Use it with [OpenSSL](#server_configuration_parameters-openssl) settings.
 
 **Possible values**
 
@@ -2281,7 +2238,7 @@ Positive integer.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port {#mysql_port}
+## mysql_port {#server_configuration_parameters-mysql_port}
 
 Port for communicating with clients over MySQL protocol.
 
@@ -2295,7 +2252,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## postgresql_port {#postgresql_port}
+## postgresql_port {#server_configuration_parameters-postgresql_port}
 
 Port for communicating with clients over PostgreSQL protocol.
 
@@ -2326,7 +2283,7 @@ Path on the local filesystem to store temporary data for processing large querie
 ```
 
 
-## user_files_path {#user_files_path}
+## user_files_path {#server_configuration_parameters-user_files_path}
 
 The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md).
 
@@ -2336,7 +2293,7 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-## user_scripts_path {#user_scripts_path}
+## user_scripts_path {#server_configuration_parameters-user_scripts_path}
 
 The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
 
@@ -2346,7 +2303,7 @@ The directory with user scripts files. Used for Executable user defined function
 <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
-## user_defined_path {#user_defined_path}
+## user_defined_path {#server_configuration_parameters-user_defined_path}
 
 The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
 
@@ -2406,7 +2363,7 @@ This section contains the following parameters:
   * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
-
+    
 **Example configuration**
 
 ``` xml
@@ -2442,7 +2399,7 @@ Storage method for data part headers in ZooKeeper.
 
 This setting only applies to the `MergeTree` family. It can be specified:
 
-- Globally in the [merge_tree](#merge_tree) section of the `config.xml` file.
+- Globally in the [merge_tree](#server_configuration_parameters-merge_tree) section of the `config.xml` file.
 
     ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
 

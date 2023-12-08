@@ -316,6 +316,7 @@ target_link_libraries(clickhouse_common_io
             boost::context
             ch_contrib::cityhash
             ch_contrib::re2
+            ch_contrib::re2_st
             ch_contrib::zlib
             pcg_random
             Poco::Foundation

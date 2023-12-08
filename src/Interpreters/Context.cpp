@@ -64,6 +64,8 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
+#include <Interpreters/SystemLog.h>
+#include <Interpreters/SessionLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
@@ -90,6 +92,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
@@ -108,6 +111,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event ContextLockWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -348,6 +352,11 @@ struct ContextSharedPart : boost::noncopyable
 
     bool is_server_completely_started = false;
 
+#if USE_ROCKSDB
+    /// Global merge tree metadata cache, stored in rocksdb.
+    MergeTreeMetadataCachePtr merge_tree_metadata_cache;
+#endif
+
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
@@ -577,6 +586,15 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
             /// Stop zookeeper connection
             zookeeper.reset();
+
+#if USE_ROCKSDB
+            /// Shutdown merge tree metadata cache
+            if (merge_tree_metadata_cache)
+            {
+                merge_tree_metadata_cache->shutdown();
+                merge_tree_metadata_cache.reset();
+            }
+#endif
         }
 
         /// Can be removed without context lock
@@ -704,7 +722,10 @@ std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
     ProfileEvents::increment(ProfileEvents::ContextLock);
     CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    return std::unique_lock(shared->mutex);
+    Stopwatch watch;
+    auto lock = std::unique_lock(shared->mutex);
+    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
+    return lock;
 }
 
 ProcessList & Context::getProcessList() { return shared->process_list; }
@@ -982,7 +1003,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
     if (!file_cache)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", disk_ptr->getCacheName());
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
 
     LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
 
@@ -1292,12 +1313,10 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
-ClassifierPtr Context::getWorkloadClassifier() const
+ClassifierPtr Context::getClassifier() const
 {
     auto lock = getLock();
-    if (!classifier)
-        classifier = getResourceManager()->acquire(getSettingsRef().workload);
-    return classifier;
+    return getResourceManager()->acquire(getSettingsRef().workload);
 }
 
 
@@ -1587,12 +1606,11 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
         if (use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & insert_columns = DatabaseCatalog::instance()
-                                              .getTable(getInsertionTable(), shared_from_this())
-                                              ->getInMemoryMetadataPtr()
-                                              ->getColumns();
-
-            const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
+            const auto & insert_structure = DatabaseCatalog::instance()
+                                                .getTable(getInsertionTable(), shared_from_this())
+                                                ->getInMemoryMetadataPtr()
+                                                ->getColumns()
+                                                .getInsertable();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -1600,8 +1618,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
-            auto insert_column_name_it = insert_column_names.begin();
-            auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
+            auto insert_column = insert_structure.begin();
+            auto insert_structure_end = insert_structure.end();  /// end iterator of the range covered by possible asterisk
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
@@ -1609,7 +1627,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
-            for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
+            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
             {
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
@@ -1624,19 +1642,15 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                             break;
                         }
 
-                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                        column.name = identifier->name();
-                        /// Change ephemeral columns to default columns.
-                        column.default_desc.kind = ColumnDefaultKind::Default;
-                        structure_hint.add(std::move(column));
+                        structure_hint.add({ identifier->name(), insert_column->type });
                     }
 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_column_names_end;
+                        --insert_structure_end;
                     else
-                        ++insert_column_name_it;
+                        ++insert_column;
                 }
                 else if ((*expression)->as<ASTAsterisk>())
                 {
@@ -1670,18 +1684,18 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_column_names_end;
+                        --insert_structure_end;
                     else
-                        ++insert_column_name_it;
+                        ++insert_column;
                 }
                 else
                 {
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_column_names_end;
+                        --insert_structure_end;
                     else
-                        ++insert_column_name_it;
+                        ++insert_column;
                 }
             }
 
@@ -1701,14 +1715,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     /// Append tail of insert structure to the hint
                     if (asterisk)
                     {
-                        for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
-                        {
-                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                            /// Change ephemeral columns to default columns.
-                            column.default_desc.kind = ColumnDefaultKind::Default;
-
-                            structure_hint.add(std::move(column));
-                        }
+                        for (; insert_column != insert_structure_end; ++insert_column)
+                            structure_hint.add({ insert_column->name, insert_column->type });
                     }
 
                     if (!structure_hint.empty())
@@ -2232,7 +2240,7 @@ BackupsWorker & Context::getBackupsWorker() const
     UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
@@ -2958,6 +2966,13 @@ std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
     return shared->auxiliary_zookeepers;
 }
 
+#if USE_ROCKSDB
+MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
+{
+    return shared->merge_tree_metadata_cache;
+}
+#endif
+
 void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -3247,10 +3262,18 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
+#if USE_ROCKSDB
+void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
+{
+    shared->merge_tree_metadata_cache = MergeTreeMetadataCache::create(dir, size);
+}
+#endif
+
 /// Call after unexpected crash happen.
 void Context::handleCrash() const
 {
-    shared->system_logs->handleCrash();
+    if (shared->system_logs)
+        shared->system_logs->handleCrash();
 }
 
 bool Context::hasTraceCollector() const
@@ -3430,16 +3453,6 @@ std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
         return {};
 
     return shared->system_logs->asynchronous_insert_log;
-}
-
-std::shared_ptr<BackupLog> Context::getBackupLog() const
-{
-    auto lock = getLock();
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->backup_log;
 }
 
 std::vector<ISystemLog *> Context::getSystemLogs() const

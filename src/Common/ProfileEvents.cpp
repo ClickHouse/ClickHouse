@@ -211,6 +211,7 @@
     \
     M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.") \
+    M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds") \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.") \
     M(StorageBufferErrorOnFlush, "Number of times a buffer in the 'Buffer' table has not been able to flush due to error writing in the destination table.") \
@@ -252,13 +253,6 @@ The server successfully detected this situation and will download merged part fr
     M(DataAfterMutationDiffersFromReplica, "Number of times data after mutation is not byte-identical to the data on another replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.") \
     M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.") \
     M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.") \
-    \
-    M(USearchAddCount, "Number of vectors added to usearch indexes.") \
-    M(USearchAddVisitedMembers, "Number of nodes visited when adding vectors to usearch indexes.") \
-    M(USearchAddComputedDistances, "Number of times distance was computed when adding vectors to usearch indexes.") \
-    M(USearchSearchCount, "Number of search operations performed in usearch indexes.") \
-    M(USearchSearchVisitedMembers, "Number of nodes visited when searching in usearch indexes.") \
-    M(USearchSearchComputedDistances, "Number of times distance was computed when searching usearch indexes.") \
     \
     M(RWLockAcquiredReadLocks, "Number of times a read lock was acquired (in a heavy RWLock).") \
     M(RWLockAcquiredWriteLocks, "Number of times a write lock was acquired (in a heavy RWLock).") \
@@ -458,8 +452,7 @@ The server successfully detected this situation and will download merged part fr
     M(ThreadPoolReaderPageCacheMissBytes, "Number of bytes read inside ThreadPoolReader when read was not done from page cache and was hand off to thread pool.") \
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
-    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads in asynchronous local read.") \
-    M(SynchronousReadWaitMicroseconds, "Time spent in waiting for synchronous reads in asynchronous local read.") \
+    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
     M(AsynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for asynchronous remote reads.") \
     M(SynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for synchronous remote reads.") \
     \
@@ -469,6 +462,13 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
+    \
+    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCachePut, "Number of rocksdb puts (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks (used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheHit, "Number of times the read of meta file was done from MergeTree metadata cache") \
+    M(MergeTreeMetadataCacheMiss, "Number of times the read of meta file was not done from MergeTree metadata cache") \
     \
     M(KafkaRebalanceRevocations, "Number of partition revocations (the first stage of consumer group rebalance)") \
     M(KafkaRebalanceAssignments, "Number of partition assignments (the final stage of consumer group rebalance)") \
@@ -576,23 +576,6 @@ Counters global_counters(global_counters_array);
 
 const Event Counters::num_counters = END;
 
-
-Timer::Timer(Counters & counters_, Event timer_event_, Resolution resolution_)
-    : counters(counters_), timer_event(timer_event_), resolution(resolution_)
-{
-}
-
-Timer::Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_)
-    : Timer(counters_, timer_event_, resolution_)
-{
-    counters.increment(counter_event);
-}
-
-void Timer::end()
-{
-    counters.increment(timer_event, watch.elapsedNanoseconds() / static_cast<UInt64>(resolution));
-    watch.reset();
-}
 
 Counters::Counters(VariableContext level_, Counters * parent_)
     : counters_holder(new Counter[num_counters] {}),

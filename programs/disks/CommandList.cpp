@@ -17,10 +17,11 @@ public:
     {
         command_name = "list";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "List files at path[s]";
+        description = "List files (the default disk is used by default)\nPath should be in format './' or './path' or 'path'";
         usage = "list [OPTION]... <PATH>...";
         command_option_description->add_options()
-            ("recursive", "recursively list all directories");
+            ("recursive", "recursively list all directories")
+            ;
     }
 
     void processOptions(

@@ -19,7 +19,6 @@ include (cmake/tools.cmake)
 include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
-include (cmake/utils.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -102,17 +101,24 @@ if (ENABLE_FUZZING)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+option (ENABLE_WOBOQ_CODEBROWSER "Build for woboq codebrowser" OFF)
+
+if (ENABLE_WOBOQ_CODEBROWSER)
+    set (ENABLE_EMBEDDED_COMPILER 0)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-poison-system-directories")
+    # woboq codebrowser uses clang tooling, and they could add default system
+    # clang includes, and later clang will warn for those added by itself
+    # includes.
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-poison-system-directories")
+endif()
+
 # Global libraries
 # See:
 # - default_libs.cmake
 # - sanitize.cmake
 add_library(global-libs INTERFACE)
 
-# We don't want to instrument everything with fuzzer, but only specific targets (see below),
-# also, since we build our own llvm, we specifically don't want to instrument
-# libFuzzer library itself - it would result in infinite recursion
-#include (cmake/fuzzer.cmake)
-
+include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
@@ -551,34 +557,6 @@ add_subdirectory (src)
 add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
-
-if (FUZZER)
-    # Bundle fuzzers target
-    add_custom_target(fuzzers)
-    # Instrument all targets fuzzer and link with libfuzzer
-    get_all_targets(all_targets)
-    foreach(target ${all_targets})
-        if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main"))
-            get_target_property(target_type ${target} TYPE)
-            if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
-                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
-            endif()
-            # clickhouse fuzzer isn't working correctly
-            # initial PR https://github.com/ClickHouse/ClickHouse/pull/27526
-            #if (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse")
-            if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
-                message(STATUS "${target} instrumented with fuzzer")
-                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
-                # Add to fuzzers bundle
-                add_dependencies(fuzzers ${target})
-                get_target_filename(${target} target_bin_name)
-                get_target_property(target_bin_dir ${target} BINARY_DIR)
-                add_custom_command(TARGET fuzzers POST_BUILD COMMAND mv "${target_bin_dir}/${target_bin_name}" "${CMAKE_CURRENT_BINARY_DIR}/programs/" VERBATIM)
-            endif()
-        endif()
-    endforeach()
-    add_custom_command(TARGET fuzzers POST_BUILD COMMAND SRC=${CMAKE_SOURCE_DIR} BIN=${CMAKE_BINARY_DIR} OUT=${CMAKE_BINARY_DIR}/programs ${CMAKE_SOURCE_DIR}/tests/fuzz/build.sh VERBATIM)
-endif()
 
 include (cmake/sanitize_targets.cmake)
 

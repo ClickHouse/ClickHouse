@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import hashlib
 import logging
-import os
 import re
 import shutil
 import time
@@ -131,11 +130,7 @@ class S3Helper:
     def fast_parallel_upload_dir(
         self, dir_path: Path, s3_dir_path: str, bucket_name: str
     ) -> List[str]:
-        all_files = []
-
-        for root, _, files in os.walk(dir_path):
-            for file in files:
-                all_files.append(os.path.join(root, file))
+        all_files = [file for file in dir_path.rglob("*") if file.is_file()]
 
         logging.info("Files found %s", len(all_files))
 
@@ -143,12 +138,13 @@ class S3Helper:
         t = time.time()
         sum_time = 0
 
-        def upload_task(file_path: str) -> str:
+        def upload_task(file_path: Path) -> str:
             nonlocal counter
             nonlocal t
             nonlocal sum_time
+            file_str = file_path.as_posix()
             try:
-                s3_path = file_path.replace(str(dir_path), s3_dir_path)
+                s3_path = file_str.replace(str(dir_path), s3_dir_path)
                 metadata = {}
                 if s3_path.endswith("html"):
                     metadata["ContentType"] = "text/html; charset=utf-8"
@@ -214,11 +210,11 @@ class S3Helper:
         def task(file_path: Path) -> Union[str, List[str]]:
             full_fs_path = file_path.absolute()
             if keep_dirs_in_s3_path:
-                full_s3_path = os.path.join(s3_directory_path, directory_path.name)
+                full_s3_path = "/".join((s3_directory_path, directory_path.name))
             else:
                 full_s3_path = s3_directory_path
 
-            if os.path.isdir(full_fs_path):
+            if full_fs_path.is_dir():
                 return self._upload_directory_to_s3(
                     full_fs_path,
                     full_s3_path,

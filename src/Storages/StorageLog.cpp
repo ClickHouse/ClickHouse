@@ -33,7 +33,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <cassert>
 #include <chrono>
@@ -45,8 +44,6 @@
 
 namespace DB
 {
-
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
 
 namespace ErrorCodes
 {
@@ -455,15 +452,10 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
             const auto & data_file = *data_file_it->second;
             const auto & columns = metadata_snapshot->getColumns();
 
-            CompressionCodecPtr compression;
-            if (name_and_type.name == BlockNumberColumn::name)
-                compression = BlockNumberColumn::compression_codec;
-            else
-                compression = columns.getCodecOrDefault(name_and_type.name);
-
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
-                                     compression, storage.max_compress_block_size).first;
+                                     columns.getCodecOrDefault(name_and_type.name),
+                                     storage.max_compress_block_size).first;
         }
 
         auto & stream = it->second;
@@ -511,15 +503,15 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
 void StorageLog::Mark::write(WriteBuffer & out) const
 {
-    writeBinaryLittleEndian(rows, out);
-    writeBinaryLittleEndian(offset, out);
+    writeIntBinary(rows, out);
+    writeIntBinary(offset, out);
 }
 
 
 void StorageLog::Mark::read(ReadBuffer & in)
 {
-    readBinaryLittleEndian(rows, in);
-    readBinaryLittleEndian(offset, in);
+    readIntBinary(rows, in);
+    readIntBinary(offset, in);
 }
 
 

@@ -20,10 +20,15 @@ namespace
 
     constexpr auto dummy_subquery_name_prefix = "_subquery";
 
-    PreformattedMessage wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
+    String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
     {
-        return PreformattedMessage::create("Different expressions with the same alias {}:\n{}\nand\n{}\n",
-                                           backQuoteIfNeed(alias), serializeAST(*ast), serializeAST(*prev_ast));
+        WriteBufferFromOwnString message;
+        message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":\n";
+        formatAST(*ast, message, false, true);
+        message << "\nand\n";
+        formatAST(*prev_ast, message, false, true);
+        message << '\n';
+        return message.str();
     }
 
 }
@@ -122,7 +127,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
     if (!alias.empty())
     {
         if (aliases.contains(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
-            throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+            throw Exception::createDeprecated(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
         aliases[alias] = ast;
     }

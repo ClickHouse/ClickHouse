@@ -186,7 +186,7 @@ def test_mutation_simple(started_cluster, replicated):
         # ALTER will sleep for 3s * 3 (rows) = 9s
         def alter():
             node1.query(
-                f"ALTER TABLE {name} UPDATE a = 42 WHERE sleep(3) OR 1",
+                f"ALTER TABLE {name} UPDATE a = 42 WHERE sleep(9) = 0",
                 settings=settings,
             )
 

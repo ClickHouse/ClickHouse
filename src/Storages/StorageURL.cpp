@@ -129,12 +129,7 @@ IStorageURLBase::IStorageURLBase(
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        /// We don't allow special columns in URL storage.
-        if (!columns_.hasOnlyOrdinary())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine URL doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -185,7 +180,7 @@ namespace
     {
         auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
                                              : ProxyConfigurationResolver::Protocol::HTTP;
-        auto proxy_config = ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+        auto proxy_config = ProxyConfigurationResolverProvider::get(protocol)->resolve();
 
         return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }

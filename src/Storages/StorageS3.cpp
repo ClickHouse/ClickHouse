@@ -55,6 +55,7 @@
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentMetrics.h>
+#include <re2/re2.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -62,15 +63,6 @@
 #include <filesystem>
 
 #include <boost/algorithm/string.hpp>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace fs = std::filesystem;
 
@@ -1005,12 +997,7 @@ StorageS3::StorageS3(
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        /// We don't allow special columns in S3 storage.
-        if (!columns_.hasOnlyOrdinary())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine S3 doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -1278,7 +1265,6 @@ void StorageS3::Configuration::connect(ContextPtr context)
         auth_settings.region,
         context->getRemoteHostFilter(),
         static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
-        static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
         context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         request_settings.get_request_throttler,
@@ -1287,12 +1273,14 @@ void StorageS3::Configuration::connect(ContextPtr context)
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.http_connection_pool_size = context->getGlobalContext()->getSettingsRef().s3_http_connection_pool_size;
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
 
     client_configuration.requestTimeoutMs = request_settings.request_timeout_ms;
+
+    client_configuration.retryStrategy
+        = std::make_shared<Aws::Client::DefaultRetryStrategy>(request_settings.retry_attempts);
 
     auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
     client = S3::ClientFactory::instance().create(
@@ -1308,7 +1296,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
             auth_settings.use_insecure_imds_request.value_or(context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
             auth_settings.expiration_window_seconds.value_or(
                 context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
-            auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
+                auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
         });
 
     client_with_long_timeout = client->clone(std::nullopt, request_settings.long_request_timeout_ms);

@@ -1105,14 +1105,6 @@ public:
         if (const auto * right_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
             right_id = right_array->getNestedType()->getTypeId();
 
-        /// Special case when one column is Integer and another is UInt64 that can be actually Int64.
-        /// The result type for this case is Int64 and we need to change UInt64 type to Int64
-        /// so the NumberTraits::ResultOfIf will return Int64 instead if Int128.
-        if (isNativeInteger(arg_then.type) && isUInt64ThatCanBeInt64(arg_else.type))
-            right_id = TypeIndex::Int64;
-        else if (isNativeInteger(arg_else.type) && isUInt64ThatCanBeInt64(arg_then.type))
-            left_id = TypeIndex::Int64;
-
         if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
             || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))
             || (res = executeString(cond_col, arguments, result_type))

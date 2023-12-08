@@ -15,7 +15,6 @@
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
-#include <Interpreters/BackupLog.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>

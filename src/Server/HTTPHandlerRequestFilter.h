@@ -5,19 +5,11 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
 
+#include <re2/re2.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <unordered_map>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {

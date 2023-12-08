@@ -381,25 +381,25 @@ public:
         const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
-        if (unit == "year" || unit == "years" || unit == "yy" || unit == "yyyy")
+        if (unit == "year" || unit == "yy" || unit == "yyyy")
             impl.template dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "quarter" || unit == "quarters" || unit == "qq" || unit == "q")
+        else if (unit == "quarter" || unit == "qq" || unit == "q")
             impl.template dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "month" || unit == "months" || unit == "mm" || unit == "m")
+        else if (unit == "month" || unit == "mm" || unit == "m")
             impl.template dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "week" || unit == "weeks" || unit == "wk" || unit == "ww")
+        else if (unit == "week" || unit == "wk" || unit == "ww")
             impl.template dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "day" || unit == "days" || unit == "dd" || unit == "d")
+        else if (unit == "day" || unit == "dd" || unit == "d")
             impl.template dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "hour" || unit == "hours" || unit == "hh" || unit == "h")
+        else if (unit == "hour" || unit == "hh" || unit == "h")
             impl.template dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "minute" || unit == "minutes" || unit == "mi" || unit == "n")
+        else if (unit == "minute" || unit == "mi" || unit == "n")
             impl.template dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "second" || unit == "seconds" || unit == "ss" || unit == "s")
+        else if (unit == "second" || unit == "ss" || unit == "s")
             impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "millisecond" || unit == "milliseconds" || unit == "ms")
+        else if (unit == "millisecond" || unit == "ms")
             impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<millisecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "microsecond" || unit == "microseconds" || unit == "us" || unit == "u")
+        else if (unit == "microsecond" || unit == "us" || unit == "u")
             impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

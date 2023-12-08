@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 
 #include <Common/logger_useful.h>
+#include <iomanip>
 
 
 namespace DB
@@ -38,35 +39,16 @@ CreatingSetsTransform::CreatingSetsTransform(
 
 void CreatingSetsTransform::work()
 {
-    try
-    {
-        if (!is_initialized)
-            init();
+    if (!is_initialized)
+        init();
 
-        if (done_with_set && done_with_table)
-        {
-            finishConsume();
-            input.close();
-        }
-
-        IAccumulatingTransform::work();
-    }
-    catch (...)
+    if (done_with_set && done_with_table)
     {
-        if (promise_to_build)
-        {
-            /// set_exception can also throw
-            try
-            {
-                promise_to_build->set_exception(std::current_exception());
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to set_exception for promise");
-            }
-        }
-        throw;
+        finishConsume();
+        input.close();
     }
+
+    IAccumulatingTransform::work();
 }
 
 void CreatingSetsTransform::startSubquery()

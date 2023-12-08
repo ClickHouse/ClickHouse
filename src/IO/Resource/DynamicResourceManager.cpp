@@ -9,7 +9,6 @@
 
 #include <map>
 #include <tuple>
-#include <future>
 
 namespace DB
 {
@@ -218,36 +217,13 @@ void DynamicResourceManager::updateConfiguration(const Poco::Util::AbstractConfi
 ClassifierPtr DynamicResourceManager::acquire(const String & classifier_name)
 {
     // Acquire a reference to the current state
-    StatePtr state_ref;
+    StatePtr state_;
     {
         std::lock_guard lock{mutex};
-        state_ref = state;
+        state_ = state;
     }
 
-    return std::make_shared<Classifier>(state_ref, classifier_name);
-}
-
-void DynamicResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
-{
-    // Acquire a reference to the current state
-    StatePtr state_ref;
-    {
-        std::lock_guard lock{mutex};
-        state_ref = state;
-    }
-
-    std::promise<void> promise;
-    auto future = promise.get_future();
-    scheduler.event_queue->enqueue([state_ref, visitor, &promise]
-    {
-        for (auto & [name, resource] : state_ref->resources)
-            for (auto & [path, node] : resource->nodes)
-                visitor(name, path, node.type, node.ptr);
-        promise.set_value();
-    });
-
-    // Block until execution is done in the scheduler thread
-    future.get();
+    return std::make_shared<Classifier>(state_, classifier_name);
 }
 
 void registerDynamicResourceManager(ResourceManagerFactory & factory)

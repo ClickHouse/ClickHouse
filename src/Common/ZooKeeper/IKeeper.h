@@ -510,18 +510,6 @@ public:
     const Error code;
 };
 
-class SimpleFaultInjection
-{
-public:
-    SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_);
-    ~SimpleFaultInjection() noexcept(false);
-
-private:
-    Float64 probability_after = 0;
-    String description;
-    int exceptions_level = 0;
-};
-
 
 /** Usage scenario:
   * - create an object and issue commands;

@@ -83,8 +83,6 @@ public:
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
-        STOP_CLEANUP,
-        START_CLEANUP,
         END
     };
 

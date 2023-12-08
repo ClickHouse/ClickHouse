@@ -49,7 +49,6 @@ namespace
             settings.auth_settings.region,
             context->getRemoteHostFilter(),
             static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
-            static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
             context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
             /* for_disk_s3 = */ false, settings.request_settings.get_request_throttler, settings.request_settings.put_request_throttler,
             s3_uri.uri.getScheme());
@@ -170,7 +169,6 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 /* dest_bucket= */ blob_path[1],
                 /* dest_key= */ blob_path[0],
                 request_settings,
-                read_settings,
                 object_attributes,
                 threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
                 /* for_disk_s3= */ true);
@@ -231,7 +229,6 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 s3_uri.bucket,
                 fs::path(s3_uri.key) / path_in_backup,
                 request_settings,
-                read_settings,
                 {},
                 threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
             return; /// copied!

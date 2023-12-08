@@ -196,6 +196,7 @@ private:
 
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
+    bool is_interserver_authenticated = false;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
@@ -264,7 +265,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
     void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);

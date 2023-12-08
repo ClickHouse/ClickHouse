@@ -103,7 +103,6 @@ static const size_t signal_pipe_buf_size =
     + sizeof(siginfo_t)
     + sizeof(ucontext_t*)
     + sizeof(StackTrace)
-    + sizeof(UInt64)
     + sizeof(UInt32)
     + sizeof(void*);
 
@@ -180,15 +179,6 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     }
 
     errno = saved_errno;
-}
-
-static bool getenvBool(const char * name)
-{
-    bool res = false;
-    const char * env_var = getenv(name); // NOLINT(concurrency-mt-unsafe)
-    if (env_var && 0 == strcmp(env_var, "1"))
-        res = true;
-    return res;
 }
 
 
@@ -853,7 +843,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
-        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c)
+        setbuf(stderr, nullptr);
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
@@ -1120,8 +1110,10 @@ void BaseDaemon::setupWatchdog()
     if (argv0)
         original_process_name = argv0;
 
-    bool restart = getenvBool("CLICKHOUSE_WATCHDOG_RESTART");
-    bool forward_signals = !getenvBool("CLICKHOUSE_WATCHDOG_NO_FORWARD");
+    bool restart = false;
+    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
+    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
+        restart = true;
 
     while (true)
     {
@@ -1202,37 +1194,23 @@ void BaseDaemon::setupWatchdog()
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
         /// Forward signals to the child process.
-        if (forward_signals)
-        {
-            addSignalHandler(
-                {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
-                [](int sig, siginfo_t *, void *)
-                {
-                    /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
-                    /// and we process double delivery of this signal as immediate termination.
-                    if (sig == SIGINT)
-                        return;
-
-                    const char * error_message = "Cannot forward signal to the child process.\n";
-                    if (0 != ::kill(pid, sig))
-                    {
-                        auto res = write(STDERR_FILENO, error_message, strlen(error_message));
-                        (void)res;
-                    }
-                },
-                nullptr);
-        }
-        else
-        {
-            for (const auto & sig : {SIGHUP, SIGINT, SIGQUIT, SIGTERM})
+        addSignalHandler(
+            {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
+            [](int sig, siginfo_t *, void *)
             {
-                if (SIG_ERR == signal(sig, SIG_IGN))
+                /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
+                /// and we process double delivery of this signal as immediate termination.
+                if (sig == SIGINT)
+                    return;
+
+                const char * error_message = "Cannot forward signal to the child process.\n";
+                if (0 != ::kill(pid, sig))
                 {
-                    char * signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe)
-                    throwFromErrno(fmt::format("Cannot ignore {}", signal_description), ErrorCodes::SYSTEM_ERROR);
+                    auto res = write(STDERR_FILENO, error_message, strlen(error_message));
+                    (void)res;
                 }
-            }
-        }
+            },
+            nullptr);
 
         int status = 0;
         do

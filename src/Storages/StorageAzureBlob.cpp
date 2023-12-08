@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <re2/re2.h>
 
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -38,14 +39,6 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -478,12 +471,7 @@ StorageAzureBlob::StorageAzureBlob(
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        /// We don't allow special columns in File storage.
-        if (!columns_.hasOnlyOrdinary())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine AzureBlobStorage doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);

@@ -43,12 +43,6 @@ SETTINGS use_query_cache = true;
 will store the query result in the query cache. Subsequent executions of the same query (also with parameter `use_query_cache = true`) will
 read the computed result from the cache and return it immediately.
 
-:::note
-Setting `use_query_cache` and all other query-cache-related settings only take an effect on stand-alone `SELECT` statements. In particular,
-the results of `SELECT`s to views created by `CREATE VIEW AS SELECT [...] SETTINGS use_query_cache = true` are not cached unless the `SELECT`
-statement runs with `SETTINGS use_query_cache = true`.
-:::
-
 The way the cache is utilized can be configured in more detail using settings [enable_writes_to_query_cache](settings/settings.md#enable-writes-to-query-cache)
 and [enable_reads_from_query_cache](settings/settings.md#enable-reads-from-query-cache) (both `true` by default). The former setting
 controls whether query results are stored in the cache, whereas the latter setting determines if the database should try to retrieve query
@@ -90,7 +84,7 @@ It is also possible to limit the cache usage of individual users using [settings
 constraints](settings/constraints-on-settings.md). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
 allocate in the query cache and the the maximum number of stored query results. For that, first provide configurations
 [query_cache_max_size_in_bytes](settings/settings.md#query-cache-max-size-in-bytes) and
-[query_cache_max_entries](settings/settings.md#query-cache-size-max-entries) in a user profile in `users.xml`, then make both settings
+[query_cache_max_entries](settings/settings.md#query-cache-size-max-items) in a user profile in `users.xml`, then make both settings
 readonly:
 
 ``` xml
@@ -140,26 +134,10 @@ block granularity when query results are later served from the query cache.
 
 As a result, the query cache stores for each query multiple (partial)
 result blocks. While this behavior is a good default, it can be suppressed using setting
-[query_cache_squash_partial_results](settings/settings.md#query-cache-squash-partial-results).
+[query_cache_squash_partial_query_results](settings/settings.md#query-cache-squash-partial-query-results).
 
-Also, results of queries with non-deterministic functions are not cached by default. Such functions include
-- functions for accessing dictionaries: [`dictGet()`](../sql-reference/functions/ext-dict-functions.md#dictGet) etc.
-- [user-defined functions](../sql-reference/statements/create/function.md),
-- functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
-  [`today()`](../sql-reference/functions/date-time-functions.md#today),
-  [`yesterday()`](../sql-reference/functions/date-time-functions.md#yesterday) etc.,
-- functions which return random values: [`randomString()`](../sql-reference/functions/random-functions.md#randomString),
-  [`fuzzBits()`](../sql-reference/functions/random-functions.md#fuzzBits) etc.,
-- functions whose result depends on the size and order or the internal chunks used for query processing:
-  [`nowInBlock()`](../sql-reference/functions/date-time-functions.md#nowInBlock) etc.,
-  [`rowNumberInBlock()`](../sql-reference/functions/other-functions.md#rowNumberInBlock),
-  [`runningDifference()`](../sql-reference/functions/other-functions.md#runningDifference),
-  [`blockSize()`](../sql-reference/functions/other-functions.md#blockSize) etc.,
-- functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
-  [`queryID()`](../sql-reference/functions/other-functions.md#queryID),
-  [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
-To force caching of results of queries with non-deterministic functions regardless, use setting
-[query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
+Also, results of queries with non-deterministic functions such as `rand()` and `now()` are not cached. This can be overruled using
+setting [query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
 
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can

@@ -68,7 +68,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addDate
 addDays
 addHours
 addMicroseconds
@@ -230,7 +229,6 @@ dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
-decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
@@ -669,7 +667,6 @@ splitByWhitespace
 sqrt
 startsWith
 subBitmap
-subDate
 substring
 substringIndex
 substringIndexUTF8

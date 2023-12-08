@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
+static std::pair<Field, std::shared_ptr<const IDataType>> getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto type = applyVisitor(FieldToDataType(), literal->value);
     /// In case of Array field nested fields can have different types.
@@ -39,7 +39,7 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
     return {res, type};
 }
 
-std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
@@ -67,9 +67,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
-    auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
-    if (!syntax_result)
-        return {};
+    auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
 
     /// AST potentially could be transformed to literal during TreeRewriter analyze.
     /// For example if we have SQL user defined function that return literal AS subquery.
@@ -110,18 +108,6 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
     return std::make_pair((*result_column)[0], result_type);
 }
 
-std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
-{
-    return evaluateConstantExpressionImpl(node, context, true);
-}
-
-EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
-{
-    auto res = evaluateConstantExpressionImpl(node, context, false);
-    if (!res)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "evaluateConstantExpression expected to return a result or throw an exception");
-    return *res;
-}
 
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {

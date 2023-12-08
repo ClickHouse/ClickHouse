@@ -19,11 +19,9 @@ public:
 
     size_t getMaxThreads() const { return max_threads; }
 
-    bool canUpdateInputStream() const override { return true; }
+    void updateOutputSortDescription();
 
 private:
-    void updateOutputStream() override;
-
     Block header;
     size_t max_threads;
 };

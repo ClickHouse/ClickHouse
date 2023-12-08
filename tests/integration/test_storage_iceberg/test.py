@@ -313,3 +313,57 @@ def test_types(started_cluster, format_version):
             ["e", "Nullable(Bool)"],
         ]
     )
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+def test_delete_files(started_cluster, format_version):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = "test_delete_files_" + format_version
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 0, 100),
+        TABLE_NAME,
+        mode="overwrite",
+        format_version=format_version,
+    )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    create_iceberg_table(instance, TABLE_NAME)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 0")
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
+    assert instance.contains_in_log("Processing delete file for path")
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 100, 200),
+        TABLE_NAME,
+        mode="upsert",
+        format_version=format_version,
+    )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 150")
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 50

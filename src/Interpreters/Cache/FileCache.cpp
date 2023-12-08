@@ -55,7 +55,7 @@ namespace ErrorCodes
 
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
-    , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
+    , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , boundary_alignment(settings.boundary_alignment)
     , background_download_threads(settings.background_download_threads)
     , metadata_download_threads(settings.load_metadata_threads)
@@ -519,7 +519,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
         result_state = state;
     }
 
-    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, settings, this, locked_key.getKeyMetadata());
+    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, settings, background_download_threads > 0, this, locked_key.getKeyMetadata());
     auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
 
     auto [file_segment_metadata_it, inserted] = locked_key.getKeyMetadata()->emplace(offset, file_segment_metadata);
@@ -1016,6 +1016,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                     auto file_segment = std::make_shared<FileSegment>(key, offset, size,
                                                                       FileSegment::State::DOWNLOADED,
                                                                       CreateFileSegmentSettings(segment_kind),
+                                                                      false,
                                                                       this,
                                                                       key_metadata,
                                                                       cache_it);
@@ -1059,9 +1060,6 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
 FileCache::~FileCache()
 {
     deactivateBackgroundOperations();
-#ifdef ABORT_ON_LOGICAL_ERROR
-    assertCacheCorrectness();
-#endif
 }
 
 void FileCache::deactivateBackgroundOperations()
@@ -1146,15 +1144,14 @@ size_t FileCache::getFileSegmentsNum() const
 
 void FileCache::assertCacheCorrectness()
 {
-    metadata.iterate([&](LockedKey & locked_key)
+    auto lock = lockCache();
+    main_priority->iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
     {
-        for (const auto & [_, file_segment_metadata] : locked_key)
-        {
-            const auto & file_segment = *file_segment_metadata->file_segment;
-            UNUSED(file_segment);
-            chassert(file_segment.assertCorrectness());
-        }
-    });
+        const auto & file_segment = *segment_metadata->file_segment;
+        UNUSED(file_segment);
+        chassert(file_segment.assertCorrectness());
+        return PriorityIterationResult::CONTINUE;
+    }, lock);
 }
 
 FileCache::QueryContextHolder::QueryContextHolder(

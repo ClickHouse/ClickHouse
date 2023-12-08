@@ -69,10 +69,10 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 -   `clickhouse-client` — Создает символические ссылки для `clickhouse-client` и других клиентских инструментов и устанавливает конфигурационные файлы `clickhouse-client`.
 -   `clickhouse-common-static-dbg` — Устанавливает исполняемые файлы ClickHouse собранные с отладочной информацией.
 
-:::note Внимание
-Если вам нужно установить ClickHouse определенной версии, вы должны установить все пакеты одной версии:
-`sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
-:::
+    :::note "Внимание"
+    Если вам нужно установить ClickHouse определенной версии, вы должны установить все пакеты одной версии:
+    `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+    :::
 ### Из RPM пакетов {#from-rpm-packages}
 
 Команда ClickHouse в Яндексе рекомендует использовать официальные предкомпилированные `rpm` пакеты для CentOS, RedHat и всех остальных дистрибутивов Linux, основанных на rpm.

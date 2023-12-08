@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Tuple
 import subprocess
 import logging
-import os
 import sys
 import time
 
@@ -12,7 +11,7 @@ from ci_config import CI_CONFIG, BuildConfig
 from ccache_utils import CargoCache
 from docker_pull_helper import get_image_with_version
 from env_helper import (
-    GITHUB_JOB,
+    GITHUB_JOB_API_URL,
     IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
@@ -34,7 +33,6 @@ from clickhouse_helper import (
     CiLogsCredentials,
     prepare_tests_results_for_clickhouse,
     get_instance_type,
-    get_instance_id,
 )
 from stopwatch import Stopwatch
 
@@ -54,7 +52,7 @@ def _can_export_binaries(build_config: BuildConfig) -> bool:
 
 def get_packager_cmd(
     build_config: BuildConfig,
-    packager_path: str,
+    packager_path: Path,
     output_path: Path,
     cargo_cache_dir: Path,
     build_version: str,
@@ -105,12 +103,12 @@ def build_clickhouse(
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
         if build_output_path.exists():
-            build_results = os.listdir(build_output_path)
+            results_exists = any(build_output_path.iterdir())
         else:
-            build_results = []
+            results_exists = False
 
         if retcode == 0:
-            if len(build_results) > 0:
+            if results_exists:
                 success = True
                 logging.info("Built successfully")
             else:
@@ -129,18 +127,16 @@ def check_for_success_run(
     version: ClickHouseVersion,
 ) -> None:
     # TODO: Remove after S3 artifacts
-    # the final empty argument is necessary for distinguish build and build_suffix
-    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
-    logging.info("Checking for artifacts in %s", logged_prefix)
+    logging.info("Checking for artifacts %s in bucket %s", s3_prefix, S3_BUILDS_BUCKET)
     try:
         # Performance artifacts are now part of regular build, so we're safe
         build_results = s3_helper.list_prefix(s3_prefix)
     except Exception as ex:
-        logging.info("Got exception while listing %s: %s\nRerun", logged_prefix, ex)
+        logging.info("Got exception while listing %s: %s\nRerun", s3_prefix, ex)
         return
 
     if build_results is None or len(build_results) == 0:
-        logging.info("Nothing found in %s, rerun", logged_prefix)
+        logging.info("Nothing found in %s, rerun", s3_prefix)
         return
 
     logging.info("Some build results found:\n%s", build_results)
@@ -164,7 +160,7 @@ def check_for_success_run(
         version.describe,
         SUCCESS if success else FAILURE,
         0,
-        GITHUB_JOB,
+        GITHUB_JOB_API_URL(),
     )
     build_result.write_json(Path(TEMP_PATH))
     # Fail build job if not successeded
@@ -223,11 +219,12 @@ def main():
     build_config = CI_CONFIG.build_config[build_name]
 
     temp_path = Path(TEMP_PATH)
-    os.makedirs(temp_path, exist_ok=True)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = Path(REPO_COPY)
 
     pr_info = PRInfo()
 
-    logging.info("Repo copy path %s", REPO_COPY)
+    logging.info("Repo copy path %s", repo_path)
 
     s3_helper = S3Helper()
 
@@ -242,7 +239,9 @@ def main():
 
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
-    check_for_success_run(s3_helper, s3_path_prefix, build_name, version)
+    # The s3_path_prefix has additional "/" in the end to prevent finding
+    # e.g. `binary_darwin_aarch64/clickhouse` for `binary_darwin`
+    check_for_success_run(s3_helper, f"{s3_path_prefix}/", build_name, version)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
@@ -263,7 +262,7 @@ def main():
     logging.info("Build short name %s", build_name)
 
     build_output_path = temp_path / build_name
-    os.makedirs(build_output_path, exist_ok=True)
+    build_output_path.mkdir(parents=True, exist_ok=True)
     cargo_cache = CargoCache(
         temp_path / "cargo_cache" / "registry", temp_path, s3_helper
     )
@@ -271,7 +270,7 @@ def main():
 
     packager_cmd = get_packager_cmd(
         build_config,
-        os.path.join(REPO_COPY, "docker/packager"),
+        repo_path / "docker" / "packager",
         build_output_path,
         cargo_cache.directory,
         version.string,
@@ -282,7 +281,7 @@ def main():
     logging.info("Going to run packager with %s", packager_cmd)
 
     logs_path = temp_path / "build_log"
-    os.makedirs(logs_path, exist_ok=True)
+    logs_path.mkdir(parents=True, exist_ok=True)
 
     start = time.time()
     log_path, build_status = build_clickhouse(
@@ -316,7 +315,7 @@ def main():
             "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
             performance_urls[0],
         )
-        os.remove(performance_path)
+        performance_path.unlink()
 
     build_urls = (
         s3_helper.upload_build_directory_to_s3(
@@ -348,7 +347,7 @@ def main():
         version.describe,
         build_status,
         elapsed,
-        GITHUB_JOB,
+        GITHUB_JOB_API_URL(),
     )
     result_json_path = build_result.write_json(temp_path)
     logging.info(
@@ -365,7 +364,6 @@ def main():
     ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
     if ci_logs_credentials.host:
         instance_type = get_instance_type()
-        instance_id = get_instance_id()
         query = f"""INSERT INTO build_time_trace
 (
     pull_request_number,
@@ -373,7 +371,6 @@ def main():
     check_start_time,
     check_name,
     instance_type,
-    instance_id,
     file,
     library,
     time,
@@ -389,7 +386,7 @@ def main():
     avgMs,
     args_name
 )
-SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', *
+SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', *
 FROM input('
     file String,
     library String,
@@ -413,15 +410,17 @@ FORMAT JSONCompactEachRow"""
         }
         url = f"https://{ci_logs_credentials.host}/"
         profiles_dir = temp_path / "profiles_source"
-        os.makedirs(profiles_dir, exist_ok=True)
-        logging.info("Processing profile JSON files from {GIT_REPO_ROOT}/build_docker")
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(
+            "Processing profile JSON files from %s", repo_path / "build_docker"
+        )
         git_runner(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"build_docker {profiles_dir.absolute()}"
         )
         profile_data_file = temp_path / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
-            for profile_sourse in os.listdir(profiles_dir):
+            for profile_sourse in profiles_dir.iterdir():
                 with open(profiles_dir / profile_sourse, "rb") as ps_fd:
                     profile_fd.write(ps_fd.read())
 

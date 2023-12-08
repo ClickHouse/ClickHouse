@@ -431,7 +431,13 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 {
     /// We backup the target table's data only if it's inner.
     if (hasInnerTable())
-        getTargetTable()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    {
+        if (auto table = tryGetTargetTable())
+            table->backupData(backup_entries_collector, data_path_in_backup, partitions);
+        else
+            LOG_WARNING(&Poco::Logger::get("StorageMaterializedView"),
+                        "Inner table does not exist, will not backup any data");
+    }
 }
 
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

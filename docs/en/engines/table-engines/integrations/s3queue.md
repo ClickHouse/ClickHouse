@@ -63,7 +63,7 @@ SETTINGS
     mode = 'ordered';
 ```
 
-## Settings {#settings}
+## Settings {#s3queue-settings}
 
 ### mode {#mode}
 
@@ -93,7 +93,7 @@ Possible values:
 
 Default value: `/`.
 
-### s3queue_loading_retries {#loading_retries}
+### s3queue_loading_retries {#s3queue_loading_retries}
 
 Retry file loading up to specified number of times. By default, there are no retries.
 Possible values:
@@ -102,7 +102,7 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
+### s3queue_polling_min_timeout_ms {#s3queue_polling_min_timeout_ms}
 
 Minimal timeout before next polling (in milliseconds).
 
@@ -112,7 +112,7 @@ Possible values:
 
 Default value: `1000`.
 
-### s3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
+### s3queue_polling_max_timeout_ms {#s3queue_polling_max_timeout_ms}
 
 Maximum timeout before next polling (in milliseconds).
 
@@ -122,7 +122,7 @@ Possible values:
 
 Default value: `10000`.
 
-### s3queue_polling_backoff_ms {#polling_backoff_ms}
+### s3queue_polling_backoff_ms {#s3queue_polling_backoff_ms}
 
 Polling backoff (in milliseconds).
 
@@ -132,7 +132,7 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_tracked_files_limit {#tracked_files_limit}
+### s3queue_tracked_files_limit {#s3queue_tracked_files_limit}
 
 Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
@@ -143,7 +143,7 @@ Possible values:
 
 Default value: `1000`.
 
-### s3queue_tracked_file_ttl_sec {#tracked_file_ttl_sec}
+### s3queue_tracked_file_ttl_sec {#s3queue_tracked_file_ttl_sec}
 
 Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
 After the specified number of seconds, the file will be re-imported.
@@ -154,7 +154,7 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_polling_size {#polling_size}
+### s3queue_polling_size {#s3queue_polling_size}
 
 Maximum files to fetch from S3 with SELECT or in background task.
 Engine takes files for processing from S3 in batches.

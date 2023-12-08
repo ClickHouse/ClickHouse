@@ -92,7 +92,7 @@ void IBridge::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("max-server-connections", "", "max connections to server, default 1024").argument("max-server-connections").binding("max-server-connections"));
 
     options.addOption(
-        Poco::Util::Option("keep-alive-timeout", "", "keepalive timeout, default 30").argument("keep-alive-timeout").binding("keep-alive-timeout"));
+        Poco::Util::Option("keep-alive-timeout", "", "keepalive timeout, default 10").argument("keep-alive-timeout").binding("keep-alive-timeout"));
 
     options.addOption(
         Poco::Util::Option("http-max-field-value-size", "", "max http field value size, default 1048576").argument("http-max-field-value-size").binding("http-max-field-value-size"));
@@ -140,7 +140,7 @@ void IBridge::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
 
         /// Disable buffering for stdout.
-        setbuf(stdout, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c)
+        setbuf(stdout, nullptr);
     }
     const auto stderr_path = config().getString("logger.stderr", "");
     if (!stderr_path.empty())
@@ -149,7 +149,7 @@ void IBridge::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr.
-        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c)
+        setbuf(stderr, nullptr);
     }
 
     buildLoggers(config(), logger(), self.commandName());
@@ -164,7 +164,7 @@ void IBridge::initialize(Application & self)
 
     http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);
-    keep_alive_timeout = config().getUInt64("keep-alive-timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
+    keep_alive_timeout = config().getUInt64("keep-alive-timeout", 10);
     http_max_field_value_size = config().getUInt64("http-max-field-value-size", 128 * 1024);
 
     struct rlimit limit;

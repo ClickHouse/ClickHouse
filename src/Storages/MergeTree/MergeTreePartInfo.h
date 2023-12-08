@@ -163,8 +163,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "tmp-fetch",
         "covered-by-broken",
         "merge-not-byte-identical",
-        "mutate-not-byte-identical",
-        "broken-from-backup",
+        "mutate-not-byte-identical"
     });
 
     static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
@@ -176,8 +175,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "deleting",
         "clone",
         "merge-not-byte-identical",
-        "mutate-not-byte-identical",
-        "broken-from-backup",
+        "mutate-not-byte-identical"
     });
 
     /// NOTE: It may parse part info incorrectly.

@@ -57,7 +57,7 @@ private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     Poco::Logger * log;
     UInt32 shard_count;
-    const String cluster_name;
+    String cluster_name;
 
     void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
     void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
@@ -74,6 +74,7 @@ public:
         Block header_,
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
+        ASTPtr table_func_ptr_,
         ContextMutablePtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
@@ -97,6 +98,7 @@ private:
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     StorageID main_table;
+    ASTPtr table_func_ptr;
     ContextMutablePtr context;
     ThrottlerPtr throttler;
     Scalars scalars;

@@ -235,15 +235,6 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 
-----------------------------------------------------
-SELECT 'AST Fuzzer crash, issue #54541';
-
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab (row_id UInt32, str String, INDEX idx str TYPE inverted) ENGINE = MergeTree ORDER BY row_id;
-INSERT INTO tab VALUES (0, 'a');
-SELECT * FROM tab WHERE str == 'b' AND 1.0;
-
-
 -- Tests with parameter max_digestion_size_per_segment are flaky in CI, not clear why --> comment out for the time being:
 
 -- ----------------------------------------------------

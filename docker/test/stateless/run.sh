@@ -22,10 +22,10 @@ dpkg -i package_folder/clickhouse-client_*.deb
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # shellcheck disable=SC1091
-source /attach_gdb.lib
+source /usr/share/clickhouse-test/ci/attach_gdb.lib || true  # FIXME: to not break old builds, clean on 2023-09-01
 
 # shellcheck disable=SC1091
-source /utils.lib
+source /usr/share/clickhouse-test/ci/utils.lib || true # FIXME: to not break old builds, clean on 2023-09-01
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
@@ -215,12 +215,6 @@ rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
 rg -A50 -Fa "============" /var/log/clickhouse-server/stderr.log ||:
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst &
 
-data_path_config="--path=/var/lib/clickhouse/"
-if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
-    # We need s3 storage configuration (but it's more likely that clickhouse-local will fail for some reason)
-    data_path_config="--config-file=/etc/clickhouse-server/config.xml"
-fi
-
 # Compress tables.
 #
 # NOTE:
@@ -230,7 +224,7 @@ fi
 #   for files >64MB, we want this files to be compressed explicitly
 for table in query_log zookeeper_log trace_log transactions_info_log
 do
-    clickhouse-local "$data_path_config" --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
         clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
@@ -240,7 +234,7 @@ done
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-local "$data_path_config" --only-system-tables -q "
+    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples

@@ -1,6 +1,6 @@
+#include <algorithm>
 #include <memory>
 #include <Core/NamesAndTypes.h>
-#include <Core/TypeId.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
@@ -81,14 +81,33 @@ bool extractFunctions(const ASTPtr & expression, const std::function<bool(const 
         }
         else if (function->name == "or")
         {
-            bool ret = true;
+            bool ret = false;
             ASTs or_args;
             for (const auto & child : function->arguments->children)
-                ret &= extractFunctions(child, is_constant, or_args);
-            /// We can keep condition only if it still OR condition (i.e. we
-            /// have dependent conditions for columns at both sides)
-            if (or_args.size() == 2)
+                ret |= extractFunctions(child, is_constant, or_args);
+
+            if (!or_args.empty())
+            {
+                /// In case of there are less number of arguments for which
+                /// is_constant() == true, we need to add always-true
+                /// implicitly to avoid breaking AND invariant.
+                ///
+                /// Consider the following:
+                ///
+                ///     ((value = 10) OR (_table = 'v2')) AND ((_table = 'v1') OR (value = 20))
+                ///
+                /// Without implicit always-true:
+                ///
+                ///     (_table = 'v2') AND (_table = 'v1')
+                ///
+                /// With:
+                ///
+                ///     (_table = 'v2' OR 1) AND (_table = 'v1' OR 1) -> (_table = 'v2') OR (_table = 'v1')
+                ///
+                if (or_args.size() != function->arguments->children.size())
+                    or_args.push_back(std::make_shared<ASTLiteral>(Field(1)));
                 result.push_back(makeASTForLogicalOr(std::move(or_args)));
+            }
             return ret;
         }
     }
@@ -165,8 +184,10 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     if (!select.where() && !select.prewhere())
         return unmodified;
 
-    // Provide input columns as constant columns to check if an expression is constant.
-    std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & node)
+    // Provide input columns as constant columns to check if an expression is
+    // constant and depends on the columns from provided block (the last is
+    // required to allow skipping some conditions for handling OR).
+    std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & expr)
     {
         auto actions = std::make_shared<ActionsDAG>(block.getColumnsWithTypeAndName());
         PreparedSetsPtr prepared_sets = std::make_shared<PreparedSets>();
@@ -178,13 +199,26 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
             context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true,
             { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
 
-        ActionsVisitor(visitor_data).visit(node);
+        ActionsVisitor(visitor_data).visit(expr);
         actions = visitor_data.getActions();
+        auto expr_column_name = expr->getColumnName();
+
+        const auto * expr_const_node = actions->tryFindInOutputs(expr_column_name);
+        if (!expr_const_node)
+            return false;
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node}, {}, context);
+        const auto & nodes = filter_actions->getNodes();
+        bool has_dependent_columns = std::any_of(nodes.begin(), nodes.end(), [&](const auto & node)
+        {
+            return block.has(node.result_name);
+        });
+        if (!has_dependent_columns)
+            return false;
+
         auto expression_actions = std::make_shared<ExpressionActions>(actions);
         auto block_with_constants = block;
         expression_actions->execute(block_with_constants);
-        auto column_name = node->getColumnName();
-        return block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column);
+        return block_with_constants.has(expr_column_name) && isColumnConst(*block_with_constants.getByName(expr_column_name).column);
     };
 
     /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
@@ -196,74 +230,6 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
 
     expression_ast = buildWhereExpression(std::move(functions));
     return unmodified;
-}
-
-static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & context)
-{
-    for (const auto & node : actions->getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::COLUMN)
-        {
-            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
-            if (!column_set)
-                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
-
-            if (column_set)
-            {
-                auto future_set = column_set->getData();
-                if (!future_set->get())
-                {
-                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
-                    {
-                        auto plan = set_from_subquery->build(context);
-
-                        if (!plan)
-                            continue;
-
-                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                        pipeline.complete(std::make_shared<EmptySink>(Block()));
-
-                        CompletedPipelineExecutor executor(pipeline);
-                        executor.execute();
-                    }
-                }
-            }
-        }
-    }
-}
-
-void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context)
-{
-    auto actions = std::make_shared<ExpressionActions>(dag);
-    makeSets(actions, context);
-    Block block_with_filter = block;
-    actions->execute(block_with_filter);
-
-    /// Filter the block.
-    String filter_column_name = dag->getOutputs().at(0)->result_name;
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
-
-    ConstantFilterDescription constant_filter(*filter_column);
-
-    if (constant_filter.always_true)
-    {
-        return;
-    }
-
-    if (constant_filter.always_false)
-    {
-        block = block.cloneEmpty();
-        return;
-    }
-
-    FilterDescription filter(*filter_column);
-
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnPtr & column = block.safeGetByPosition(i).column;
-        column = column->filter(*filter.data, -1);
-    }
 }
 
 void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
@@ -282,16 +248,40 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
 
-    makeSets(actions, context);
+    for (const auto & node : actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN)
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        auto plan = set_from_subquery->build(context);
+                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+                        pipeline.complete(std::make_shared<EmptySink>(Block()));
+
+                        CompletedPipelineExecutor executor(pipeline);
+                        executor.execute();
+                    }
+                }
+            }
+        }
+    }
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullIfNeeded();
-    if (filter_column->getDataType() != TypeIndex::UInt8)
-        return;
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
 
     ConstantFilterDescription constant_filter(*filter_column);
 

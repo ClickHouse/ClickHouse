@@ -377,21 +377,15 @@ bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node
         if (node.tryGetConstant(const_value, const_type))
         {
             /// Check constant like in KeyCondition
-            if (const_value.getType() == Field::Types::UInt64)
+            if (const_value.getType() == Field::Types::UInt64
+                || const_value.getType() == Field::Types::Int64
+                || const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
-            }
+                /// Zero in all types is represented in memory the same way as in UInt64.
+                out.function = const_value.get<UInt64>()
+                            ? RPNElement::ALWAYS_TRUE
+                            : RPNElement::ALWAYS_FALSE;
 
-            if (const_value.getType() == Field::Types::Int64)
-            {
-                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
-            }
-
-            if (const_value.getType() == Field::Types::Float64)
-            {
-                out.function = const_value.get<Float64>() != 0.00 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -708,14 +702,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexInverted::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleInverted>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator() const
 {
     /// should not be called: createIndexAggregatorForPart should be used
     assert(false);
     return nullptr;
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store) const
 {
     return std::make_shared<MergeTreeIndexAggregatorInverted>(store, index.column_names, index.name, params, token_extractor.get());
 }

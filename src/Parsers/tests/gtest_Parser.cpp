@@ -18,7 +18,6 @@
 #include <string_view>
 #include <regex>
 #include <gtest/gtest.h>
-#include <boost/algorithm/string/replace.hpp>
 
 namespace
 {
@@ -40,11 +39,7 @@ std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> pa
 
 std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
 {
-    // New line characters are removed because at the time of writing this the unit test results are parsed from the
-    // command line output, and multi-line string representations are breaking the parsing logic.
-    std::string input_text{test_case.input_text};
-    boost::replace_all(input_text, "\n", "\\n");
-    return ostr << "ParserTestCase input: " << input_text;
+    return ostr << "ParserTestCase input: " << test_case.input_text;
 }
 
 class ParserTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<IParser>, ParserTestCase>>
@@ -499,11 +494,11 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
             {
-                "from albums\ngroup {author_id} (\n  aggregate {first_published = min published}\n)\njoin a=author side:left (==author_id)\njoin p=purchases side:right (==author_id)\ngroup {a.id, p.purchase_id} (\n  aggregate {avg_sell = min first_published}\n)",
-                "WITH table_0 AS\n    (\n        SELECT\n            MIN(published) AS _expr_0,\n            author_id\n        FROM albums\n        GROUP BY author_id\n    )\nSELECT\n    a.id,\n    p.purchase_id,\n    MIN(table_0._expr_0) AS avg_sell\nFROM table_0\nLEFT JOIN author AS a ON table_0.author_id = a.author_id\nRIGHT JOIN purchases AS p ON table_0.author_id = p.author_id\nGROUP BY\n    a.id,\n    p.purchase_id",
+                "from albums\ngroup [author_id] (\n  aggregate [first_pushlied = min published]\n)\njoin a=author side:left [==author_id]\njoin p=purchases side:right [==author_id]\ngroup [a.id, p.purchase_id] (\n  aggregate [avg_sell = min first_pushlied]\n)",
+                "WITH table_1 AS\n    (\n        SELECT\n            MIN(published) AS _expr_0,\n            author_id\n        FROM albums\n        GROUP BY author_id\n    )\nSELECT\n    a.id,\n    p.purchase_id,\n    MIN(table_0._expr_0) AS avg_sell\nFROM table_1 AS table_0\nLEFT JOIN author AS a ON table_0.author_id = a.author_id\nRIGHT JOIN purchases AS p ON table_0.author_id = p.author_id\nGROUP BY\n    a.id,\n    p.purchase_id",
             },
             {
-                "from matches\nfilter start_date > @2023-05-30                 # Some comment here\nderive {\n  some_derived_value_1 = a + (b ?? 0),          # And there\n  some_derived_value_2 = c + some_derived_value\n}\nfilter some_derived_value_2 > 0\ngroup {country, city} (\n  aggregate {\n    average some_derived_value_2,\n    aggr = max some_derived_value_2\n  }\n)\nderive place = f\"{city} in {country}\"\nderive country_code = s\"LEFT(country, 2)\"\nsort {aggr, -country}\ntake 1..20",
-                "WITH\n    table_1 AS\n    (\n        SELECT\n            country,\n            city,\n            c + some_derived_value AS _expr_1\n        FROM matches\n        WHERE start_date > toDate('2023-05-30')\n    ),\n    table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(_expr_1) AS _expr_0,\n            MAX(_expr_1) AS aggr\n        FROM table_1\n        WHERE _expr_1 > 0\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
+                "from matches\nfilter start_date > @2023-05-30                 # Some comment here\nderive [\n  some_derived_value_1 = a + (b ?? 0),          # And there\n  some_derived_value_2 = c + some_derived_value\n]\nfilter some_derived_value_2 > 0\ngroup [country, city] (\n  aggregate [\n    average some_derived_value_2,\n    aggr = max some_derived_value_2,\n  ]\n)\nderive place = f\"{city} in {country}\"\nderive country_code = s\"LEFT(country, 2)\"\nsort [aggr, -country]\ntake 1..20",
+                "WITH\n    table_3 AS\n    (\n        SELECT\n            country,\n            city,\n            c + some_derived_value AS _expr_1\n        FROM matches\n        WHERE start_date > toDate('2023-05-30')\n    ),\n    table_1 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(_expr_1) AS _expr_0,\n            MAX(_expr_1) AS aggr\n        FROM table_3 AS table_2\n        WHERE _expr_1 > 0\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_1 AS table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));

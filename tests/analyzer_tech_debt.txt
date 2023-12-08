@@ -54,7 +54,6 @@
 01710_projection_additional_filters
 01721_join_implicit_cast_long
 01739_index_hint
-02880_indexHint__partition_id
 01747_join_view_filter_dictionary
 01748_partition_id_pruning
 01756_optimize_skip_unused_shards_rewrite_in
@@ -83,7 +82,6 @@
 02345_implicit_transaction
 02352_grouby_shadows_arg
 02354_annoy
-02366_union_decimal_conversion
 02375_rocksdb_with_filters
 02382_join_and_filtering_set
 02402_merge_engine_with_view

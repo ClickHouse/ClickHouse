@@ -43,10 +43,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-#include <Storages/BlockNumberColumn.h>
+
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
@@ -329,8 +328,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 settings.min_count_to_compile_aggregate_expression,
                 settings.max_block_size,
                 settings.enable_software_prefetch_in_aggregation,
-                only_merge,
-                settings.optimize_group_by_constant_keys);
+                only_merge);
 
             return std::make_pair(params, only_merge);
         };
@@ -777,46 +775,12 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
-    const ActionsDAGPtr & filter_dag,
-    ContextPtr context)
-{
-    if (!filter_dag)
-        return {};
-
-    auto sample = data.getSampleBlockWithVirtualColumns();
-    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
-    for (const auto * input : filter_dag->getInputs())
-        if (sample.has(input->result_name))
-            allowed_inputs.insert(input);
-
-    if (allowed_inputs.empty())
-        return {};
-
-    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
-    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
-    if (atoms.empty())
-        return {};
-
-    auto dag = ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
-
-    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
-    VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
-    return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
-}
-
-
-std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
-    const MergeTreeData & data,
-    const MergeTreeData::DataPartsVector & parts,
     const ASTPtr & query,
     ContextPtr context)
 {
     std::unordered_set<String> part_values;
     ASTPtr expression_ast;
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
-
-    if (virtual_columns_block.rows() == 0)
-        return {};
 
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);
@@ -1232,10 +1196,6 @@ static void selectColumnNames(
             virt_column_names.push_back(name);
         }
         else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == BlockNumberColumn::name)
         {
             virt_column_names.push_back(name);
         }
