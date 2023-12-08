@@ -20,6 +20,7 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
+#include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -1163,6 +1164,8 @@ try
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    NamedCollectionUtils::loadIfNot();
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
@@ -1331,6 +1334,10 @@ try
             global_context->getSchedulePool().increaseThreadsCount(server_settings_.background_schedule_pool_size);
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
+
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, server_settings_.tables_loader_foreground_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, server_settings_.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, server_settings_.tables_loader_background_pool_size);
 
             getIOThreadPool().reloadConfiguration(
                 server_settings.max_io_thread_pool_size,
@@ -1573,6 +1580,10 @@ try
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+
     /// Set path for filesystem caches
     fs::path filesystem_caches_path(config().getString("filesystem_caches_path", ""));
     if (!filesystem_caches_path.empty())
@@ -1668,17 +1679,18 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
+    LoadTaskPtrs load_metadata_tasks;
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
-        loadMetadataSystem(global_context);
-        maybeConvertSystemDatabase(global_context);
+        auto system_startup_tasks = loadMetadataSystem(global_context);
+        maybeConvertSystemDatabase(global_context, system_startup_tasks);
         /// This has to be done before the initialization of system logs,
         /// otherwise there is a race condition between the system database initialization
         /// and creation of new tables in the database.
-        startupSystemTables();
+        waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1694,9 +1706,10 @@ try
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
-        /// Then, load remaining databases
-        loadMetadata(global_context, default_database);
-        convertDatabasesEnginesIfNeed(global_context);
+        /// Then, load remaining databases (some of them maybe be loaded asynchronously)
+        load_metadata_tasks = loadMetadata(global_context, default_database, server_settings.async_load_databases);
+        /// If we need to convert database engines, disable async tables loading
+        convertDatabasesEnginesIfNeed(load_metadata_tasks, global_context);
         database_catalog.startupBackgroundTasks();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -1708,6 +1721,7 @@ try
         tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
+
     LOG_DEBUG(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created
@@ -1823,7 +1837,7 @@ try
         {
             global_context->loadOrReloadDictionaries(config());
 
-            if (config().getBool("wait_dictionaries_load_at_startup", false))
+            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
                 global_context->waitForDictionariesLoad();
         }
         catch (...)
@@ -1863,8 +1877,13 @@ try
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker",
-                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
+                                         load_metadata_tasks);
         }
+
+        /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
+        load_metadata_tasks.clear();
+        load_metadata_tasks.shrink_to_fit();
 
         {
             std::lock_guard lock(servers_lock);

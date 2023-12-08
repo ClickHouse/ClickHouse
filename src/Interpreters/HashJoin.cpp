@@ -254,7 +254,8 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     else if (table_join->getClauses().empty())
     {
         data->type = Type::EMPTY;
-        sample_block_with_columns_to_add = right_sample_block;
+        /// We might need to insert default values into the right columns, materialize them
+        sample_block_with_columns_to_add = materializeBlock(right_sample_block);
     }
     else if (table_join->oneDisjunct())
     {
