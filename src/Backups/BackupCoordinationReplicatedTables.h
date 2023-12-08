@@ -40,7 +40,7 @@ public:
 
     struct PartNamesForTableReplica
     {
-        String table_shared_id;
+        String table_zk_path;
         String table_name_for_logs;
         String replica_name;
         std::vector<PartNameAndChecksum> part_names_and_checksums;
@@ -55,13 +55,13 @@ public:
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addPartNames() but without duplications and without
     /// parts covered by another parts.
-    Strings getPartNames(const String & table_shared_id, const String & replica_name) const;
+    Strings getPartNames(const String & table_zk_path, const String & replica_name) const;
 
     using MutationInfo = IBackupCoordination::MutationInfo;
 
     struct MutationsForTableReplica
     {
-        String table_shared_id;
+        String table_zk_path;
         String table_name_for_logs;
         String replica_name;
         std::vector<MutationInfo> mutations;
@@ -71,11 +71,11 @@ public:
     void addMutations(MutationsForTableReplica && mutations_for_table_replica);
 
     /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames().
-    std::vector<MutationInfo> getMutations(const String & table_shared_id, const String & replica_name) const;
+    std::vector<MutationInfo> getMutations(const String & table_zk_path, const String & replica_name) const;
 
     struct DataPathForTableReplica
     {
-        String table_shared_id;
+        String table_zk_path;
         String data_path;
     };
 
@@ -85,7 +85,7 @@ public:
     void addDataPath(DataPathForTableReplica && data_path_for_table_replica);
 
     /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
-    Strings getDataPaths(const String & table_shared_id) const;
+    Strings getDataPaths(const String & table_zk_path) const;
 
 private:
     void prepare() const;
@@ -110,7 +110,7 @@ private:
         std::unordered_set<String> data_paths;
     };
 
-    std::map<String /* table_shared_id */, TableInfo> table_infos; /// Should be ordered because we need this map to be in the same order on every replica.
+    std::map<String /* table_zk_path */, TableInfo> table_infos; /// Should be ordered because we need this map to be in the same order on every replica.
     mutable bool prepared = false;
 };
 
