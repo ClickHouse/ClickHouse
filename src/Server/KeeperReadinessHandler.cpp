@@ -1,18 +1,11 @@
 #include <memory>
 
-#include <Server/KeeperReadinessHandler.h>
-#include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
-#include <Interpreters/Context.h>
-#include <Server/HTTP/HTMLForm.h>
+#include <Coordination/KeeperDispatcher.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
-#include <Server/IServer.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/typeid_cast.h>
-#include <Coordination/KeeperDispatcher.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -69,18 +62,16 @@ void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTP
     }
 }
 
-
 HTTPRequestHandlerFactoryPtr createKeeperHTTPControlMainHandlerFactory(
-    IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     const std::string & name)
 {
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
     using Factory = HandlingRuleHTTPHandlerFactory<KeeperReadinessHandler>;
-    Factory::Creator creator = [&server, keeper_dispatcher]() -> std::unique_ptr<KeeperReadinessHandler>
+    Factory::Creator creator = [keeper_dispatcher]() -> std::unique_ptr<KeeperReadinessHandler>
     {
-        return std::make_unique<KeeperReadinessHandler>(server, keeper_dispatcher);
+        return std::make_unique<KeeperReadinessHandler>(keeper_dispatcher);
     };
 
     auto readiness_handler = std::make_shared<Factory>(std::move(creator));

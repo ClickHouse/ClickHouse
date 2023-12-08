@@ -92,6 +92,7 @@
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
@@ -1575,7 +1576,6 @@ try
                     std::make_unique<HTTPServer>(
                         std::move(http_context),
                         createKeeperHTTPControlMainHandlerFactory(
-                            *this,
                             config_getter(),
                             global_context->getKeeperDispatcher(),
                             "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params));
