@@ -216,7 +216,9 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             /// All rows must contain the same number of dimensions, so limit 1 is ok. If number of dimensions in all rows is not the same -
             /// such arrays are not able to be used as ClickHouse Array at all.
             pqxx::result result{tx.exec(fmt::format("SELECT array_ndims({}) FROM {} LIMIT 1", name_and_type.name, postgres_table))};
-            auto dimensions = result[0][0].as<int>();
+            // array_ndims() may return null for empty array, but we expect 0:
+            // https://github.com/postgres/postgres/blob/d16a0c1e2e3874cd5adfa9ee968008b6c4b1ae01/src/backend/utils/adt/arrayfuncs.c#L1658
+            auto dimensions = result[0][0].as<std::optional<int>>().value_or(0);
 
             /// It is always 1d array if it is in recheck.
             DataTypePtr type = assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType();
