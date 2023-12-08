@@ -941,6 +941,7 @@ def test_symbols_in_publication_name(started_cluster):
     )
     check_tables_are_synchronized(
         instance, table, postgres_database=pg_manager3.get_default_database()
+    )
 
 
 if __name__ == "__main__":
