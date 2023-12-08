@@ -108,6 +108,8 @@ namespace JSONUtils
         bool write_statistics,
         WriteBuffer & out);
 
+    void writeException(const String & exception_message, WriteBuffer & out, const FormatSettings & settings, size_t indent = 0);
+
     void skipColon(ReadBuffer & in);
     void skipComma(ReadBuffer & in);
 
