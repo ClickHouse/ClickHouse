@@ -1696,6 +1696,10 @@ class ClickHouseCluster:
 
         if with_foundationdb and (with_zookeeper or with_zookeeper_secure):
             raise Exception("Can't set both fdbkeeper and zookeeper at the same time")
+        
+        if keeper_impl=="fdbkeeper" and (with_zookeeper or with_zookeeper_secure):
+            with_zookeeper = False
+            with_foundationdb = True
 
         instance = ClickHouseInstance(
             cluster=self,
@@ -1708,7 +1712,7 @@ class ClickHouseCluster:
             custom_user_configs=user_configs or [],
             custom_dictionaries=dictionaries or [],
             macros=macros or {},
-            with_zookeeper=with_zookeeper if (keeper_impl=="zookeeper") else False,
+            with_zookeeper=with_zookeeper,
             zookeeper_config_path=self.zookeeper_config_path,
             fdb_config_path=self.fdb_config_path,
             with_mysql_client=with_mysql_client,
@@ -1736,7 +1740,7 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
             allow_analyzer=allow_analyzer,
-            with_foundationdb=with_zookeeper if (keeper_impl=="fdbkeeper") else with_foundationdb,
+            with_foundationdb=with_foundationdb,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -1978,7 +1982,7 @@ class ClickHouseCluster:
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if (with_zookeeper if (keeper_impl=="fdbkeeper") else with_foundationdb) and not self.with_foundationdb:
+        if with_foundationdb and not self.with_foundationdb:
             cmds.append(
                 self.setup_foundationdb_cmd(
                     instance, env_variables, docker_compose_yml_dir
