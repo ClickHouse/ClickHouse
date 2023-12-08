@@ -144,7 +144,9 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
+    /// NullsAction is not part of the type definition, instead it will have transformed the function into a different one
+    auto action = NullsAction::EMPTY;
+    function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
 
     DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 
@@ -167,19 +169,4 @@ void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
     factory.registerDataTypeCustom("SimpleAggregateFunction", create);
 }
 
-bool DataTypeCustomSimpleAggregateFunction::identical(const IDataTypeCustomName & rhs_) const
-{
-    if (const auto * rhs = typeid_cast<decltype(this)>(&rhs_))
-    {
-        if (parameters != rhs->parameters)
-            return false;
-        if (argument_types.size() != rhs->argument_types.size())
-            return false;
-        for (size_t i = 0; i < argument_types.size(); ++i)
-            if (!argument_types[i]->identical(*rhs->argument_types[i]))
-                return false;
-        return function->getName() == rhs->function->getName();
-    }
-    return false;
-}
 }

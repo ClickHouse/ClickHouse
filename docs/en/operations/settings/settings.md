@@ -2647,7 +2647,7 @@ Default value: 0.
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -2658,7 +2658,7 @@ Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -4800,6 +4800,14 @@ a	Tuple(
     l Nullable(String)
 )
 ```
+
+## allow_experimental_statistic {#allow_experimental_statistic}
+
+Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
+
+## allow_statistic_optimize {#allow_statistic_optimize}
+
+Allows using statistic to optimize the order of [prewhere conditions](../../sql-reference/statements/select/prewhere.md).
 
 ## analyze_index_with_space_filling_curves
 

@@ -349,8 +349,8 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 
 | 函数 (操作符) / 索引                                         | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 | ------------------------------------------------------------ | ----------- | ------ | ---------- | ---------- | ------------ |
-| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#equals) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
@@ -358,10 +358,10 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany) | ✗           | ✗      | ✔          | ✗          | ✗            |
 | [in](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notIn](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [less (\<)](../../../sql-reference/functions/comparison-functions.md#less) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#greater) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#lessorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [empty](../../../sql-reference/functions/array-functions.md#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | hasToken                                                     | ✗           | ✗      | ✗          | ✔          | ✗            |
@@ -623,7 +623,6 @@ MergeTree 系列表引擎可以将数据存储在多个块设备上。这对某�
 - `disk` — 卷中的磁盘。
 - `max_data_part_size_bytes` — 卷中的磁盘可以存储的数据片段的最大大小。
 - `move_factor` — 当可用空间少于这个因子时，数据将自动的向下一个卷（如果有的话）移动 (默认值为 0.1)。
-- `prefer_not_to_merge` - 禁止在这个卷中进行数据合并。该选项启用时，对该卷的数据不能进行合并。这个选项主要用于慢速磁盘。
 
 配置示例：
 
@@ -660,7 +659,6 @@ MergeTree 系列表引擎可以将数据存储在多个块设备上。这对某�
                 </main>
                 <external>
                     <disk>external</disk>
-                    <prefer_not_to_merge>true</prefer_not_to_merge>
                 </external>
             </volumes>
         </small_jbod_with_external_no_merges>

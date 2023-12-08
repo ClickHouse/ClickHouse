@@ -30,7 +30,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="23.10.5.20"
+ARG VERSION="23.11.1.2711"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
@@ -83,7 +83,7 @@ RUN if ! clickhouse local -q "SELECT ''" > /dev/null 2>&1; then \
         && GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring \
             --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
             --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754 \
-        && rm -r "$GNUPGHOME" \
+        && rm -rf "$GNUPGHOME" \
         && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
         && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \
         && echo "installing from repository: ${REPOSITORY}" \

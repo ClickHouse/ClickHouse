@@ -537,6 +537,11 @@ jobs:
       run_command: |
         cd "$REPO_COPY/tests/ci"
 
+        mkdir -p "${REPORTS_PATH}/integration"
+        mkdir -p "${REPORTS_PATH}/stateless"
+        cp -r ${REPORTS_PATH}/changed_images* ${REPORTS_PATH}/integration
+        cp -r ${REPORTS_PATH}/changed_images* ${REPORTS_PATH}/stateless
+
         TEMP_PATH="${TEMP_PATH}/integration" \
           REPORTS_PATH="${REPORTS_PATH}/integration" \
           python3 integration_test_check.py "Integration $CHECK_NAME" \
