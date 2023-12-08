@@ -434,7 +434,7 @@ public:
     bool hasBrokenProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
-    bool loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded = false);
+    void loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded = false);
 
     void setBrokenReason(const String & message, int code) const;
 
