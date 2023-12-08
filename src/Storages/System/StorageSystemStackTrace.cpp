@@ -190,7 +190,7 @@ ThreadIdToName getFilteredThreadNames(ASTPtr query, ContextPtr context, const Pa
         tid_to_name[tid] = thread_name;
         all_thread_names->insert(thread_name);
     }
-    LOG_TEST(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
+    LOG_TRACE(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
 
     Block block { ColumnWithTypeAndName(std::move(all_thread_names), std::make_shared<DataTypeString>(), "thread_name") };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -250,7 +250,7 @@ protected:
         {
             Stopwatch watch;
             thread_ids = getFilteredThreadIds();
-            LOG_TEST(log, "Read {} threads, took {} ms", thread_ids->size(), watch.elapsedMilliseconds());
+            LOG_TRACE(log, "Read {} threads, took {} ms", thread_ids->size(), watch.elapsedMilliseconds());
         }
         if (thread_ids->empty())
             return Chunk();
@@ -332,7 +332,7 @@ protected:
                 ++sequence_num;
             }
         }
-        LOG_TEST(log, "Send signal to {} threads (total), took {} ms", signals_sent, signals_sent_ms);
+        LOG_TRACE(log, "Send signal to {} threads (total), took {} ms", signals_sent, signals_sent_ms);
 
         UInt64 num_rows = res_columns.at(0)->size();
         Chunk chunk(std::move(res_columns), num_rows);
