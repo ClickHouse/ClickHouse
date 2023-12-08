@@ -2576,6 +2576,12 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
     }
 
+    /// ignore all leading plus
+    while (pos->type == TokenType::Plus)
+    {
+        ++pos;
+    }
+
     /// Try to find any unary operators
     auto cur_op = unary_operators_table.begin();
     for (; cur_op != unary_operators_table.end(); ++cur_op)
