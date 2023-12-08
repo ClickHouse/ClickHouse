@@ -1277,7 +1277,7 @@ try
             global_context->setHTTPHeaderFilter(*config);
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
-            global_context->setClientHTTPHeaderForbiddenHeaders(server_settings_.get_client_http_header_forbidden_headers);
+            global_context->setClientHTTPHeaderForbiddenHeaders(server_settings_.get_client_http_header_forbidden_headers.value);
             global_context->setAllowGetHTTPHeaderFunction(server_settings_.allow_get_client_http_header);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
 

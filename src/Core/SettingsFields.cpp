@@ -5,6 +5,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -81,6 +82,32 @@ namespace
         return f.safeGet<const Map &>();
     }
 
+    Array stringToArray(const String & str)
+    {
+        if (str.empty())
+            return {};
+
+        auto type_string = std::make_shared<DataTypeString>();
+        DataTypeArray type_array(type_string);
+        auto serialization = type_array.getSerialization(ISerialization::Kind::DEFAULT);
+        auto column = type_array.createColumn();
+
+        ReadBufferFromString buf(str);
+        serialization->deserializeTextEscaped(*column, buf, {});
+        return (*column)[0].safeGet<Array>();
+    }
+
+    [[maybe_unused]] Array fieldToArray(const Field & f)
+    {
+            if (f.getType() == Field::Types::String)
+            {
+                /// Allow to parse Map from string field. For the convenience.
+                const auto & str = f.get<const String &>();
+                return stringToArray(str);
+            }
+
+            return f.safeGet<const Array&>();
+    }
 }
 
 template <typename T>
@@ -376,6 +403,44 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
     Map map;
     DB::readBinary(map, in);
     *this = map;
+}
+
+SettingFieldArray::SettingFieldArray(const Field & f) : value(fieldToArray(f)) {}
+
+String SettingFieldArray::toString() const
+{
+    auto type_string = std::make_shared<DataTypeString>();
+    DataTypeArray type_array(type_string);
+    auto serialization = type_array.getSerialization(ISerialization::Kind::DEFAULT);
+    auto column = type_array.createColumn();
+    column->insert(value);
+
+    WriteBufferFromOwnString out;
+    serialization->serializeTextEscaped(*column, 0, out, {});
+    return out.str();
+}
+
+SettingFieldArray & SettingFieldArray::operator =(const Field & f)
+{
+    *this = fieldToArray(f);
+    return *this;
+}
+
+void SettingFieldArray::parseFromString(const String & str)
+{
+    *this = stringToArray(str);
+}
+
+void SettingFieldArray::writeBinary(WriteBuffer & out) const
+{
+    DB::writeBinary(value, out);
+}
+
+void SettingFieldArray::readBinary(ReadBuffer & in)
+{
+    Array array;
+    DB::readBinary(array, in);
+    *this = array;
 }
 
 #else

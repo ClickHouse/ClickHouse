@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/Field.h"
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
@@ -1073,7 +1074,7 @@ public:
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
     size_t getMaxTableSizeToDrop() const;
-    void setClientHTTPHeaderForbiddenHeaders(const String & forbidden_headers);
+    void setClientHTTPHeaderForbiddenHeaders(const FieldVector & forbidden_headers);
     /// Return the forbiddent headers that users cant get via getClientHTTPHeader function
     const std::unordered_set<String> & getClientHTTPHeaderForbiddenHeaders() const;
     void setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function);

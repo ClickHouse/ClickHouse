@@ -3944,10 +3944,16 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 }
 
 
-void Context::setClientHTTPHeaderForbiddenHeaders(const String & forbidden_headers)
+void Context::setClientHTTPHeaderForbiddenHeaders(const FieldVector & forbidden_headers)
 {
     std::unordered_set<String> forbidden_header_list;
-    boost::split(forbidden_header_list, forbidden_headers, [](char c) { return c == ','; });
+    forbidden_header_list.insert("X-ClickHouse-Key");
+    for(const auto & field : forbidden_headers)
+    {
+        String header;
+        field.tryGet<String>(header);
+        forbidden_header_list.insert(header);
+    }
     shared->get_client_http_header_forbidden_headers = forbidden_header_list;
 }
 

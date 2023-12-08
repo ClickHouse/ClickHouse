@@ -1,8 +1,9 @@
 value
 value1	value2
 value1	value1	value2
-NOT-FOUND-KEY is not in HTTP request headers
 FORBIDDEN-KEY1 is in get_client_http_header_forbidden_headers
+FORBIDDEN-KEY2 is in get_client_http_header_forbidden_headers
+FORBIDDEN-KEY,CONTAINS_COMMA is in get_client_http_header_forbidden_headers
 1	row1_value1	row1_value2	row1_value3	row1_value4	row1_value5	row1_value6	row1_value7
 2	row2_value1	row2_value2	row2_value3	row2_value4	row2_value5	row2_value6	row2_value7
 3							

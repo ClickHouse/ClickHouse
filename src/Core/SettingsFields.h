@@ -276,8 +276,30 @@ public:
     NORETURN void readBinary(ReadBuffer & in);
 };
 
-#undef NORETURN
+struct SettingFieldArray
+{
+public:
+    Array value;
+    bool changed = false;
 
+    explicit SettingFieldArray(const Array & array = {}) : value(array) {}
+    explicit SettingFieldArray(Array && array) : value(std::move(array)) {}
+    explicit SettingFieldArray(const Field & f);
+
+    SettingFieldArray & operator =(const Array & array) { value = array; changed = true; return *this; }
+    SettingFieldArray & operator =(const Field & f);
+
+    operator const Array &() const { return value; } /// NOLINT
+    explicit operator Field() const { return value; }
+
+    NORETURN String toString() const;
+    NORETURN void parseFromString(const String & str);
+
+    NORETURN void writeBinary(WriteBuffer & out) const;
+    NORETURN void readBinary(ReadBuffer & in);
+};
+
+#undef NORETURN
 struct SettingFieldChar
 {
 public:
