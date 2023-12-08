@@ -321,7 +321,6 @@ geoDistance
 geohashDecode
 geohashEncode
 geohashesInBox
-getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort

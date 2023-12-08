@@ -908,12 +908,20 @@ void StorageDistributed::read(
     }
 
     ClusterProxy::executeQuery(
-        query_plan, header, processed_stage,
-        main_table, remote_table_function_ptr,
-        select_stream_factory, log, modified_query_ast,
-        local_context, query_info,
-        sharding_key_expr, sharding_key_column_name,
-        query_info.cluster, additional_shard_filter_generator);
+        query_plan,
+        header,
+        processed_stage,
+        main_table,
+        remote_table_function_ptr,
+        select_stream_factory,
+        log,
+        modified_query_ast,
+        local_context,
+        query_info,
+        sharding_key_expr,
+        sharding_key_column_name,
+        query_info.cluster,
+        additional_shard_filter_generator);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
