@@ -1121,7 +1121,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_DISK_METADATA_CACHE:
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemeted");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         case Type::DROP_SCHEMA_CACHE:
         case Type::DROP_FORMAT_SCHEMA_CACHE:
 #if USE_AWS_S3
@@ -1259,7 +1259,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::REPLICA_READY:
         case Type::REPLICA_UNREADY:
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemeted");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         case Type::RESTART_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA, query.getDatabase(), query.getTable());
