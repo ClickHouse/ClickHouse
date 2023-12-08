@@ -559,7 +559,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 
 void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
-    LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.query_for_logging);
+    LOG_DEBUG(log, "Processing task {} (query: {}, backup restore: {})", task.entry_name, task.query_for_logging, task.entry.is_backup_restore);
     chassert(!task.completely_processed);
 
     /// Setup tracing context on current thread for current DDL

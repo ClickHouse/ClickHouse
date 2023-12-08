@@ -323,6 +323,7 @@ def main():
     )
     if validate_bugfix_check:
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
+        additional_envs.append("BUGFIX_VALIDATE_CHECK=1")
 
     ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
     ci_logs_args = ci_logs_credentials.get_docker_arguments(

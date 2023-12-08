@@ -194,6 +194,7 @@ namespace ErrorCodes
     extern const int SERIALIZATION_ERROR;
     extern const int TOO_MANY_MUTATIONS;
     extern const int CANNOT_SCHEDULE_TASK;
+    extern const int LIMIT_EXCEEDED;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -648,6 +649,10 @@ void MergeTreeData::checkProperties(
         {
             if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
+
+            const auto settings = getSettings();
+            if (projections_names.size() >= settings->max_projections)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", settings->max_projections);
 
             /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
@@ -1651,22 +1656,39 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
         }
 
+        std::unordered_set<String> skip_check_disks;
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
             if (disk->isBroken() || disk->isCustomDisk())
+            {
+                skip_check_disks.insert(disk_name);
                 continue;
+            }
 
-            if (!defined_disk_names.contains(disk_name) && disk->exists(relative_data_path))
+            bool is_disk_defined = defined_disk_names.contains(disk_name);
+
+            if (!is_disk_defined && disk->exists(relative_data_path))
+            {
+                /// There still a chance that underlying disk is defined in storage policy
+                const auto & delegate = disk->getDelegateDiskIfExists();
+                is_disk_defined = delegate && !delegate->isBroken() && !delegate->isCustomDisk()
+                               && delegate->getPath() == disk->getPath()
+                               && defined_disk_names.contains(delegate->getName());
+            }
+
+            if (!is_disk_defined && disk->exists(relative_data_path))
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {
-                    if (MergeTreePartInfo::tryParsePartName(it->name(), format_version))
-                    {
-                        throw Exception(
-                            ErrorCodes::UNKNOWN_DISK,
-                            "Part {} ({}) was found on disk {} which is not defined in the storage policy (defined disks: {})",
-                            backQuote(it->name()), backQuote(it->path()), backQuote(disk_name), fmt::join(defined_disk_names, ", "));
-                    }
+                    if (!MergeTreePartInfo::tryParsePartName(it->name(), format_version))
+                        continue; /// Cannot parse part name, some garbage on disk, just ignore it.
+                    /// But we can't ignore valid part name on undefined disk.
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_DISK,
+                        "Part '{}' ({}) was found on disk '{}' which is not defined in the storage policy '{}' or broken"
+                        " (defined disks: [{}], skipped disks: [{}])",
+                        it->name(), it->path(), disk_name, getStoragePolicy()->getName(),
+                        fmt::join(defined_disk_names, ", "), fmt::join(skip_check_disks, ", "));
                 }
             }
         }
