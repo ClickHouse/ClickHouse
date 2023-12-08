@@ -14,7 +14,7 @@ class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 
-struct FileSegmentMetadata;
+class FileSegmentMetadata;
 using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
 
 struct LockedKey;

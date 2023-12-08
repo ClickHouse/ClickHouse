@@ -154,6 +154,8 @@ public:
 
     std::vector<FileSegment::Info> sync();
 
+    CacheMetadata::Iterator iterate();
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
