@@ -20,6 +20,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include "Common/AsyncLoader.h"
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/PoolId.h>
@@ -223,11 +224,16 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     LoadJobSet startup_after,
     LoadingStrictnessLevel /*mode*/)
 {
-    // NOTE: this task is empty, but it is required for correct dependency handling (startup should be done after tables loading)
     auto job = makeLoadJob(
         std::move(startup_after),
         TablesLoaderBackgroundStartupPoolId,
-        fmt::format("startup Ordinary database {}", getDatabaseName()));
+        fmt::format("startup Ordinary database {}", getDatabaseName()),
+        ignoreDependencyFailure,
+        [] (AsyncLoader &, const LoadJobPtr &) {
+            // NOTE: this job is no-op, but it is required for correct dependency handling
+            // 1) startup should be done after tables loading
+            // 2) load or startup errors for tables should not lead to not starting up the whole database
+        });
     return startup_database_task = makeLoadTask(async_loader, {job});
 }
 
