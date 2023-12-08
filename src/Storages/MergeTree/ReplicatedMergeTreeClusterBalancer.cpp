@@ -799,6 +799,9 @@ void ReplicatedMergeTreeClusterBalancer::cleanupOldPartitions(const zkutil::ZooK
         if (!local_partitions.contains(partition.getPartitionId()))
             continue;
 
+        if (partition.getNewReplica() == replica_name)
+            continue;
+
         const auto & all_replicas = partition.getAllReplicas();
         if (std::find(all_replicas.begin(), all_replicas.end(), replica_name) != all_replicas.end())
             continue;
