@@ -699,7 +699,7 @@ public:
     /// Used for:
     /// - For total_bytes_uncompressed column in system.tables
     ///
-    /// Does not takes underlying Storage (if any) into account
+    /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
     
     /// Number of rows INSERTed since server start.
