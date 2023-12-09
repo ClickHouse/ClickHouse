@@ -829,12 +829,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is ON");
 
                     if (query_plan.isInitialized()) {
+                        auto subscriber = storage->subscribeForChanges();
+
                         auto streaming_step = std::make_unique<StreamingAdapterStep>(
-                            query_plan.getCurrentDataStream(), storage->subscribeForChanges());
-                        streaming_step->setStepDescription("Streaming Adapter");
+                            query_plan.getCurrentDataStream(), std::move(subscriber));
+
+                        streaming_step->setStepDescription(fmt::format("Streaming Adapter, table: {}", storage->getStorageID()));
+
                         query_plan.addStep(std::move(streaming_step));
 
-                        LOG_DEBUG(&Poco::Logger::get("Planner"), "Streaming Adapter is configured");
+                        LOG_DEBUG(&Poco::Logger::get("Planner"), "Streaming Adapter is configured for table: {}", storage->getStorageID());
                     }
                 }
 
