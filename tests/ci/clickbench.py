@@ -4,7 +4,6 @@ import argparse
 import csv
 import logging
 import os
-import re
 import subprocess
 import sys
 import atexit
@@ -20,7 +19,6 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    NotSet,
     RerunHelper,
     get_commit,
     override_status,
@@ -29,7 +27,6 @@ from commit_status_helper import (
     update_mergeable_check,
 )
 from docker_pull_helper import DockerImage, get_image_with_version
-from download_release_packages import download_last_release
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
@@ -37,8 +34,6 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
-
-NO_CHANGES_MSG = "Nothing to run"
 
 
 def get_image_name() -> str:
