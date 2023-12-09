@@ -65,12 +65,6 @@ class TestDockerImageCheck(unittest.TestCase):
                     "clickhouse/test-base",  # type: ignore
                 ),
                 di.DockerImage(
-                    "docker/test/clickbench",
-                    "clickhouse/clickbench",
-                    False,
-                    "clickhouse/test-base",  # type: ignore
-                ),
-                di.DockerImage(
                     "docker/test/keeper-jepsen",
                     "clickhouse/keeper-jepsen-test",
                     False,
