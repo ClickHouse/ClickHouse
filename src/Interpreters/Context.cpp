@@ -367,6 +367,7 @@ struct ContextSharedPart : boost::noncopyable
     std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
     ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
     std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
+    size_t clusters_version TSA_GUARDED_BY(clusters_mutex) = 0;
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
@@ -3523,6 +3524,14 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, getMacros(), config_name);
     else
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
+
+    ++shared->clusters_version;
+}
+
+size_t Context::getClustersVersion() const
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    return shared->clusters_version;
 }
 
 
@@ -4802,7 +4811,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     shared->are_background_executors_initialized = true;
 }
 
-bool Context::areBackgroundExecutorsInitialized()
+bool Context::areBackgroundExecutorsInitialized() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->are_background_executors_initialized;
