@@ -1,6 +1,7 @@
+#include <deque>
 #include <memory>
 #include <mutex>
-#include <optional>
+#include <utility>
 
 #include <Processors/Chunk.h>
 
@@ -12,21 +13,18 @@ namespace DB
 void Subscriber::push(Chunk chunk) {
   std::unique_lock guard(mutex);
   ready_chunks.emplace_back(std::move(chunk));
+  event_fd.write(1);
 }
 
-std::optional<Chunk> Subscriber::extract() {
+std::list<Chunk> Subscriber::extractAll() {
   std::unique_lock guard(mutex);
-
-  if (ready_chunks.empty()) {
-    return std::nullopt;
-  }
-
-  Chunk next = std::move(ready_chunks.front());
-  ready_chunks.pop_front();
-
-  return next;
+  event_fd.read();
+  return std::exchange(ready_chunks, {});
 }
 
+int Subscriber::fd() const {
+  return event_fd.fd;
+}
 
 std::shared_lock<std::shared_mutex> SubscriptionQueue::lockShared() const {
     return std::shared_lock{rwlock};

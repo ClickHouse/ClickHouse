@@ -47,6 +47,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/StorageDummy.h>
@@ -825,10 +826,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
 
                 if (table_expression_query_info.isStream()) {
-                    SubscriberPtr sub = storage->subscribeForChanges();
-                    LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is ON: {}", (uint64_t)sub.get());
-                } else {
-                    LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is OFF");
+                    LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is ON");
+
+                    if (query_plan.isInitialized()) {
+                        auto streaming_step = std::make_unique<StreamingAdapterStep>(
+                            query_plan.getCurrentDataStream(), storage->subscribeForChanges());
+                        streaming_step->setStepDescription("Streaming Adapter");
+                        query_plan.addStep(std::move(streaming_step));
+
+                        LOG_DEBUG(&Poco::Logger::get("Planner"), "Streaming Adapter is configured");
+                    }
                 }
 
                 for (const auto & filter_info_and_description : where_filters)

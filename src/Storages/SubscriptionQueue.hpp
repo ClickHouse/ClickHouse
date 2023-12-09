@@ -1,9 +1,7 @@
 #pragma once
 
-#include <deque>
 #include <list>
 #include <mutex>
-#include <optional>
 #include <shared_mutex>
 
 #include <Common/EventFD.h>
@@ -16,15 +14,16 @@ namespace DB
 class Subscriber {
 public:
     void push(Chunk chunk);
+    std::list<Chunk> extractAll();
 
-    std::optional<Chunk> extract();
+    int fd() const;
 
 private:
     EventFD event_fd;
 
     // data
     std::mutex mutex;
-    std::deque<Chunk> ready_chunks;
+    std::list<Chunk> ready_chunks;
 };
 
 using SubscriberPtr = std::shared_ptr<Subscriber>;
