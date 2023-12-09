@@ -84,7 +84,7 @@ private:
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {
-    return lhs.hasFinal() == rhs.hasFinal() && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio() && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio();
+    return lhs.hasFinal() == rhs.hasFinal() && lhs.hasStream() == rhs.hasStream() && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio() && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio();
 }
 
 inline bool operator!=(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
