@@ -72,7 +72,7 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found test_results.tsv")
+        logging.info("Found check_status.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:

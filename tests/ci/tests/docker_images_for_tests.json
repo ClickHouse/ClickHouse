@@ -120,6 +120,7 @@
             "docker/test/integration/base",
             "docker/test/fuzzer",
             "docker/test/keeper-jepsen",
+            "docker/test/clickbench",
             "docker/test/sqltest"
          ]
     },
@@ -129,6 +130,10 @@
     },
     "docker/test/sqlancer": {
         "name": "clickhouse/sqlancer-test",
+        "dependent": []
+    },
+    "docker/test/clickbench": {
+        "name": "clickhouse/clickbench",
         "dependent": []
     },
     "docker/test/keeper-jepsen": {
