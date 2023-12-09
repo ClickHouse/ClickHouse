@@ -242,7 +242,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
         // TODO myrrc revisit whether we need table shared id
         const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
-        const bool vfs_lock_already_acquired = is_vfs && disk->lock(vfs_lock_path, false);
+        const bool vfs_lock_already_acquired = !disk->lock(vfs_lock_path, false);
 
         if (zerocopy_lock_already_acquired || vfs_lock_already_acquired)
         {

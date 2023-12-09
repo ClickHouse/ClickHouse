@@ -140,9 +140,9 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
         log_batch.emplace_back(previous_snapshot_log_item);
 
         auto snapshot_buf = storage.object_storage->readObject(previous_snapshot_log_item);
-        //auto snapshot_compressed_buf = CompressedReadBuffer{*snapshot_buf};
+        auto snapshot_compressed_buf = CompressedReadBuffer{*snapshot_buf};
         String snapshot_str;
-        readStringUntilEOF(snapshot_str, *snapshot_buf);
+        readStringUntilEOF(snapshot_str, snapshot_compressed_buf);
 
         out.snapshot = VFSSnapshot::deserialize(snapshot_str);
     }
@@ -159,8 +159,9 @@ void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const Stri
     LOG_DEBUG(log, "Writing snapshot {}", snapshot_name);
 
     auto buf = storage.writeFile(snapshot_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
-    //auto compressed_buf = CompressedWriteBuffer{*buf};
-    writeString(snapshot.serialize(), *buf);
+    auto compressed_buf = CompressedWriteBuffer{*buf};
+    writeString(snapshot.serialize(), compressed_buf);
+    compressed_buf.finalize();
     buf->finalize();
 
     // Local metadata file which we don't need (snapshot will be deleted by replica processing next batch)
