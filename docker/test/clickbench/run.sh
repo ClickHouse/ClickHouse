@@ -33,19 +33,19 @@ clickhouse-client --time < /create.sql
 
 TRIES=3
 QUERY_NUM=1
-cat /queries.sql | while read query; do
+while read query; do
     echo -n "["
     for i in $(seq 1 $TRIES); do
         RES=$(clickhouse-client --time --format Null --query "$query" --progress 0 2>&1 ||:)
-        [[ "$?" == "0" ]] && echo -n "${RES}" || echo -n "null"
-        [[ "$i" != $TRIES ]] && echo -n ", "
+        echo -n "${RES}"
+        [[ "$i" != "$TRIES" ]] && echo -n ", "
 
         echo "${QUERY_NUM},${i},${RES}" >> /test_output/test_results.tsv
     done
     echo "],"
 
     QUERY_NUM=$((QUERY_NUM + 1))
-done
+done < /queries.sql
 
 clickhouse-client --query "SELECT total_bytes FROM system.tables WHERE name = 'hits' AND database = 'default'"
 
