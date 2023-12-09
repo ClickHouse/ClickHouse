@@ -163,14 +163,14 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
     else
     {
         /// We don't always add a group to readers_queue here because multiple readers can use the same group.
-        /// We can reuse the last group if we're in write phase now, or if the last group didn't get ownership yet,
+        /// We can reuse the last group if the last group didn't get ownership yet,
         /// or even if it got ownership but there are no writers waiting in writers_queue.
-        bool can_use_last_group = !readers_queue.empty() &&
-            ((rdlock_owner == readers_queue.end()) || !rdlock_owner->ownership || writers_queue.empty());
+        bool can_use_last_group = !readers_queue.empty() && (!readers_queue.back().ownership || writers_queue.empty());
 
         if (!can_use_last_group)
             readers_queue.emplace_back(type);  /// SM1: may throw (nothing to roll back)
     }
+
     GroupsContainer::iterator it_group =
             (type == Type::Write) ? std::prev(writers_queue.end()) : std::prev(readers_queue.end());
 
@@ -215,6 +215,9 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
         }
     }
 
+    /// Our group must be an owner here.
+    chassert(it_group->ownership);
+
     if (request_has_query_id)
     {
         try
@@ -250,17 +253,28 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
   * it is guaranteed that all three steps have been executed successfully and the resulting state is consistent.
   * With the mutex locked the order of steps to restore the lock's state can be arbitrary
   *
-  * We do not employ try-catch: if something bad happens, there is nothing we can do =(
+  * We do not employ try-catch: if something bad happens and chassert() is disabled, there is nothing we can do
+  * (we can't throw an exception here because RWLockImpl::unlock() is called from the destructor ~LockHolderImpl).
   */
 void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept
 {
     std::lock_guard state_lock(internal_state_mtx);
 
-    /// All of these are Undefined behavior and nothing we can do!
-    if (rdlock_owner == readers_queue.end() && wrlock_owner == writers_queue.end())
+    /// Our group must be an owner here.
+    if (!group_it->ownership)
+    {
+        chassert(false && "RWLockImpl::unlock() is called for a non-owner group");
         return;
-    if (wrlock_owner != writers_queue.end() && group_it != wrlock_owner)
+    }
+
+    /// Check consistency.
+    if ((group_it->type == Read)
+            ? !(rdlock_owner != readers_queue.end() && wrlock_owner == writers_queue.end())
+            : !(wrlock_owner != writers_queue.end() && rdlock_owner == readers_queue.end() && group_it == wrlock_owner))
+    {
+        chassert(false && "RWLockImpl::unlock() found the rwlock inconsistent");
         return;
+    }
 
     /// If query_id is not empty it must be listed in parent->owner_queries
     if (query_id != NO_QUERY)
