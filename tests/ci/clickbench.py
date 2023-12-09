@@ -41,12 +41,11 @@ from upload_result_helper import upload_results
 NO_CHANGES_MSG = "Nothing to run"
 
 
-def get_image_name(check_name: str) -> str:
+def get_image_name() -> str:
     return "clickhouse/clickbench"
 
 
 def get_run_command(
-    check_name: str,
     builds_path: Path,
     result_path: Path,
     server_log_path: Path,
@@ -70,8 +69,8 @@ def get_run_command(
 def process_results(
     result_directory: Path,
     server_log_path: Path,
-) -> Tuple[str, str, TestResults, List[Path]]:
-    test_results = []  # type: TestResults
+) -> Tuple[str, str, List[str], List[Path]]:
+    test_results = []
     additional_files = []
     # Just upload all files from result_directory.
     # If task provides processed results, then it's responsible for content of result_directory.
@@ -156,7 +155,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    image_name = get_image_name(check_name)
+    image_name = get_image_name()
     docker_image = get_image_with_version(reports_path, image_name)
 
     packages_path = temp_path / "packages"
@@ -180,9 +179,7 @@ def main():
     )
 
     run_command = get_run_command(
-        check_name,
         packages_path,
-        repo_path,
         result_path,
         server_log_path,
         kill_timeout,
