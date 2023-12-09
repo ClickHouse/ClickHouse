@@ -45,7 +45,6 @@ void registerDisks(
 
 #if USE_AWS_S3
     registerDiskS3(factory, global_skip_access_check, allow_vfs, allow_vfs_gc);
-    /* ToDo: prevent allow_vfs unused */
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -69,7 +68,9 @@ void registerDisks(
 
 #else
 
-void registerDisks(bool global_skip_access_check)
+// We don't allow VFS disks with standalone Keeper as VFS disk startup requires a running Keeper
+// thus creating a chain
+void registerDisks(bool global_skip_access_check, bool, bool)
 {
     auto & factory = DiskFactory::instance();
 

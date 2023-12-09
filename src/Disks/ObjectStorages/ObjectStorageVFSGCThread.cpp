@@ -1,6 +1,8 @@
 #include "ObjectStorageVFSGCThread.h"
 #include <ranges>
 #include "Common/ZooKeeper/ZooKeeperLock.h"
+#include "Compression/CompressedReadBuffer.h"
+#include "Compression/CompressedWriteBuffer.h"
 #include "Disks/ObjectStorages/DiskObjectStorageVFS.h"
 #include "Interpreters/Context.h"
 
@@ -13,18 +15,15 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-static constexpr auto VFS_SNAPSHOT_PREFIX = "vfs_snapshot_";
+static constexpr std::string_view VFS_SNAPSHOT_PREFIX = "vfs_snapshot_";
 
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
     : storage(storage_)
-    , log_name("DiskObjectStorageVFSGC")
-    , log(&Poco::Logger::get(log_name))
-    , zookeeper_lock(zkutil::createSimpleZooKeeperLock(storage.zookeeper, storage.traits.base_node, "lock", ""))
-    , sleep_ms(storage_.getGcSleep())
+    , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
+    , zookeeper_lock(storage.zookeeper, storage.traits.locks_node, "gc_lock")
 {
-    LOG_DEBUG(log, "ObjectStorageVFSGCThread with sleep_ms {}", sleep_ms);
     task = context->getSchedulePool().createTask(
-        log_name,
+        log->name(),
         [this]
         {
             try
@@ -35,28 +34,22 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
             {
                 LOG_DEBUG(log, "Task threw an exception, rescheduling");
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                task->scheduleAfter(sleep_ms);
             }
         });
+
+    task->activateAndSchedule();
 }
 
 ObjectStorageVFSGCThread::~ObjectStorageVFSGCThread() = default;
 
-String ObjectStorageVFSGCThread::findInLog(std::string_view local_path) const
-{
-    // TODO myrrc
-    (void)local_path;
-    return "";
-}
-
 void ObjectStorageVFSGCThread::run()
 {
     SCOPE_EXIT({
-        zookeeper_lock->unlock();
-        task->scheduleAfter(sleep_ms);
+        zookeeper_lock.unlock();
+        task->scheduleAfter(storage.gc_thread_sleep_ms);
     });
 
-    if (!zookeeper_lock->tryLock())
+    if (!zookeeper_lock.tryLock())
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
@@ -136,12 +129,18 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
                 start_logpointer - 1,
                 start_logpointer,
                 end_logpointer);
+        const size_t snapshot_logpointer
+            = parseFromString<size_t>(previous_snapshot_log_item.local_path.substr(VFS_SNAPSHOT_PREFIX.size()));
+        if (snapshot_logpointer + 1 != start_logpointer)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Snapshot logpointer {} != start logpointer {}", snapshot_logpointer, start_logpointer);
 
         previous_snapshot_log_item.type = Unlink;
         // Issue previous snapshot remote file for removal (no local metadata file as we use direct readObject)
         log_batch.emplace_back(previous_snapshot_log_item);
 
         auto snapshot_buf = storage.object_storage->readObject(previous_snapshot_log_item);
+        //auto snapshot_compressed_buf = CompressedReadBuffer{*snapshot_buf};
         String snapshot_str;
         readStringUntilEOF(snapshot_str, *snapshot_buf);
 
@@ -160,6 +159,7 @@ void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const Stri
     LOG_DEBUG(log, "Writing snapshot {}", snapshot_name);
 
     auto buf = storage.writeFile(snapshot_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+    //auto compressed_buf = CompressedWriteBuffer{*buf};
     writeString(snapshot.serialize(), *buf);
     buf->finalize();
 

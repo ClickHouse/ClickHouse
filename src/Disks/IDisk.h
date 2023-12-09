@@ -211,16 +211,6 @@ public:
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {});
 
-    // TODO myrrc Usually from_disk.copyFile(from_path, to_disk, to_path), reverse method
-    // used only in DiskObjectStorageVFS
-    virtual void copyFileReverse(
-        const String & from_file_path,
-        IDisk & from_disk,
-        const String & to_file_path,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook);
-
     /// List files at `path` and add their names to `file_names`
     virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
 
