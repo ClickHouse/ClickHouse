@@ -54,7 +54,6 @@ def get_run_command(
     ci_logs_args: str,
     image: DockerImage,
 ) -> str:
-
     envs = [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
@@ -66,6 +65,7 @@ def get_run_command(
         f"--volume={server_log_path}:/var/log/clickhouse-server "
         f"--cap-add=SYS_PTRACE {env_str} {image}"
     )
+
 
 def process_results(
     result_directory: Path,
