@@ -10,7 +10,6 @@ namespace DB
 template<typename StorageT, typename... StorageArgs>
 void attachLazy(ContextPtr context, IDatabase & system_database, const String & table_name, StorageArgs && ... args)
 {
-    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
     if (system_database.getUUID() == UUIDHelpers::Nil)
     {
         /// Attach to Ordinary database.
@@ -38,7 +37,6 @@ void attachLazy(ContextPtr context, IDatabase & system_database, const String & 
 template<typename StorageT, typename... StorageArgs>
 void attach(ContextPtr context, IDatabase & system_database, const String & table_name, StorageArgs && ... args)
 {
-    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
     if (system_database.getUUID() == UUIDHelpers::Nil)
     {
         /// Attach to Ordinary database.
@@ -55,6 +53,17 @@ void attach(ContextPtr context, IDatabase & system_database, const String & tabl
         String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
         system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...), path);
     }
+}
+
+template<bool lazy, typename StorageT, typename... StorageArgs>
+void attachLazyOrNot(ContextPtr context, IDatabase & system_database, const String & table_name, StorageArgs && ... args)
+{
+    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+
+    if constexpr (lazy)
+        attachLazy<StorageT>(context, system_database, table_name, std::forward<StorageArgs>(args)...);
+    else
+        attach<StorageT>(context, system_database, table_name, std::forward<StorageArgs>(args)...);
 }
 
 }
