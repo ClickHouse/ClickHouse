@@ -55,5 +55,11 @@ void IDatabase::attachTable(ContextPtr context, const String & name, const Stora
     attachTableUnlocked(context, name, table, relative_table_path);
 }
 
+void IDatabase::registerLazyTable(ContextPtr, const String & table_name, LazyTableCreator table_creator, const String & relative_table_path) /// NOLINT
+{
+    std::lock_guard lock(mutex);
+    registerLazyTableUnlocked(table_name, std::move(table_creator), relative_table_path);
+}
+
 
 }

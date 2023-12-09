@@ -125,7 +125,6 @@ public:
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 
-
 /** Database engine.
   * It is responsible for:
   * - initialization of set of known tables and dictionaries;
@@ -138,6 +137,10 @@ using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
+    using LazyTableCreator = std::function<StoragePtr()>;
+    /// Map{table_name, Pair{relative_table_path, LazyTableCreator}}
+    using LazyTables = std::map<String, std::pair<String, LazyTableCreator>>;
+
     IDatabase() = delete;
     explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
 
@@ -276,6 +279,10 @@ public:
     /// - Instead of overriding this method you should override attachTableUnlocked()
     ///   (This method is only for DatabasesOverlay to override)
     virtual void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path = {}); /// NOLINT
+
+    /// Register tables lazily (attach will be done only when the table will be used) instead of attaching it.
+    /// This is needed to improve startup time of clickhouse-local.
+    virtual void registerLazyTable(ContextPtr context, const String & table_name, LazyTableCreator table_creator, const String & relative_table_path = {});
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
@@ -435,6 +442,11 @@ protected:
     virtual void attachTableUnlocked(ContextPtr /*context*/, const String & /*name*/, const StoragePtr & /*table*/, const String & /*relative_table_path*/ = {}) TSA_REQUIRES(mutex) /// NOLINT
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
+    }
+
+    virtual void registerLazyTableUnlocked(const String & /* table_name */, LazyTableCreator /* table_creator */, const String & /* relative_table_path */) TSA_REQUIRES(mutex) /// NOLINT
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There lazy table initialization support for Database{}", getEngineName());
     }
 
     mutable std::mutex mutex;

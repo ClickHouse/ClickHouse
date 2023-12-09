@@ -24,18 +24,11 @@ class Context;
 class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
 {
 public:
-    using LazyTableCreator = std::function<StoragePtr()>;
-    using LazyTables = std::map<String, LazyTableCreator>;
-
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
 
     bool empty() const override;
-
-    /// Register tables lazily (attach will be done only when the table will be used).
-    /// This is needed to improve startup time of clickhouse-local.
-    virtual void registerLazyTable(ContextPtr context, const String & table_name, LazyTableCreator table_creator, const String & relative_table_path = {}); /// NOLINT
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
@@ -57,7 +50,7 @@ protected:
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) TSA_REQUIRES(mutex) override;
-    void registerLazyTableUnlocked(const String & table_name, LazyTableCreator table_creator) TSA_REQUIRES(mutex);
+    void registerLazyTableUnlocked(const String & table_name, LazyTableCreator table_creator, const String & relative_table_path) TSA_REQUIRES(mutex) override;
     StoragePtr detachTableUnlocked(const String & table_name)  TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;

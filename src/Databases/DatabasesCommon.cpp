@@ -254,12 +254,6 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     return res;
 }
 
-void DatabaseWithOwnTablesBase::registerLazyTable(ContextPtr, const String & table_name, LazyTableCreator table_creator, const String &)
-{
-    std::lock_guard lock(mutex);
-    registerLazyTableUnlocked(table_name, std::move(table_creator));
-}
-
 void DatabaseWithOwnTablesBase::attachTableUnlocked(ContextPtr, const String & name, const StoragePtr & table, const String &)
 {
     auto table_id = table->getStorageID();
@@ -285,9 +279,9 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(ContextPtr, const String & n
     table->is_detached = false;
 }
 
-void DatabaseWithOwnTablesBase::registerLazyTableUnlocked(const String & table_name, LazyTableCreator table_creator)
+void DatabaseWithOwnTablesBase::registerLazyTableUnlocked(const String & table_name, LazyTableCreator table_creator, const String & relative_table_path)
 {
-    if (!lazy_tables.emplace(table_name, std::move(table_creator)).second)
+    if (!lazy_tables.emplace(table_name, std::make_pair(relative_table_path, std::move(table_creator))).second)
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already registered.", table_name);
 }
 
@@ -400,9 +394,10 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_nam
     if (lazy_it != lazy_tables.end())
     {
         LOG_DEBUG(log, "Attaching lazy table {}", backQuoteIfNeed(table_name));
-        auto storage = lazy_it->second();
+        auto relative_table_path = lazy_it->second.first;
+        auto storage = lazy_it->second.second();
         lazy_tables.erase(lazy_it);
-        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(Context::getGlobalContextInstance(), table_name, storage, /*relative_table_path=*/ {});
+        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(Context::getGlobalContextInstance(), table_name, storage, relative_table_path);
 
         it = tables.find(table_name);
         if (it != tables.end())
@@ -424,10 +419,10 @@ void DatabaseWithOwnTablesBase::loadLazyTables() const
 
         const auto table_name = lazy_it->first;
         LOG_DEBUG(log, "Attaching lazy table {}", backQuoteIfNeed(table_name));
-        auto storage = lazy_it->second();
-
+        auto relative_table_path = lazy_it->second.first;
+        auto storage = lazy_it->second.second();
         lazy_tables.erase(lazy_it);
-        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(global_context, table_name, storage, /*relative_table_path=*/ {});
+        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(global_context, table_name, storage, relative_table_path);
     }
 }
 
