@@ -254,19 +254,13 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     return res;
 }
 
-void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
-{
-    std::lock_guard lock(mutex);
-    attachTableUnlocked(table_name, table);
-}
-
 void DatabaseWithOwnTablesBase::registerLazyTable(ContextPtr, const String & table_name, LazyTableCreator table_creator, const String &)
 {
     std::lock_guard lock(mutex);
     registerLazyTableUnlocked(table_name, std::move(table_creator));
 }
 
-void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table)
+void DatabaseWithOwnTablesBase::attachTableUnlocked(ContextPtr, const String & name, const StoragePtr & table, const String &)
 {
     auto table_id = table->getStorageID();
     if (table_id.database_name != database_name)
@@ -279,7 +273,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 
-    if (!tables.emplace(table_name, table).second)
+    if (!tables.emplace(name, table).second)
     {
         if (table_id.hasUUID())
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
@@ -408,8 +402,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_nam
         LOG_DEBUG(log, "Attaching lazy table {}", backQuoteIfNeed(table_name));
         auto storage = lazy_it->second();
         lazy_tables.erase(lazy_it);
-        /// FIXME: it should call attachTable(), but need to reorder locking bits for this
-        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(table_name, storage);
+        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(Context::getGlobalContextInstance(), table_name, storage, /*relative_table_path=*/ {});
 
         it = tables.find(table_name);
         if (it != tables.end())
@@ -421,6 +414,10 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_nam
 
 void DatabaseWithOwnTablesBase::loadLazyTables() const
 {
+    if (lazy_tables.empty())
+        return;
+
+    ContextPtr global_context = Context::getGlobalContextInstance();
     while (!lazy_tables.empty())
     {
         auto lazy_it = lazy_tables.begin();
@@ -430,9 +427,7 @@ void DatabaseWithOwnTablesBase::loadLazyTables() const
         auto storage = lazy_it->second();
 
         lazy_tables.erase(lazy_it);
-
-        /// FIXME: it should call attachTable(), but need to reorder locking bits for this
-        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(table_name, storage);
+        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(global_context, table_name, storage, /*relative_table_path=*/ {});
     }
 }
 

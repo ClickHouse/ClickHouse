@@ -269,11 +269,13 @@ public:
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
-    /// Note: ATTACH TABLE statement actually uses createTable method.
-    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {}) /// NOLINT
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
-    }
+    /// @param relative_table_path - only for Atomic engine
+    ///
+    /// Note:
+    /// - ATTACH TABLE statement actually uses createTable method.
+    /// - Instead of overriding this method you should override attachTableUnlocked()
+    ///   (This method is only for DatabasesOverlay to override)
+    virtual void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path = {}); /// NOLINT
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
@@ -428,6 +430,11 @@ protected:
         if (throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no SHOW CREATE TABLE query for Database{}", getEngineName());
         return nullptr;
+    }
+
+    virtual void attachTableUnlocked(ContextPtr /*context*/, const String & /*name*/, const StoragePtr & /*table*/, const String & /*relative_table_path*/ = {}) TSA_REQUIRES(mutex) /// NOLINT
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
     }
 
     mutable std::mutex mutex;
