@@ -481,11 +481,11 @@ def test_schema_inference(started_cluster):
         data.append(
             {
                 "key": i,
-                "int64": -(i + 1),
+                "int64": -(i + 4294967295),
                 "int32": -(i + 1),
                 "int16": -(i + 1),
                 "int8": -(i + 1),
-                "uint64": i + 1,
+                "uint64": i + 4294967295,
                 "uint32": i + 1,
                 "uint16": i + 1,
                 "uint8": i + 1,

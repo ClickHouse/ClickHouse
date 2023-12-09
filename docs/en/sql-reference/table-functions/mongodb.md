@@ -6,12 +6,12 @@ sidebar_label: mongodb
 
 # mongodb
 
-Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server.
+Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote MongoDB server.
 
 **Syntax**
 
 ``` sql
-mongodb(host:port, database, collection, user, password, structure [, options])
+mongodb(host:port, database, collection, user, password [, structure, options])
 ```
 
 **Arguments**
@@ -26,7 +26,7 @@ mongodb(host:port, database, collection, user, password, structure [, options])
 
 - `password` — User password.
 
-- `structure` - The schema for the ClickHouse table returned from this function.
+- `structure` - The schema for the ClickHouse table returned from this function (optional parameter).
 
 - `options` - MongoDB connection string options (optional parameter).
 

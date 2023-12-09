@@ -56,11 +56,28 @@ public:
         std::string options;
     };
 
+    static ColumnsDescription getTableStructureFromData(
+        std::shared_ptr<Poco::MongoDB::Connection> & connection_,
+        const std::string & database_name_,
+        const std::string & collection_name_,
+        const FormatSettings & format_settings);
+
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+
+    static std::string getMongoURI(
+        const std::string & host_,
+        uint16_t port_,
+        const std::string & database_name_,
+        const std::string & options_);
+
+    static std::shared_ptr<Poco::MongoDB::Connection> getConnection(
+        const std::string & uri_,
+        const std::string & database_name_,
+        const std::string & username_,
+        const std::string & password_);
 
 private:
     void connectIfNotConnected();
-    ColumnsDescription getTableStructureFromData(const FormatSettings & format_settings);
 
     const std::string database_name;
     const std::string collection_name;
@@ -69,8 +86,7 @@ private:
     const std::string uri;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
-    bool authenticated = false;
-    std::mutex connection_mutex; /// Protects the variables `connection` and `authenticated`.
+    std::mutex connection_mutex; /// Protects the variable `connection`.
 };
 
 }

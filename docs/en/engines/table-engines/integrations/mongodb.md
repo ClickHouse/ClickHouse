@@ -6,7 +6,7 @@ sidebar_label: MongoDB
 
 # MongoDB
 
-MongoDB engine is read-only table engine which allows to read data (`SELECT` queries) from remote MongoDB collection. Engine supports only non-nested data types. `INSERT` queries are not supported.
+The MongoDB engine allows you to perform `SELECT` and `INSERT` queries on data that is stored in a remote MongoDB collection.
 
 ## Creating a Table {#creating-a-table}
 

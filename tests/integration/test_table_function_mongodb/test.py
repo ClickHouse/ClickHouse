@@ -4,6 +4,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 
 from helpers.cluster import ClickHouseCluster
+import datetime
 
 
 @pytest.fixture(scope="module")
@@ -275,3 +276,115 @@ def test_missing_columns(started_cluster):
     )
     assert result == "10\n"
     simple_mongo_table.drop()
+
+
+@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
+def test_schema_inference(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    inference_mongo_table = db["inference_table"]
+    data = []
+    for i in range(0, 100):
+        data.append(
+            {
+                "key": i,
+                "int64": -(i + 4294967295),
+                "int32": -(i + 1),
+                "int16": -(i + 1),
+                "int8": -(i + 1),
+                "uint64": i + 4294967295,
+                "uint32": i + 1,
+                "uint16": i + 1,
+                "uint8": i + 1,
+                "float32": i + 3.750,
+                "float64": i + 3.750,
+                "date": datetime.datetime(2002, 10, 27),
+                "datetime": datetime.datetime(2023, 3, 31, 6, 3, 12),
+                "string": str(i + 1),
+                "uuid": "f0e77736-91d1-48ce-8f01-15123ca1c7ed",
+                "bool": True,
+                "arr_float64": [i + 1.125, i + 2.5, i + 3.750],
+                "arr_datetime": [
+                    datetime.datetime(2023, 3, 31, 6, 3, 12),
+                    datetime.datetime(1999, 2, 28, 12, 46, 34),
+                ],
+                "tuple": {
+                    "float": i + 3.750,
+                    "tuple": {
+                        "datetime": datetime.datetime(2023, 3, 31, 6, 3, 12),
+                        "string": str(i + 1),
+                    },
+                    "array": [True, False, True],
+                },
+                "arr_tuple_arr": [
+                    {
+                        "int": i,
+                        "array": [
+                            {
+                                "float32": i + 3.750,
+                                "date": datetime.datetime(2002, 10, 27),
+                            },
+                            {
+                                "float32": i + 3.750,
+                                "date": datetime.datetime(2002, 10, 27),
+                            },
+                        ],
+                    },
+                    {
+                        "int": i,
+                        "array": [
+                            {
+                                "float32": i + 3.750,
+                                "date": datetime.datetime(2002, 10, 27),
+                            },
+                            {
+                                "float32": i + 3.750,
+                                "date": datetime.datetime(2002, 10, 27),
+                            },
+                        ],
+                    },
+                ],
+                "nullable_int": i if i % 2 == 0 else None,
+            }
+        )
+
+    inference_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    result = node.query(
+        "SELECT count() FROM mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
+    )
+    assert result == "100\n"
+
+    table_description = "_id\tString\t\t\t\t\t\nkey\tInt32\t\t\t\t\t\nint64\tInt64\t\t\t\t\t\nint32\tInt32\t\t\t\t\t\nint16\tInt32\t\t\t\t\t\nint8\tInt32\t\t\t\t\t\nuint64\tInt64\t\t\t\t\t\nuint32\tInt32\t\t\t\t\t\nuint16\tInt32\t\t\t\t\t\nuint8\tInt32\t\t\t\t\t\nfloat32\tFloat64\t\t\t\t\t\nfloat64\tFloat64\t\t\t\t\t\ndate\tDateTime\t\t\t\t\t\ndatetime\tDateTime\t\t\t\t\t\nstring\tString\t\t\t\t\t\nuuid\tString\t\t\t\t\t\nbool\tBool\t\t\t\t\t\narr_float64\tArray(Float64)\t\t\t\t\t\narr_datetime\tArray(DateTime)\t\t\t\t\t\ntuple\tTuple(float Float64, tuple Tuple(datetime DateTime, string String), array Array(Bool))\t\t\t\t\t\narr_tuple_arr\tArray(Tuple(int Int32, array Array(Tuple(float32 Float64, date DateTime))))\t\t\t\t\t\nnullable_int\tInt32\t\t\t\t\t\n"
+    assert table_description == node.query(
+        "DESCRIBE TABLE mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
+    )
+    assert table_description == node.query(
+        "DESCRIBE TABLE mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse', 'auto')"
+    )
+    assert table_description == node.query(
+        "DESCRIBE TABLE mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse', structure='auto')"
+    )
+
+    table_description_subset = "int64\tInt64\t\t\t\t\t\n"
+    assert table_description_subset == node.query(
+        "DESCRIBE TABLE mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse', structure='int64 Int64')"
+    )
+
+    node.query(
+        "INSERT INTO FUNCTION mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse') SELECT * FROM mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
+    )
+
+    result = node.query(
+        "SELECT count() FROM mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
+    )
+    assert result == "200\n"
+
+    result = node.query(
+        "SELECT count(DISTINCT *) FROM mongodb('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
+    )
+    assert result == "100\n"
+
+    inference_mongo_table.drop()

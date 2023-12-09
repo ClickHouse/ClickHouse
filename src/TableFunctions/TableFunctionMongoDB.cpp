@@ -46,7 +46,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     std::optional<StorageMongoDB::Configuration> configuration;
-    String structure;
+    String structure = "auto";
 };
 
 StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
@@ -76,6 +76,21 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
 
 ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
+    if (structure == "auto")
+    {
+        FormatSettings format_settings = getFormatSettings(context);
+
+        auto uri = StorageMongoDB::getMongoURI(configuration->host, configuration->port, configuration->database, configuration->options);
+        auto connection = StorageMongoDB::getConnection(uri, configuration->database, configuration->username, configuration->password);
+
+        return StorageMongoDB::getTableStructureFromData(
+            connection,
+            configuration->database,
+            configuration->table,
+            format_settings
+        );
+    }
+
     return parseColumnsListFromString(structure, context);
 }
 
@@ -87,11 +102,11 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
 
     ASTs & args = func_args.arguments->children;
 
-    if (args.size() < 6 || args.size() > 7)
+    if (args.size() < 5 || args.size() > 7)
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'mongodb' requires from 6 to 7 parameters: "
-                        "mongodb('host:port', database, collection, 'user', 'password', structure, [, 'options'])");
+                        "Table function 'mongodb' requires from 5 to 7 parameters: "
+                        "mongodb('host:port', database, collection, 'user', 'password' [, 'structure', 'options'])");
     }
 
     ASTs main_arguments(args.begin(), args.begin() + 5);

@@ -132,13 +132,14 @@ StorageMongoDB::StorageMongoDB(
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
-    , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
+    , uri(getMongoURI(host_, port_, database_name_, options_))
 {
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
     {
-        auto columns =  StorageMongoDB::getTableStructureFromData(format_settings);
+        connectIfNotConnected();
+        auto columns = StorageMongoDB::getTableStructureFromData(connection, database_name, collection_name, format_settings);
         storage_metadata.setColumns(columns);
     }
     else
@@ -149,42 +150,57 @@ StorageMongoDB::StorageMongoDB(
     setInMemoryMetadata(storage_metadata);
 }
 
+std::string StorageMongoDB::getMongoURI(
+    const std::string & host_,
+    uint16_t port_,
+    const std::string & database_name_,
+    const std::string & options_)
+{
+    return "mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_;
+}
 
 void StorageMongoDB::connectIfNotConnected()
 {
     std::lock_guard lock{connection_mutex};
+
     if (!connection)
-    {
-        StorageMongoDBSocketFactory factory;
-        connection = std::make_shared<Poco::MongoDB::Connection>(uri, factory);
-    }
-
-    if (!authenticated)
-    {
-        Poco::URI poco_uri(uri);
-        auto query_params = poco_uri.getQueryParameters();
-        auto auth_source = std::find_if(query_params.begin(), query_params.end(),
-                                        [&](const std::pair<std::string, std::string> & param) { return param.first == "authSource"; });
-        auto auth_db = database_name;
-        if (auth_source != query_params.end())
-            auth_db = auth_source->second;
-
-        if (!username.empty() && !password.empty())
-        {
-            Poco::MongoDB::Database poco_db(auth_db);
-            if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
-                throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
-        }
-
-        authenticated = true;
-    }
+        connection = getConnection(uri, database_name, username, password);
 }
 
-ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSettings & format_settings)
+std::shared_ptr<Poco::MongoDB::Connection> StorageMongoDB::getConnection(
+    const std::string & uri_,
+    const std::string & database_name_,
+    const std::string & username_,
+    const std::string & password_)
 {
-    connectIfNotConnected();
+    StorageMongoDBSocketFactory factory;
+    auto connection_ = std::make_shared<Poco::MongoDB::Connection>(uri_, factory);
 
-    MongoDBCursor cursor(database_name, collection_name, {}, {}, *connection);
+    Poco::URI poco_uri(uri_);
+    auto query_params = poco_uri.getQueryParameters();
+    auto auth_source = std::find_if(query_params.begin(), query_params.end(),
+                                    [&](const std::pair<std::string, std::string> & param) { return param.first == "authSource"; });
+    auto auth_db = database_name_;
+    if (auth_source != query_params.end())
+        auth_db = auth_source->second;
+
+    if (!username_.empty() && !password_.empty())
+    {
+        Poco::MongoDB::Database poco_db(auth_db);
+        if (!poco_db.authenticate(*connection_, username_, password_, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
+            throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
+    }
+
+    return connection_;
+}
+
+ColumnsDescription StorageMongoDB::getTableStructureFromData(
+    std::shared_ptr<Poco::MongoDB::Connection> & connection_,
+    const std::string & database_name_,
+    const std::string & collection_name_,
+    const FormatSettings & format_settings)
+{
+    MongoDBCursor cursor(database_name_, collection_name_, {}, {}, *connection_);
 
     std::unordered_map<std::string, DataTypePtr> types;
     std::vector<std::string> current_keys;
@@ -193,7 +209,7 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSetting
     size_t num_rows = 0;
     while (num_rows < format_settings.max_rows_to_read_for_schema_inference)
     {
-        auto documents = cursor.nextDocuments(*connection);
+        auto documents = cursor.nextDocuments(*connection_);
 
         for (auto & document : documents)
         {
@@ -262,7 +278,7 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSetting
                 key,
                 num_rows);
 
-        result.push_back({key, std::move(types[key])});
+        result.push_back({key, types[key]});
     }
 
     return ColumnsDescription(result);
