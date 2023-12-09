@@ -2614,8 +2614,17 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        layers.back()->pushOperator(cur_op->second);
-        return Action::OPERAND;
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+            auto identifier = std::make_shared<ASTIdentifier>(cur_op->second.function_name);
+            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function));
+            return Action::OPERAND;
+        }
+        else
+        {
+            layers.back()->pushOperator(cur_op->second);
+        }
     }
 
     auto old_pos = pos;
