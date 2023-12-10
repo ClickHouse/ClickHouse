@@ -11,10 +11,10 @@ dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
 # A directory for cache
-sudo mkdir /dev/shm/clickhouse
-sudo chown clickhouse:clickhouse /dev/shm/clickhouse
+mkdir /dev/shm/clickhouse
+chown clickhouse:clickhouse /dev/shm/clickhouse
 
-sudo clickhouse start
+clickhouse start
 
 # Wait for the server to start, but not for too long.
 for _ in {1..100}
