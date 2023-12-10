@@ -33,13 +33,13 @@ DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
 }
 
 void DatabaseMemory::createTable(
-    ContextPtr /*context*/,
+    ContextPtr local_context,
     const String & table_name,
     const StoragePtr & table,
     const ASTPtr & query)
 {
     std::lock_guard lock{mutex};
-    attachTableUnlocked(table_name, table);
+    attachTableUnlocked(local_context, table_name, table, /*relative_table_path=*/ {});
 
     /// Clean the query from temporary flags.
     ASTPtr query_to_store = query;
@@ -56,7 +56,7 @@ void DatabaseMemory::createTable(
 }
 
 void DatabaseMemory::dropTable(
-    ContextPtr /*context*/,
+    ContextPtr local_context,
     const String & table_name,
     bool /*sync*/)
 {
@@ -83,7 +83,7 @@ void DatabaseMemory::dropTable(
     catch (...)
     {
         std::lock_guard lock{mutex};
-        attachTableUnlocked(table_name, table);
+        attachTableUnlocked(local_context, table_name, table, /*relative_table_path=*/ {});
         throw;
     }
 
