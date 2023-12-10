@@ -6,6 +6,11 @@
 
 namespace DB
 {
+// TODO myrrc we should
+// 1. Get rid of StoredObject as we need local_path only to match a snapshot entry -- need a workaround in
+// VFSGCThread::writeSnapshot.
+// 1. Allow multiple entry types for multiple files in a single log entry (to reduce Keeper load)
+// Possible interface is Strings (remote_paths) + index delimiters for each entry type
 struct VFSTransactionLogItem : StoredObject
 {
     // For Link and Unlink only remote_path (of StoredObject) is filled

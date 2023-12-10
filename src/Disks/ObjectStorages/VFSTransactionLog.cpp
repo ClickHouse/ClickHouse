@@ -59,6 +59,8 @@ VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactio
     using enum VFSTransactionLogItem::Type;
     ObsoleteObjects out;
 
+    // TODO myrrc instead of throwing, we should dedicate a snapshot part to invalid objects
+    // and keep track of them so that some entity could clear object storage
     for (const VFSTransactionLogItem & item : logs)
         switch (item.type)
         {

@@ -77,20 +77,20 @@ bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
 
     LOG_DEBUG(log, "Creating lock {} (zk path {}), block={}", path, lock_path_full, block);
 
-    if (block)
+    // TODO myrrc need something better for blocking case as now we should nearly always lose in tryCreate
+    // in case there's contention on node
+    do
     {
-        // TODO myrrc what if wait returns but create() fails?
-        zookeeper->waitForDisappear(lock_path_full);
-        zookeeper->create(lock_path_full, "", mode);
-        return true;
-    }
-
-    auto code = zookeeper->tryCreate(lock_path_full, "", mode);
-    if (code == ZOK)
-        return true;
-    if (code == ZNODEEXISTS)
-        return false;
-    throw Coordination::Exception(code);
+        if (block)
+            zookeeper->waitForDisappear(lock_path_full);
+        const auto code = zookeeper->tryCreate(lock_path_full, "", mode);
+        if (code == ZOK)
+            return true;
+        if (code == ZNODEEXISTS && !block)
+            return false;
+        if (code != ZNODEEXISTS)
+            throw Coordination::Exception(code, "While trying to create lock {}", code);
+    } while (true);
 }
 
 void DiskObjectStorageVFS::unlock(std::string_view path)

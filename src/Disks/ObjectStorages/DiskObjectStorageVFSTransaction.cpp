@@ -192,6 +192,8 @@ void DiskObjectStorageVFSTransaction::copyFile(
 
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(VFSTransactionLogItem::Type type, StoredObjects && objects)
 {
+    // TODO myrrc support multiple objects per Link/Unlink transaction
+    // Alternate: support multi-action log items e.g. multiple Link/Unlink/CreateInode actions per item
     if (objects.empty()) [[unlikely]]
         return;
     LOG_TRACE(log, "Pushing {} {}", type, fmt::join(objects, ", "));
