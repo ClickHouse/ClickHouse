@@ -63,6 +63,12 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
 }
 
+ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
+{
+    /// NOTE: stop() from base class is not enough, since this leads to leak on vptr
+    stop();
+}
+
 void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
 {
     if (auto mark_cache = getContext()->getMarkCache())
