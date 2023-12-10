@@ -130,7 +130,6 @@ def main():
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    repo_path = Path(REPO_COPY)
     reports_path = Path(REPORTS_PATH)
     post_commit_path = temp_path / "clickbench_status.tsv"
 
@@ -177,7 +176,6 @@ def main():
         packages_path,
         result_path,
         server_log_path,
-        kill_timeout,
         additional_envs,
         ci_logs_args,
         docker_image,
@@ -218,7 +216,7 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
+            commit, state, report_url, description, check_name, pr_info
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(
@@ -239,6 +237,7 @@ def main():
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
         report_url,
+        check_name
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
