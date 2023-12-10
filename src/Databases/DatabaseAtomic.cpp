@@ -324,7 +324,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
-        attachTableUnlocked(query_context, query.getTable(), table, /*relative_table_path=*/ {});   /// Should never throw
+        DatabaseWithOwnTablesBase::attachTableUnlocked(query_context, query.getTable(), table, /*relative_table_path=*/ {});   /// Should never throw
         table_name_to_path.emplace(query.getTable(), table_data_path);
     }
     catch (...)
