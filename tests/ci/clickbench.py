@@ -65,8 +65,8 @@ def process_results(
     result_directory: Path,
     server_log_path: Path,
 ) -> Tuple[str, str, List[str], List[Path]]:
-    test_results = []  # type: List[str]
-    additional_files = []  # type: List[str]
+    test_results = []  # type: List[TestResult]
+    additional_files = []  # type: List[Path]
     # Just upload all files from result_directory.
     # If task provides processed results, then it's responsible for content of result_directory.
     if result_directory.exists():
@@ -164,7 +164,7 @@ def main():
 
     run_log_path = result_path / "run.log"
 
-    additional_envs = []
+    additional_envs = []  # type: List[str]
 
     ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
     ci_logs_args = ci_logs_credentials.get_docker_arguments(
