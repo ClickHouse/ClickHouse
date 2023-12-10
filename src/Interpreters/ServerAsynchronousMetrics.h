@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class ServerAsynchronousMetrics : public AsynchronousMetrics, WithContext
+class ServerAsynchronousMetrics : WithContext, public AsynchronousMetrics
 {
 public:
     ServerAsynchronousMetrics(
