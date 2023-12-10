@@ -322,7 +322,7 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 }
 
 
-void DatabaseMaterializedPostgreSQL::attachTableUnlocked(ContextPtr context_, const String & table_name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
     /// If there is query context then we need to attach materialized storage.
     /// If there is no query context then we need to attach internal storage from atomic database.
@@ -362,7 +362,7 @@ void DatabaseMaterializedPostgreSQL::attachTableUnlocked(ContextPtr context_, co
     }
     else
     {
-        DatabaseAtomic::attachTableUnlocked(context_, table_name, table, relative_table_path);
+        DatabaseAtomic::attachTable(context_, table_name, table, relative_table_path);
     }
 }
 

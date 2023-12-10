@@ -50,6 +50,8 @@ public:
 
     void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
 
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
+
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
@@ -69,8 +71,6 @@ public:
     String getPostgreSQLDatabaseName() const { return remote_database_name; }
 
 protected:
-    void attachTableUnlocked(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) TSA_REQUIRES(mutex) override;
-
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
 private:
