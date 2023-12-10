@@ -65,6 +65,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     split = new DB::OwnSplitChannel();
 
     auto log_level_string = config.getString("logger.level", "trace");
+    bool log_anything = log_level_string != "none";
 
     /// different channels (log, console, syslog) may have different loglevels configured
     /// The maximum (the most verbose) of those will be used as default for Poco loggers
@@ -73,7 +74,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     time_t now = std::time({});
 
     const auto log_path_prop = config.getString("logger.log", "");
-    if (!log_path_prop.empty())
+    if (log_anything && !log_path_prop.empty())
     {
         const auto log_path = renderFileNameTemplate(now, log_path_prop);
         createDirectory(log_path);
@@ -115,7 +116,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
 
     const auto errorlog_path_prop = config.getString("logger.errorlog", "");
-    if (!errorlog_path_prop.empty())
+    if (log_anything && !errorlog_path_prop.empty())
     {
         const auto errorlog_path = renderFileNameTemplate(now, errorlog_path_prop);
         createDirectory(errorlog_path);
@@ -157,7 +158,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(errorlog, "errorlog");
     }
 
-    if (config.getBool("logger.use_syslog", false))
+    if (log_anything && config.getBool("logger.use_syslog", false))
     {
         //const std::string & cmd_name = commandName();
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
@@ -204,8 +205,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
     bool color_logs_by_default = isatty(STDERR_FILENO);
 
-    if (config.getBool("logger.console", false)
-        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+    if (log_anything && (config.getBool("logger.console", false) || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console)))
     {
         bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
