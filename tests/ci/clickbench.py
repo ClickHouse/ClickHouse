@@ -215,9 +215,7 @@ def main():
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        post_commit_status(
-            commit, state, report_url, description, check_name, pr_info
-        )
+        post_commit_status(commit, state, report_url, description, check_name, pr_info)
     elif args.post_commit_status == "file":
         post_commit_status_to_file(
             post_commit_path,
@@ -237,7 +235,7 @@ def main():
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
         report_url,
-        check_name
+        check_name,
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
