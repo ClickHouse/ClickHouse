@@ -549,7 +549,7 @@ def test_schema_inference(started_cluster):
         "CREATE TABLE inference_mongo_table ENGINE = MongoDB('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
     )
 
-    expected = "CREATE TABLE default.inference_mongo_table (`_id` String, `key` Int32, `int64` Int32, `int32` Int32, `int16` Int32, `int8` Int32, `uint64` Int32, `uint32` Int32, `uint16` Int32, `uint8` Int32, `float32` Float64, `float64` Float64, `date` DateTime, `datetime` DateTime, `string` String, `uuid` String, `bool` Bool, `arr_float64` Array(Float64), `arr_datetime` Array(DateTime), `tuple` Tuple(float Float64, tuple Tuple(datetime DateTime, string String), array Array(Bool)), `arr_tuple_arr` Array(Tuple(int Int32, array Array(Tuple(float32 Float64, date DateTime)))), `nullable_int` Int32) ENGINE = MongoDB(\\'mongo1:27017\\', \\'test\\', \\'inference_table\\', \\'root\\', \\'[HIDDEN]\\')\n"
+    expected = "CREATE TABLE default.inference_mongo_table (`_id` String, `key` Int32, `int64` Int64, `int32` Int32, `int16` Int32, `int8` Int32, `uint64` Int64, `uint32` Int32, `uint16` Int32, `uint8` Int32, `float32` Float64, `float64` Float64, `date` DateTime, `datetime` DateTime, `string` String, `uuid` String, `bool` Bool, `arr_float64` Array(Float64), `arr_datetime` Array(DateTime), `tuple` Tuple(float Float64, tuple Tuple(datetime DateTime, string String), array Array(Bool)), `arr_tuple_arr` Array(Tuple(int Int32, array Array(Tuple(float32 Float64, date DateTime)))), `nullable_int` Int32) ENGINE = MongoDB(\\'mongo1:27017\\', \\'test\\', \\'inference_table\\', \\'root\\', \\'[HIDDEN]\\')\n"
 
     assert expected == node.query(
         "select create_table_query from system.tables where name = 'inference_mongo_table'"
