@@ -34,6 +34,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
+from report import TestResults
 
 
 def get_image_name() -> str:
@@ -64,8 +65,8 @@ def get_run_command(
 def process_results(
     result_directory: Path,
     server_log_path: Path,
-) -> Tuple[str, str, List[str], List[Path]]:
-    test_results = []  # type: List[TestResult]
+) -> Tuple[str, str, TestResults, List[Path]]:
+    test_results = []  # type: TestResults
     additional_files = []  # type: List[Path]
     # Just upload all files from result_directory.
     # If task provides processed results, then it's responsible for content of result_directory.
