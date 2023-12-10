@@ -10,6 +10,7 @@
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace ProfileEvents
@@ -27,6 +28,7 @@ namespace ErrorCodes
     extern const int TOO_SLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 /** sleep(seconds) - the specified number of seconds sleeps each columns.
@@ -43,15 +45,20 @@ class FunctionSleep : public IFunction
 {
 private:
     UInt64 max_microseconds;
+    QueryStatusPtr query_status;
+
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionSleep<variant>>(context->getSettingsRef().function_sleep_max_microseconds_per_block);
+        return std::make_shared<FunctionSleep<variant>>(
+            context->getSettingsRef().function_sleep_max_microseconds_per_block,
+            context->getProcessListElementSafe());
     }
 
-    FunctionSleep(UInt64 max_microseconds_)
+    FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)
         : max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
+        , query_status(query_status_)
     {
     }
 
@@ -128,7 +135,19 @@ public:
                         "The maximum sleep time is {} microseconds. Requested: {} microseconds per block (of size {})",
                         max_microseconds, microseconds, size);
 
-                sleepForMicroseconds(microseconds);
+                while (microseconds)
+                {
+                    UInt64 sleep_ms = microseconds;
+                    if (query_status)
+                        sleep_ms = std::min(sleep_ms, /* 1 second */ static_cast<size_t>(1000000));
+
+                    sleepForMicroseconds(sleep_ms);
+                    microseconds -= sleep_ms;
+
+                    if (query_status && query_status->isKilled())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+                }
+
                 ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
                 ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
             }
