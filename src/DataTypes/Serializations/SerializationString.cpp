@@ -152,6 +152,8 @@ template <int UNROLL_TIMES>
 static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
     size_t offset = data.size();
+    data.resize(std::max(data.capacity(), static_cast<size_t>(4096)));
+
     for (size_t i = 0; i < limit; ++i)
     {
         if (istr.eof())
@@ -171,7 +173,8 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
         offset += size + 1;
         offsets.push_back(offset);
 
-        data.resize(offset);
+        if (unlikely(offset > data.size()))
+            data.resize(data.size() * 2);
 
         if (size)
         {
@@ -203,6 +206,8 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         data[offset - 1] = 0;
     }
+
+    data.resize(offset);
 }
 
 
