@@ -244,8 +244,6 @@ private:
     }
 };
 
-#define PRINT_ASSEMBLY
-
 #ifdef PRINT_ASSEMBLY
 
 class AssemblyPrinter
