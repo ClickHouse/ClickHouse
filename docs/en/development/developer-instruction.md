@@ -74,6 +74,10 @@ You can also add original ClickHouse repo address to your local repository to pu
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
+:::note 
+Instructions below work on most Linux compatible systems, but before proceeding please also check for operating system and architecture specific guides, such as building on (MacOS)[https://clickhouse.com/docs/en/development/build-osx], (Linux for MacOS)[https://clickhouse.com/docs/en/development/build-cross-osx], (Linux for RISC-V 64)[https://clickhouse.com/docs/en/development/build-cross-riscv] and so on. 
+:::
+
 ## Build System {#build-system}
 
 ClickHouse uses CMake and Ninja for building.
