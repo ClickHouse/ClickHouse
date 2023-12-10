@@ -65,8 +65,8 @@ def process_results(
     result_directory: Path,
     server_log_path: Path,
 ) -> Tuple[str, str, List[str], List[Path]]:
-    test_results = []
-    additional_files = []
+    test_results = []  # type: List[str]
+    additional_files = []  # type: List[str]
     # Just upload all files from result_directory.
     # If task provides processed results, then it's responsible for content of result_directory.
     if result_directory.exists():
