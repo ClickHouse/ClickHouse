@@ -22,7 +22,7 @@ ENGINE = Distributed(test_unavailable_shard, currentDatabase(), table_02916, ran
 SETTINGS skip_unavailable_shards = 1;
 
 SELECT *, _shard_num FROM table_02916_distributed;
---SELECT *, _shard_num FROM table_02916_distributed SETTINGS skip_unavailable_shards=0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT *, _shard_num FROM table_02916_distributed SETTINGS skip_unavailable_shards=0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
 
 DROP TABLE table_02916_distributed;
 DROP TABLE table_02916;
