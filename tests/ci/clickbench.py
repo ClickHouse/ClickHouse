@@ -27,7 +27,7 @@ from commit_status_helper import (
     update_mergeable_check,
 )
 from docker_pull_helper import DockerImage, get_image_with_version
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import TEMP_PATH, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
@@ -135,7 +135,6 @@ def main():
 
     args = parse_args()
     check_name = args.check_name
-    kill_timeout = args.kill_timeout
 
     gh = Github(get_best_robot_token(), per_page=100)
 
