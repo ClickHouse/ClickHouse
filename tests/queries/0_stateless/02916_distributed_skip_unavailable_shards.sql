@@ -1,5 +1,7 @@
 -- Tags: shard, no-fasttest
 
+SET prefer_localhost_replica = 0; -- Always do network communication to check if the shard is unavailable.
+
 DROP TABLE IF EXISTS table_02916;
 DROP TABLE IF EXISTS table_02916_distributed;
 
