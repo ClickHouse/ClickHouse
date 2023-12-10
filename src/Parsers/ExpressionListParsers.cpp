@@ -2619,12 +2619,12 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             ++pos;
             auto identifier = std::make_shared<ASTIdentifier>(cur_op->second.function_name);
             layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function));
-            return Action::OPERAND;
         }
         else
         {
             layers.back()->pushOperator(cur_op->second);
         }
+        return Action::OPERAND;
     }
 
     auto old_pos = pos;
