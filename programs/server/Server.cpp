@@ -711,6 +711,7 @@ try
     });
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
+    /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT({
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
