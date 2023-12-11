@@ -151,7 +151,7 @@ def test_read_equally_from_each_replica(start_cluster, prefer_localhost_replica)
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 0,
-            }
+            },
         )
         == expected_result
     )
