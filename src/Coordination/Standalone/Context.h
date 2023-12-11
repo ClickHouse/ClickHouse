@@ -20,6 +20,11 @@
 
 #include <memory>
 
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
 namespace DB
 {
 
@@ -148,7 +153,7 @@ public:
     void shutdownKeeperDispatcher() const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
 
-    std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeper() const;
 };
 
 }
