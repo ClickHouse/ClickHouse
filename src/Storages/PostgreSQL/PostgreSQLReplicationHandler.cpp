@@ -447,8 +447,6 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     assertBlocksHaveEqualStructure(input->getPort().getHeader(), block_io.pipeline.getHeader(), "postgresql replica load from snapshot");
     block_io.pipeline.complete(Pipe(std::move(input)));
 
-    /// TODO: make a test when we fail in the middle of inserting data from source.
-
     CompletedPipelineExecutor executor(block_io.pipeline);
     executor.execute();
 

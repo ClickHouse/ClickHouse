@@ -549,7 +549,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
             }
 
-            auto log_table_structure_changed = [&](std::string_view reason)
+            auto log_table_structure_changed = [&](const std::string & reason)
             {
                 LOG_INFO(log, "Table structure of the table {} changed ({}), "
                          "will mark it as skipped from replication. "

@@ -198,7 +198,7 @@ void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructur
         auto table_id = getStorageID();
         auto tmp_nested_table_id = StorageID(table_id.database_name, getNestedTableName());
         LOG_DEBUG(log, "Creating clickhouse table for postgresql table {} (ast: {})",
-                  table_id.getNameForLogs(), serializeAST(*ast_create));
+                  table_id.getNameForLogs(), ast_create->formatForLogging());
 
         InterpreterCreateQuery interpreter(ast_create, nested_context);
         interpreter.execute();
