@@ -271,6 +271,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
+    data->sample_block = prepareRightBlock(data->sample_block);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
@@ -806,7 +807,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     for (const auto & column_name : right_key_names)
     {
         const auto & column = source_block.getByName(column_name).column;
-        all_key_columns[column_name] = recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+        all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
     Block block_to_save = prepareRightBlock(source_block);
@@ -821,7 +822,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
         data->blocks_allocated_size += block_to_save.allocatedBytes();
 
-        assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "Saved joined block structure mismatch");
+        assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "joined block");
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
 
@@ -1030,16 +1031,15 @@ public:
     };
 
     AddedColumns(
+        const Block & left_block,
         const Block & block_with_columns_to_add,
-        const Block & block,
         const Block & saved_block_sample,
         const HashJoin & join,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         bool is_asof_join,
         bool is_join_get_)
         : join_on_keys(join_on_keys_)
-        , rows_to_add(block.rows())
-        , sample_block(saved_block_sample)
+        , rows_to_add(left_block.rows())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -1056,7 +1056,7 @@ public:
             /// because it uses not qualified right block column names
             auto qualified_name = join.getTableJoin().renamedRightColumnName(src_column.name);
             /// Don't insert column if it's in left block
-            if (!block.has(qualified_name))
+            if (!left_block.has(qualified_name))
                 addColumn(src_column, qualified_name);
         }
 
@@ -1070,6 +1070,17 @@ public:
 
         for (auto & tn : type_name)
             right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
+
+        nullable_column_ptrs.resize(right_indexes.size(), nullptr);
+        for (size_t j = 0; j < right_indexes.size(); ++j)
+        {
+            /** If it's joinGetOrNull, we will have nullable columns in result block
+              * even if right column is not nullable in storage (saved_block_sample).
+              */
+            const auto & saved_column = saved_block_sample.getByPosition(right_indexes[j]).column;
+            if (columns[j]->isNullable() && !saved_column->isNullable())
+                nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
+        }
     }
 
     size_t size() const { return columns.size(); }
@@ -1086,32 +1097,43 @@ public:
         if constexpr (has_defaults)
             applyLazyDefaults();
 
+#ifndef NDEBUG
+        for (size_t j = 0; j < right_indexes.size(); ++j)
+        {
+            const auto & column_from_block = block.getByPosition(right_indexes[j]);
+            const auto * dest_column = columns[j].get();
+            if (auto * nullable_col = nullable_column_ptrs[j])
+            {
+                if (!is_join_get)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Columns {} and {} can have different nullability only in joinGetOrNull",
+                        dest_column->getName(), column_from_block.column->getName());
+                dest_column = nullable_col->getNestedColumnPtr().get();
+            }
+            if (!dest_column->structureEquals(*column_from_block.column))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} are not structure equals", dest_column->getName(), column_from_block.column->getName());
+        }
+#endif
+
         if (is_join_get)
         {
-            /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
-            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            size_t right_indexes_size = right_indexes.size();
+            for (size_t j = 0; j < right_indexes_size; ++j)
             {
                 const auto & column_from_block = block.getByPosition(right_indexes[j]);
-                if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[j].get());
-                    nullable_col && !column_from_block.column->isNullable())
+                if (auto * nullable_col = nullable_column_ptrs[j])
                     nullable_col->insertFromNotNullable(*column_from_block.column, row_num);
-                else if (auto * lowcard_col = typeid_cast<ColumnLowCardinality *>(columns[j].get());
-                         lowcard_col && !typeid_cast<const ColumnLowCardinality *>(column_from_block.column.get()))
-                    lowcard_col->insertFromFullColumn(*column_from_block.column, row_num);
                 else
                     columns[j]->insertFrom(*column_from_block.column, row_num);
             }
         }
         else
         {
-            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            size_t right_indexes_size = right_indexes.size();
+            for (size_t j = 0; j < right_indexes_size; ++j)
             {
                 const auto & column_from_block = block.getByPosition(right_indexes[j]);
-                if (auto * lowcard_col = typeid_cast<ColumnLowCardinality *>(columns[j].get());
-                    lowcard_col && !typeid_cast<const ColumnLowCardinality *>(column_from_block.column.get()))
-                    lowcard_col->insertFromFullColumn(*column_from_block.column, row_num);
-                else
-                    columns[j]->insertFrom(*column_from_block.column, row_num);
+                columns[j]->insertFrom(*column_from_block.column, row_num);
             }
         }
     }
@@ -1142,11 +1164,12 @@ public:
 private:
     std::vector<TypeAndName> type_name;
     MutableColumns columns;
+    std::vector<ColumnNullable *> nullable_column_ptrs;
+
     std::vector<size_t> right_indexes;
     size_t lazy_defaults_count = 0;
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
-    Block sample_block;
 
     bool is_join_get;
 
@@ -1601,8 +1624,8 @@ void HashJoin::joinBlockImpl(
       * For ASOF, the last column is used as the ASOF column
       */
     AddedColumns added_columns(
-        block_with_columns_to_add,
         block,
+        block_with_columns_to_add,
         savedBlockSample(),
         *this,
         std::move(join_on_keys),
@@ -1811,7 +1834,7 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
     std::vector<const MapsOne *> maps_vector;
     maps_vector.push_back(&std::get<MapsOne>(data->maps[0]));
     joinBlockImpl<JoinKind::Left, JoinStrictness::Any>(
-        keys, block_with_columns_to_add, maps_vector, true);
+        keys, block_with_columns_to_add, maps_vector, /* is_join_get = */ true);
     return keys.getByPosition(keys.columns() - 1);
 }
 
