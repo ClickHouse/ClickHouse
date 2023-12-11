@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -104,7 +105,7 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
             columns_.begin(), columns_.end(),
             [](const auto & col) { return col.name == "_sign" || col.name == "_version"; }))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                         "PostgreSQL table cannot contain `_sign` or `_version` columns "
                         "as they are reserved for internal usage");
     }
