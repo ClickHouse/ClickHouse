@@ -1954,9 +1954,9 @@ public:
         }
         else
         {
-            auto fill_callback = [&](auto, auto strictness, auto & map)
+            auto fill_callback = [&](auto, auto, auto & map)
             {
-                rows_added = fillColumnsFromMap<strictness>(map, columns_right);
+                rows_added = fillColumnsFromMap(map, columns_right);
             };
 
             if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), fill_callback))
@@ -2017,14 +2017,14 @@ private:
         return rows_added;
     }
 
-    template <JoinStrictness STRICTNESS, typename Maps>
+    template <typename Maps>
     size_t fillColumnsFromMap(const Maps & maps, MutableColumns & columns_keys_and_right)
     {
         switch (parent.data->type)
         {
         #define M(TYPE) \
             case HashJoin::Type::TYPE: \
-                return fillColumns<STRICTNESS>(*maps.TYPE, columns_keys_and_right);
+                return fillColumns(*maps.TYPE, columns_keys_and_right);
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
             default:
@@ -2034,7 +2034,7 @@ private:
         UNREACHABLE();
     }
 
-    template <JoinStrictness STRICTNESS, typename Map>
+    template <typename Map>
     size_t fillColumns(const Map & map, MutableColumns & columns_keys_and_right)
     {
         size_t rows_added = 0;
