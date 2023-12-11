@@ -46,3 +46,15 @@ Result:
 │                      3 │
 └────────────────────────┘
 ```
+
+``` sql
+SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS print_0;
+```
+
+Result:
+
+``` text
+┌─print_0─┐
+│       6 │
+└─────────┘
+```

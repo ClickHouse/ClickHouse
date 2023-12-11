@@ -105,7 +105,7 @@ public:
         size_t len = src_vec.size();
         if (len < 4)
         {
-            period = NAN; // Atleast four data points are required to detect period
+            period = NAN; // At least four data points are required to detect period
             return true;
         }
 
@@ -197,6 +197,18 @@ Result:
 ┌───────────print_0──────┐
 │                      3 │
 └────────────────────────┘
+```
+
+``` sql
+SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS print_0;
+```
+
+Result:
+
+``` text
+┌─print_0─┐
+│       6 │
+└─────────┘
 ```
 )",
         .categories{"Time series analysis"}});

@@ -6,7 +6,9 @@ SELECT seriesPeriodDetectFFT([10.1, 20.45, 40.34, 10.1, 20.45, 40.34,10.1, 20.45
 SELECT seriesPeriodDetectFFT([10.1, 10, 400, 10.1, 10, 400, 10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400,10.1, 10, 400]);
 SELECT seriesPeriodDetectFFT([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
 SELECT seriesPeriodDetectFFT(arrayMap(x -> sin(x / 10), range(1000)));
-SELECT seriesPeriodDetectFFT([1,2,3]); 
+SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000)));
+SELECT seriesPeriodDetectFFT(arrayMap(x -> if((x % 6) < 3, 3, 0), range(1000)));
+SELECT seriesPeriodDetectFFT([1,2,3]);
 SELECT seriesPeriodDetectFFT(); --{ serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 SELECT seriesPeriodDetectFFT([]); -- { serverError ILLEGAL_COLUMN}
 SELECT seriesPeriodDetectFFT([NULL, NULL, NULL]); -- { serverError ILLEGAL_COLUMN}
