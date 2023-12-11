@@ -780,6 +780,13 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
                 addProjectionPart(projection.name, std::move(part));
             }
         }
+        else if (checksums.has(path))
+        {
+            auto part = getProjectionPartBuilder(projection.name).withPartFormatFromDisk().build();
+            part->setBrokenReason("Projection directory " + path + " does not exist while loading projections", ErrorCodes::NO_FILE_IN_DATA_PART);
+            addProjectionPart(projection.name, std::move(part));
+            has_broken_projection = true;
+        }
     }
 }
 

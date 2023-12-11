@@ -410,6 +410,8 @@ function test2()
     check test2
 }
 
+CLICKHOUSE_DATABASE="default"
+CLICKHOUSE_TEST_UNIQUE_NAME="test123456"
 function test3()
 {
     create_table test3 test 1
@@ -473,7 +475,7 @@ function test3()
 
     check test
 
-    break_projection test proj all_2_2_0 part
+    break_projection test proj all_1_1_0 part
 
     check test proj FILE_DOESNT_EXIST
 

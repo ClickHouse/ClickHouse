@@ -406,7 +406,7 @@ SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 1
 0
-broke all data of part 'proj' (parent part: all_2_2_0)
+broke all data of part 'proj' (parent part: all_1_1_0)
 system.parts
 all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
@@ -421,13 +421,13 @@ SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 0
 broken projections info
-all_2_2_0	proj	FILE_DOESNT_EXIST
+all_1_1_0	proj	FILE_DOESNT_EXIST
 BACKUP_CREATED
 RESTORED
 system.parts
 all_0_0_0	1	['proj','proj_2']
 all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj_2']
+all_2_2_0	1	['proj','proj_2']
 all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
@@ -442,3 +442,4 @@ SELECT d FROM test WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 0
 broken projections info
+all_1_1_0	proj	NO_FILE_IN_DATA_PART
