@@ -8,6 +8,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/AsyncLoader.h>
+#include <Common/PoolId.h>
 #include <Common/ThreadPool_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 
@@ -75,12 +77,17 @@ private:
     Tables tables;
     Tables::iterator it;
 
+    // Tasks to wait before returning a table
+    using Tasks = std::unordered_map<String, LoadTaskPtr>;
+    Tasks tasks;
+
 protected:
     DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other) noexcept
     : IDatabaseTablesIterator(std::move(other.database_name))
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
         std::swap(tables, other.tables);
+        std::swap(tasks, other.tasks);
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
@@ -103,11 +110,20 @@ public:
 
     const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const override { return it->second; }
+    const StoragePtr & table() const override
+    {
+        if (auto task = tasks.find(it->first); task != tasks.end())
+            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task->second);
+        return it->second;
+    }
+
+    void setLoadTasks(const Tasks & tasks_)
+    {
+        tasks = tasks_;
+    }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
-
 
 /** Database engine.
   * It is responsible for:
@@ -121,6 +137,10 @@ using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
+    using LazyTableCreator = std::function<StoragePtr()>;
+    /// Map{table_name, Pair{relative_table_path, LazyTableCreator}}
+    using LazyTables = std::map<String, std::pair<String, LazyTableCreator>>;
+
     IDatabase() = delete;
     explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
 
@@ -151,13 +171,59 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/,
+    virtual void loadTableFromMetadata(
+        ContextMutablePtr /*local_context*/,
+        const String & /*file_path*/,
+        const QualifiedTableName & /*name*/,
+        const ASTPtr & /*ast*/,
         LoadingStrictnessLevel /*mode*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void startupTables(ThreadPool & /*thread_pool*/, LoadingStrictnessLevel /*mode*/) {}
+    /// Create a task to load table `name` after specified dependencies `startup_after` using `async_loader`.
+    /// `load_after` must contain the tasks returned by `loadTableFromMetadataAsync()` for dependent tables (see TablesLoader).
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    virtual LoadTaskPtr loadTableFromMetadataAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*load_after*/,
+        ContextMutablePtr /*local_context*/,
+        const String & /*file_path*/,
+        const QualifiedTableName & /*name*/,
+        const ASTPtr & /*ast*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    /// Create a task to startup table `name` after specified dependencies `startup_after` using `async_loader`.
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    [[nodiscard]] virtual LoadTaskPtr startupTableAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*startup_after*/,
+        const QualifiedTableName & /*name*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    /// Create a task to startup database after specified dependencies `startup_after` using `async_loader`.
+    /// `startup_after` must contain all the tasks returned by `startupTableAsync()` for every table (see TablesLoader).
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    [[nodiscard]] virtual LoadTaskPtr startupDatabaseAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*startup_after*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    /// Waits for specific table to be started up, i.e. task returned by `startupTableAsync()` is done
+    virtual void waitTableStarted(const String & /*name*/) const {}
+
+    /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
+    /// NOTE: `no_throw` wait should be used during shutdown to (1) prevent race with startup and (2) avoid exceptions if startup failed
+    virtual void waitDatabaseStarted(bool /*no_throw*/) const {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -206,11 +272,17 @@ public:
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
-    /// Note: ATTACH TABLE statement actually uses createTable method.
-    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {}) /// NOLINT
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
-    }
+    /// @param relative_table_path - only for Atomic engine
+    ///
+    /// Note:
+    /// - ATTACH TABLE statement actually uses createTable method.
+    /// - Instead of overriding this method you should override attachTableUnlocked()
+    ///   (This method is only for DatabasesOverlay to override)
+    virtual void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path = {}); /// NOLINT
+
+    /// Register tables lazily (attach will be done only when the table will be used) instead of attaching it.
+    /// This is needed to improve startup time of clickhouse-local.
+    virtual void registerLazyTable(ContextPtr context, const String & table_name, LazyTableCreator table_creator, const String & relative_table_path = {});
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
@@ -365,6 +437,16 @@ protected:
         if (throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no SHOW CREATE TABLE query for Database{}", getEngineName());
         return nullptr;
+    }
+
+    virtual void attachTableUnlocked(ContextPtr /*context*/, const String & /*name*/, const StoragePtr & /*table*/, const String & /*relative_table_path*/ = {}) TSA_REQUIRES(mutex) /// NOLINT
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
+    }
+
+    virtual void registerLazyTableUnlocked(const String & /* table_name */, LazyTableCreator /* table_creator */, const String & /* relative_table_path */) TSA_REQUIRES(mutex) /// NOLINT
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There lazy table initialization support for Database{}", getEngineName());
     }
 
     mutable std::mutex mutex;

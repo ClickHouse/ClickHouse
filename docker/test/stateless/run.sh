@@ -19,10 +19,14 @@ dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
+echo "$BUGFIX_VALIDATE_CHECK"
+
 # Check that the tools are available under short names
-ch --query "SELECT 1" || exit 1
-chl --query "SELECT 1" || exit 1
-chc --version || exit 1
+if [[ -z "$BUGFIX_VALIDATE_CHECK" ]]; then
+    ch --query "SELECT 1" || exit 1
+    chl --query "SELECT 1" || exit 1
+    chc --version || exit 1
+fi
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
@@ -45,6 +49,16 @@ fi
 ./setup_hdfs_minicluster.sh
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
+
+if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
+    sudo cat /etc/clickhouse-server/config.d/zookeeper.xml \
+    | sed "/<use_compression>1<\/use_compression>/d" \
+    > /etc/clickhouse-server/config.d/zookeeper.xml.tmp
+    sudo mv /etc/clickhouse-server/config.d/zookeeper.xml.tmp /etc/clickhouse-server/config.d/zookeeper.xml
+
+    # it contains some new settings, but we can safely remove it
+    rm /etc/clickhouse-server/users.d/s3_cache_new.xml
+fi
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -216,6 +230,9 @@ ls -la /
 /process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 clickhouse-client -q "system flush logs" ||:
+
+# stop logs replication to make it possible to dump logs tables via clickhouse-local
+stop_logs_replication
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?

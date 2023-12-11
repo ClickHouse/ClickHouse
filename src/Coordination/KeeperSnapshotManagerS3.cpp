@@ -101,6 +101,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             new_uri.is_virtual_hosted_style,
+            /* disable_checksum= */ false,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,
