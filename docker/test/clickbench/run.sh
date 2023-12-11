@@ -31,6 +31,8 @@ clickhouse-client --time < /create.sql
 
 # Run the queries
 
+set +x
+
 TRIES=3
 QUERY_NUM=1
 while read -r query; do
@@ -46,6 +48,8 @@ while read -r query; do
 
     QUERY_NUM=$((QUERY_NUM + 1))
 done < /queries.sql
+
+set -x
 
 clickhouse-client --query "SELECT total_bytes FROM system.tables WHERE name = 'hits' AND database = 'default'"
 
