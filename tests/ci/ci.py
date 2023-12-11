@@ -499,7 +499,7 @@ def main() -> int:
         pr_info = PRInfo()
 
         docker_data = {}
-        git_ref = os.getenv("GITHUB_REF") or GR.run(f"{GIT_PREFIX} rev-parse HEAD")
+        git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
 
         # if '#no-merge-commit' is set in commit message - set git ref to PR branch head to avoid merge-commit
         if pr_info.number != 0:

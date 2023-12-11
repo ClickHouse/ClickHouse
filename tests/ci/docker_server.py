@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 from os import path as p, makedirs
-from typing import List
+from typing import Dict, List
 
 from github import Github
 
@@ -17,7 +17,6 @@ from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickh
 from commit_status_helper import format_description, get_commit, post_commit_status
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
-    CI,
     GITHUB_RUN_URL,
     REPORT_PATH,
     TEMP_PATH,
@@ -226,13 +225,15 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
     return tags
 
 
-def buildx_args(urls: dict[str, str], arch: str) -> List[str]:
+def buildx_args(urls: Dict[str, str], arch: str, direct_urls: List[str]) -> List[str]:
     args = [
         f"--platform=linux/{arch}",
         f"--label=build-url={GITHUB_RUN_URL}",
         f"--label=com.clickhouse.build.githash={git.sha}",
     ]
-    if urls:
+    if direct_urls:
+        args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
+    elif urls:
         url = urls[arch]
         args.append(f"--build-arg=REPOSITORY='{url}'")
         args.append(f"--build-arg=deb_location_url='{url}'")
@@ -246,6 +247,7 @@ def build_and_push_image(
     os: str,
     tag: str,
     version: ClickHouseVersion,
+    direct_urls: Dict[str, List[str]],
 ) -> TestResults:
     result = []  # type: TestResults
     if os != "ubuntu":
@@ -268,7 +270,11 @@ def build_and_push_image(
         metadata_path = p.join(TEMP_PATH, arch_tag)
         dockerfile = p.join(image.path, f"Dockerfile.{os}")
         cmd_args = list(init_args)
-        cmd_args.extend(buildx_args(repo_urls, arch))
+        if os == "ubuntu" and "clickhouse-server" in image.repo:
+            urls = [url for url in direct_urls[arch] if ".deb" in url]
+        else:
+            urls = [url for url in direct_urls[arch] if ".tgz" in url]
+        cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls))
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")
         cmd_args.extend(
@@ -341,22 +347,38 @@ def main():
     NAME = f"Docker image {image.repo} building check"
     pr_info = None
     repo_urls = dict()
+    direct_urls: Dict[str, List[str]] = dict()
     pr_info = PRInfo()
     release_or_pr, _ = get_release_or_pr(pr_info, args.version)
+
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
-        if CI:
-            if args.allow_build_reuse:
-                # read s3 urls from pre-downloaded build reports
-                urls = read_build_urls(build_name, Path(REPORT_PATH))
-                url = urls[0].split(build_name)[0][:-1]
-                repo_urls[arch] = f"{url}/{build_name}"
-            else:
-                # generate url address for build in current ci run
-                repo_urls[
-                    arch
-                ] = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}"
-        elif args.bucket_prefix:
+        if not args.bucket_prefix:
+            repo_urls[
+                arch
+            ] = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}"
+        else:
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
+        if args.allow_build_reuse:
+            # read s3 urls from pre-downloaded build reports
+            if "clickhouse-server" in args.image_repo:
+                PACKAGES = [
+                    "clickhouse-client",
+                    "clickhouse-server",
+                    "clickhouse-common-static",
+                ]
+            elif "clickhouse-keeper" in args.image_repo:
+                PACKAGES = ["clickhouse-keeper"]
+            else:
+                assert False, "BUG"
+            urls = read_build_urls(build_name, Path(REPORT_PATH))
+            assert (
+                urls
+            ), f"URLS has not been read from build report, report path[{REPORT_PATH}], build [{build_name}]"
+            direct_urls[arch] = [
+                url
+                for url in urls
+                if any(package in url for package in PACKAGES) and "-dbg" not in url
+            ]
 
     if args.push:
         docker_login()
@@ -368,7 +390,9 @@ def main():
     for os in args.os:
         for tag in tags:
             test_results.extend(
-                build_and_push_image(image, args.push, repo_urls, os, tag, args.version)
+                build_and_push_image(
+                    image, args.push, repo_urls, os, tag, args.version, direct_urls
+                )
             )
             if test_results[-1].status != "OK":
                 status = "failure"

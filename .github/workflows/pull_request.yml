@@ -248,7 +248,7 @@ jobs:
     with:
       build_name: binary_amd64_compat
   BuilderBinAmd64Musl:
-    needs: [FastTest, StyleCheck]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
@@ -837,7 +837,7 @@ jobs:
 #############################################################################################
   PerformanceComparisonX86:
     needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() && contains( github.event.pull_request.labels.*.name, 'performance-pr') }}
+    if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Performance Comparison
@@ -845,7 +845,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
   PerformanceComparisonAarch:
     needs: [RunConfig, BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() && contains( github.event.pull_request.labels.*.name, 'performance-pr') }}
+    if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Performance Comparison Aarch64
