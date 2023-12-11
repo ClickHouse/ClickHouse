@@ -27,6 +27,14 @@ namespace ErrorCodes
 
 class FunctionToStartOfInterval : public IFunction
 {
+private:
+    enum class Overload
+    {
+        Default,    /// toStartOfInterval(time, interval) or toStartOfInterval(time, interval, timezone)
+        Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
+    };
+    mutable Overload overload;
+
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
 
@@ -36,7 +44,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     bool hasInformationAboutMonotonicity() const override { return true; }
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
@@ -96,13 +104,49 @@ public:
         auto check_third_argument = [&]
         {
             const DataTypePtr & type_arg3 = arguments[2].type;
-            if (!isString(type_arg3))
+
+            if (isString(type_arg3))
+            {
+                overload = Overload::Default;
+
+                if (value_is_date && result_type == ResultType::Date) /// weird why this is && instead of || but too afraid to change it
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "The timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
+                        getName(), interval_type->getKind().toString());
+            }
+            else if (isDate(type_arg3) || isDateTime(type_arg3) || isDateTime64(type_arg3))
+            {
+                overload = Overload::Origin;
+
+                /// For simplicity, require the time and origin arguments have the same type and scale
+                const DataTypePtr & type_arg1 = arguments[0].type;
+
+                if (!type_arg1->equals(*type_arg3))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "1st and 3rd argument for function {} must have the same type", getName());
+                /// As a lemma, if both types are DateTime64, they will have the same scale
+            }
+            else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 3rd argument of function {}, expected a constant timezone string",
+                    "Illegal type {} of 3rd argument of function {}, expected constant timezone string or constant origin of type Date, DateTime or DateTime64",
                     type_arg3->getName(), getName());
-            if (value_is_date && result_type == ResultType::Date) /// weird why this is && instead of || but too afraid to change it
+        };
+
+        auto check_fourth_argument = [&]
+        {
+            if (overload == Overload::Default) /// sanity check
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The timezone argument of function {} with interval type {} is allowed only when the 1st argument has type DateTime or DateTimt64",
+                    "Illegal type {} of 3rd argument of function {}, expected a const origin of type Date, DateTime or DateTime64",
+                    arguments[2].type->getName(), getName());
+
+            const DataTypePtr & type_arg4 = arguments[3].type;
+            if (!isString(type_arg4))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 4th argument of function {}, expected constant timezone string",
+                    type_arg4->getName(), getName());
+
+            if (value_is_date || result_type == ResultType::Date) /// same as in check_third_argument()
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
                     getName(), interval_type->getKind().toString());
         };
 
@@ -117,21 +161,34 @@ public:
             check_second_argument();
             check_third_argument();
         }
+        else if (arguments.size() == 4)
+        {
+            check_first_argument();
+            check_second_argument();
+            check_third_argument();
+            check_fourth_argument();
+        }
         else
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                "Number of arguments for function {} doesn't match: passed {}, should be 2, 3 or 4",
                 getName(), arguments.size());
         }
 
         switch (result_type)
         {
             case ResultType::Date:
+            {
                 return std::make_shared<DataTypeDate>();
+            }
             case ResultType::DateTime:
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            {
+                const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
+            }
             case ResultType::DateTime64:
             {
+                /// TODO complex stuff is added here
                 UInt32 scale = 0;
                 if (interval_type->getKind() == IntervalKind::Nanosecond)
                     scale = 9;
@@ -140,7 +197,8 @@ public:
                 else if (interval_type->getKind() == IntervalKind::Millisecond)
                     scale = 3;
 
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+                const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
             }
         }
 
@@ -151,14 +209,21 @@ public:
     {
         const auto & time_column = arguments[0];
         const auto & interval_column = arguments[1];
-        const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        auto result_column = dispatchForTimeColumn(time_column, interval_column, result_type, time_zone);
+
+        ColumnWithTypeAndName origin_column;
+        if (overload == Overload::Origin)
+            origin_column = arguments[2];
+
+        const size_t time_zone_arg_num = (overload == Overload::Origin) ? 3 : 2;
+        const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
+
+        auto result_column = dispatchForTimeColumn(time_column, interval_column, origin_column, result_type, time_zone);
         return result_column;
     }
 
 private:
     ColumnPtr dispatchForTimeColumn(
-        const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column,
+        const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
         const DataTypePtr & result_type, const DateLUTImpl & time_zone) const
     {
         const auto & time_column_type = *time_column.type.get();
@@ -170,26 +235,26 @@ private:
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone, scale);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
         }
         else if (isDateTime(time_column_type))
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         else if (isDate(time_column_type))
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, DateTime or DateTime64", getName());
     }
 
     template <typename TimeDataType, typename TimeColumnType>
     ColumnPtr dispatchForIntervalColumn(
-        const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column,
+        const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
         const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale = 1) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
@@ -207,27 +272,27 @@ private:
         switch (interval_type->getKind())
         {
             case IntervalKind::Nanosecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Nanosecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Nanosecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Microsecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Microsecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Microsecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Millisecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Millisecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Millisecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Second:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Second>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Second>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Minute:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Minute>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Minute>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Hour:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Hour>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Hour>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Day:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Day>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Day>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Week:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Week>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Week>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Month:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Month>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Month>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Quarter:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Quarter>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Quarter>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Year:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Year>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Year>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
         }
 
         std::unreachable();
@@ -235,7 +300,7 @@ private:
 
     template <typename TimeDataType, typename TimeColumnType, typename ResultDataType, IntervalKind::Kind unit>
     ColumnPtr execute(
-        const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units,
+        const TimeDataType & time_data_type, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column,
         const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         using ResultColumnType = typename ResultDataType::ColumnType;
@@ -251,8 +316,39 @@ private:
 
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
-        for (size_t i = 0; i != size; ++i)
-            result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+        if (origin_column.column == nullptr)
+        {
+            /// Default overload
+            for (size_t i = 0; i != size; ++i)
+                result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+        }
+        else
+        {
+            /// Origin overload
+            static constexpr size_t SECONDS_PER_DAY = 86400;
+
+            UInt64 origin = origin_column.column->get64(0);
+            for (size_t i = 0; i != size; ++i)
+            {
+                auto t = time_data[i];
+                if (origin > static_cast<UInt64>(t))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin value must be earlier than the time value");
+
+                t -= origin;
+                auto res = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(t, num_units, time_zone, scale_multiplier));
+
+                result_data[i] = 0;
+
+                if (isDateTime(time_data_type) && (unit == IntervalKind::Week || unit == IntervalKind::Month || unit == IntervalKind::Quarter || unit == IntervalKind::Year))
+                {
+                    result_data[i] += res + (origin / SECONDS_PER_DAY);
+                }
+                else
+                {
+                    result_data[i] += res + origin;
+                }
+            }
+        }
 
         return result_col;
     }

@@ -1,0 +1,6 @@
+-- Negative tests
+-- time argument is of type Date
+2023-09-22
+-- time argument is of type DateTime
+2023-09-22
+2023-10-09 10:11:04
