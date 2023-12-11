@@ -80,7 +80,7 @@ target_include_directories(_qatzstd_plugin PRIVATE
     ${ZSTD_LIBRARY_DIR}
     ${LIBQAT_HEADER_DIR})
 target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_QATZSTD_COMPRESSION -DINTREE)
-add_library (ch_contrib::qatzstd_plugin ALIAS _qatzstd_plugin)
 target_include_directories(_qatzstd_plugin SYSTEM PUBLIC $<BUILD_INTERFACE:${QATZSTD_SRC_DIR}> $<INSTALL_INTERFACE:include>)
+add_library (ch_contrib::qatzstd_plugin ALIAS _qatzstd_plugin)
 endif ()
 
