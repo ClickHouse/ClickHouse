@@ -180,7 +180,7 @@ private:
 
 UInt32 CompressionCodecQATZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    if(!initialized)
+    if (!initialized)
     {
         cctx = ZSTD_createCCtx();
         /* Start QAT device, start QAT device at any time before compression job started */
@@ -241,7 +241,7 @@ CompressionCodecQATZSTD::CompressionCodecQATZSTD(int level_)
 
 CompressionCodecQATZSTD::~CompressionCodecQATZSTD()
 {
-    if(initialized)
+    if (initialized)
     {
         /* Free sequence producer state */
         QZSTD_freeSeqProdState(sequenceProducerState);
