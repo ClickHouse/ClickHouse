@@ -315,20 +315,6 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
-{
-    ColumnPtrMap ptrs;
-    ptrs.reserve(names.size());
-
-    for (const auto & column_name : names)
-    {
-        ColumnPtr column = block.getByName(column_name).column;
-        ptrs[column_name] = materializeColumn(column);
-    }
-
-    return ptrs;
-}
-
 ColumnPtr materializeColumn(const Block & block, const String & column_name)
 {
     const auto & src_column = block.getByName(column_name).column;

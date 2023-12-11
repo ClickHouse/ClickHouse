@@ -70,7 +70,6 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void convertToFullColumnsInplace(Block & block);
 void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type = true);

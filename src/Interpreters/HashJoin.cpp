@@ -373,10 +373,20 @@ HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_c
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
-    if (keys_size == 1
-        && (typeid_cast<const ColumnString *>(key_columns[0])
-            || (isColumnConst(*key_columns[0]) && typeid_cast<const ColumnString *>(&assert_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
-        return Type::key_string;
+    if (keys_size == 1)
+    {
+        auto is_string_column = [](const IColumn * column_ptr) -> bool
+        {
+            if (const auto * lc_column_ptr = typeid_cast<const ColumnLowCardinality *>(column_ptr))
+                return typeid_cast<const ColumnString *>(lc_column_ptr->getDictionary().getNestedColumn().get());
+            return typeid_cast<const ColumnString *>(column_ptr);
+        };
+
+        const auto * key_column = key_columns[0];
+        if (is_string_column(key_column) ||
+            (isColumnConst(*key_column) && is_string_column(assert_cast<const ColumnConst *>(key_column)->getDataColumnPtr().get())))
+            return Type::key_string;
+    }
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
         return Type::key_fixed_string;
@@ -791,7 +801,13 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
     size_t rows = source_block.rows();
 
-    ColumnPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
+    const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
+    ColumnPtrMap all_key_columns(right_key_names.size());
+    for (const auto & column_name : right_key_names)
+    {
+        const auto & column = source_block.getByName(column_name).column;
+        all_key_columns[column_name] = recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+    }
 
     Block block_to_save = prepareRightBlock(source_block);
     if (shrink_blocks)
@@ -804,6 +820,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addBlockToJoin called when HashJoin locked to prevent updates");
 
         data->blocks_allocated_size += block_to_save.allocatedBytes();
+
+        assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "Saved joined block structure mismatch");
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
 
@@ -1061,46 +1079,12 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    static void assertBlockEqualsStructureUpToLowCard(const Block & lhs_block, const Block & rhs_block)
-    {
-        if (lhs_block.columns() != rhs_block.columns())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Different number of columns in blocks [{}] and [{}]",
-                lhs_block.dumpStructure(), rhs_block.dumpStructure());
-
-        for (size_t i = 0; i < lhs_block.columns(); ++i)
-        {
-            const auto & lhs = lhs_block.getByPosition(i);
-            const auto & rhs = rhs_block.getByPosition(i);
-            if (lhs.name != rhs.name)
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}] ({} != {})",
-                    lhs_block.dumpStructure(), rhs_block.dumpStructure(), lhs.name, rhs.name);
-
-            const auto & ltype = recursiveRemoveLowCardinality(lhs.type);
-            const auto & rtype = recursiveRemoveLowCardinality(rhs.type);
-            if (!ltype->equals(*rtype))
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}] ({} != {})",
-                    lhs_block.dumpStructure(), rhs_block.dumpStructure(), ltype->getName(), rtype->getName());
-
-            const auto & lcol = recursiveRemoveLowCardinality(lhs.column);
-            const auto & rcol = recursiveRemoveLowCardinality(rhs.column);
-            if (lcol->getDataType() != rcol->getDataType())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}] ({} != {})",
-                    lhs_block.dumpStructure(), rhs_block.dumpStructure(), lcol->getDataType(), rcol->getDataType());
-        }
-    }
 
     template <bool has_defaults>
     void appendFromBlock(const Block & block, size_t row_num)
     {
         if constexpr (has_defaults)
             applyLazyDefaults();
-
-#ifndef NDEBUG
-        /// Like assertBlocksHaveEqualStructure but doesn't check low cardinality
-        assertBlockEqualsStructureUpToLowCard(sample_block, block);
-#else
-        UNUSED(assertBlockEqualsStructureUpToLowCard);
-#endif
 
         if (is_join_get)
         {
