@@ -112,7 +112,8 @@ public:
 
     ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 
-    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(const NamesAndTypesList & columns) const;
+    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(
+        const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults = {}) const;
 
     StoragePtr getNested() const;
 
