@@ -134,7 +134,11 @@ void FileCache::initialize()
     }
 
     for (size_t i = 0; i < background_download_threads; ++i)
-         download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
+    {
+        download_threads.emplace_back(std::make_unique<DownloadThread>());
+        download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
+            [&, this] { metadata.downloadThreadFunc(download_threads.back()->stop_flag); });
+    }
 
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ metadata.cleanupThreadFunc(); }});
 
@@ -1266,9 +1270,12 @@ void FileCache::deactivateBackgroundOperations()
     metadata.cancelDownload();
     metadata.cancelCleanup();
 
-    for (auto & thread : download_threads)
-        if (thread.joinable())
-            thread.join();
+    for (const auto & download_thread : download_threads)
+    {
+        download_thread->stop_flag.store(true);
+        if (download_thread->thread && download_thread->thread->joinable())
+            download_thread->thread->join();
+    }
 
     if (cleanup_thread && cleanup_thread->joinable())
         cleanup_thread->join();
@@ -1356,44 +1363,69 @@ void FileCache::assertCacheCorrectness()
 
 void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)
 {
-    if (!is_initialized || shutdown)
+    if (!is_initialized || shutdown || new_settings == actual_settings)
         return;
 
-    size_t add_download_threads = 0;
+    Int32 download_threads_diff = 0;
     {
         std::lock_guard lock(apply_settings_mutex);
-
-        if (new_settings == actual_settings)
-            return;
 
         size_t background_download_queue_size_limit = metadata.getBackgroundDownloadQueueSizeLimit();
         if (background_download_queue_size_limit != new_settings.background_download_queue_size_limit)
         {
-            LOG_DEBUG(log, "Changing background_download_queue_size_limit from {} to {}",
-                      background_download_queue_size_limit, new_settings.background_download_queue_size_limit);
-
             metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit);
             actual_settings.background_download_queue_size_limit = new_settings.background_download_queue_size_limit;
+
+            LOG_INFO(log, "Changed background_download_queue_size_limit from {} to {}",
+                     background_download_queue_size_limit, new_settings.background_download_queue_size_limit);
         }
 
-        if (background_download_threads < new_settings.background_download_threads)
+        if (background_download_threads != new_settings.background_download_threads)
         {
-            LOG_DEBUG(log, "Changing background_download_threads from {} to {}",
-                      background_download_threads, new_settings.background_download_threads);
+            if (background_download_threads < new_settings.background_download_threads)
+            {
+                download_threads_diff = Int32(new_settings.background_download_threads) - Int32(background_download_threads);
+                background_download_threads = actual_settings.background_download_threads = new_settings.background_download_threads;
+            }
+            else if (background_download_threads > new_settings.background_download_threads)
+            {
+                download_threads_diff = Int32(new_settings.background_download_threads) - Int32(background_download_threads);
+                background_download_threads = actual_settings.background_download_threads = new_settings.background_download_threads;
+            }
 
-            add_download_threads = new_settings.background_download_threads - background_download_threads;
-            background_download_threads = actual_settings.background_download_threads = new_settings.background_download_threads;
+            LOG_INFO(log, "Changed background_download_threads from {} to {} (diff: {})",
+                     background_download_threads, new_settings.background_download_threads, download_threads_diff);
         }
     }
 
-    if (add_download_threads)
+    if (download_threads_diff)
     {
         auto lock = lockCache();
         if (shutdown)
             return;
 
-        for (size_t i = 0; i < add_download_threads; ++i)
-            download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
+        if (download_threads_diff > 0)
+        {
+            for (size_t i = 0; i < size_t(download_threads_diff); ++i)
+            {
+                download_threads.emplace_back(std::make_unique<DownloadThread>());
+                download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
+                    [&, this] { metadata.downloadThreadFunc(download_threads.back()->stop_flag); });
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < size_t(-download_threads_diff); ++i)
+            {
+                auto & download_thread = *download_threads.back();
+                download_thread.stop_flag.store(true);
+
+                if (download_thread.thread && download_thread.thread->joinable())
+                    download_thread.thread->join();
+
+                download_threads.pop_back();
+            }
+        }
     }
 }
 

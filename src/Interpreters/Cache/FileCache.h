@@ -211,7 +211,13 @@ private:
      * A background cleanup task.
      * Clears removed cache entries from metadata.
      */
-    std::vector<ThreadFromGlobalPool> download_threads;
+    struct DownloadThread
+    {
+        std::unique_ptr<ThreadFromGlobalPool> thread;
+        std::atomic_bool stop_flag{false};
+    };
+    std::vector<std::unique_ptr<DownloadThread>> download_threads;
+
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     void assertInitialized() const;

@@ -527,10 +527,10 @@ private:
     std::queue<DownloadInfo> queue;
 };
 
-void CacheMetadata::downloadThreadFunc()
+void CacheMetadata::downloadThreadFunc(const std::atomic_bool & stop_flag)
 {
     std::optional<Memory<>> memory;
-    while (true)
+    while (stop_flag.load() == false)
     {
         Key key;
         size_t offset;
@@ -543,8 +543,8 @@ void CacheMetadata::downloadThreadFunc()
 
             if (download_queue->queue.empty())
             {
-                download_queue->cv.wait(lock, [&](){ return download_queue->cancelled || !download_queue->queue.empty(); });
-                if (download_queue->cancelled)
+                download_queue->cv.wait(lock, [&](){ return download_queue->cancelled || !download_queue->queue.empty() || stop_flag.load() == true; });
+                if (download_queue->cancelled || stop_flag.load() == true)
                     return;
             }
 

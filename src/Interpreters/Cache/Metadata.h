@@ -150,7 +150,7 @@ public:
     /// E.g. number of elements submitted to background cleanup should remain low.
     void cleanupThreadFunc();
 
-    void downloadThreadFunc();
+    void downloadThreadFunc(const std::atomic_bool & stop_flag);
 
     void cancelDownload();
 
