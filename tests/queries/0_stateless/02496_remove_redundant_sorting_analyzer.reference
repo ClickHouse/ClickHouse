@@ -113,7 +113,7 @@ FROM
     )
     ORDER BY number DESC
 ) AS t2
-ORDER BY number
+ORDER BY t1.number, t2.number
 -- explain
 Expression (Project names)
   Sorting (Sorting for ORDER BY)

@@ -73,7 +73,7 @@ FROM
     SELECT DISTINCT number AS n
     FROM numbers(2)
 ) as y
-ORDER BY n
+ORDER BY x.n, y.n
 -- explain
 Expression (Projection)
   Distinct
@@ -155,7 +155,7 @@ FROM
     FROM VALUES('Hello', 'World', 'Goodbye')
 ) AS words
 ARRAY JOIN [0, 1] AS arr
-ORDER BY arr
+ORDER BY c1, arr
 -- explain
 Expression (Projection)
   Distinct
@@ -169,9 +169,9 @@ Expression (Projection)
                   Expression (Before ORDER BY)
                     ReadFromStorage (Values)
 -- execute
+Goodbye
 Hello
 World
-Goodbye
 -- WITH FILL: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs
 -- query
 SELECT DISTINCT *

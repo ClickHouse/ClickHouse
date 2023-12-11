@@ -60,7 +60,7 @@ FROM
     SELECT DISTINCT number AS n
     FROM numbers(2)
 ) as y
-ORDER BY n"
+ORDER BY x.n, y.n"
 run_query "$query"
 
 echo "-- DISTINCT duplicates with several columns"
@@ -99,7 +99,7 @@ FROM
     FROM VALUES('Hello', 'World', 'Goodbye')
 ) AS words
 ARRAY JOIN [0, 1] AS arr
-ORDER BY arr"
+ORDER BY c1, arr"
 run_query "$query"
 
 echo "-- WITH FILL: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs"

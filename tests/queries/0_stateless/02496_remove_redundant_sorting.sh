@@ -97,7 +97,7 @@ FROM
     )
     ORDER BY number DESC
 ) AS t2
-ORDER BY number"
+ORDER BY t1.number, t2.number"
 run_query "$query"
 
 echo "-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries"
