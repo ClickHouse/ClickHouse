@@ -405,26 +405,28 @@ private:
             }
         }
 
-        if (!shared_data->is_bucket_processed[current_bucket_num])
-            return Status::NeedData;
-
-        if (!two_level_chunks[current_bucket_num])
-            return Status::NeedData;
-
-        auto chunk = std::move(two_level_chunks[current_bucket_num]);
-        const auto has_rows = chunk.hasRows();
-        if (has_rows)
-            output.push(std::move(chunk));
-
-        ++current_bucket_num;
-        if (current_bucket_num == NUM_BUCKETS)
+        while (current_bucket_num < NUM_BUCKETS)
         {
-            output.finish();
-            /// Do not close inputs, they must be finished.
-            return Status::Finished;
+            if (!shared_data->is_bucket_processed[current_bucket_num])
+                return Status::NeedData;
+
+            if (!two_level_chunks[current_bucket_num])
+                return Status::NeedData;
+
+            auto chunk = std::move(two_level_chunks[current_bucket_num]);
+            ++current_bucket_num;
+
+            const auto has_rows = chunk.hasRows();
+            if (has_rows)
+            {
+                output.push(std::move(chunk));
+                return Status::PortFull;
+            }
         }
 
-        return has_rows ? Status::PortFull : Status::NeedData;
+        output.finish();
+        /// Do not close inputs, they must be finished.
+        return Status::Finished;
     }
 
     AggregatingTransformParamsPtr params;
