@@ -173,6 +173,9 @@ add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_co
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
+# DateLUTImpl is too slow in debug builds (binary is 3x slower because of this,
+# 0.3 sec vs 1 sec), so let's compile it with optimizations always.
+set_source_files_properties(Common/DateLUTImpl.cpp PROPERTIES COMPILE_FLAGS "-O3")
 
 add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
