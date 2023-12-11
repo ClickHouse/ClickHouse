@@ -46,4 +46,20 @@ void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query,
                     backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
 }
 
+/// Add a table to the database, but do not add it to the metadata. The database may not support this method.
+///
+/// Note: ATTACH TABLE statement actually uses createTable method.
+void IDatabase::attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) /// NOLINT
+{
+    std::lock_guard lock(mutex);
+    attachTableUnlocked(context, name, table, relative_table_path);
+}
+
+void IDatabase::registerLazyTable(ContextPtr, const String & table_name, LazyTableCreator table_creator, const String & relative_table_path) /// NOLINT
+{
+    std::lock_guard lock(mutex);
+    registerLazyTableUnlocked(table_name, std::move(table_creator), relative_table_path);
+}
+
+
 }

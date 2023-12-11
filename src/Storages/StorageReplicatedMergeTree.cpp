@@ -1379,7 +1379,6 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
 
-
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 }
 
@@ -1869,7 +1868,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             }
         }
 
-        throw zkutil::KeeperException(e);
+        throw zkutil::KeeperMultiException(e, ops, responses);
     }
 }
 

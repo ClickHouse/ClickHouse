@@ -35,6 +35,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
+#include <Disks/IO/IOUringReader.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -310,6 +311,11 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
 
+#if USE_LIBURING
+    mutable OnceFlag io_uring_reader_initialized;
+    mutable std::unique_ptr<IOUringReader> io_uring_reader;
+#endif
+
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
 
@@ -368,6 +374,7 @@ struct ContextSharedPart : boost::noncopyable
     std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
     ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
     std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
+    size_t clusters_version TSA_GUARDED_BY(clusters_mutex) = 0;
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
@@ -3526,6 +3533,14 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, getMacros(), config_name);
     else
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
+
+    ++shared->clusters_version;
+}
+
+size_t Context::getClustersVersion() const
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    return shared->clusters_version;
 }
 
 
@@ -4805,7 +4820,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     shared->are_background_executors_initialized = true;
 }
 
-bool Context::areBackgroundExecutorsInitialized()
+bool Context::areBackgroundExecutorsInitialized() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->are_background_executors_initialized;
@@ -4854,6 +4869,17 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
             return *shared->synchronous_local_fs_reader;
     }
 }
+
+#if USE_LIBURING
+IOUringReader & Context::getIOURingReader() const
+{
+    callOnce(shared->io_uring_reader_initialized, [&] {
+        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
+    });
+
+    return *shared->io_uring_reader;
+}
+#endif
 
 ThreadPool & Context::getThreadPoolWriter() const
 {

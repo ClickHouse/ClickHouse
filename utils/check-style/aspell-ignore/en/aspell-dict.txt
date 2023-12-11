@@ -872,7 +872,6 @@ TCPConnection
 TCPThreads
 TDigest
 TINYINT
-TKSV
 TLSv
 TPCH
 TSDB
