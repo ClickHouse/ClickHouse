@@ -269,7 +269,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
         sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
     }
 
-    JoinCommon::convertToFullColumnsInplace(right_table_keys);
+    materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
@@ -2028,7 +2028,7 @@ private:
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
             default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type)   ;
+                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type);
         }
 
         UNREACHABLE();
@@ -2080,8 +2080,8 @@ private:
             {
                 const Mapped & mapped = it->getMapped();
 
-                size_t off = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(off))
+                size_t offset = map.offsetInternal(it.getPtr());
+                if (parent.isUsed(offset))
                     continue;
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
