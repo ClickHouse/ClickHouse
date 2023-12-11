@@ -1,35 +1,33 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnStringHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
 
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "formatString.h"
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
 
-template <typename Name>
 class FormatFunction : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = "format";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FormatFunction>(); }
 
@@ -52,18 +50,6 @@ public:
                 getName(),
                 arguments.size());
 
-        for (const auto arg_idx : collections::range(0, arguments.size()))
-        {
-            const auto * arg = arguments[arg_idx].get();
-            if (!isStringOrFixedString(arg))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}",
-                    arg->getName(),
-                    arg_idx + 1,
-                    getName());
-        }
-
         return std::make_shared<DataTypeString>();
     }
 
@@ -83,6 +69,7 @@ public:
         std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
         std::vector<size_t> fixed_string_sizes(arguments.size() - 1);
         std::vector<std::optional<String>> constant_strings(arguments.size() - 1);
+        std::vector<ColumnString::MutablePtr> converted_col_ptrs(arguments.size() - 1);
 
         bool has_column_string = false;
         bool has_column_fixed_string = false;
@@ -106,8 +93,29 @@ public:
                 constant_strings[i - 1] = const_col->getValue<String>();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                    column->getName(), getName());
+            {
+                /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
+                auto full_column = column->convertToFullIfNeeded();
+                auto serialization = arguments[i].type->getDefaultSerialization();
+                auto converted_col_str = ColumnString::create();
+                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
+                auto & write_buffer = write_helper.getWriteBuffer();
+                FormatSettings format_settings;
+                for (size_t row = 0; row < column->size(); ++row)
+                {
+                    serialization->serializeText(*full_column, row, write_buffer, format_settings);
+                    write_helper.rowWritten();
+                }
+                write_helper.finalize();
+
+                /// Same as the normal `ColumnString` branch
+                has_column_string = true;
+                data[i - 1] = &converted_col_str->getChars();
+                offsets[i - 1] = &converted_col_str->getOffsets();
+
+                /// Keep the pointer alive
+                converted_col_ptrs[i - 1] = std::move(converted_col_str);
+            }
         }
 
         FormatStringImpl::formatExecute(
@@ -127,11 +135,7 @@ public:
 };
 
 
-struct NameFormat
-{
-    static constexpr auto name = "format";
-};
-using FunctionFormat = FormatFunction<NameFormat>;
+using FunctionFormat = FormatFunction;
 
 }
 
