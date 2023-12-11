@@ -787,8 +787,25 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
     };
 
-    auto commit_new_part_stage = [&] () -> CommitRetryContext::Stages
+    auto commit_new_part_stage = [&]() -> CommitRetryContext::Stages
     {
+        if (storage.is_readonly)
+        {
+            /// stop retries if in shutdown
+            if (storage.shutdown_prepared_called)
+                throw Exception(
+                    ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+
+            /// When we attach existing parts it's okay to be in read-only mode
+            /// For example during RESTORE REPLICA.
+            if (!writing_existing_part)
+            {
+                retries_ctl.setUserError(
+                    ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
+                return CommitRetryContext::ERROR;
+            }
+        }
+
         if constexpr (async_insert)
         {
             /// prefilter by cache
@@ -798,8 +815,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 return CommitRetryContext::ERROR;
             }
         }
-
-        LOG_INFO(log, "commit_new_part_stage");
 
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
@@ -832,8 +847,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
 
         auto block_number = block_number_lock->getNumber();
-
-        LOG_INFO(log, "lock_part_number_stage {}", block_number);
 
         /// Set part attributes according to part_number.
         part->info.min_block = block_number;
@@ -885,15 +898,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
         ThreadFuzzer::maybeInjectSleep();
 
-        fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op,
-                  {
-                      if (!zookeeper->fault_policy)
-                      {
-                          zookeeper->logger = log;
-                          zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
-                      }
-                      zookeeper->fault_policy->must_fail_after_op = true;
-                  });
+        fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op, { zookeeper->forceFailureAfterOperation(); });
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
@@ -1016,22 +1021,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     {
         zookeeper->setKeeper(storage.getZooKeeper());
 
-        if (storage.is_readonly)
-        {
-            /// stop retries if in shutdown
-            if (storage.shutdown_prepared_called)
-                throw Exception(
-                    ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
-
-            /// When we attach existing parts it's okay to be in read-only mode
-            /// For example during RESTORE REPLICA.
-            if (!writing_existing_part)
-            {
-                retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
-                return;
-            }
-        }
-
         while (true)
         {
             const auto prev_stage = retry_context.stage;
@@ -1051,8 +1040,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 return;
             }
         }
-    },
-    [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
+    });
 
     if (!retry_context.conflict_block_ids.empty())
         return {retry_context.conflict_block_ids, false};
@@ -1102,15 +1090,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     try
     {
-        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0,
-        {
-            if (!zookeeper->fault_policy)
-            {
-                zookeeper->logger = log;
-                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
-            }
-            zookeeper->fault_policy->must_fail_before_op = true;
-        });
+        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0, { zookeeper->forceFailureBeforeOperation(); });
 
         while (true)
         {
