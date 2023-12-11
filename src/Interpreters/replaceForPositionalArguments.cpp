@@ -27,16 +27,18 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
         return false;
 
     auto which = ast_literal->value.getType();
-    if (which != Field::Types::UInt64)
+    if (which != Field::Types::UInt64 && which != Field::Types::Int64)
         return false;
 
-    auto pos = ast_literal->value.get<UInt64>();
-    if (!pos || pos > columns.size())
+    auto pos = ast_literal->value.get<Int64>();
+    if (!pos || static_cast<size_t>(std::abs(pos)) > columns.size())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Positional argument out of bounds: {} (expected in range [1, {}]",
                         pos, columns.size());
 
-    const auto & column = columns[--pos];
+    pos = (pos > 0) ? --pos : columns.size() + pos;
+
+    const auto & column = columns[pos];
     if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))
     {
         argument = column->clone();
