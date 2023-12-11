@@ -1353,7 +1353,9 @@ void Planner::buildPlanForQueryNode()
             const auto & modifiers = table_node->getTableExpressionModifiers();
             if (modifiers.has_value() && modifiers->hasFinal())
             {
-                if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+                if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                else
                 {
                     LOG_DEBUG(
                         &Poco::Logger::get("Planner"),
@@ -1361,17 +1363,18 @@ void Planner::buildPlanForQueryNode()
                     auto & mutable_context = planner_context->getMutableQueryContext();
                     mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 }
-                else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-                {
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
-                }
             }
         }
+    }
 
+    if (settings.allow_experimental_parallel_reading_from_replicas > 0 || !settings.parallel_replicas_custom_key.value.empty())
+    {
         /// Check support for JOIN for parallel replicas with custom key
         if (planner_context->getTableExpressionNodeToData().size() > 1)
         {
-            if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            else
             {
                 LOG_DEBUG(
                     &Poco::Logger::get("Planner"),
@@ -1380,10 +1383,6 @@ void Planner::buildPlanForQueryNode()
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-            }
-            else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-            {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
             }
         }
     }
