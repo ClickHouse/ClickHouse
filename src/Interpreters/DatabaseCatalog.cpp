@@ -354,6 +354,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             return {};
         }
 
+        /// Wait for table to be started because we are going to return StoragePtr
+        db_and_table.first->waitTableStarted(table_id.getTableName());
+
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {

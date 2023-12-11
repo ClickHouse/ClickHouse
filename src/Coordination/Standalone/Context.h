@@ -20,6 +20,8 @@
 
 #include <memory>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -28,6 +30,7 @@ class Macros;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class BlobStorageLog;
+class IOUringReader;
 
 /// A small class which owns ContextShared.
 /// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
@@ -127,6 +130,9 @@ public:
     ApplicationType getApplicationType() const { return ApplicationType::KEEPER; }
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+#if USE_LIBURING
+    IOUringReader & getIOURingReader() const;
+#endif
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
 

@@ -110,12 +110,12 @@
     M(StorageHiveThreads, "Number of threads in the StorageHive thread pool.") \
     M(StorageHiveThreadsActive, "Number of threads in the StorageHive thread pool running a task.") \
     M(StorageHiveThreadsScheduled, "Number of queued or active jobs in the StorageHive thread pool.") \
-    M(TablesLoaderThreads, "Number of threads in the tables loader thread pool.") \
-    M(TablesLoaderThreadsActive, "Number of threads in the tables loader thread pool running a task.") \
-    M(TablesLoaderThreadsScheduled, "Number of queued or active jobs in the tables loader thread pool.") \
-    M(DatabaseOrdinaryThreads, "Number of threads in the Ordinary database thread pool.") \
-    M(DatabaseOrdinaryThreadsActive, "Number of threads in the Ordinary database thread pool running a task.") \
-    M(DatabaseOrdinaryThreadsScheduled, "Number of queued or active jobs in the Ordinary database thread pool.") \
+    M(TablesLoaderBackgroundThreads, "Number of threads in the tables loader background thread pool.") \
+    M(TablesLoaderBackgroundThreadsActive, "Number of threads in the tables loader background thread pool running a task.") \
+    M(TablesLoaderBackgroundThreadsScheduled, "Number of queued or active jobs in the tables loader background thread pool.") \
+    M(TablesLoaderForegroundThreads, "Number of threads in the tables loader foreground thread pool.") \
+    M(TablesLoaderForegroundThreadsActive, "Number of threads in the tables loader foreground thread pool running a task.") \
+    M(TablesLoaderForegroundThreadsScheduled, "Number of queued or active jobs in the tables loader foreground thread pool.") \
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseOnDiskThreadsScheduled, "Number of queued or active jobs in the DatabaseOnDisk thread pool.") \

@@ -243,7 +243,7 @@ struct LockedKey : private boost::noncopyable
 
     void markAsRemoved();
 
-    FileSegments sync();
+    std::vector<FileSegment::Info> sync(FileCache & cache);
 
     std::string toString() const;
 

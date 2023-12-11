@@ -1269,39 +1269,39 @@ void FileCache::deactivateBackgroundOperations()
         cleanup_thread->join();
 }
 
-FileSegments FileCache::getSnapshot()
+std::vector<FileSegment::Info> FileCache::getFileSegmentInfos()
 {
     assertInitialized();
 #ifndef NDEBUG
     assertCacheCorrectness();
 #endif
 
-    FileSegments file_segments;
+    std::vector<FileSegment::Info> file_segments;
     metadata.iterate([&](const LockedKey & locked_key)
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
-            file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
+            file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment, *this));
     });
     return file_segments;
 }
 
-FileSegments FileCache::getSnapshot(const Key & key)
+std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const Key & key)
 {
-    FileSegments file_segments;
+    std::vector<FileSegment::Info> file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL);
     for (const auto & [_, file_segment_metadata] : *locked_key)
-        file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
+        file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment, *this));
     return file_segments;
 }
 
-FileSegments FileCache::dumpQueue()
+std::vector<FileSegment::Info> FileCache::dumpQueue()
 {
     assertInitialized();
 
-    FileSegments file_segments;
+    std::vector<FileSegment::Info> file_segments;
     main_priority->iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
     {
-        file_segments.push_back(FileSegment::getSnapshot(segment_metadata->file_segment));
+        file_segments.push_back(FileSegment::getInfo(segment_metadata->file_segment, *this));
         return PriorityIterationResult::CONTINUE;
     }, lockCache());
 
@@ -1381,12 +1381,12 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     return std::make_unique<QueryContextHolder>(query_id, this, std::move(context));
 }
 
-FileSegments FileCache::sync()
+std::vector<FileSegment::Info> FileCache::sync()
 {
-    FileSegments file_segments;
+    std::vector<FileSegment::Info> file_segments;
     metadata.iterate([&](LockedKey & locked_key)
     {
-        auto broken = locked_key.sync();
+        auto broken = locked_key.sync(*this);
         file_segments.insert(file_segments.end(), broken.begin(), broken.end());
     });
     return file_segments;
