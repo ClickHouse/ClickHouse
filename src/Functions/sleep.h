@@ -140,7 +140,7 @@ public:
                 {
                     UInt64 sleep_time = microseconds - elapsed;
                     if (query_status)
-                        sleep_time = std::min(sleep_time, /* 1 second */ static_cast<size_t>(1000000));
+                        sleep_time = std::min(sleep_time, /* 1 second */ static_cast<UInt64>(1000000));
 
                     sleepForMicroseconds(sleep_time);
                     elapsed += sleep_time;
