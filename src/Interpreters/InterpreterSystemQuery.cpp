@@ -409,15 +409,15 @@ BlockIO InterpreterSystemQuery::execute()
 
             MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const FileSegments & file_segments)
+            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const std::vector<FileSegment::Info> & file_segments)
             {
                 for (const auto & file_segment : file_segments)
                 {
                     size_t i = 0;
-                    const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
+                    const auto path = cache->getPathInLocalCache(file_segment.key, file_segment.offset, file_segment.kind);
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
-                    res_columns[i++]->insert(file_segment->getDownloadedSize());
+                    res_columns[i++]->insert(file_segment.downloaded_size);
                 }
             };
 

@@ -5,6 +5,8 @@ set mutations_sync = 2;
 -- system.parts has server default, timezone cannot be randomized
 set session_timezone = '';
 
+SET allow_suspicious_ttl_expressions = 1;
+
 drop table if exists ttl;
 
 create table ttl (d Date, a Int) engine = MergeTree order by a partition by toDayOfMonth(d)
