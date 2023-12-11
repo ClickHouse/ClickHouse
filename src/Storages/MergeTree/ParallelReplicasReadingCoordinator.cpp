@@ -300,20 +300,20 @@ void DefaultCoordinator::selectPartsAndRanges(const PartRefs & container, size_t
         while (!part->description.ranges.empty() && current_mark_size < min_number_of_marks)
         {
             auto & range = part->description.ranges.front();
+            const size_t needed = min_number_of_marks - current_mark_size;
 
-            if (range.getNumberOfMarks() > min_number_of_marks)
+            if (range.getNumberOfMarks() > needed)
             {
-                auto new_range = range;
-                range.begin += min_number_of_marks;
-                new_range.end = new_range.begin + min_number_of_marks;
+                auto range_we_take = MarkRange{range.begin, range.begin + needed};
+                response.description.back().ranges.emplace_back(range_we_take);
+                current_mark_size += range_we_take.getNumberOfMarks();
 
-                response.description.back().ranges.emplace_back(new_range);
-                current_mark_size += new_range.getNumberOfMarks();
-                continue;
+                range.begin += needed;
+                break;
             }
 
-            current_mark_size += part->description.ranges.front().getNumberOfMarks();
-            response.description.back().ranges.emplace_back(part->description.ranges.front());
+            response.description.back().ranges.emplace_back(range);
+            current_mark_size += range.getNumberOfMarks();
             part->description.ranges.pop_front();
         }
     }
