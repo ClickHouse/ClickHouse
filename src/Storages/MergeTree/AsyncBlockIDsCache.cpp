@@ -79,11 +79,12 @@ catch (...)
 
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
-    : storage(storage_),
-    update_min_interval(storage.getSettings()->async_block_ids_cache_min_update_interval_ms),
-    path(storage.getZooKeeperPath() + "/async_blocks"),
-    log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)"),
-    log(&Poco::Logger::get(log_name))
+    : storage(storage_)
+    , update_min_interval(storage.getSettings()->async_block_ids_cache_min_update_interval_ms)
+    , update_wait(storage.getSettings()->async_block_ids_cache_update_wait_ms)
+    , path(storage.getZooKeeperPath() + "/async_blocks")
+    , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
+    , log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ update(); });
 }
@@ -102,21 +103,20 @@ Strings AsyncBlockIDsCache<TStorage>::detectConflicts(const Strings & paths, UIn
     if (!storage.getSettings()->use_async_block_ids_cache)
         return {};
 
-    std::unique_lock lk(mu);
-    /// For first time access of this cache, the `last_version` is zero, so it will not block here.
-    /// For retrying request, We compare the request version and cache version, because zk only returns
-    /// incomplete information of duplication, we need to update the cache to find out more duplication.
-    /// The timeout here is to prevent deadlock, just in case.
-    cv.wait_for(lk, update_min_interval * 2, [&]{return version != last_version;});
-
-    if (version == last_version)
-        LOG_INFO(log, "Read cache with a old version {}", last_version);
-
     CachePtr cur_cache;
-    cur_cache = cache_ptr;
-    last_version = version;
+    {
+        std::unique_lock lk(mu);
+        /// For first time access of this cache, the `last_version` is zero, so it will not block here.
+        /// For retrying request, We compare the request version and cache version, because zk only returns
+        /// incomplete information of duplication, we need to update the cache to find out more duplication.
+        cv.wait_for(lk, update_wait, [&]{return version != last_version;});
 
-    lk.unlock();
+        if (version == last_version)
+            LOG_INFO(log, "Read cache with a old version {}", last_version);
+
+        cur_cache = cache_ptr;
+        last_version = version;
+    }
 
     if (cur_cache == nullptr)
         return {};
