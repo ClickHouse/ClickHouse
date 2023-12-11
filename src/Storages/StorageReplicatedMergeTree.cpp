@@ -694,6 +694,44 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     const auto settings = getSettings();
     if (settings->allow_remote_fs_zero_copy_replication)
     {
+        auto disks = getStoragePolicy()->getDisks();
+        std::set<DataSourceType> disk_types_for_zero_copy;
+        for (auto & disk : disks)
+        {
+            if (!disk->supportZeroCopyReplication())
+                continue;
+
+            disk_types_for_zero_copy.insert(disk->getDataSourceDescription().type);
+        }
+
+        const auto table_shared_id_ = getTableSharedID();
+
+        if (!disk_types_for_zero_copy.empty())
+        {
+            /// create all ancestors of remote_fs_zero_copy_zookeeper_path
+            auto remote_fs_zero_copy_zookeeper_path = fs::path(settings->remote_fs_zero_copy_zookeeper_path.toString());
+            fs::path ancestor = *remote_fs_zero_copy_zookeeper_path.begin();
+            for (auto it = ++remote_fs_zero_copy_zookeeper_path.begin(); it != remote_fs_zero_copy_zookeeper_path.end(); it++)
+            {
+                /// If there is a directory separator after the last file-name in the path,
+                /// the last element before the end iterator is an empty element.
+                /// We do not what to create path with the / at the end
+                if (!it->empty())
+                {
+                    ancestor = ancestor / *it;
+                    futures.push_back(zookeeper->asyncTryCreateNoThrow(ancestor, String(), zkutil::CreateMode::Persistent));
+                }
+            }
+        }
+
+        for (const auto & disk_type: disk_types_for_zero_copy)
+        {
+            auto zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
+            auto zero_copy_path = fs::path(settings->remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy;
+            futures.push_back(zookeeper->asyncTryCreateNoThrow(zero_copy_path, String(), zkutil::CreateMode::Persistent));
+            futures.push_back(zookeeper->asyncTryCreateNoThrow(zero_copy_path / table_shared_id_, String(), zkutil::CreateMode::Persistent));
+        }
+
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_s3", String(), zkutil::CreateMode::Persistent));
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_s3/shared", String(), zkutil::CreateMode::Persistent));
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_hdfs", String(), zkutil::CreateMode::Persistent));
@@ -724,7 +762,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     {
         auto res = future.get();
         if (res.error != Coordination::Error::ZOK && res.error != Coordination::Error::ZNODEEXISTS)
-            throw Coordination::Exception(res.error, "Failed to create new nodes at {}", zookeeper_path);
+            throw Coordination::Exception(res.error, "Failed to create new nodes {} at {}", res.path_created, zookeeper_path);
     }
 }
 
@@ -1311,12 +1349,8 @@ bool StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
 
-    const auto & old_columns = metadata_snapshot->getColumns();
-
-    /// Replicated tables on different replicas must have exactly same column definitions
-    /// We cannot compare column descriptions with `==` here because data types like SimpleAggregateFunction
-    /// may have different aggregate function in 1st argument but still compatible if 2nd argument is same.
-    if (columns_from_zk.identical(old_columns))
+    const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
+    if (columns_from_zk == old_columns)
         return true;
 
     if (!strict_check && metadata_stat.version != 0)
@@ -1344,7 +1378,6 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
-
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 }
@@ -1835,7 +1868,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             }
         }
 
-        throw zkutil::KeeperException(e);
+        throw zkutil::KeeperMultiException(e, ops, responses);
     }
 }
 
@@ -10150,25 +10183,33 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 
 void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
-    /// Adjust the create query using values from ZooKeeper.
-    auto zookeeper = getZooKeeper();
-    auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
-    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
-
-    auto current_metadata = getInMemoryMetadataPtr();
-    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
-    auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
-    applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
-
-    /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
-    auto actual_table_shared_id = getTableSharedID();
-    auto expected_table_shared_id = tryGetTableSharedIDFromCreateQuery(*create_query, getContext());
-    if (actual_table_shared_id != expected_table_shared_id)
+    try
     {
-        throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Table {} has its shared ID different from one from the create query: "
-                        "actual shared id = {}, expected shared id = {}, create query = {}",
-                        getStorageID().getNameForLogs(), actual_table_shared_id, expected_table_shared_id.value_or("nullopt"),
-                        create_query);
+        /// Try to adjust the create query using values from ZooKeeper.
+        auto zookeeper = getZooKeeper();
+        auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
+        auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
+
+        auto current_metadata = getInMemoryMetadataPtr();
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
+        auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
+        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
+
+        /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
+        auto actual_table_shared_id = getTableSharedID();
+        auto expected_table_shared_id = tryGetTableSharedIDFromCreateQuery(*create_query, getContext());
+        if (actual_table_shared_id != expected_table_shared_id)
+        {
+            throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Table {} has its shared ID different from one from the create query: "
+                            "actual shared id = {}, expected shared id = {}, create query = {}",
+                            getStorageID().getNameForLogs(), actual_table_shared_id, expected_table_shared_id.value_or("nullopt"),
+                            create_query);
+        }
+    }
+    catch (...)
+    {
+        /// We can continue making a backup with non-adjusted name.
+        tryLogCurrentException(log, "Failed to adjust the create query of this table for backup");
     }
 }
 
