@@ -237,10 +237,10 @@ Pipe StorageMongoDB::read(
     return Pipe(std::make_shared<MongoDBSource>(connection, database_name, collection_name, Poco::MongoDB::Document{}, sample_block, max_block_size));
 }
 
-SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
+Chain StorageMongoDB::writeImpl(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
 {
     connectIfNotConnected();
-    return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
+    return Chain::fromSink<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
 }
 
 StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)

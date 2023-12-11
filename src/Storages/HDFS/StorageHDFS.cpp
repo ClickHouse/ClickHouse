@@ -838,7 +838,7 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
+Chain StorageHDFS::writeImpl(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
 {
     String current_uri = uris.back();
 
@@ -849,7 +849,7 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
 
     if (is_partitioned_implementation)
     {
-        return std::make_shared<PartitionedHDFSSink>(
+        return Chain::fromSink<PartitionedHDFSSink>(
             partition_by_ast,
             current_uri,
             format_name,
@@ -892,7 +892,7 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
                     path_from_uri);
         }
 
-        return std::make_shared<HDFSSink>(current_uri,
+        return Chain::fromSink<HDFSSink>(current_uri,
             format_name,
             metadata_snapshot->getSampleBlock(),
             context_,

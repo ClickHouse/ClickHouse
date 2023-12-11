@@ -13,16 +13,14 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/SubscriptionQueue.hpp>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include "Storages/SubscriptionQueue.hpp"
 
 #include <mutex>
 #include <optional>
-#include <compare>
-#include <shared_mutex>
 
 
 namespace DB
@@ -394,6 +392,26 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /** Writes the data to a table.
+      * Receives a description of the query, which can contain information about the data write method.
+      * Returns an object by which you can write data sequentially.
+      *
+      * metadata_snapshot is consistent snapshot of table metadata, it should be
+      * passed in all parts of the returned streams. Storage metadata can be
+      * changed during lifetime of the returned streams, but the snapshot is
+      * guaranteed to be immutable.
+      *
+      * async_insert - set to true if the write is part of async insert flushing
+      */
+    virtual Chain writeImpl(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        bool /*async_insert*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
+    }
+
     /// Should we process blocks of data returned by the storage in parallel
     /// even when the storage returned only one stream of data for reading?
     /// It is beneficial, for example, when you read from a file quickly,
@@ -417,25 +435,11 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
-    /** Writes the data to a table.
-      * Receives a description of the query, which can contain information about the data write method.
-      * Returns an object by which you can write data sequentially.
-      *
-      * metadata_snapshot is consistent snapshot of table metadata, it should be
-      * passed in all parts of the returned streams. Storage metadata can be
-      * changed during lifetime of the returned streams, but the snapshot is
-      * guaranteed to be immutable.
-      *
-      * async_insert - set to true if the write is part of async insert flushing
-      */
-    virtual SinkToStoragePtr write(
+    virtual Chain write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
-        bool /*async_insert*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
-    }
+        bool /*async_insert*/);
 
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed

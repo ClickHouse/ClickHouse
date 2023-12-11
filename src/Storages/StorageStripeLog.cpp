@@ -395,13 +395,13 @@ Pipe StorageStripeLog::read(
 }
 
 
-SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+Chain StorageStripeLog::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
+    return Chain::fromSink<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
 IStorage::DataValidationTasksPtr StorageStripeLog::getCheckTaskList(

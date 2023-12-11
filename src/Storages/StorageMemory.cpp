@@ -162,9 +162,9 @@ void StorageMemory::read(
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+Chain StorageMemory::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
-    return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
+    return Chain::fromSink<MemorySink>(*this, metadata_snapshot, context);
 }
 
 

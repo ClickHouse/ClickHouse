@@ -929,7 +929,7 @@ void StorageDistributed::read(
 }
 
 
-SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+Chain StorageDistributed::writeImpl(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
@@ -959,7 +959,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
     /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
-    return std::make_shared<DistributedSink>(
+    return Chain::fromSink<DistributedSink>(
         local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
         StorageID{remote_database, remote_table}, columns_to_send);
 }

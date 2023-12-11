@@ -33,7 +33,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
+    Chain writeImpl(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context,

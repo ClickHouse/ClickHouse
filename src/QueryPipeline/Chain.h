@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB
 {
@@ -14,6 +15,12 @@ namespace DB
 class Chain
 {
 public:
+    template <class Sink, class... Args>
+    static Chain fromSink(Args&&... args) {
+        auto sink = std::make_shared<Sink>(std::forward<Args>(args)...);
+        return Chain(std::move(sink));
+    }
+
     Chain() = default;
     Chain(Chain &&) = default;
     Chain(const Chain &) = delete;
@@ -34,7 +41,9 @@ public:
 
     void addSource(ProcessorPtr processor);
     void addSink(ProcessorPtr processor);
-    void appendChain(Chain chain);
+
+    void pushBackChain(Chain chain);
+    void pushFrontChain(Chain chain);
 
     IProcessor & getSource();
     IProcessor & getSink();
@@ -51,6 +60,8 @@ public:
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
+
+    void setRuntimeData(ThreadStatus * thread_status_, std::atomic_uint64_t * elapsed_counter_ms_);
 
     void attachResources(QueryPlanResourceHolder holder_)
     {

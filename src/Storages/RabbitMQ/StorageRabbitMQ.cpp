@@ -769,7 +769,7 @@ void StorageRabbitMQ::read(
 }
 
 
-SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+Chain StorageRabbitMQ::writeImpl(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto producer = std::make_unique<RabbitMQProducer>(
         configuration, routing_keys, exchange_name, exchange_type, producer_id.fetch_add(1), persistent, shutdown_called, log);
@@ -777,7 +777,7 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
         max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
-    return std::make_shared<MessageQueueSink>(
+    return Chain::fromSink<MessageQueueSink>(
         metadata_snapshot->getSampleBlockNonMaterialized(),
         getFormatName(),
         max_rows,

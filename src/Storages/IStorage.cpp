@@ -9,8 +9,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/Chain.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/Estimator.h>
 #include <Backups/RestorerFromBackup.h>
@@ -172,6 +174,19 @@ void IStorage::readFromPipe(
         auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info, context);
         query_plan.addStep(std::move(read_step));
     }
+}
+
+Chain IStorage::write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert)
+{
+    Chain chain = writeImpl(query, metadata_snapshot, context, async_insert);
+
+    // TODO: add subscription-queue pushed
+
+    return chain;
 }
 
 std::optional<QueryPipeline> IStorage::distributedWrite(

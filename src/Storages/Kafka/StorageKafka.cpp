@@ -375,7 +375,7 @@ Pipe StorageKafka::read(
 }
 
 
-SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+Chain StorageKafka::writeImpl(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
@@ -405,7 +405,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
         max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
-    return std::make_shared<MessageQueueSink>(
+    return Chain::fromSink<MessageQueueSink>(
         header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 

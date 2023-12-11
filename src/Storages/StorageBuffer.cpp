@@ -659,9 +659,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+Chain StorageBuffer::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
-    return std::make_shared<BufferSink>(*this, metadata_snapshot);
+    return Chain::fromSink<BufferSink>(*this, metadata_snapshot);
 }
 
 

@@ -1596,7 +1596,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageFile::write(
+Chain StorageFile::writeImpl(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -1622,7 +1622,7 @@ SinkToStoragePtr StorageFile::write(
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
 
-        return std::make_shared<PartitionedStorageFileSink>(
+        return Chain::fromSink<PartitionedStorageFileSink>(
             insert_query->partition_by,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
@@ -1677,7 +1677,7 @@ SinkToStoragePtr StorageFile::write(
             }
         }
 
-        return std::make_shared<StorageFileSink>(
+        return Chain::fromSink<StorageFileSink>(
             metadata_snapshot,
             getStorageID().getNameForLogs(),
             std::unique_lock{rwlock, getLockTimeout(context)},

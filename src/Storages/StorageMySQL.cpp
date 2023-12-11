@@ -244,9 +244,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+Chain StorageMySQL::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    return std::make_shared<StorageMySQLSink>(
+    return Chain::fromSink<StorageMySQLSink>(
         *this,
         metadata_snapshot,
         remote_database_name,

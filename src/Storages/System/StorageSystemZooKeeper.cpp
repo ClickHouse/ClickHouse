@@ -232,7 +232,7 @@ void StorageSystemZooKeeper::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
+Chain StorageSystemZooKeeper::writeImpl(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
@@ -240,7 +240,7 @@ SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMeta
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "path"));
-    return std::make_shared<ZooKeeperSink>(write_header, context);
+    return Chain::fromSink<ZooKeeperSink>(write_header, context);
 }
 
 NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()

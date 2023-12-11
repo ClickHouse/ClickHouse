@@ -275,7 +275,7 @@ Chain InterpreterInsertQuery::buildChain(
     Chain sink = buildSink(table, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
     Chain chain = buildPreSinkChain(sink.getInputHeader(), table, metadata_snapshot, sample, thread_status_holder);
 
-    chain.appendChain(std::move(sink));
+    chain.pushBackChain(std::move(sink));
     return chain;
 }
 
@@ -302,9 +302,8 @@ Chain InterpreterInsertQuery::buildSink(
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
     {
-        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert);
-        sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        out.addSource(std::move(sink));
+        out = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert);
+        out.setRuntimeData(thread_status, elapsed_counter_ms);
     }
     else
     {
@@ -633,7 +632,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else
     {
-        presink_chains.at(0).appendChain(std::move(sink_chains.at(0)));
+        presink_chains.at(0).pushBackChain(std::move(sink_chains.at(0)));
         res.pipeline = QueryPipeline(std::move(presink_chains[0]));
         res.pipeline.setNumThreads(std::min<size_t>(res.pipeline.getNumThreads(), settings.max_threads));
         res.pipeline.setConcurrencyControl(settings.use_concurrency_control);
