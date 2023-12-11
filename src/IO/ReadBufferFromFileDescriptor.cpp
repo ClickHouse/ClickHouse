@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int CANNOT_SELECT;
     extern const int CANNOT_ADVISE;
 }
 
@@ -248,24 +247,6 @@ void ReadBufferFromFileDescriptor::rewind()
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
 }
-
-
-/// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
-{
-    fd_set fds;
-    FD_ZERO(&fds);
-    FD_SET(fd, &fds);
-    timeval timeout = { time_t(timeout_microseconds / 1000000), suseconds_t(timeout_microseconds % 1000000) };
-
-    int res = select(1, &fds, nullptr, nullptr, &timeout);
-
-    if (-1 == res)
-        throwFromErrno("Cannot select", ErrorCodes::CANNOT_SELECT);
-
-    return res > 0;
-}
-
 
 size_t ReadBufferFromFileDescriptor::getFileSize()
 {
