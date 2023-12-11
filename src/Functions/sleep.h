@@ -28,7 +28,6 @@ namespace ErrorCodes
     extern const int TOO_SLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 /** sleep(seconds) - the specified number of seconds sleeps each columns.
@@ -144,8 +143,8 @@ public:
                     sleepForMicroseconds(sleep_ms);
                     microseconds -= sleep_ms;
 
-                    if (query_status && query_status->isKilled())
-                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+                    if (query_status && !query_status->checkTimeLimit())
+                        break;
                 }
 
                 ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
