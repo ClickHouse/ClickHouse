@@ -24,6 +24,7 @@
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 #include <Interpreters/RewriteSumIfFunctionVisitor.h>
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
+#include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -644,6 +645,12 @@ void optimizeDateFilters(ASTSelectQuery * select_query, const std::vector<TableW
     }
 }
 
+void rewriteSumFunctionWithSumAndCount(ASTPtr & query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns)
+{
+    RewriteSumFunctionWithSumAndCountVisitor::Data data = {tables_with_columns};
+    RewriteSumFunctionWithSumAndCountVisitor(data).visit(query);
+}
+
 void transformIfStringsIntoEnum(ASTPtr & query)
 {
     std::unordered_set<String> function_names = {"if", "transform"};
@@ -749,6 +756,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
     optimizeDateFilters(select_query, tables_with_columns, context);
+
+    rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);

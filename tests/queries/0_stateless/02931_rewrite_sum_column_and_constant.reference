@@ -1,0 +1,41 @@
+25
+25
+SELECT sum(uint64) + (2 * count(uint64))
+FROM test_table
+SELECT sum(uint64) + (2 * count(uint64))
+FROM test_table
+--
+26.5
+26.5
+SELECT sum(float64) + (2 * count(float64))
+FROM test_table
+SELECT sum(float64) + (2 * count(float64))
+FROM test_table
+--
+26.65
+26.65
+SELECT sum(decimal32) + (2 * count(decimal32))
+FROM test_table
+SELECT sum(decimal32) + (2 * count(decimal32))
+FROM test_table
+--
+55
+55
+SELECT (sum(uint64) + (2 * count(uint64))) + (sum(uint64) + (3 * count(uint64)))
+FROM test_table
+SELECT ((sum(uint64) + (2 * count(uint64))) + sum(uint64)) + (3 * count(uint64))
+FROM test_table
+--
+58
+58
+SELECT (sum(float64) + (2 * count(float64))) + (sum(float64) + (3 * count(float64)))
+FROM test_table
+SELECT ((sum(float64) + (2 * count(float64))) + sum(float64)) + (3 * count(float64))
+FROM test_table
+--
+58.3
+58.3
+SELECT (sum(decimal32) + (2 * count(decimal32))) + (sum(decimal32) + (3 * count(decimal32)))
+FROM test_table
+SELECT ((sum(decimal32) + (2 * count(decimal32))) + sum(decimal32)) + (3 * count(decimal32))
+FROM test_table
