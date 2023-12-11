@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
+#include <Processors/TTL/TTLDropAlgorithm.h>
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
@@ -32,15 +33,24 @@ TTLTransform::TTLTransform(
     if (metadata_snapshot_->hasRowsTTL())
     {
         const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
-        auto algorithm = std::make_unique<TTLDeleteAlgorithm>(
-            rows_ttl, old_ttl_infos.table_ttl, current_time_, force_);
+
+        if (storage_.getSettings()->ttl_only_drop_parts)
+        {
+            algorithms.emplace_back(std::make_unique<TTLDropAlgorithm>(
+                rows_ttl, old_ttl_infos.table_ttl, current_time_, force_));
+        }
+        else
+        {
+            auto del_algorithm = std::make_unique<TTLDeleteAlgorithm>(
+                rows_ttl, old_ttl_infos.table_ttl, current_time_, force_);
+            delete_algorithm = del_algorithm.get();
+
+            algorithms.emplace_back(std::move(del_algorithm));
+        }
 
         /// Skip all data if table ttl is expired for part
-        if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression)
+        if (algorithms.back()->isMaxTTLExpired() && !rows_ttl.where_expression)
             all_data_dropped = true;
-
-        delete_algorithm = algorithm.get();
-        algorithms.emplace_back(std::move(algorithm));
     }
 
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
@@ -138,13 +148,10 @@ void TTLTransform::finalize()
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
 
-    if (delete_algorithm)
-    {
-        if (all_data_dropped)
-            LOG_DEBUG(log, "Removed all rows from part {} due to expired TTL", data_part->name);
-        else
-            LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
-    }
+    if (all_data_dropped)
+        LOG_DEBUG(log, "Removed all rows from part {} due to expired TTL", data_part->name);
+    else if (delete_algorithm)
+        LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
     else
         LOG_DEBUG(log, "No delete algorithm was applied for part {}", data_part->name);
 }
