@@ -27,12 +27,12 @@ public:
 
     Strings detectConflicts(const Strings & paths, UInt64 & last_version);
 
+    void triggerCacheUpdate();
+
 private:
 
     TStorage & storage;
 
-    std::atomic<std::chrono::steady_clock::time_point> last_updatetime;
-    const std::chrono::milliseconds update_min_interval;
     const std::chrono::milliseconds update_wait;
 
     std::mutex mu;

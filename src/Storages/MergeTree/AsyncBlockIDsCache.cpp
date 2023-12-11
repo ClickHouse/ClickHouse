@@ -18,6 +18,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
+static constexpr int FAILURE_RETRY_MS = 3000;
 
 template <typename TStorage>
 struct AsyncBlockIDsCache<TStorage>::Cache : public std::unordered_set<String>
@@ -33,24 +34,7 @@ template <typename TStorage>
 std::vector<String> AsyncBlockIDsCache<TStorage>::getChildren()
 {
     auto zookeeper = storage.getZooKeeper();
-
-    auto watch_callback = [last_time = this->last_updatetime.load()
-                           , my_update_min_interval = this->update_min_interval
-                           , my_task = task->shared_from_this()](const Coordination::WatchResponse &)
-    {
-        auto now = std::chrono::steady_clock::now();
-        if (now - last_time < my_update_min_interval)
-        {
-            std::chrono::milliseconds sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(my_update_min_interval - (now - last_time));
-            my_task->scheduleAfter(sleep_time.count());
-        }
-        else
-            my_task->schedule();
-    };
-    std::vector<String> children;
-    Coordination::Stat stat;
-    zookeeper->tryGetChildrenWatch(path, children, &stat, watch_callback);
-    return children;
+    return zookeeper->getChildren(path);
 }
 
 template <typename TStorage>
@@ -69,18 +53,16 @@ try
         ++version;
     }
     cv.notify_all();
-    last_updatetime = std::chrono::steady_clock::now();
 }
 catch (...)
 {
     LOG_INFO(log, "Updating async block ids cache failed. Reason: {}", getCurrentExceptionMessage(false));
-    task->scheduleAfter(update_min_interval.count());
+    task->scheduleAfter(FAILURE_RETRY_MS);
 }
 
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
     : storage(storage_)
-    , update_min_interval(storage.getSettings()->async_block_ids_cache_min_update_interval_ms)
     , update_wait(storage.getSettings()->async_block_ids_cache_update_wait_ms)
     , path(storage.getZooKeeperPath() + "/async_blocks")
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
@@ -94,6 +76,14 @@ void AsyncBlockIDsCache<TStorage>::start()
 {
     if (storage.getSettings()->use_async_block_ids_cache)
         task->activateAndSchedule();
+}
+
+template <typename TStorage>
+void AsyncBlockIDsCache<TStorage>::triggerCacheUpdate()
+{
+    /// Trigger task update
+    if (!task->schedule())
+        LOG_TRACE(log, "Task is already scheduled, will wait for update for {}ms", update_wait.count());
 }
 
 /// Caller will keep the version of last call. When the caller calls again, it will wait util gets a newer version.
