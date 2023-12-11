@@ -30,5 +30,5 @@ odbc_psql_db = "postgres"
 odbc_psql_user = "postgres"
 odbc_psql_pass = "mysecretpassword"
 
-#KEEPER IMPLEMENT
+# KEEPER IMPLEMENT
 keeper_impl = "fdbkeeper"

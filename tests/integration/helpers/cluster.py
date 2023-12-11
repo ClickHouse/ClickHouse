@@ -1696,8 +1696,8 @@ class ClickHouseCluster:
 
         if with_foundationdb and (with_zookeeper or with_zookeeper_secure):
             raise Exception("Can't set both fdbkeeper and zookeeper at the same time")
-        
-        if keeper_impl=="fdbkeeper" and (with_zookeeper or with_zookeeper_secure):
+
+        if keeper_impl == "fdbkeeper" and (with_zookeeper or with_zookeeper_secure):
             with_zookeeper = False
             with_foundationdb = True
 
