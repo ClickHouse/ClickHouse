@@ -307,7 +307,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
         /// Some merging algorithms can mofidy the block which loses the information about the async insert offsets
-        /// when preprocessing or filtering data for asnyc inserts deduplication we want to use the initial, unmerged block
+        /// when preprocessing or filtering data for async inserts deduplication we want to use the initial, unmerged block
         std::optional<BlockWithPartition> unmerged_block;
 
         if constexpr (async_insert)

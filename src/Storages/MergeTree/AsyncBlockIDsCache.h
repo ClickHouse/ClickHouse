@@ -14,8 +14,6 @@ class AsyncBlockIDsCache
     struct Cache;
     using CachePtr = std::shared_ptr<Cache>;
 
-    std::vector<String> getChildren();
-
     void update();
 
 public:

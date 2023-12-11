@@ -31,17 +31,11 @@ struct AsyncBlockIDsCache<TStorage>::Cache : public std::unordered_set<String>
 };
 
 template <typename TStorage>
-std::vector<String> AsyncBlockIDsCache<TStorage>::getChildren()
-{
-    auto zookeeper = storage.getZooKeeper();
-    return zookeeper->getChildren(path);
-}
-
-template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::update()
 try
 {
-    std::vector<String> paths = getChildren();
+    auto zookeeper = storage.getZooKeeper();
+    std::vector<String> paths = zookeeper->getChildren(path);
     std::unordered_set<String> set;
     for (String & p : paths)
     {
@@ -81,7 +75,9 @@ void AsyncBlockIDsCache<TStorage>::start()
 template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::triggerCacheUpdate()
 {
-    /// Trigger task update
+    /// Trigger task update. Watch-based updates may produce a lot of
+    /// redundant work in case of multiple replicas, so we use manually controlled updates
+    /// in case of duplicates
     if (!task->schedule())
         LOG_TRACE(log, "Task is already scheduled, will wait for update for {}ms", update_wait.count());
 }
