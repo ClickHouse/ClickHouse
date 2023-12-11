@@ -419,7 +419,7 @@ private:
             auto & instruction = instructions[inserts[row_i]];
             size_t index = instruction.source_is_constant ? 0 : row_i;
             res_data[row_i] = data_cols[inserts[row_i]]->getData()[index];
-            null_map_data[row_i] = null_map_cols[inserts[row_i]]->getData()[index];
+            null_map_data[row_i] = null_map_cols[inserts[row_i]] ? null_map_cols[inserts[row_i]]->getData()[index] : 0;
         }
     }
 
