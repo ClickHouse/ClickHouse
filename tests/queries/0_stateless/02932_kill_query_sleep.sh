@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function wait_query_started()
 {
     local query_id="$1"
-    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.query_log WHERE query_id='$query_id'") == 0 ]]; do
+    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.query_log WHERE query_id='$query_id' AND current_database = currentDatabase()") == 0 ]]; do
         sleep 0.1;
         $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS;"
     done
@@ -35,4 +35,4 @@ echo "Cancelling query"
 kill_query "$sleep_query_id"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS;"
-$CLICKHOUSE_CLIENT --query "SELECT exception FROM system.query_log WHERE query_id='$sleep_query_id'" | grep -oF "QUERY_WAS_CANCELLED"
+$CLICKHOUSE_CLIENT --query "SELECT exception FROM system.query_log WHERE query_id='$sleep_query_id' AND current_database = currentDatabase()" | grep -oF "QUERY_WAS_CANCELLED"
