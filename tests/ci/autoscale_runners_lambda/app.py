@@ -115,7 +115,9 @@ def set_capacity(
         # Are we already at the capacity limits
         stop = stop or asg["MaxSize"] <= asg["DesiredCapacity"]
         # Let's calculate a new desired capacity
-        desired_capacity = asg["DesiredCapacity"] + (capacity_deficit + scale_up - 1) // scale_up
+        desired_capacity = (
+            asg["DesiredCapacity"] + (capacity_deficit + scale_up - 1) // scale_up
+        )
         desired_capacity = max(desired_capacity, asg["MinSize"])
         desired_capacity = min(desired_capacity, asg["MaxSize"])
         # Finally, should the capacity be even changed
