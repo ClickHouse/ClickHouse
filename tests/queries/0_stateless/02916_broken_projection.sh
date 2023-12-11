@@ -410,8 +410,6 @@ function test2()
     check test2
 }
 
-CLICKHOUSE_DATABASE="default"
-CLICKHOUSE_TEST_UNIQUE_NAME="test123456"
 function test3()
 {
     create_table test3 test 1
