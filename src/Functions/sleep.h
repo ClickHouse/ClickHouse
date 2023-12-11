@@ -17,6 +17,7 @@ namespace ProfileEvents
 {
 extern const Event SleepFunctionCalls;
 extern const Event SleepFunctionMicroseconds;
+extern const Event SleepFunctionElapsedMicroseconds;
 }
 
 namespace DB
@@ -134,14 +135,15 @@ public:
                         "The maximum sleep time is {} microseconds. Requested: {} microseconds per block (of size {})",
                         max_microseconds, microseconds, size);
 
-                while (microseconds)
+                UInt64 elapsed = 0;
+                while (elapsed < microseconds)
                 {
-                    UInt64 sleep_ms = microseconds;
+                    UInt64 sleep_time = microseconds - elapsed;
                     if (query_status)
-                        sleep_ms = std::min(sleep_ms, /* 1 second */ static_cast<size_t>(1000000));
+                        sleep_time = std::min(sleep_time, /* 1 second */ static_cast<size_t>(1000000));
 
-                    sleepForMicroseconds(sleep_ms);
-                    microseconds -= sleep_ms;
+                    sleepForMicroseconds(sleep_time);
+                    elapsed += sleep_time;
 
                     if (query_status && !query_status->checkTimeLimit())
                         break;
@@ -149,6 +151,7 @@ public:
 
                 ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
                 ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
+                ProfileEvents::increment(ProfileEvents::SleepFunctionElapsedMicroseconds, elapsed);
             }
         }
 
