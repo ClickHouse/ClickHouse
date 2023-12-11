@@ -52,7 +52,7 @@ function insert()
     offset=$2
     size=$3
     echo 'insert new part'
-    $CLICKHOUSE_CLIENT -q "INSERT INTO $table SELECT number, number, number, number, number%2 FROM numbers($offset, $size);"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO $table SELECT number, number, number, number, number%2 FROM numbers($offset, $size) SETTINGS insert_keeper_fault_injection_probability;"
 }
 
 function break_projection()
@@ -431,11 +431,12 @@ function test3()
     broken_projections_info test
 
     ${CLICKHOUSE_CLIENT} -nm --query "
-    backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}') settings check_projection_parts=false;
+    backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}') settings check_projection_parts=false, backup_restore_keeper_fault_injection_probability=0.0;
     " | grep -o "BACKUP_CREATED"
 
     ${CLICKHOUSE_CLIENT} -nm --stacktrace --query "
     drop table test sync;
+    set backup_restore_keeper_fault_injection_probability=0.0;
     restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}');
     " | grep -o "RESTORED"
 
@@ -451,6 +452,7 @@ function test3()
 
     ${CLICKHOUSE_CLIENT} -nm --query "
     set send_logs_level='fatal';
+    set backup_restore_keeper_fault_injection_probability=0.0;
     backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_2')
     " 2>&1 | grep -o "FILE_DOESNT_EXIST"
 
@@ -462,12 +464,14 @@ function test3()
 
     ${CLICKHOUSE_CLIENT} -nm --query "
     set send_logs_level='fatal';
+    set backup_restore_keeper_fault_injection_probability=0.0;
     backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_3')
     " | grep -o "BACKUP_CREATED"
 
     ${CLICKHOUSE_CLIENT} -nm --stacktrace --query "
     drop table test sync;
     set send_logs_level='fatal';
+    set backup_restore_keeper_fault_injection_probability=0.0;
     restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_3');
     " | grep -o "RESTORED"
 
@@ -481,6 +485,7 @@ function test3()
 
     ${CLICKHOUSE_CLIENT} -nm --query "
     set send_logs_level='fatal';
+    set backup_restore_keeper_fault_injection_probability=0.0;
     backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_4')
     settings check_projection_parts=false, allow_backup_broken_projections=true;
     " | grep -o "BACKUP_CREATED"
@@ -488,6 +493,7 @@ function test3()
     ${CLICKHOUSE_CLIENT} -nm --stacktrace --query "
     drop table test sync;
     set send_logs_level='fatal';
+    set backup_restore_keeper_fault_injection_probability=0.0;
     restore table ${CLICKHOUSE_DATABASE}.test from Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_4');
     " | grep -o "RESTORED"
 
