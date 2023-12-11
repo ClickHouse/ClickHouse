@@ -150,7 +150,6 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
     /// Entry is in probationary queue.
     /// We need to move it to protected queue.
-
     const size_t size = iterator.getEntry().size;
     if (size > protected_queue.getSizeLimit())
     {
