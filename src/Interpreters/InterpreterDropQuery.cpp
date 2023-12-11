@@ -267,6 +267,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
+            auto * log = &Poco::Logger::get("Kssenii");
+            LOG_DEBUG(log, "KSSENII CHECK {}", getContext()->getSettingsRef().materialized_postgresql_drop_replication_on_drop_table);
+
             table->flushAndShutdown(true);
 
             TableExclusiveLockHolder table_lock;

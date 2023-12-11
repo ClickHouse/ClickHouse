@@ -43,6 +43,7 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         bool attach;
+        bool backup_restore;
         bool has_force_restore_data_flag;
         const String & comment;
 
@@ -86,7 +87,8 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        bool has_force_restore_data_flag) const;
+        bool has_force_restore_data_flag,
+        bool is_backup_restore) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.

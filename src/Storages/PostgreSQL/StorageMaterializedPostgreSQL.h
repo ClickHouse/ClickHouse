@@ -100,6 +100,10 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    void backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &) override;
+
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
     /// only once - when nested table is successfully created and is never changed afterwards.

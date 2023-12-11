@@ -107,7 +107,11 @@ namespace
         if (slot_name.empty())
         {
             if (replication_settings.materialized_postgresql_use_unique_replication_consumer_identifier)
-                slot_name = clickhouse_uuid;
+            {
+                slot_name = replication_settings.materialized_postgresql_replication_consumer_identifier.value.empty()
+                    ? clickhouse_uuid
+                    : replication_settings.materialized_postgresql_replication_consumer_identifier.value;
+            }
             else
                 slot_name = postgres_table.empty() ? postgres_database : fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
 
@@ -694,11 +698,14 @@ void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 }
 
 
-void PostgreSQLReplicationHandler::shutdownFinal()
+void PostgreSQLReplicationHandler::shutdownFinal(bool drop_replication)
 {
     try
     {
         shutdown();
+
+        if (!drop_replication)
+            return;
 
         postgres::Connection connection(connection_info);
         connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
@@ -706,8 +713,8 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
         connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
-            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
-                dropReplicationSlot(tx, /* temporary */true);
+            if (isPublicationExist(tx))
+                dropPublication(tx);
         });
 
         if (user_managed_slot)

@@ -1312,7 +1312,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 getContext()->getGlobalContext(),
                 properties.columns,
                 properties.constraints,
-                false);
+                false, is_restore_from_backup);
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
@@ -1454,7 +1454,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             getContext()->getGlobalContext(),
             properties.columns,
             properties.constraints,
-            false);
+            false, is_restore_from_backup);
 
         /// If schema wes inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);

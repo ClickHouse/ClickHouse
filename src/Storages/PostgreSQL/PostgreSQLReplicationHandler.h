@@ -38,7 +38,7 @@ public:
     void shutdown();
 
     /// Clean up replication: remove publication and replication slots.
-    void shutdownFinal();
+    void shutdownFinal(bool drop_replication);
 
     /// Add storage pointer to let handler know which tables it needs to keep in sync.
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);

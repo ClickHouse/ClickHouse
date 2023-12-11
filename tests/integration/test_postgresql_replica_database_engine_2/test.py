@@ -1038,6 +1038,66 @@ def test_default_columns(started_cluster):
     )
 
 
+def test_backup_restore_table_engine(started_cluster):
+    table = "backup_restore_t"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(50)"
+    )
+
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', 'mysecretpassword') ORDER BY key
+        """
+    )
+
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_manager.get_default_database(), materialized_database='default'
+    )
+
+    assert 50 == int(instance.query(f"SELECT count() FROM default.{table}"))
+
+    instance.query(f"BACKUP TABLE default.{table} TO Disk('backups', 'b1')")
+    instance.query(f"DROP TABLE default.{table} SYNC SETTINGS materialized_postgresql_drop_replication_on_drop_table=0")
+    instance.query(f"RESTORE TABLE default.{table} FROM Disk('backups', 'b1')")
+
+    assert 50 == int(instance.query(f"SELECT count() FROM default.{table}"))
+
+
+def test_backup_restore_database_engine(started_cluster):
+    table = "backup_restore_d"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_manager.get_default_database(), materialized_database='default'
+    )
+
+    assert 50 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
+
+    instance.query(f"BACKUP TABLE default.{table} TO Disk('backups', 'b1')")
+    instance.query(f"DROP TABLE default.{table} SYNC SETTINGS materialized_postgresql_drop_replication_on_drop_table=0")
+    instance.query(f"RESTORE TABLE default.{table} FROM Disk('backups', 'b1')")
+
+    assert 50 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

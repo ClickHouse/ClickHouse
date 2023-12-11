@@ -62,7 +62,8 @@ StoragePtr StorageFactory::get(
     ContextMutablePtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    bool has_force_restore_data_flag) const
+    bool has_force_restore_data_flag,
+    bool is_backup_restore) const
 {
     String name, comment;
 
@@ -217,6 +218,7 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .attach = query.attach,
+        .backup_restore = is_backup_restore,
         .has_force_restore_data_flag = has_force_restore_data_flag,
         .comment = comment};
 

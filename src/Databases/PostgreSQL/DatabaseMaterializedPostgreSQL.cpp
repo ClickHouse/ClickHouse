@@ -458,7 +458,10 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 {
     std::lock_guard lock(handler_mutex);
     if (replication_handler)
-        replication_handler->shutdownFinal();
+    {
+        bool drop_replication = local_context->getSettingsRef().materialized_postgresql_drop_replication_on_drop_table;
+        replication_handler->shutdownFinal(drop_replication);
+    }
 
     DatabaseAtomic::drop(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
 }
