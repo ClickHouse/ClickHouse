@@ -57,10 +57,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     : max_file_segment_size(settings.max_file_segment_size)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
     , boundary_alignment(settings.boundary_alignment)
-    , background_download_threads(settings.background_download_threads)
     , load_metadata_threads(settings.load_metadata_threads)
     , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
-    , metadata(settings.base_path, settings.background_download_queue_size_limit)
+    , metadata(settings.base_path, settings.background_download_queue_size_limit, settings.background_download_threads)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
@@ -133,15 +132,7 @@ void FileCache::initialize()
         throw;
     }
 
-    for (size_t i = 0; i < background_download_threads; ++i)
-    {
-        download_threads.emplace_back(std::make_shared<DownloadThread>());
-        download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
-            [this, download_thread = download_threads.back()] { metadata.downloadThreadFunc(download_thread->stop_flag); });
-    }
-
-    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ metadata.cleanupThreadFunc(); }});
-
+    metadata.startup();
     is_initialized = true;
 }
 
@@ -707,7 +698,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
         result_state = state;
     }
 
-    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, create_settings, background_download_threads > 0, this, locked_key.getKeyMetadata());
+    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, create_settings, metadata.isBackgroundDownloadEnabled(), this, locked_key.getKeyMetadata());
     auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
 
     auto [file_segment_metadata_it, inserted] = locked_key.emplace(offset, file_segment_metadata);
@@ -1263,21 +1254,7 @@ FileCache::~FileCache()
 void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
-    metadata.cancelDownload();
-    metadata.cancelCleanup();
-
-    {
-        std::lock_guard lock(apply_settings_mutex);
-        for (const auto & download_thread : download_threads)
-        {
-            download_thread->stop_flag.store(true);
-            if (download_thread->thread && download_thread->thread->joinable())
-                download_thread->thread->join();
-        }
-    }
-
-    if (cleanup_thread && cleanup_thread->joinable())
-        cleanup_thread->join();
+    metadata.shutdown();
 }
 
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos()
@@ -1367,66 +1344,22 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
     std::lock_guard lock(apply_settings_mutex);
 
-    size_t background_download_queue_size_limit = metadata.getBackgroundDownloadQueueSizeLimit();
-    if (background_download_queue_size_limit != new_settings.background_download_queue_size_limit)
+    if (metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit))
     {
-        metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit);
+        LOG_INFO(log, "Changed background_download_queue_size from {} to {}",
+                 actual_settings.background_download_queue_size_limit,
+                 new_settings.background_download_queue_size_limit);
+
         actual_settings.background_download_queue_size_limit = new_settings.background_download_queue_size_limit;
-
-        LOG_INFO(log, "Changed background_download_queue_size_limit from {} to {}",
-                    background_download_queue_size_limit, new_settings.background_download_queue_size_limit);
     }
 
-    if (background_download_threads != download_threads.size())
+    if (metadata.setBackgroundDownloadThreads(new_settings.background_download_threads))
     {
-        chassert(false);
-        background_download_threads = download_threads.size();
-    }
-
-    if (background_download_threads != new_settings.background_download_threads)
-    {
-        if (background_download_threads < new_settings.background_download_threads)
-        {
-            size_t add_threads = new_settings.background_download_threads - background_download_threads;
-            try
-            {
-                while (add_threads--)
-                {
-
-                    download_threads.emplace_back(std::make_shared<DownloadThread>());
-                    download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
-                        [this, download_thread = download_threads.back()] { metadata.downloadThreadFunc(download_thread->stop_flag); });
-                }
-            }
-            catch (...)
-            {
-                if (!download_threads.back()->thread)
-                    download_threads.pop_back();
-
-                background_download_threads = actual_settings.background_download_threads = download_threads.size();
-                throw;
-            }
-            background_download_threads = actual_settings.background_download_threads = new_settings.background_download_threads;
-        }
-        else if (background_download_threads > new_settings.background_download_threads)
-        {
-            size_t remove_threads = background_download_threads - new_settings.background_download_threads;
-            for (size_t i = 0; i < remove_threads; ++i)
-            {
-                auto & download_thread = *download_threads.back();
-                download_thread.stop_flag.store(true);
-
-                if (download_thread.thread && download_thread.thread->joinable())
-                    download_thread.thread->join();
-
-                download_threads.pop_back();
-            }
-
-            background_download_threads = actual_settings.background_download_threads = new_settings.background_download_threads;
-        }
-
         LOG_INFO(log, "Changed background_download_threads from {} to {}",
-                 background_download_threads, new_settings.background_download_threads);
+                 actual_settings.background_download_threads,
+                 new_settings.background_download_threads);
+
+        actual_settings.background_download_threads = new_settings.background_download_threads;
     }
 }
 

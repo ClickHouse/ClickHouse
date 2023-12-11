@@ -163,7 +163,6 @@ private:
     const size_t max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
-    size_t background_download_threads; /// 0 means background download is disabled.
     size_t load_metadata_threads;
 
     Poco::Logger * log;
@@ -207,18 +206,6 @@ private:
      * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
      */
     FileCacheQueryLimitPtr query_limit;
-    /**
-     * A background cleanup task.
-     * Clears removed cache entries from metadata.
-     */
-    struct DownloadThread
-    {
-        std::unique_ptr<ThreadFromGlobalPool> thread;
-        std::atomic_bool stop_flag{false};
-    };
-    std::vector<std::shared_ptr<DownloadThread>> download_threads;
-
-    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     void assertInitialized() const;
     void assertCacheCorrectness();
