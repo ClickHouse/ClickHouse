@@ -1,6 +1,7 @@
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -131,6 +132,12 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
         extractTableNameFromArgument(*storage.engine, data, 3);
     else if (storage.engine->name == "Dictionary")
         extractTableNameFromArgument(*storage.engine, data, 0);
+    else if (storage.engine->name == "MaterializedPostgreSQL")
+    {
+        const auto * create_query = data.create_query->as<ASTCreateQuery>();
+        auto nested_table = toString(create_query->uuid) + StorageMaterializedPostgreSQL::NESTED_TABLE_SUFFIX;
+        data.dependencies.emplace(QualifiedTableName{ .database = create_query->getDatabase(), .table = nested_table });
+    }
 }
 
 
