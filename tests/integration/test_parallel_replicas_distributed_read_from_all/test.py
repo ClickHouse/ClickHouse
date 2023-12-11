@@ -143,6 +143,8 @@ def test_read_equally_from_each_replica(start_cluster, prefer_localhost_replica)
     nodes[0].query(f"system start fetches {table_name}")
     nodes[1].query(f"system start fetches {table_name}")
     nodes[2].query(f"system start fetches {table_name}")
+    # ensure that replica in sync before querying it to get stable result
+    nodes[0].query(f"system sync  replica {table_name} strict")
     assert (
         nodes[0].query(
             f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d"
