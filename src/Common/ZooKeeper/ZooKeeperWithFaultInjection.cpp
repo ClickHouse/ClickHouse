@@ -48,15 +48,15 @@ void ZooKeeperWithFaultInjection::resetKeeper()
             {
                 keeper->remove(path_created);
             }
-            catch (const Coordination::Exception &)
+            catch (const Coordination::Exception & e)
             {
                 if (logger)
-                    LOG_TRACE(logger, "Failed to delete ephemeral node ({}) during fault cleanup", path_created);
+                    LOG_TRACE(logger, "Failed to delete ephemeral node ({}) during fault cleanup: {}", path_created, e.what());
             }
         }
     }
 
-
+    session_ephemeral_nodes.clear();
     keeper.reset();
 }
 
@@ -94,7 +94,6 @@ void ZooKeeperWithFaultInjection::injectFailureBeforeOperationThrow(const char *
 
     if (unlikely(fault_policy) && fault_policy->beforeOperation())
     {
-        resetKeeper();
         if (logger)
             LOG_TRACE(
                 logger,
@@ -104,6 +103,7 @@ void ZooKeeperWithFaultInjection::injectFailureBeforeOperationThrow(const char *
                 path,
                 RandomFaultInjection::error_before_op,
                 RandomFaultInjection::msg_before_op);
+        resetKeeper();
         throw zkutil::KeeperException::fromMessage(RandomFaultInjection::error_before_op, RandomFaultInjection::msg_before_op);
     }
 }
@@ -112,7 +112,6 @@ void ZooKeeperWithFaultInjection::injectFailureAfterOperationThrow(const char * 
 {
     if (unlikely(fault_policy) && fault_policy->afterOperation())
     {
-        resetKeeper();
         if (logger)
             LOG_TRACE(
                 logger,
@@ -122,6 +121,7 @@ void ZooKeeperWithFaultInjection::injectFailureAfterOperationThrow(const char * 
                 path,
                 RandomFaultInjection::error_after_op,
                 RandomFaultInjection::msg_after_op);
+        resetKeeper();
         throw zkutil::KeeperException::fromMessage(RandomFaultInjection::error_after_op, RandomFaultInjection::msg_after_op);
     }
 }
@@ -159,10 +159,10 @@ bool ZooKeeperWithFaultInjection::injectFailureBeforeOperationPromise(const char
 
     if (unlikely(fault_policy) && fault_policy->beforeOperation())
     {
-        resetKeeper();
         if (logger)
             LOG_TRACE(
                 logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func={} path={}", seed, func_name, path);
+        resetKeeper();
         promise->set_exception(std::make_exception_ptr(
             zkutil::KeeperException::fromMessage(RandomFaultInjection::error_before_op, RandomFaultInjection::msg_before_op)));
         return true;
@@ -175,11 +175,11 @@ bool ZooKeeperWithFaultInjection::injectFailureAfterOperationPromise(const char 
 {
     if (unlikely(fault_policy) && fault_policy->afterOperation())
     {
-        resetKeeper();
         promise->set_exception(std::make_exception_ptr(
             zkutil::KeeperException::fromMessage(RandomFaultInjection::error_after_op, RandomFaultInjection::msg_after_op)));
         if (logger)
             LOG_TRACE(logger, "ZooKeeperWithFaultInjection injected fault after operation: seed={} func={} path={}", seed, func_name, path);
+        resetKeeper();
         return true;
     }
     return false;
@@ -513,9 +513,9 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
 
     if (!keeper || (unlikely(fault_policy) && fault_policy->beforeOperation()))
     {
-        resetKeeper();
         if (logger)
             LOG_TRACE(logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func={} path={}", seed, __func__, path);
+        resetKeeper();
         Coordination::MultiResponse errors;
         for (size_t i = 0; i < request_size; i++)
         {
@@ -532,7 +532,6 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
     {
         if (unlikely(fault_policy) && fault_policy->afterOperation())
         {
-            resetKeeper();
             if (logger)
                 LOG_TRACE(
                     logger,
@@ -540,6 +539,7 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
                     seed,
                     function_name,
                     path);
+            resetKeeper();
             Coordination::MultiResponse errors;
             for (size_t i = 0; i < request_size; i++)
             {
@@ -593,9 +593,9 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
 
     if (!keeper || (unlikely(fault_policy) && fault_policy->beforeOperation()))
     {
-        resetKeeper();
         if (logger)
             LOG_TRACE(logger, "ZooKeeperWithFaultInjection injected fault before operation: seed={} func={} path={}", seed, __func__, path);
+        resetKeeper();
         Coordination::RemoveResponse r;
         r.error = RandomFaultInjection::error_before_op;
         promise->set_value(r);
@@ -607,7 +607,6 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
     {
         if (unlikely(fault_policy) && fault_policy->afterOperation())
         {
-            resetKeeper();
             if (logger)
                 LOG_TRACE(
                     logger,
@@ -615,6 +614,7 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
                     seed,
                     function_name,
                     path);
+            resetKeeper();
             Coordination::RemoveResponse r;
             r.error = RandomFaultInjection::error_after_op;
             promise->set_value(r);

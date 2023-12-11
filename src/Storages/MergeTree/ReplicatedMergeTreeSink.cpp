@@ -29,6 +29,7 @@ namespace FailPoints
 {
     extern const char replicated_merge_tree_commit_zk_fail_after_op[];
     extern const char replicated_merge_tree_insert_quorum_fail_0[];
+    extern const char replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault[];
 }
 
 namespace ErrorCodes
@@ -594,7 +595,6 @@ struct CommitRetryContext
     {
         LOCK_AND_COMMIT,
         DUPLICATED_PART,
-        UNCERTAIN_COMMIT,
         SUCCESS,
         ERROR
     };
@@ -602,19 +602,17 @@ struct CommitRetryContext
     /// Possible ways:
 
     /// LOCK_AND_COMMIT -> DUPLICATED_PART
-    /// LOCK_AND_COMMIT -> UNCERTAIN_COMMIT
     /// LOCK_AND_COMMIT -> SUCCESS
+    /// LOCK_AND_COMMIT -> ERROR
 
     /// DUPLICATED_PART -> SUCCESS
-    /// UNCERTAIN_COMMIT -> SUCCESS
-    /// * -> ERROR
+    /// DUPLICATED_PART -> ERROR
 
     Stages stage = LOCK_AND_COMMIT;
 
     String actual_part_name;
     std::vector<String> conflict_block_ids;
     bool part_was_deduplicated = false;
-    Coordination::Error uncertain_keeper_error = Coordination::Error::ZOK;
 };
 
 template<bool async_insert>
@@ -664,34 +662,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             retry_context.part_was_deduplicated = true;
 
             return CommitRetryContext::SUCCESS;
-        }
-    };
-
-    auto resolve_uncertain_commit_stage = [&] () -> CommitRetryContext::Stages
-    {
-        /// check that info about the part was actually written in zk
-        if (zookeeper->exists(fs::path(storage.replica_path) / "parts" / retry_context.actual_part_name))
-        {
-            LOG_DEBUG(log, "Part was successfully committed on previous iteration: part_id={}", part->name);
-            return CommitRetryContext::SUCCESS;
-        }
-        else
-        {
-            /// if all retries will be exhausted by accessing zookeeper on fresh retry -> we'll add committed part to queue in the action
-            /// here lambda capture part name, it's ok since we'll not generate new one for this insert,
-            retries_ctl.actionAfterLastFailedRetry(
-                    [&] ()
-                    {
-                        storage.enqueuePartForCheck(retry_context.actual_part_name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
-                    });
-
-            retries_ctl.setUserError(
-                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                    "Insert failed due to zookeeper error. Please retry. Reason: {}",
-                    retry_context.uncertain_keeper_error);
-
-            /// trigger next keeper retry
-            return CommitRetryContext::UNCERTAIN_COMMIT;
         }
     };
 
@@ -916,14 +886,57 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
         if (Coordination::isHardwareError(multi_code))
         {
-            retry_context.uncertain_keeper_error = multi_code;
+            LOG_TRACE(
+                log, "Insert of part {} failed when committing to keeper (Reason: {}). Attempting to recover it", part->name, multi_code);
+            ZooKeeperRetriesControl new_retry_controller = retries_ctl;
 
-            /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
-             *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
-             */
-            sleep_before_commit_for_tests();
-            transaction.commit();
-            return CommitRetryContext::UNCERTAIN_COMMIT;
+            /// We are going to try to verify if the transaction was written into keeper
+            /// If we fail to do so (keeper unavailable) then we don't know if the changes were applied or not so
+            /// we can't delete the local part, as if the changes were applied then inserted block appeared in
+            /// `/blocks/`, and it can not be inserted again.
+            new_retry_controller.actionAfterLastFailedRetry([&]
+            {
+                transaction.commit();
+                storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+                throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                        "Unknown status of part {} (Reason: {}). Data was written locally but we don't know the status in keeper. "
+                        "The status will be verified automatically in ~{} seconds (the part will be kept if present in keeper or dropped if not)",
+                        part->name, multi_code, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+            });
+
+            /// Independently of how many retries we had left we want to do at least one check of this inner retry
+            /// at least once so a) we try to verify at least once if metadata was written and b) we set the proper
+            /// final error (UNKNOWN_STATUS_OF_INSERT) if we fail to reconnect to keeper
+            new_retry_controller.requestUnconditionalRetry();
+
+            bool node_exists = false;
+            new_retry_controller.retryLoop([&]
+            {
+                fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault, { zookeeper->forceFailureBeforeOperation(); });
+                zookeeper->setKeeper(storage.getZooKeeper());
+                node_exists = zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name);
+            });
+
+            if (node_exists)
+            {
+                LOG_TRACE(log, "Insert of part {} recovered from keeper successfully. It will be committed", part->name);
+                part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
+                sleep_before_commit_for_tests();
+                transaction.commit();
+                block_number_lock->assumeUnlocked();
+                return CommitRetryContext::SUCCESS;
+            }
+            else
+            {
+//                LOG_TRACE(log, "Insert of part {} was not committed to keeper. Will try again with a new block", part->name);
+//                rename_part_to_temporary();
+//                retries_ctl.setUserError(
+//                        ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+//                        "Insert of part {} failed when committing to keeper (Reason: {})",
+//                        part->name,
+//                        multi_code);
+                throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Need to implement full retry");
+            }
         }
 
         transaction.rollback();
@@ -991,9 +1004,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     break;
                 case CommitRetryContext::DUPLICATED_PART:
                     retry_context.stage = resolve_duplicate_stage();
-                    break;
-                case CommitRetryContext::UNCERTAIN_COMMIT:
-                    retry_context.stage = resolve_uncertain_commit_stage();
                     break;
                 case CommitRetryContext::SUCCESS:
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
