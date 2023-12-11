@@ -216,7 +216,7 @@ private:
         std::unique_ptr<ThreadFromGlobalPool> thread;
         std::atomic_bool stop_flag{false};
     };
-    std::vector<std::unique_ptr<DownloadThread>> download_threads;
+    std::vector<std::shared_ptr<DownloadThread>> download_threads;
 
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 

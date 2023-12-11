@@ -31,3 +31,19 @@ mv $config_path_tmp $config_path
 
 $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
+
+cat $config_path \
+| sed "s|<background_download_threads>5<\/background_download_threads>|<background_download_threads>15<\/background_download_threads>|" \
+> $config_path_tmp
+mv $config_path_tmp $config_path
+
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
+
+cat $config_path \
+| sed "s|<background_download_threads>15<\/background_download_threads>|<background_download_threads>2<\/background_download_threads>|" \
+> $config_path_tmp
+mv $config_path_tmp $config_path
+
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
+$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
