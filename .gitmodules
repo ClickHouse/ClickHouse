@@ -9,7 +9,7 @@
 	url = https://github.com/ClickHouse/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
-	url = https://github.com/ClickHouse/librdkafka
+	url = https://github.com/ilejn/librdkafka
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse/cctz
