@@ -35,6 +35,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
+#include <Disks/IO/IOUringReader.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -308,6 +309,11 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
+
+#if USE_LIBURING
+    mutable OnceFlag io_uring_reader_initialized;
+    mutable std::unique_ptr<IOUringReader> io_uring_reader;
+#endif
 
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
@@ -4860,6 +4866,17 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
             return *shared->synchronous_local_fs_reader;
     }
 }
+
+#if USE_LIBURING
+IOUringReader & Context::getIOURingReader() const
+{
+    callOnce(shared->io_uring_reader_initialized, [&] {
+        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
+    });
+
+    return *shared->io_uring_reader;
+}
+#endif
 
 ThreadPool & Context::getThreadPoolWriter() const
 {
