@@ -978,8 +978,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.no_makeset,
             data.only_consts,
             data.aggregation_keys_info,
-            false,
-            false,
+            false, /* build_expression_with_window_functions */
+            false, /* is_create_parameterized_view */
             data.is_projection_optimized);
 
         NamesWithAliases args;
