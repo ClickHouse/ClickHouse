@@ -367,7 +367,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             IConnections::ReplicaInfo replica_info
             {
                 .all_replicas_count = all_replicas_count,
-                .number_of_current_replica = 0
+                /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
+                /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
+                .number_of_current_replica = shard.shard_num - 1,
             };
 
             addPipeForSingeReplica(pipes, shard.pool, replica_info);
@@ -386,7 +388,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         IConnections::ReplicaInfo replica_info
         {
             .all_replicas_count = all_replicas_count,
-            .number_of_current_replica = pipes.size()
+            /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
+            /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
+            .number_of_current_replica = current_shard->shard_num - 1,
         };
 
         addPipeForSingeReplica(pipes, current_shard->pool, replica_info);
