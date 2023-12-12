@@ -1,6 +1,7 @@
 #include "MemoryTracker.h"
 
 #include <IO/WriteHelpers.h>
+#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -192,23 +193,25 @@ namespace
 {
     /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
     /// Let's find them.
-void debugLogBigAllocationWithoutCheck(
-    Int64 size [[maybe_unused]], bool can_throw [[maybe_unused]], bool throw_if_memory_exceeded [[maybe_unused]])
+void debugLogBigAllocationWithoutCheck(Int64 size)
 {
-    if (size < 0)
-        return;
-
-    constexpr Int64 threshold = 5 * 1024 * 1024; /// The choice is arbitrary (maybe we should decrease it)
+    constexpr Int64 threshold = 1 * 1024 * 1024; /// The choice is arbitrary (maybe we should decrease it)
     if (size > threshold)
+#ifdef ABORT_ON_LOGICAL_ERROR
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Too big allocation ({} bytes > {}) without checking memory limits, it may lead to OOM. Can throw: {} Throw if exceeded: {}. "
-            "Stack trace: {}",
+            "Memory limit reached and large allocation ({} bytes > {}) when the memory tracker cannot throw. Stack trace: {}",
             size,
             threshold,
-            can_throw,
-            throw_if_memory_exceeded,
             StackTrace().toString());
+#else
+        LOG_DEBUG(
+            &Poco::Logger::get("MemoryTracker"),
+            "Memory limit reached and large allocation ({} bytes > {}) when the memory tracker cannot throw. Stack trace: {}",
+            size,
+            threshold,
+            StackTrace().toString());
+#endif
 }
 }
 
@@ -277,7 +280,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (!can_throw)
         {
             memory_limit_exceeded_ignored = true;
-            debugLogBigAllocationWithoutCheck(size, can_throw, throw_if_memory_exceeded);
+            debugLogBigAllocationWithoutCheck(size);
         }
         else
         {
@@ -357,11 +360,11 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         }
         else
         {
-            bool can_throw = memoryTrackerCanThrow(level, true);
+            bool can_throw = memoryTrackerCanThrow(level, false);
             if (!can_throw)
             {
                 memory_limit_exceeded_ignored = true;
-                debugLogBigAllocationWithoutCheck(size, memoryTrackerCanThrow(level, false), throw_if_memory_exceeded);
+                debugLogBigAllocationWithoutCheck(size);
             }
             else
             {
