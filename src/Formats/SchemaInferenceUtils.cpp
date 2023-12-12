@@ -1305,11 +1305,22 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
             return;
         }
 
+        /// First, try to transform nested types without final transformations to see if there is a common type.
+        auto nested_types_copy = nested_types;
+        transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
+        if (checkIfTypesAreEqual(nested_types_copy))
+        {
+            data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
+            transformFinalInferredJSONTypeIfNeededImpl(data_type, settings, json_info);
+            return;
+        }
+
+        /// Apply final transformation to nested types, and then try to find common type.
         for (auto & nested_type : nested_types)
             /// Don't change Nothing to String in nested types here, because we are not sure yet if it's Array or actual Tuple
             transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, /*remain_nothing_types=*/ true);
 
-        auto nested_types_copy = nested_types;
+        nested_types_copy = nested_types;
         transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
         if (checkIfTypesAreEqual(nested_types_copy))
         {
@@ -1439,7 +1450,6 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
             return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
 
         return std::make_shared<DataTypeTuple>(std::move(nested_types));
-
     }
 
     if (which.isMap())
