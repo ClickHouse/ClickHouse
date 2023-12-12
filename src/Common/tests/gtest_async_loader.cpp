@@ -1000,7 +1000,7 @@ TEST(AsyncLoader, SubJobs)
         std::atomic<int> jobs_left;
         // It is a good practice to keep load task inside the component:
         // 1) to make sure it outlives its load jobs;
-        // 2) to avoid removing load jobs from `system.async_loader` while we use the component
+        // 2) to avoid removing load jobs from `system.asynchronous_loader` while we use the component
         LoadTaskPtr load_task;
     };
 
@@ -1070,7 +1070,7 @@ TEST(AsyncLoader, RecursiveJob)
         std::atomic<int> jobs_left;
         // It is a good practice to keep load task inside the component:
         // 1) to make sure it outlives its load jobs;
-        // 2) to avoid removing load jobs from `system.async_loader` while we use the component
+        // 2) to avoid removing load jobs from `system.asynchronous_loader` while we use the component
         LoadTaskPtr load_task;
     };
 
