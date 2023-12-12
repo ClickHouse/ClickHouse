@@ -64,6 +64,7 @@ clickhouse-client --query "SELECT total_bytes FROM system.tables WHERE name = 'h
 
 clickhouse-client -q "system flush logs" ||:
 stop_logs_replication
+clickhouse stop
 
 mv /var/log/clickhouse-server/* /test_output/
 
