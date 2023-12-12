@@ -75,7 +75,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
-    auto table_id = getContext()->tryResolveStorageID(alter, Context::ResolveOrdinary);
+    auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
     if (table_id)

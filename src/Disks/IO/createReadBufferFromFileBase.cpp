@@ -36,7 +36,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     std::optional<size_t> file_size,
     int flags,
     char * existing_memory,
-    size_t alignment)
+    size_t alignment,
+    bool use_external_buffer)
 {
     if (file_size.has_value() && !*file_size)
         return std::make_unique<ReadBufferFromEmptyFile>();
@@ -100,12 +101,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
 #if USE_LIBURING
-            static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(512);
-            if (!reader->isSupported())
+            auto global_context = Context::getGlobalContextInstance();
+            if (!global_context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain io_uring reader (global context not initialized)");
+
+            auto & reader = global_context->getIOURingReader();
+            if (!reader.isSupported())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
 
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                *reader,
+                reader,
                 settings.priority,
                 filename,
                 buffer_size,
@@ -144,7 +149,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 existing_memory,
                 buffer_alignment,
                 file_size,
-                settings.local_throttler);
+                settings.local_throttler,
+                use_external_buffer);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");

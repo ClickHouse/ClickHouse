@@ -15,6 +15,7 @@ void registerTableFunctions()
     registerTableFunctionZeros(factory);
     registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
+    registerTableFunctionFileCluster(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionURLCluster(factory);
     registerTableFunctionValues(factory);
