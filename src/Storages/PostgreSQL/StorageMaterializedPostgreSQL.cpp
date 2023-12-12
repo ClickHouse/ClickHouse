@@ -47,9 +47,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static const auto NESTED_TABLE_SUFFIX = "_nested";
-static const auto TMP_SUFFIX = "_tmp";
-
 
 /// For the case of single storage.
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(

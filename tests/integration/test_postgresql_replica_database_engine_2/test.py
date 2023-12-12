@@ -1038,12 +1038,12 @@ def test_default_columns(started_cluster):
     )
 
 
-def test_backup_restore_table_engine(started_cluster):
-    table = "backup_restore_t"
+def test_dependent_loading(started_cluster):
+    table = "test_dependent_loading"
 
     pg_manager.create_postgres_table(table)
     instance.query(
-        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(50)"
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(0, 50)"
     )
 
     instance.query(
@@ -1066,6 +1066,12 @@ def test_backup_restore_table_engine(started_cluster):
 
     assert 50 == int(instance.query(f"SELECT count() FROM default.{table}"))
 
+def test_backup_restore_table_engine(started_cluster):
+    table = "backup_restore_t"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(50)"
 
 def test_backup_restore_database_engine(started_cluster):
     table = "backup_restore_d"
@@ -1096,6 +1102,45 @@ def test_backup_restore_database_engine(started_cluster):
     instance.query(f"RESTORE TABLE default.{table} FROM Disk('backups', 'b1')")
 
     assert 50 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
+=======
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    instance.restart_clickhouse()
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    uuid = instance.query(
+        f"SELECT uuid FROM system.tables WHERE name='{table}' and database='default' limit 1"
+    ).strip()
+    nested_table = f"default.`{uuid}_nested`"
+    instance.contains_in_log(
+        f"Table default.{table} has 1 dependencies: {nested_table} (level 1)"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+    nested_time = instance.query(
+        f"SELECT event_time_microseconds FROM system.text_log WHERE message like 'Loading table default.{uuid}_nested' and message not like '%like%'"
+    ).strip()
+    time = instance.query(
+        f"SELECT event_time_microseconds FROM system.text_log WHERE message like 'Loading table default.{table}' and message not like '%like%'"
+    ).strip()
+    instance.query(
+        f"SELECT toDateTime64('{nested_time}', 6) < toDateTime64('{time}', 6)"
+    )
+>>>>>>> origin/fix-loading-dependent-table-materialized-postgresql
 
 
 if __name__ == "__main__":
