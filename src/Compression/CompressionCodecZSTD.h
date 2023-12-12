@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Compression/ICompressionCodec.h>
 
 namespace DB
