@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 import os
+import time
 import pytest
 import requests
 
-import helpers.keeper_utils as keeper_utils
-from kazoo.client import KazooClient
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+import helpers.keeper_utils as keeper_utils
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -30,16 +31,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
-def get_fake_zk(node, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
-
-
-def test_http_readiness(started_cluster):
+def test_http_readiness_basic_responses(started_cluster):
     leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
     response = requests.get(
         "http://{host}:{port}/ready".format(host=leader.ip_address, port=9182)
@@ -48,8 +40,7 @@ def test_http_readiness(started_cluster):
 
     readiness_data = response.json()
     assert readiness_data["status"] == "ok"
-    assert readiness_data["details"]["leader"] == True
-    assert readiness_data["details"]["follower"] == False
+    assert readiness_data["details"]["role"] == "leader"
 
     follower = keeper_utils.get_any_follower(cluster, [node1, node2, node3])
     response = requests.get(
@@ -59,5 +50,26 @@ def test_http_readiness(started_cluster):
 
     readiness_data = response.json()
     assert readiness_data["status"] == "ok"
-    assert readiness_data["details"]["leader"] == False
-    assert readiness_data["details"]["follower"] == True
+    assert readiness_data["details"]["role"] == "follower"
+    assert readiness_data["details"]["hasLeader"] == True
+
+def test_http_readiness_partitioned_cluster(started_cluster):
+    with PartitionManager() as pm:
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+        follower = keeper_utils.get_any_follower(cluster, [node1, node2, node3])
+
+        pm.partition_instances(
+            leader, follower
+        )
+        time.sleep(3)
+
+        response = requests.get(
+            "http://{host}:{port}/ready".format(host=follower.ip_address, port=9182)
+        )
+        print(response.json())
+        assert response.status_code == 503
+
+        readiness_data = response.json()
+        assert readiness_data["status"] == "fail"
+        assert readiness_data["details"]["role"] == "follower"
+        assert readiness_data["details"]["hasLeader"] == False
