@@ -393,40 +393,6 @@ Reverses the sequence of bytes in a string.
 
 Reverses a sequence of Unicode code points in a string. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-## format
-
-Format the `pattern` string with the strings listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
-
-**Syntax**
-
-```sql
-format(pattern, s0, s1, …)
-```
-
-**Example**
-
-``` sql
-SELECT format('{1} {0} {1}', 'World', 'Hello')
-```
-
-```result
-┌─format('{1} {0} {1}', 'World', 'Hello')─┐
-│ Hello World Hello                       │
-└─────────────────────────────────────────┘
-```
-
-With implicit numbers:
-
-``` sql
-SELECT format('{} {}', 'Hello', 'World')
-```
-
-```result
-┌─format('{} {}', 'Hello', 'World')─┐
-│ Hello World                       │
-└───────────────────────────────────┘
-```
-
 ## concat
 
 Concatenates the given arguments.

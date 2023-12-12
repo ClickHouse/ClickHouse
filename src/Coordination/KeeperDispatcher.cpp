@@ -143,7 +143,7 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
-                Int64 mem_soft_limit = configuration_and_settings->coordination_settings->max_memory_usage_soft_limit;
+                Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && mem_soft_limit > 0 && total_memory_tracker.get() >= mem_soft_limit && checkIfRequestIncreaseMem(request.request))
                 {
                     LOG_TRACE(log, "Processing requests refused because of max_memory_usage_soft_limit {}, the total used memory is {}, request type is {}", mem_soft_limit, total_memory_tracker.get(), request.request->getOpNum());
@@ -930,6 +930,8 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
 
     snapshot_s3.updateS3Configuration(config, macros);
+
+    keeper_context->updateKeeperMemorySoftLimit(config);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
