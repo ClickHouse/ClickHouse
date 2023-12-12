@@ -279,7 +279,7 @@ def get_leader(cluster, nodes):
     raise Exception("No leader in Keeper cluster.")
 
 
-def get_follower(cluster, nodes):
+def get_any_follower(cluster, nodes):
     for node in nodes:
         if is_follower(cluster, node):
             return node

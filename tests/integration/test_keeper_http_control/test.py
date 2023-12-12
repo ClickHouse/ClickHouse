@@ -51,7 +51,7 @@ def test_http_readiness(started_cluster):
     assert readiness_data["details"]["leader"] == True
     assert readiness_data["details"]["follower"] == False
 
-    follower = keeper_utils.get_follower(cluster, [node1, node2, node3])
+    follower = keeper_utils.get_any_follower(cluster, [node1, node2, node3])
     response = requests.get(
         "http://{host}:{port}/ready".format(host=follower.ip_address, port=9182)
     )
