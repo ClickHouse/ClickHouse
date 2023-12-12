@@ -1,4 +1,4 @@
-#include "Functions/UserDefined/UserDefinedSQLObjectsLoaderFromDisk.h"
+#include "Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h"
 
 #include "Functions/UserDefined/UserDefinedSQLFunctionFactory.h"
 #include "Functions/UserDefined/UserDefinedSQLObjectType.h"
@@ -51,7 +51,7 @@ namespace
     }
 }
 
-UserDefinedSQLObjectsLoaderFromDisk::UserDefinedSQLObjectsLoaderFromDisk(const ContextPtr & global_context_, const String & dir_path_)
+UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
     : global_context(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
     , log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromDisk")}
@@ -60,13 +60,13 @@ UserDefinedSQLObjectsLoaderFromDisk::UserDefinedSQLObjectsLoaderFromDisk(const C
 }
 
 
-ASTPtr UserDefinedSQLObjectsLoaderFromDisk::tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name)
+ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
     return tryLoadObject(object_type, object_name, getFilePath(object_type, object_name), /* check_file_exists= */ true);
 }
 
 
-ASTPtr UserDefinedSQLObjectsLoaderFromDisk::tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name, const String & path, bool check_file_exists)
+ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name, const String & path, bool check_file_exists)
 {
     LOG_DEBUG(log, "Loading user defined object {} from file {}", backQuote(object_name), path);
 
@@ -93,7 +93,6 @@ ASTPtr UserDefinedSQLObjectsLoaderFromDisk::tryLoadObject(UserDefinedSQLObjectTy
                     "",
                     0,
                     global_context->getSettingsRef().max_parser_depth);
-                UserDefinedSQLFunctionFactory::checkCanBeRegistered(global_context, object_name, *ast);
                 return ast;
             }
         }
@@ -106,20 +105,20 @@ ASTPtr UserDefinedSQLObjectsLoaderFromDisk::tryLoadObject(UserDefinedSQLObjectTy
 }
 
 
-void UserDefinedSQLObjectsLoaderFromDisk::loadObjects()
+void UserDefinedSQLObjectsDiskStorage::loadObjects()
 {
     if (!objects_loaded)
         loadObjectsImpl();
 }
 
 
-void UserDefinedSQLObjectsLoaderFromDisk::reloadObjects()
+void UserDefinedSQLObjectsDiskStorage::reloadObjects()
 {
     loadObjectsImpl();
 }
 
 
-void UserDefinedSQLObjectsLoaderFromDisk::loadObjectsImpl()
+void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
 {
     LOG_INFO(log, "Loading user defined objects from {}", dir_path);
     createDirectory();
@@ -148,26 +147,25 @@ void UserDefinedSQLObjectsLoaderFromDisk::loadObjectsImpl()
             function_names_and_queries.emplace_back(function_name, ast);
     }
 
-    UserDefinedSQLFunctionFactory::instance().setAllFunctions(function_names_and_queries);
+    setAllObjects(function_names_and_queries);
     objects_loaded = true;
 
     LOG_DEBUG(log, "User defined objects loaded");
 }
 
 
-void UserDefinedSQLObjectsLoaderFromDisk::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
+void UserDefinedSQLObjectsDiskStorage::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
     createDirectory();
     auto ast = tryLoadObject(object_type, object_name);
-    auto & factory = UserDefinedSQLFunctionFactory::instance();
     if (ast)
-        factory.setFunction(object_name, *ast);
+        setObject(object_name, *ast);
     else
-        factory.removeFunction(object_name);
+        removeObject(object_name);
 }
 
 
-void UserDefinedSQLObjectsLoaderFromDisk::createDirectory()
+void UserDefinedSQLObjectsDiskStorage::createDirectory()
 {
     std::error_code create_dir_error_code;
     fs::create_directories(dir_path, create_dir_error_code);
@@ -177,10 +175,11 @@ void UserDefinedSQLObjectsLoaderFromDisk::createDirectory()
 }
 
 
-bool UserDefinedSQLObjectsLoaderFromDisk::storeObject(
+bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
+    const ContextPtr & /*current_context*/,
     UserDefinedSQLObjectType object_type,
     const String & object_name,
-    const IAST & create_object_query,
+    ASTPtr create_object_query,
     bool throw_if_exists,
     bool replace_if_exists,
     const Settings & settings)
@@ -197,7 +196,7 @@ bool UserDefinedSQLObjectsLoaderFromDisk::storeObject(
     }
 
     WriteBufferFromOwnString create_statement_buf;
-    formatAST(create_object_query, create_statement_buf, false);
+    formatAST(*create_object_query, create_statement_buf, false);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 
@@ -228,8 +227,11 @@ bool UserDefinedSQLObjectsLoaderFromDisk::storeObject(
 }
 
 
-bool UserDefinedSQLObjectsLoaderFromDisk::removeObject(
-    UserDefinedSQLObjectType object_type, const String & object_name, bool throw_if_not_exists)
+bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
+    const ContextPtr & /*current_context*/,
+    UserDefinedSQLObjectType object_type,
+    const String & object_name,
+    bool throw_if_not_exists)
 {
     String file_path = getFilePath(object_type, object_name);
     LOG_DEBUG(log, "Removing user defined object {} stored in file {}", backQuote(object_name), file_path);
@@ -249,7 +251,7 @@ bool UserDefinedSQLObjectsLoaderFromDisk::removeObject(
 }
 
 
-String UserDefinedSQLObjectsLoaderFromDisk::getFilePath(UserDefinedSQLObjectType object_type, const String & object_name) const
+String UserDefinedSQLObjectsDiskStorage::getFilePath(UserDefinedSQLObjectType object_type, const String & object_name) const
 {
     String file_path;
     switch (object_type)

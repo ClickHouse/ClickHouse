@@ -66,7 +66,7 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -1716,7 +1716,7 @@ try
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
-        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     catch (...)
     {

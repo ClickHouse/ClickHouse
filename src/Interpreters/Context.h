@@ -68,7 +68,7 @@ enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
-class IUserDefinedSQLObjectsLoader;
+class IUserDefinedSQLObjectsStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -802,8 +802,9 @@ public:
 
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
-    const IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader() const;
-    IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader();
+    const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
+    IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
+    void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
