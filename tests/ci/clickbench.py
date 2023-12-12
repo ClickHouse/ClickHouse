@@ -53,7 +53,7 @@ def get_run_command(
     env_str = " ".join(envs)
 
     return (
-        f"docker run --volume={builds_path}:/package_folder "
+        f"docker run --shm-size=16g --volume={builds_path}:/package_folder "
         f"{ci_logs_args}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "

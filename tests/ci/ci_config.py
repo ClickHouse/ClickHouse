@@ -512,7 +512,7 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         "ClickBench",
         "Runs [ClickBench](https://github.com/ClickHouse/ClickBench/) with instant-attach table",
-        lambda x: x.startswith("Upgrade check ("),
+        lambda x: x.startswith("ClickBench"),
     ),
     CheckDescription(
         "Falback for unknown",
