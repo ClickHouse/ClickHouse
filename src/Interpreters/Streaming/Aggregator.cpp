@@ -38,6 +38,7 @@ namespace CurrentMetrics
 {
     extern const Metric AggregatorThreads;
     extern const Metric AggregatorThreadsActive;
+    extern const Metric AggregatorThreadsScheduled;
 }
 
 namespace
@@ -703,9 +704,9 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
         if (inst->offsets)
-            inst->batch_that->addBatchSinglePlaceFromInterval(inst->offsets[row_begin], inst->offsets[row_end - 1], res + inst->state_offset, inst->batch_arguments, arena, -1);
+            inst->batch_that->addBatchSinglePlace(inst->offsets[row_begin], inst->offsets[row_end - 1], res + inst->state_offset, inst->batch_arguments, arena, -1);
         else
-            inst->batch_that->addBatchSinglePlaceFromInterval(row_begin, row_end, res + inst->state_offset, inst->batch_arguments, arena, -1);
+            inst->batch_that->addBatchSinglePlace(row_begin, row_end, res + inst->state_offset, inst->batch_arguments, arena, -1);
     }
 }
 
@@ -1608,7 +1609,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevel(AggregatedDataVariants & dat
     std::unique_ptr<ThreadPool> thread_pool;
     if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000 /// TODO Make a custom threshold.
         && data_variants.isStaticBucketTwoLevel()) /// TODO Use the shared thread pool with the `merge` function.
-        thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, max_threads);
+        thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, max_threads);
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
@@ -2360,7 +2361,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         std::unique_ptr<ThreadPool> thread_pool;
         if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
-            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, max_threads);
+            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)
         {

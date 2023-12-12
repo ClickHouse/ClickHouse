@@ -860,4 +860,17 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
+void Pipe::resizeStreaming(size_t num_streams, bool force)
+{
+    assert(isStreaming());
+    if (output_ports.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
+
+    ProcessorPtr resize;
+    if (num_streams == numOutputPorts() && !force)
+        return;
+
+    addTransform(getStreamingResizeProcessor(getHeader(), numOutputPorts(), num_streams));
+}
+
 }
