@@ -36,6 +36,7 @@ TTLTransform::TTLTransform(
 
         if (storage_.getSettings()->ttl_only_drop_parts)
         {
+            LOG_DEBUG(log, "ttl_only_drop_parts is set, will try to drop the whole part {}", data_part->name);
             algorithms.emplace_back(std::make_unique<TTLDropAlgorithm>(
                 rows_ttl, old_ttl_infos.table_ttl, current_time_, force_));
         }
