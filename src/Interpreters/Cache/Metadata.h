@@ -32,7 +32,7 @@ public:
 
     bool evicting() const { return removal_candidate.load(); }
 
-    Priority::Iterator getQueueIterator() const { return file_segment->getQueueIterator(); }
+    Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     const FileSegment & getFileSegment() const { return *file_segment; }
 
