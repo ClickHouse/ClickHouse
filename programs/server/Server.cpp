@@ -1719,6 +1719,8 @@ try
         load_metadata_tasks = loadMetadata(global_context, default_database, server_settings.async_load_databases);
         /// If we need to convert database engines, disable async tables loading
         convertDatabasesEnginesIfNeed(load_metadata_tasks, global_context);
+        /// Convert MergeTree tables to replicated if flag is set
+        convertMergeTreeToReplicatedIfNeed(global_context);
         database_catalog.startupBackgroundTasks();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
