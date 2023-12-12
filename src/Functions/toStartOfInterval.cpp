@@ -371,7 +371,7 @@ private:
             {
                 result_data[i] = 0;
                 if (scale_on_interval < scale_on_time)
-                    /// if we have a time argument that has bigger scale than the interval can contain, we need 
+                    /// if we have a time argument that has bigger scale than the interval can contain, we need
                     /// to return a value with bigger precision and thus we should multiply result on the scale difference.
                     result_data[i] += static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_on_interval)) * scale_diff;
                 else
@@ -429,7 +429,7 @@ private:
                     /// Case when Interval has some specific scale (3,6,9)
                     else
                     {
-                        /// If we have a time argument that has bigger scale than the interval can contain, we need 
+                        /// If we have a time argument that has bigger scale than the interval can contain, we need
                         /// to return a value with bigger precision and thus we should multiply result on the scale difference.
                         if (scale_on_interval < scale_on_time)
                             result_data[i] += origin + res * scale_diff;
