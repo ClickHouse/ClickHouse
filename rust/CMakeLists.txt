@@ -14,6 +14,10 @@ macro(configure_rustc)
         set(RUST_CFLAGS "${RUST_CFLAGS} --sysroot ${CMAKE_SYSROOT}")
     endif()
 
+    if (USE_MUSL)
+        set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
+    endif ()
+
     if(CCACHE_EXECUTABLE MATCHES "/sccache$")
         message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
         set(RUSTCWRAPPER "rustc-wrapper = \"${CCACHE_EXECUTABLE}\"")
