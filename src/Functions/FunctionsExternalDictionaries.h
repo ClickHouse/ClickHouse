@@ -633,17 +633,16 @@ private:
                 result_columns = dictionary->getColumnsAllValues(
                     attribute_names, result_tuple_type.getElements(), key_columns, key_types, default_cols, collect_values_limit);
             }
-            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.front() == nullptr)
+            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault
+                     && default_cols.front() == nullptr)
             {
-                #pragma clang diagnostic push
-                #pragma clang diagnostic ignored "-Wunused-value"
-                last_argument;
-                #pragma clang diagnostic pop
+                result_columns = dictionary->getColumnsOrDefault(
+                    attribute_names, result_tuple_type.getElements(), key_columns, last_argument);
             }
             else
             {
-                result_columns
-                    = dictionary->getColumns(attribute_names, result_tuple_type.getElements(), key_columns, key_types, default_cols);
+                result_columns = dictionary->getColumns(
+                    attribute_names, result_tuple_type.getElements(), key_columns, key_types, default_cols);
             }
 
             result = ColumnTuple::create(std::move(result_columns));
@@ -655,16 +654,16 @@ private:
                 result = dictionary->getColumnAllValues(
                     attribute_names[0], result_type, key_columns, key_types, default_cols.front(), collect_values_limit);
             }
-            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.front() == nullptr)
+            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault
+                     && default_cols.front() == nullptr)
             {
-                #pragma clang diagnostic push
-                #pragma clang diagnostic ignored "-Wunused-value"
-                last_argument;
-                #pragma clang diagnostic pop
+                result = dictionary->getColumnOrDefault(
+                    attribute_names[0], result_type, key_columns, last_argument);
             }
             else
             {
-                result = dictionary->getColumn(attribute_names[0], result_type, key_columns, key_types, default_cols.front());
+                result = dictionary->getColumn(
+                    attribute_names[0], result_type, key_columns, key_types, default_cols.front());
             }
         }
 

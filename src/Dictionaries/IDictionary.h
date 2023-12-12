@@ -252,6 +252,47 @@ public:
         return result;
     }
 
+    /**
+     * Analogous to getColumn, but for dictGetOrDefault
+     */
+    virtual ColumnPtr getColumnOrDefault(
+        const std::string & attribute_name [[maybe_unused]],
+        const DataTypePtr & result_type [[maybe_unused]],
+        const Columns & key_columns [[maybe_unused]],
+        const ColumnWithTypeAndName & default_argument [[maybe_unused]]) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method getColumnOrDefault is not supported for {} dictionary.",
+                        getDictionaryID().getNameForLogs());
+    }
+
+    /** Get multiple columns from dictionary.
+      *
+      * Default implementation just calls getColumnOrDefault multiple times.
+      * Subclasses can provide custom more efficient implementation.
+      */
+    virtual Columns getColumnsOrDefault(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const ColumnWithTypeAndName & default_argument) const
+    {
+        size_t attribute_names_size = attribute_names.size();
+
+        Columns result;
+        result.reserve(attribute_names_size);
+
+        for (size_t i = 0; i < attribute_names_size; ++i)
+        {
+            const auto & attribute_name = attribute_names[i];
+            const auto & result_type = result_types[i];
+            result.emplace_back(getColumnOrDefault(attribute_name, result_type,
+                                                   key_columns, default_argument));
+        }
+
+        return result;
+    }
+
     /** Subclass must validate key columns and key types and return ColumnUInt8 that
       * is bitmask representation of is key in dictionary or not.
       * If key is in dictionary then value of associated row will be 1, otherwise 0.
