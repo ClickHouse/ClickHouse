@@ -786,6 +786,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
+        /// Save the current temporary path in case we need to revert the change to retry (ZK connection loss)
+        const String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
+
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
@@ -886,7 +889,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
         if (Coordination::isHardwareError(multi_code))
         {
-            LOG_TRACE(
+            LOG_DEBUG(
                 log, "Insert of part {} failed when committing to keeper (Reason: {}). Attempting to recover it", part->name, multi_code);
             ZooKeeperRetriesControl new_retry_controller = retries_ctl;
 
@@ -919,7 +922,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             if (node_exists)
             {
-                LOG_TRACE(log, "Insert of part {} recovered from keeper successfully. It will be committed", part->name);
+                LOG_DEBUG(log, "Insert of part {} recovered from keeper successfully. It will be committed", part->name);
                 part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
                 sleep_before_commit_for_tests();
                 transaction.commit();
@@ -928,14 +931,17 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
             else
             {
-//                LOG_TRACE(log, "Insert of part {} was not committed to keeper. Will try again with a new block", part->name);
-//                rename_part_to_temporary();
-//                retries_ctl.setUserError(
-//                        ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-//                        "Insert of part {} failed when committing to keeper (Reason: {})",
-//                        part->name,
-//                        multi_code);
-                throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Need to implement full retry");
+                LOG_DEBUG(log, "Insert of part {} was not committed to keeper. Will try again with a new block", part->name);
+                /// We checked in keeper and the the data in ops being written so we can retry the process again, but
+                /// there is a caveat: as we lost the connection the block number that we got (EphemeralSequential)
+                /// might or might not be there (and it belongs to a different session anyway) so we need to assume
+                /// it's not there and will be removed automatically, and start from scratch
+                /// In order to start from scratch we need to undo the changes that we've done as part of the
+                /// transaction: renameTempPartAndAdd
+                transaction.rollbackPartsToTemporaryState();
+                part->is_temp = true;
+                part->renameTo(temporary_part_relative_path, false);
+                zkutil::KeeperMultiException::check(multi_code, ops, responses);
             }
         }
 
