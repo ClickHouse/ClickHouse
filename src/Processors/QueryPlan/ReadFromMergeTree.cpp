@@ -612,7 +612,8 @@ Pipe ReadFromMergeTree::read(
     if (read_type == ReadType::ParallelReplicas)
         return readFromPoolParallelReplicas(std::move(parts_with_range), std::move(required_columns), std::move(pool_settings));
 
-    if (read_type == ReadType::Default && max_streams > 1)
+    /// Reading from default thread pool is beneficial for remote storage because of new prefetches.
+    if (read_type == ReadType::Default && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
         return readFromPool(std::move(parts_with_range), std::move(required_columns), std::move(pool_settings));
 
     auto pipe = readInOrder(parts_with_range, required_columns, pool_settings, read_type, /*limit=*/ 0);
@@ -1824,7 +1825,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         chassert(!is_parallel_reading_from_replicas);
 
         if (output_each_partition_through_separate_port)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimization isn't supposed to be used for queries with final");
 
         /// Add columns needed to calculate the sorting expression and the sign.
         for (const auto & column : metadata_for_reading->getColumnsRequiredForSortingKey())

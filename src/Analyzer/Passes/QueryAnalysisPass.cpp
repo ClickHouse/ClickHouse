@@ -119,6 +119,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
+    extern const int SYNTAX_ERROR;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
@@ -1209,7 +1210,8 @@ private:
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    static std::string rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, const ContextPtr & context);
+    static std::string
+    rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
     {
@@ -2316,7 +2318,8 @@ void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
         recursivelyCollectMaxOrdinaryExpressions(node, group_by_nodes);
 }
 
-std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, const ContextPtr & context)
+std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
+    const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context)
 {
     std::string result_aggregate_function_name = aggregate_function_name;
     auto aggregate_function_name_lowercase = Poco::toLower(aggregate_function_name);
@@ -2343,7 +2346,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(const std::strin
     bool need_add_or_null = settings.aggregate_functions_null_for_empty && !result_aggregate_function_name.ends_with("OrNull");
     if (need_add_or_null)
     {
-        auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name);
+        auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
         if (!properties->returns_default_when_only_null)
             result_aggregate_function_name += "OrNull";
     }
@@ -2355,7 +2358,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(const std::strin
       */
     if (result_aggregate_function_name.ends_with("OrNull"))
     {
-        auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name);
+        auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
         if (function_properies && !function_properies->returns_default_when_only_null)
         {
             size_t function_name_size = result_aggregate_function_name.size();
@@ -4597,6 +4600,19 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     return result_projection_names;
 }
 
+namespace
+{
+void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
+{
+    if (node.getNullsAction() != NullsAction::EMPTY)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Function with name '{}' cannot use {} NULLS",
+            node.getFunctionName(),
+            node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
+}
+}
+
 /** Resolve function node in scope.
   * During function node resolve, function node can be replaced with another expression (if it match lambda or sql user defined function),
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
@@ -4755,6 +4771,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     if (is_special_function_exists)
     {
+        checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
         /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
         auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
 
@@ -4775,6 +4792,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     if (is_special_function_if && !function_node_ptr->getArguments().getNodes().empty())
     {
+        checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
         /** Handle special case with constant If function, even if some of the arguments are invalid.
           *
           * SELECT if(hasColumnInTable('system', 'numbers', 'not_existing_column'), not_existing_column, 5) FROM system.numbers;
@@ -4840,6 +4858,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
     if (is_special_function_in)
     {
+        checkFunctionNodeHasEmptyNullsAction(function_node);
         if (scope.context->getSettingsRef().transform_null_in)
         {
             static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> in_function_to_replace_null_in_function_map =
@@ -5018,6 +5037,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     lambda_expression_untyped->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
+            checkFunctionNodeHasEmptyNullsAction(function_node);
+
             if (!parameters.empty())
             {
                 throw Exception(
@@ -5046,6 +5067,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Function 'untuple' must have 1 argument. In scope {}",
                     scope.scope_node->formatASTForErrorMessage());
+
+            checkFunctionNodeHasEmptyNullsAction(function_node);
 
             const auto & untuple_argument = function_arguments[0];
             auto result_type = untuple_argument->getResultType();
@@ -5097,6 +5120,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                     "Function GROUPING can have up to 64 arguments, but {} provided",
                     function_arguments_size);
+            checkFunctionNodeHasEmptyNullsAction(function_node);
 
             bool force_grouping_standard_compatibility = scope.context->getSettingsRef().force_grouping_standard_compatibility;
             auto grouping_function = std::make_shared<FunctionGrouping>(force_grouping_standard_compatibility);
@@ -5121,10 +5145,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Window function '{}' does not support lambda arguments",
                 function_name);
 
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, scope.context);
+        auto action = function_node_ptr->getNullsAction();
+        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
 
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, parameters, properties);
+        auto aggregate_function
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
 
         function_node.resolveAsWindowFunction(std::move(aggregate_function));
 
@@ -5148,7 +5174,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_executable_udf = false;
     }
 
-    if (!function)
+    if (function)
+    {
+        checkFunctionNodeHasEmptyNullsAction(function_node);
+    }
+    else
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
@@ -5187,10 +5217,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Aggregate function '{}' does not support lambda arguments",
                 function_name);
 
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, scope.context);
+        auto action = function_node_ptr->getNullsAction();
+        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
 
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, parameters, properties);
+        auto aggregate_function
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
