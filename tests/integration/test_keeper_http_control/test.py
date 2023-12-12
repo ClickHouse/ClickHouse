@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import os
-import time
 import pytest
 import requests
 
@@ -61,7 +60,7 @@ def test_http_readiness_partitioned_cluster(started_cluster):
         follower = keeper_utils.get_any_follower(cluster, [node1, node2, node3])
 
         pm.partition_instances(leader, follower)
-        time.sleep(3)
+        keeper_utils.wait_until_quorum_lost(cluster, follower)
 
         response = requests.get(
             "http://{host}:{port}/ready".format(host=follower.ip_address, port=9182)
