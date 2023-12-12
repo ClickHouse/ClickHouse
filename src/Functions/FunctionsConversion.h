@@ -221,6 +221,18 @@ struct ConvertImpl
                     continue;
                 }
 
+                if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
+                {
+                    static_assert(
+                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
+                        "UInt128 and IPv6 types must be same");
+
+                    vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
+                    vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
+
+                    continue;
+                }
+
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
