@@ -100,19 +100,19 @@ Strings BackupCoordinationStageSync::waitFor(const Strings & all_hosts, const St
 
 namespace
 {
-    struct UnreadyHostState
+    struct UnreadyHost
     {
+        String host;
         bool started = false;
-        bool alive = false;
     };
 }
 
 struct BackupCoordinationStageSync::State
 {
-    Strings results;
-    std::map<String, UnreadyHostState> unready_hosts;
+    std::optional<Strings> results;
     std::optional<std::pair<String, Exception>> error;
     std::optional<String> disconnected_host;
+    std::optional<UnreadyHost> unready_host;
 };
 
 BackupCoordinationStageSync::State BackupCoordinationStageSync::readCurrentState(
@@ -137,39 +137,45 @@ BackupCoordinationStageSync::State BackupCoordinationStageSync::readCurrentState
         return state;
     }
 
+    std::optional<UnreadyHost> unready_host;
+
     for (const auto & host : all_hosts)
     {
         if (!zk_nodes_set.contains("current|" + host + "|" + stage_to_wait))
         {
             const String started_node_name = "started|" + host;
             const String alive_node_name = "alive|" + host;
-            const String alive_node_path = zookeeper_path + "/" + alive_node_name;
 
-            UnreadyHostState unready_host_state;
-            unready_host_state.started = zk_nodes_set.contains(started_node_name);
-            unready_host_state.alive = zk_nodes_set.contains(alive_node_name);
-            state.unready_hosts.emplace(host, unready_host_state);
+            bool started = zk_nodes_set.contains(started_node_name);
+            bool alive = zk_nodes_set.contains(alive_node_name);
 
-            if (!unready_host_state.alive && !state.disconnected_host)
+            if (!alive)
             {
                 /// If the "alive" node doesn't exist then we don't have connection to the corresponding host.
                 /// This node is ephemeral so probably it will be recreated soon. We use zookeeper retries to wait.
                 /// In worst case when we won't manage to see the alive node for a long time we will just abort the backup.
-                state.disconnected_host = host;
                 String message;
-                if (unready_host_state.started)
+                if (started)
                     message = fmt::format("Lost connection to host {}", host);
                 else
                     message = fmt::format("No connection to host {} yet", host);
                 if (!retries_ctl.isLastRetry())
                     message += ", will retry";
                 retries_ctl.setUserError(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, message);
+                state.disconnected_host = host;
+                return state;
             }
+
+            if (!unready_host)
+                unready_host.emplace(UnreadyHost{.host = host, .started = started});
         }
     }
 
-    if (state.disconnected_host || !state.unready_hosts.empty())
+    if (unready_host)
+    {
+        state.unready_host = std::move(unready_host);
         return state;
+    }
 
     Strings results;
     for (const auto & host : all_hosts)
@@ -215,12 +221,16 @@ Strings BackupCoordinationStageSync::waitImpl(
         }
 
         /// Analyze the current state of zk nodes.
-        if (state.error || state.disconnected_host || state.unready_hosts.empty())
-            break; /// Error happened or everything is ready.
+        chassert(state.results || state.error || state.disconnected_host || state.unready_host);
 
-        /// Log that we will wait
-        const auto & unready_host = state.unready_hosts.begin()->first;
-        LOG_INFO(log, "Waiting on ZooKeeper watch for any node to be changed (currently waiting for host {})", unready_host);
+        if (state.results || state.error || state.disconnected_host)
+            break; /// Everything is ready or error happened.
+
+        /// Log what we will wait.
+        const auto & unready_host = *state.unready_host;
+        LOG_INFO(log, "Waiting on ZooKeeper watch for any node to be changed (currently waiting for host {}{})",
+                 unready_host.host,
+                 (!unready_host.started ? " which didn't start the operation yet" : ""));
 
         /// Wait until `watch_callback` is called by ZooKeeper meaning that zk nodes have changed.
         {
@@ -247,19 +257,19 @@ Strings BackupCoordinationStageSync::waitImpl(
         throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "No connection to host {}", *state.disconnected_host);
 
     /// Something's unready, timeout is probably not enough.
-    if (!state.unready_hosts.empty())
+    if (state.unready_host)
     {
-        const auto & [unready_host, unready_host_state] = *state.unready_hosts.begin();
+        const auto & unready_host = *state.unready_host;
         throw Exception(
             ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
             "Waited for host {} too long (> {}){}",
-            unready_host,
+            unready_host.host,
             to_string(*timeout),
-            unready_host_state.started ? "" : ": Operation didn't start");
+            unready_host.started ? "" : ": Operation didn't start");
     }
 
     LOG_TRACE(log, "Everything is Ok. All hosts achieved stage {}", stage_to_wait);
-    return state.results;
+    return std::move(*state.results);
 }
 
 }
