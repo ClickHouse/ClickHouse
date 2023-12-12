@@ -16,6 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
+#include <base/types.h>
 
 #include <boost/math/distributions/normal.hpp>
 
@@ -99,31 +100,39 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         }
 
         // Find the size of each bucket
-        size_t single_bucket_size = this->x.size() / total_buckets;
+        Float64 single_bucket_size = static_cast<Float64>(this->x.size() - 2) / static_cast<Float64>(total_buckets - 2);
 
         // Include the first data point
         result.emplace_back(std::make_pair(this->x[0], this->y[0]));
 
-        for (size_t i = 1; i < total_buckets - 1; ++i) // Skip the first and last bucket
+        // the start index of current bucket
+        size_t start_index = 1;
+        // the end index of current bucket, also is the start index of next bucket
+        size_t center_index = start_index + static_cast<int>(floor(single_bucket_size));
+
+        for (size_t i = 0; i < total_buckets - 2; ++i) // Skip the first and last bucket
         {
-            size_t start_index = i * single_bucket_size;
-            size_t end_index = (i + 1) * single_bucket_size;
+            // the end index of next bucket
+            size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
+            // current bucket is the last bucket
+            if (end_index > this->x.size())
+                end_index = this->x.size();
 
             // Compute the average point in the next bucket
             Float64 avg_x = 0;
             Float64 avg_y = 0;
-            for (size_t j = end_index; j < (i + 2) * single_bucket_size; ++j)
+            for (size_t j = center_index; j < end_index; ++j)
             {
                 avg_x += this->x[j];
                 avg_y += this->y[j];
             }
-            avg_x /= single_bucket_size;
-            avg_y /= single_bucket_size;
+            avg_x /= static_cast<Float64>(end_index - center_index);
+            avg_y /= static_cast<Float64>(end_index - center_index);
 
             // Find the point in the current bucket that forms the largest triangle
             size_t max_index = start_index;
             Float64 max_area = 0.0;
-            for (size_t j = start_index; j < end_index; ++j)
+            for (size_t j = start_index; j < center_index; ++j)
             {
                 Float64 area = std::abs(
                     0.5
@@ -138,6 +147,9 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
 
             // Include the selected point
             result.emplace_back(std::make_pair(this->x[max_index], this->y[max_index]));
+
+            start_index = center_index;
+            center_index = end_index;
         }
 
         // Include the last data point

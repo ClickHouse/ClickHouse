@@ -208,6 +208,13 @@ CI_CONFIG = CiConfig(
             static_binary_name="amd64compat",
             comment="SSE2-only build",
         ),
+        "binary_amd64_musl": BuildConfig(
+            name="binary_amd64_musl",
+            compiler="clang-17-amd64-musl",
+            package_type="binary",
+            static_binary_name="amd64musl",
+            comment="Build with Musl",
+        ),
         "binary_riscv64": BuildConfig(
             name="binary_riscv64",
             compiler="clang-17-riscv64",
@@ -249,6 +256,7 @@ CI_CONFIG = CiConfig(
             "binary_riscv64",
             "binary_s390x",
             "binary_amd64_compat",
+            "binary_amd64_musl",
         ],
     },
     test_configs={

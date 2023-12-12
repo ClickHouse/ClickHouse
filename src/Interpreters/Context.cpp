@@ -3,8 +3,9 @@
 #include <optional>
 #include <memory>
 #include <Poco/UUID.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <Poco/Util/Application.h>
+#include <Common/AsyncLoader.h>
+#include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
@@ -14,6 +15,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -33,6 +35,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
+#include <Disks/IO/IOUringReader.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -142,6 +145,12 @@ namespace CurrentMetrics
     extern const Metric IOPrefetchThreadsScheduled;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
+    extern const Metric TablesLoaderBackgroundThreads;
+    extern const Metric TablesLoaderBackgroundThreadsActive;
+    extern const Metric TablesLoaderBackgroundThreadsScheduled;
+    extern const Metric TablesLoaderForegroundThreads;
+    extern const Metric TablesLoaderForegroundThreadsActive;
+    extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
 }
 
@@ -231,6 +240,9 @@ struct ContextSharedPart : boost::noncopyable
     /// Initialized once during server startup.
     TemporaryDataOnDiskScopePtr root_temp_data_on_disk TSA_GUARDED_BY(mutex);
 
+    mutable OnceFlag async_loader_initialized;
+    mutable std::unique_ptr<AsyncLoader> async_loader; /// Thread pool for asynchronous initialization of arbitrary DAG of `LoadJob`s (used for tables loading)
+
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries TSA_GUARDED_BY(embedded_dictionaries_mutex);    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader TSA_GUARDED_BY(external_dictionaries_mutex);
 
@@ -298,6 +310,11 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
 
+#if USE_LIBURING
+    mutable OnceFlag io_uring_reader_initialized;
+    mutable std::unique_ptr<IOUringReader> io_uring_reader;
+#endif
+
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
 
@@ -310,7 +327,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex);                  /// Process ddl commands from zk.
+    std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
+    LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
     /// Storage disk chooser for MergeTree engines
@@ -323,11 +341,10 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
-    std::unordered_set<String> get_client_http_header_forbidden_headers;
-    bool allow_get_client_http_header;
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
+    String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
@@ -356,6 +373,7 @@ struct ContextSharedPart : boost::noncopyable
     std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
     ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
     std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
+    size_t clusters_version TSA_GUARDED_BY(clusters_mutex) = 0;
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
@@ -585,6 +603,28 @@ struct ContextSharedPart : boost::noncopyable
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
+
+        {
+            // Disk selector might not be initialized if there was some error during
+            // its initialization. Don't try to initialize it again on shutdown.
+            if (merge_tree_disk_selector)
+            {
+                for (const auto & [disk_name, disk] : merge_tree_disk_selector->getDisksMap())
+                {
+                    LOG_INFO(log, "Shutdown disk {}", disk_name);
+                    disk->shutdown();
+                }
+            }
+
+            /// Special volumes might also use disks that require shutdown.
+            auto & tmp_data = root_temp_data_on_disk;
+            if (tmp_data && tmp_data->getVolume())
+            {
+                auto & disks = tmp_data->getVolume()->getDisks();
+                for (auto & disk : disks)
+                    disk->shutdown();
+            }
+        }
 
         {
             std::lock_guard lock(mutex);
@@ -2244,6 +2284,43 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
     return getEmbeddedDictionariesImpl(false);
 }
 
+AsyncLoader & Context::getAsyncLoader() const
+{
+    callOnce(shared->async_loader_initialized, [&] {
+        shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
+                // IMPORTANT: Pool declaration order should match the order in `PoolId.h` to get the indices right.
+                { // TablesLoaderForegroundPoolId
+                    "FgLoad",
+                    CurrentMetrics::TablesLoaderForegroundThreads,
+                    CurrentMetrics::TablesLoaderForegroundThreadsActive,
+                    CurrentMetrics::TablesLoaderForegroundThreadsScheduled,
+                    shared->server_settings.tables_loader_foreground_pool_size,
+                    TablesLoaderForegroundPriority
+                },
+                { // TablesLoaderBackgroundLoadPoolId
+                    "BgLoad",
+                    CurrentMetrics::TablesLoaderBackgroundThreads,
+                    CurrentMetrics::TablesLoaderBackgroundThreadsActive,
+                    CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
+                    shared->server_settings.tables_loader_background_pool_size,
+                    TablesLoaderBackgroundLoadPriority
+                },
+                { // TablesLoaderBackgroundStartupPoolId
+                    "BgStartup",
+                    CurrentMetrics::TablesLoaderBackgroundThreads,
+                    CurrentMetrics::TablesLoaderBackgroundThreadsActive,
+                    CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
+                    shared->server_settings.tables_loader_background_pool_size,
+                    TablesLoaderBackgroundStartupPriority
+                }
+            },
+            /* log_failures = */ true,
+            /* log_progress = */ true);
+    });
+
+    return *shared->async_loader;
+}
+
 
 const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() const
 {
@@ -2906,17 +2983,37 @@ bool Context::hasDistributedDDL() const
     return getConfigRef().has("distributed_ddl");
 }
 
-void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
+void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTaskPtrs & startup_after)
 {
     std::lock_guard lock(shared->mutex);
     if (shared->ddl_worker)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DDL background thread has already been initialized");
-    ddl_worker->startup();
+
     shared->ddl_worker = std::move(ddl_worker);
+
+    auto job = makeLoadJob(
+        getGoals(startup_after),
+        TablesLoaderBackgroundStartupPoolId,
+        "startup ddl worker",
+        [this] (AsyncLoader &, const LoadJobPtr &)
+        {
+            std::lock_guard lock2(shared->mutex);
+            shared->ddl_worker->startup();
+        });
+
+    shared->ddl_worker_startup_task = makeLoadTask(getAsyncLoader(), {job});
+    shared->ddl_worker_startup_task->schedule();
 }
 
 DDLWorker & Context::getDDLWorker() const
 {
+    // We have to ensure that DDL worker will not interfere with async loading of tables.
+    // For example to prevent creation of a table that already exists, but has not been yet loaded.
+    // So we have to wait for all tables to be loaded before starting up DDL worker.
+    // NOTE: Possible improvement: above requirement can be loosen by waiting for specific tables to load.
+    if (shared->ddl_worker_startup_task)
+        waitLoad(shared->ddl_worker_startup_task); // Just wait and do not prioritize, because it depends on all load and startup tasks
+
     SharedLockGuard lock(shared->mutex);
     if (!shared->ddl_worker)
     {
@@ -3433,6 +3530,14 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, getMacros(), config_name);
     else
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
+
+    ++shared->clusters_version;
+}
+
+size_t Context::getClustersVersion() const
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    return shared->clusters_version;
 }
 
 
@@ -3670,15 +3775,24 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
     return shared->system_logs->backup_log;
 }
 
+std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+    return shared->system_logs->blob_storage_log;
+}
+
 std::vector<ISystemLog *> Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-
     return shared->system_logs->logs;
 }
+
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
@@ -3944,6 +4058,7 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 }
 
 
+<<<<<<< HEAD
 void Context::setClientHTTPHeaderForbiddenHeaders(const FieldVector & forbidden_headers)
 {
     std::unordered_set<String> forbidden_header_list;
@@ -4062,26 +4177,6 @@ void Context::stopServers(const ServerType & server_type) const
 
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    // Disk selector might not be initialized if there was some error during
-    // its initialization. Don't try to initialize it again on shutdown.
-    if (shared->merge_tree_disk_selector)
-    {
-        for (auto & [disk_name, disk] : getDisksMap())
-        {
-            LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
-            disk->shutdown();
-        }
-    }
-
-    /// Special volumes might also use disks that require shutdown.
-    auto & tmp_data = shared->root_temp_data_on_disk;
-    if (tmp_data && tmp_data->getVolume())
-    {
-        auto & disks = tmp_data->getVolume()->getDisks();
-        for (auto & disk : disks)
-            disk->shutdown();
-    }
-
     shared->shutdown();
 }
 
@@ -4136,6 +4231,16 @@ String Context::getFormatSchemaPath() const
 void Context::setFormatSchemaPath(const String & path)
 {
     shared->format_schema_path = path;
+}
+
+String Context::getGoogleProtosPath() const
+{
+    return shared->google_protos_path;
+}
+
+void Context::setGoogleProtosPath(const String & path)
+{
+    shared->google_protos_path = path;
 }
 
 Context::SampleBlockCache & Context::getSampleBlockCache() const
@@ -4292,15 +4397,12 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
+void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
     client_info.http_referer = http_referer;
     need_recalculate_access = true;
-
-    if (!http_headers.empty())
-        client_info.headers = http_headers;
 }
 
 void Context::setForwardedFor(const String & forwarded_for)
@@ -4744,7 +4846,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     shared->are_background_executors_initialized = true;
 }
 
-bool Context::areBackgroundExecutorsInitialized()
+bool Context::areBackgroundExecutorsInitialized() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->are_background_executors_initialized;
@@ -4794,6 +4896,17 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
     }
 }
 
+#if USE_LIBURING
+IOUringReader & Context::getIOURingReader() const
+{
+    callOnce(shared->io_uring_reader_initialized, [&] {
+        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
+    });
+
+    return *shared->io_uring_reader;
+}
+#endif
+
 ThreadPool & Context::getThreadPoolWriter() const
 {
     callOnce(shared->threadpool_writer_initialized, [&] {
@@ -4838,6 +4951,7 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.filesystem_cache_segments_batch_size = settings.filesystem_cache_segments_batch_size;
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;

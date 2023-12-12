@@ -306,6 +306,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set path for format schema files
     if (config().has("format_schema_path"))
         global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 
@@ -325,7 +329,7 @@ try
 
     processConfig();
     adjustSettings();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
@@ -489,8 +493,7 @@ void Client::connect()
 
     if (is_interactive)
     {
-        std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl << std::endl;
+        std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
@@ -1459,7 +1462,6 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         DB::Client client;
         // Initialize command line options
         client.init(argc, argv);
-        /// Initialize config file
         return client.run();
     }
     catch (const DB::Exception & e)
