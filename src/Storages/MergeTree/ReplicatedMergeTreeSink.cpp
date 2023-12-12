@@ -307,7 +307,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
         /// Some merging algorithms can mofidy the block which loses the information about the async insert offsets
-        /// when preprocessing or filtering data for asnyc inserts deduplication we want to use the initial, unmerged block
+        /// when preprocessing or filtering data for async inserts deduplication we want to use the initial, unmerged block
         std::optional<BlockWithPartition> unmerged_block;
 
         if constexpr (async_insert)
@@ -456,7 +456,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
     if (!delayed_chunk)
         return;
 
-    for (auto & partition: delayed_chunk->partitions)
+    for (auto & partition : delayed_chunk->partitions)
     {
         int retry_times = 0;
         /// users may have lots of same inserts. It will be helpful to deduplicate in advance.
@@ -469,6 +469,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         }
 
         /// reset the cache version to zero for every partition write.
+        /// Version zero allows to avoid wait on first iteration
         cache_version = 0;
         while (true)
         {
@@ -476,6 +477,8 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false).first;
             if (conflict_block_ids.empty())
                 break;
+
+            storage.async_block_ids_cache.triggerCacheUpdate();
             ++retry_times;
             LOG_DEBUG(log, "Found duplicate block IDs: {}, retry times {}", toString(conflict_block_ids), retry_times);
             /// partition clean conflict
