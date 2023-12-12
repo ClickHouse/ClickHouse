@@ -78,7 +78,7 @@ INSTANTIATE(IPv6)
 #undef INSTANTIATE
 
 template <bool inverted, bool column_is_short, typename Container>
-size_t extractMaskNumericImpl(
+static size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
     UInt8 null_value,
@@ -97,8 +97,7 @@ size_t extractMaskNumericImpl(
     size_t mask_size = mask.size();
     size_t data_size = data.size();
 
-    size_t i = 0;
-    for (; i != mask_size && data_index != data_size; ++i)
+    for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
@@ -142,7 +141,7 @@ size_t extractMaskNumericImpl(
 }
 
 template <bool inverted, typename NumericType>
-bool extractMaskNumeric(
+static bool extractMaskNumeric(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value,
@@ -167,7 +166,7 @@ bool extractMaskNumeric(
 }
 
 template <bool inverted>
-MaskInfo extractMaskFromConstOrNull(
+static MaskInfo extractMaskFromConstOrNull(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value,
@@ -196,7 +195,7 @@ MaskInfo extractMaskFromConstOrNull(
 }
 
 template <bool inverted>
-MaskInfo extractMaskImpl(
+static MaskInfo extractMaskImpl(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & col,
     UInt8 null_value,

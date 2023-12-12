@@ -21,6 +21,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnFunction.h>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -320,6 +321,13 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+    // bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    // {
+    //     settings.enable_lazy_execution_for_first_argument = false;
+    //     settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+    //     settings.force_enable_lazy_execution = false;
+    //     return true;
+    // }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -455,29 +463,37 @@ public:
                     arguments.size() + 1);
 
             const auto & column_before_cast = arguments[current_arguments_index];
-            ColumnWithTypeAndName column_to_cast = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
-
-            auto result = castColumnAccurate(column_to_cast, result_type);
-
-            if (attribute_names.size() > 1)
+            const auto * column_function = checkAndGetShortCircuitArgument(column_before_cast.column);
+            if (!column_function)
             {
-                const auto * tuple_column = checkAndGetColumn<ColumnTuple>(result.get());
+                ColumnWithTypeAndName column_to_cast = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-                if (!tuple_column)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Wrong argument for function {} default values column must be tuple",
-                        getName());
+                auto result = castColumnAccurate(column_to_cast, result_type);
 
-                if (tuple_column->tupleSize() != attribute_names.size())
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Wrong argument for function {} default values tuple column must contain same column size as requested attributes",
-                        getName());
+                if (attribute_names.size() > 1)
+                {
+                    const auto * tuple_column = checkAndGetColumn<ColumnTuple>(result.get());
 
-                default_cols = tuple_column->getColumnsCopy();
+                    if (!tuple_column)
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Wrong argument for function {} default values column must be tuple",
+                            getName());
+
+                    if (tuple_column->tupleSize() != attribute_names.size())
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Wrong argument for function {} default values tuple column must contain same column size as requested attributes",
+                            getName());
+
+                    default_cols = tuple_column->getColumnsCopy();
+                }
+                else
+                {
+                    default_cols.emplace_back(result);
+                }
             }
             else
             {
-                default_cols.emplace_back(result);
+                default_cols.emplace_back(nullptr);
             }
 
             ++current_arguments_index;
@@ -584,7 +600,8 @@ public:
         }
 
         auto result_column = executeDictionaryRequest(
-            dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols, collect_values_limit);
+            dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols,
+            arguments[current_arguments_index-1], collect_values_limit);
 
         if (key_is_nullable)
             result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
@@ -601,6 +618,7 @@ private:
         const DataTypes & key_types,
         const DataTypePtr & result_type,
         const Columns & default_cols,
+        const ColumnWithTypeAndName & last_argument,
         size_t collect_values_limit) const
     {
         ColumnPtr result;
@@ -614,6 +632,13 @@ private:
             {
                 result_columns = dictionary->getColumnsAllValues(
                     attribute_names, result_tuple_type.getElements(), key_columns, key_types, default_cols, collect_values_limit);
+            }
+            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.front() == nullptr)
+            {
+                #pragma clang diagnostic push
+                #pragma clang diagnostic ignored "-Wunused-value"
+                last_argument;
+                #pragma clang diagnostic pop
             }
             else
             {
@@ -629,6 +654,13 @@ private:
             {
                 result = dictionary->getColumnAllValues(
                     attribute_names[0], result_type, key_columns, key_types, default_cols.front(), collect_values_limit);
+            }
+            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.front() == nullptr)
+            {
+                #pragma clang diagnostic push
+                #pragma clang diagnostic ignored "-Wunused-value"
+                last_argument;
+                #pragma clang diagnostic pop
             }
             else
             {
