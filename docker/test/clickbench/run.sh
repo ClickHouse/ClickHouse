@@ -19,9 +19,9 @@ echo "
 profiles:
     default:
         allow_introspection_functions: 1
-" > /etc/clickhouse-server/allow_introspection_functions.yaml
+" > /etc/clickhouse-server/users.d/allow_introspection_functions.yaml
 
-config_logs_export_cluster /etc/clickhouse-server/users.d/system_logs_export.yaml
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 clickhouse start
 
