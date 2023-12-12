@@ -772,7 +772,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             {
                 retries_ctl.setUserError(
                     ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
-                return CommitRetryContext::ERROR;
+                return CommitRetryContext::LOCK_AND_COMMIT;
             }
         }
 
@@ -1012,9 +1012,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     retry_context.stage = resolve_duplicate_stage();
                     break;
                 case CommitRetryContext::SUCCESS:
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                    "Operation is already succeed.");
-
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation is already succeed.");
                 case CommitRetryContext::ERROR:
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                                     "Operation is already in error state.");
