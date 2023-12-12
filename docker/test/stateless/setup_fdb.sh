@@ -15,7 +15,6 @@ fdb_cluster_realpath=${extra_conf_dir}/fdb.cluster
 [ -d "${extra_conf_dir}" ] || mkdir -p "${extra_conf_dir}"
 
 echo "test:test@${public_ip}:4500" > "$fdb_cluster_realpath"
-chown foundationdb:foundationdb "$fdb_cluster_realpath"
 chmod 0664 "$fdb_cluster_realpath"
 
 if [ -z "$(ls /var/lib/foundationdb/data)" ]; then

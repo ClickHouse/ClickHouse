@@ -56,7 +56,9 @@ RUN arch=${TARGETARCH:-amd64} \
             && rm /tmp/foundationdb-*.deb \
             # Remove auto generated data during dpkg -i
             && /etc/init.d/foundationdb stop \
-            && rm -rf /etc/foundationdb/fdb.cluster /var/lib/foundationdb/data/* ;; \
+            && rm -rf /etc/foundationdb/fdb.cluster /var/lib/foundationdb/data/* \
+            && chmod 777 -R /etc/foundationdb \
+            && chmod 777 /var/lib/foundationdb/data ;; \
         arm64) rm /setup_fdb.sh ;; \
     esac
 
