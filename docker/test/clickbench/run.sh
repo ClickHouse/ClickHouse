@@ -21,6 +21,11 @@ profiles:
         allow_introspection_functions: 1
 " > /etc/clickhouse-server/users.d/allow_introspection_functions.yaml
 
+# Enable text_log
+echo "
+text_log:
+" > /etc/clickhouse-server/config.d/text_log.yaml
+
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 clickhouse start
