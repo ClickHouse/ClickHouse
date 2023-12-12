@@ -23,7 +23,6 @@ from commit_status_helper import (
     get_commit,
     override_status,
     post_commit_status,
-    post_commit_status_to_file,
     update_mergeable_check,
 )
 from docker_pull_helper import DockerImage, get_image_with_version
@@ -113,13 +112,6 @@ def process_results(
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
-    parser.add_argument("kill_timeout", type=int)
-    parser.add_argument(
-        "--post-commit-status",
-        default="commit_status",
-        choices=["commit_status", "file"],
-        help="Where to public post commit status",
-    )
     return parser.parse_args()
 
 
@@ -214,19 +206,7 @@ def main():
     )
 
     print(f"::notice:: {check_name} Report url: {report_url}")
-    if args.post_commit_status == "commit_status":
-        post_commit_status(commit, state, report_url, description, check_name, pr_info)
-    elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
-    else:
-        raise Exception(
-            f'Unknown post_commit_status option "{args.post_commit_status}"'
-        )
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

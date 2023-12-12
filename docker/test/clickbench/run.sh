@@ -65,4 +65,6 @@ clickhouse-client --query "SELECT total_bytes FROM system.tables WHERE name = 'h
 clickhouse-client -q "system flush logs" ||:
 stop_logs_replication
 
+mv /var/log/clickhouse-server/* /test_output/
+
 echo -e "success\tClickBench finished" > /test_output/check_status.tsv
