@@ -10,7 +10,7 @@ A set of queries that allow changing the table structure.
 Syntax:
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
