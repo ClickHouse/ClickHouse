@@ -721,6 +721,8 @@ void AggregatingTransform::initGenerate()
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
     {
+        /// Note: we reset aggregation state here to release memory earlier.
+        /// It might cause extra memory usage for complex queries othervise.
         many_data.reset();
         return;
     }
