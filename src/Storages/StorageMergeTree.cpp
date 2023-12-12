@@ -829,8 +829,13 @@ void StorageMergeTree::loadDeduplicationLog()
 
     auto disk = getDisks()[0];
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
-    deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
-    deduplication_log->load();
+
+    /// If either there is already a deduplication log, or we will be able to use it.
+    if (disk->exists(path) || !disk->isReadOnly())
+    {
+        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
+        deduplication_log->load();
+    }
 }
 
 void StorageMergeTree::loadMutations()
