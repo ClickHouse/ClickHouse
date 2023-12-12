@@ -9,9 +9,11 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include "qatseqprod.h"
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#ifdef ENABLE_QATZSTD_COMPRESSION
+#include "qatseqprod.h"
+#endif
 
 namespace DB
 {
