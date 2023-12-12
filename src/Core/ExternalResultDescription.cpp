@@ -20,6 +20,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
 }
 
+ExternalResultDescription::ExternalResultDescription(const Block & sample_block_)
+{
+    init(sample_block_);
+}
+
 void ExternalResultDescription::init(const Block & sample_block_)
 {
     sample_block = sample_block_;

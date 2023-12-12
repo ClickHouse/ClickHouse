@@ -347,7 +347,13 @@ InputFormatPtr FormatFactory::getInput(
     if (owned_buf)
         format->addBuffer(std::move(owned_buf));
     if (!settings.input_format_record_errors_file_path.toString().empty())
-        format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
+    {
+        if (parallel_parsing)
+            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
+        else
+            format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+    }
+
 
     /// It's a kludge. Because I cannot remove context from values format.
     /// (Not needed in the parallel_parsing case above because VALUES format doesn't support it.)
