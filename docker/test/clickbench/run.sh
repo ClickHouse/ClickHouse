@@ -53,4 +53,7 @@ set -x
 
 clickhouse-client --query "SELECT total_bytes FROM system.tables WHERE name = 'hits' AND database = 'default'"
 
+clickhouse-client -q "system flush logs" ||:
+stop_logs_replication
+
 echo -e "success\tClickBench finished" > /test_output/check_status.tsv
