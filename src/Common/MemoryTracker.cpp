@@ -303,7 +303,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             {
                 LOG_ERROR(
                     &Poco::Logger::get("MemoryTracker"),
-                    "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                    "Memory tracker{}{}: fault injected with throwing disabled. Would use {} (attempt to allocate chunk of {} bytes), "
+                    "maximum: {}",
                     description ? " " : "",
                     description ? description : "",
                     formatReadableSizeWithBinarySuffix(will_be),
@@ -389,18 +390,20 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 }
                 else
                 {
-                    LOG_ERROR(
+                    LOG_DEBUG(
                         &Poco::Logger::get("MemoryTracker"),
-                        "Memory limit{}{} exceeded: "
+                        "Memory limit{}{} exceeded with throwing disabled: "
                         "would use {} (attempt to allocate chunk of {} bytes), maximum: {}."
-                        "{}{}",
+                        "{}{}"
+                        " Stacktrace: {}",
                         description ? " " : "",
                         description ? description : "",
                         formatReadableSizeWithBinarySuffix(will_be),
                         size,
                         formatReadableSizeWithBinarySuffix(current_hard_limit),
                         overcommit_result == OvercommitResult::NONE ? "" : " OvercommitTracker decision: ",
-                        toDescription(overcommit_result));
+                        toDescription(overcommit_result),
+                        StackTrace().toString());
                     return AllocationTrace(_sample_probability, true);
                 }
             }
