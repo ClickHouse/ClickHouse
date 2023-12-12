@@ -124,7 +124,6 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
 
     reports_path = Path(REPORTS_PATH)
-    post_commit_path = temp_path / "clickbench_status.tsv"
 
     args = parse_args()
     check_name = args.check_name
