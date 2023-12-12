@@ -75,6 +75,7 @@ public:
     StorageMaterializedPostgreSQL(
         const StorageID & table_id_,
         bool is_attach_,
+        bool is_restore_,
         const String & remote_database_name,
         const String & remote_table_name,
         const postgres::ConnectionInfo & connection_info,

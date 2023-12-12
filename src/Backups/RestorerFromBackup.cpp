@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
@@ -348,6 +349,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     res_table_info.data_path_in_backup = data_path_in_backup;
 
     tables_dependencies.addDependencies(table_name, getDependenciesFromCreateQuery(context, table_name, create_table_query));
+    tables_dependencies.addDependencies(table_name, getLoadingDependenciesFromCreateQuery(context, table_name, create_table_query));
 
     if (partitions)
     {

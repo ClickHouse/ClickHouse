@@ -474,6 +474,52 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
 }
 
+std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMaterializedPostgreSQL::getTablesForBackup(
+    const FilterByNameFunction & filter,
+    const ContextPtr & local_context) const
+{
+    std::vector<std::pair<ASTPtr, StoragePtr>> res;
+
+    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
+    {
+        auto storage = it->table();
+        if (!storage)
+            continue; /// Probably the table has been just dropped.
+
+        auto create_table_query = tryGetCreateTableQuery(it->name(), StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
+        if (!create_table_query)
+        {
+            LOG_WARNING(log, "Couldn't get a create query for table {}.{}",
+                        backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+            continue;
+        }
+
+        auto * create = create_table_query->as<ASTCreateQuery>();
+        if (create->getTable() != it->name())
+        {
+            /// Probably the database has been just renamed. Use the older name for backup to keep the backup consistent.
+            LOG_WARNING(log, "Got a create query with unexpected name {} for table {}.{}",
+                        backQuoteIfNeed(create->getTable()), backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+            create_table_query = create_table_query->clone();
+            create = create_table_query->as<ASTCreateQuery>();
+            create->setTable(it->name());
+        }
+
+        storage->adjustCreateQueryForBackup(create_table_query);
+        res.emplace_back(create_table_query, storage);
+    }
+
+    return res;
+}
+
+void createTableRestoredFromBackup(
+    const ASTPtr & create_table_query,
+    ContextMutablePtr local_context,
+    std::shared_ptr<IRestoreCoordination> restore_coordination,
+    UInt64 timeout_ms)
+{
+}
+
 }
 
 #endif

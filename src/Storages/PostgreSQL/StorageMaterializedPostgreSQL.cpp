@@ -52,6 +52,7 @@ namespace ErrorCodes
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     const StorageID & table_id_,
     bool is_attach_,
+    bool is_restore_,
     const String & remote_database_name,
     const String & remote_table_name_,
     const postgres::ConnectionInfo & connection_info,
@@ -82,12 +83,12 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             toString(table_id_.uuid),
             connection_info,
             getContext(),
-            is_attach,
+            is_attach || is_restore_,
             *replication_settings,
             /* is_materialized_postgresql_database */false);
 
     replication_handler->addStorage(remote_table_name, this);
-    replication_handler->startup(/* delayed */is_attach);
+    replication_handler->startup(/* delayed */is_attach || is_restore_);
 }
 
 
@@ -590,6 +591,7 @@ void StorageMaterializedPostgreSQL::restoreDataFromBackup(RestorerFromBackup & r
     if (is_materialized_postgresql_database)
         return;
 
+    createNestedIfNeeded(nullptr, nullptr);
     auto table = getNested();
     table->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
@@ -629,7 +631,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.attach || args.backup_restore, configuration.database, configuration.table, connection_info,
+                args.table_id, args.attach, args.backup_restore, configuration.database, configuration.table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };
