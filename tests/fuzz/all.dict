@@ -485,6 +485,7 @@
 "geoToH3"
 "geoToS2"
 "getMacro"
+"getClientHTTPHeader"
 "__getScalar"
 "getServerPort"
 "getSetting"
