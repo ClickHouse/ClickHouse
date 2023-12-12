@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Poco/Net/NameValueCollection.h>
 #include <Common/AsyncLoader.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
@@ -342,6 +343,8 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
+    bool allow_get_client_http_header;
+    std::unordered_set<String> get_client_http_header_forbidden_headers;
     /// No lock required for format_schema_path modified only during initialization
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
@@ -4057,8 +4060,6 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
     checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
 
-
-<<<<<<< HEAD
 void Context::setClientHTTPHeaderForbiddenHeaders(const FieldVector & forbidden_headers)
 {
     std::unordered_set<String> forbidden_header_list;
@@ -4074,7 +4075,7 @@ void Context::setClientHTTPHeaderForbiddenHeaders(const FieldVector & forbidden_
 
 void Context::setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function)
 {
-    shared->allow_get_client_http_header= allow_get_http_header_function;
+    shared->allow_get_client_http_header = allow_get_http_header_function;
 }
 
 const std::unordered_set<String> & Context::getClientHTTPHeaderForbiddenHeaders() const
@@ -4397,12 +4398,14 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
     client_info.http_referer = http_referer;
     need_recalculate_access = true;
+    if (!http_headers.empty())
+        client_info.headers = http_headers;
 }
 
 void Context::setForwardedFor(const String & forwarded_for)

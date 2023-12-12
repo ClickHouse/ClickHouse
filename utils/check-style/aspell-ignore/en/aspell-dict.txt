@@ -1543,6 +1543,7 @@ geohashesInBox
 geoip
 geospatial
 getMacro
+getClientHTTPHeader
 getOSKernelVersion
 getServerPort
 getSetting
