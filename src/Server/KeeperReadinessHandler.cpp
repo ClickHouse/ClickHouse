@@ -27,15 +27,16 @@ void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTP
         auto is_follower = keeper_dispatcher->isFollower() && keeper_dispatcher->hasLeader();
         auto is_observer = keeper_dispatcher->isObserver() && keeper_dispatcher->hasLeader();
 
+        auto data = keeper_dispatcher->getKeeper4LWInfo();
+
         auto status = is_leader || is_follower || is_observer;
 
         Poco::JSON::Object json, details;
 
-        details.set("leader", is_leader);
-        details.set("follower", is_follower);
-        details.set("observer", is_observer);
+        details.set("role", data.getRole());
+        details.set("hasLeader", keeper_dispatcher->hasLeader());
         json.set("details", details);
-        json.set("status", status ? "ok": "fail");
+        json.set("status", status ? "ok" : "fail");
 
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
