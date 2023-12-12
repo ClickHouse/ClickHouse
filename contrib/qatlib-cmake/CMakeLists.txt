@@ -40,7 +40,6 @@ SET(LIBOSAL_Sources
     ${LIBOSAL_DIR}/linux/user_space/OsalCryptoInterface.c)
 add_library(_osal ${LIBOSAL_Sources})
 target_include_directories(_osal PRIVATE
-    ${ClickHouse_SOURCE_DIR}/contrib/sysroot/linux-x86_64/include
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src/linux/user_space
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/include
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src/linux/user_space/include
