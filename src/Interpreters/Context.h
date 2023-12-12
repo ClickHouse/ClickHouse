@@ -842,6 +842,9 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
+    void setMaxTableNumToWarn(size_t max_table_to_warn);
+    void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
+    void setMaxPartNumToWarn(size_t max_part_to_warn);
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
