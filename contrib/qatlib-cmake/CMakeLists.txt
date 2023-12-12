@@ -47,7 +47,7 @@ target_include_directories(_osal PRIVATE
     ${OPENSSL_DIR}/include
     ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/linux_x86_64/include
     ${ClickHouse_SOURCE_DIR}/contrib/qatlib-cmake/include)
-target_compile_definitions(_osal PRIVATE -DOSAL_ENSURE_ON -DUSE_OPENSSL -D__GLIBC_PREREQ=0)
+target_compile_definitions(_osal PRIVATE -DOSAL_ENSURE_ON -DUSE_OPENSSL)
 
 #_qatlib
 SET(LIBQAT_Sources 
