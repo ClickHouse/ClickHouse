@@ -52,7 +52,7 @@ function insert()
     offset=$2
     size=$3
     echo 'insert new part'
-    $CLICKHOUSE_CLIENT -q "INSERT INTO $table SELECT number, number, number, number, number%2 FROM numbers($offset, $size) SETTINGS insert_keeper_fault_injection_probability;"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO $table SELECT number, number, number, number, number%2 FROM numbers($offset, $size) SETTINGS insert_keeper_fault_injection_probability=0.0;"
 }
 
 function break_projection()
