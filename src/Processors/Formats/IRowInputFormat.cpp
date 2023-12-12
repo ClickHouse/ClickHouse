@@ -128,8 +128,6 @@ Chunk IRowInputFormat::read()
         {
             try
             {
-                ++total_rows;
-
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
@@ -143,6 +141,8 @@ Chunk IRowInputFormat::read()
                         block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
+
+                ++total_rows;
 
                 /// Some formats may read row AND say the read is finished.
                 /// For such a case, get the number or rows from first column.
@@ -158,6 +158,8 @@ Chunk IRowInputFormat::read()
             }
             catch (Exception & e)
             {
+                ++total_rows;
+
                 /// Logic for possible skipping of errors.
 
                 if (!isParseError(e.code()))

@@ -318,7 +318,7 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
     if (!format_reader->tryParseSuffixWithDiagnosticInfo(out))
         return false;
 
-    if (likely(getRowNum() != 1) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
+    if (likely(getRowNum() != 0) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
         return false;
 
     if (!format_reader->parseRowStartWithDiagnosticInfo(out))

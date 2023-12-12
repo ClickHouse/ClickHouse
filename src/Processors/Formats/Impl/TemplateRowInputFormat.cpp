@@ -121,7 +121,7 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
 
     updateDiagnosticInfo();
 
-    if (likely(getRowNum() != 1))
+    if (likely(getRowNum() != 0))
         format_reader->skipRowBetweenDelimiter();
 
     extra.read_columns.assign(columns.size(), false);
@@ -198,7 +198,7 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
 
     out << "\nUsing format string (from format_schema_rows): " << row_format.dump() << "\n";
     out << "\nTrying to parse next row, because suffix does not match:\n";
-    if (likely(getRowNum() != 1) && !parseDelimiterWithDiagnosticInfo(out, *buf, row_between_delimiter, "delimiter between rows", ignore_spaces))
+    if (likely(getRowNum() != 0) && !parseDelimiterWithDiagnosticInfo(out, *buf, row_between_delimiter, "delimiter between rows", ignore_spaces))
         return false;
 
     for (size_t i = 0; i < row_format.columnsCount(); ++i)

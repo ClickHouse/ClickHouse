@@ -205,7 +205,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
     skipWhitespaceIfAny(*in);
 
-    bool is_first_row = getRowNum() == 1;
+    bool is_first_row = getRowNum() == 0;
     if (checkEndOfData(is_first_row))
         return false;
 
