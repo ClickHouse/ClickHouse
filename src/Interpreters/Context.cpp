@@ -3,7 +3,6 @@
 #include <optional>
 #include <memory>
 #include <Poco/UUID.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <Poco/Util/Application.h>
 #include <Common/AsyncLoader.h>
 #include <Common/PoolId.h>
@@ -36,6 +35,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
+#include <Disks/IO/IOUringReader.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -313,6 +313,11 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
 
+#if USE_LIBURING
+    mutable OnceFlag io_uring_reader_initialized;
+    mutable std::unique_ptr<IOUringReader> io_uring_reader;
+#endif
+
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
 
@@ -339,8 +344,6 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
-    std::unordered_set<String> get_client_http_header_forbidden_headers;
-    bool allow_get_client_http_header;
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
     std::atomic_size_t max_database_num_to_warn = 1000lu;
@@ -376,6 +379,7 @@ struct ContextSharedPart : boost::noncopyable
     std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
     ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
     std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
+    size_t clusters_version TSA_GUARDED_BY(clusters_mutex) = 0;
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
@@ -3556,6 +3560,14 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, getMacros(), config_name);
     else
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
+
+    ++shared->clusters_version;
+}
+
+size_t Context::getClustersVersion() const
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    return shared->clusters_version;
 }
 
 
@@ -4076,28 +4088,6 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 }
 
 
-void Context::setClientHTTPHeaderForbiddenHeaders(const String & forbidden_headers)
-{
-    std::unordered_set<String> forbidden_header_list;
-    boost::split(forbidden_header_list, forbidden_headers, [](char c) { return c == ','; });
-    shared->get_client_http_header_forbidden_headers = forbidden_header_list;
-}
-
-void Context::setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function)
-{
-    shared->allow_get_client_http_header= allow_get_http_header_function;
-}
-
-const std::unordered_set<String> & Context::getClientHTTPHeaderForbiddenHeaders() const
-{
-    return shared->get_client_http_header_forbidden_headers;
-}
-
-bool Context::allowGetHTTPHeaderFunction() const
-{
-    return shared->allow_get_client_http_header;
-}
-
 void Context::setMaxPartitionSizeToDrop(size_t max_size)
 {
     // Is initialized at server startup and updated at config reload
@@ -4408,15 +4398,12 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
+void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
     client_info.http_referer = http_referer;
     need_recalculate_access = true;
-
-    if (!http_headers.empty())
-        client_info.headers = http_headers;
 }
 
 void Context::setForwardedFor(const String & forwarded_for)
@@ -4860,7 +4847,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     shared->are_background_executors_initialized = true;
 }
 
-bool Context::areBackgroundExecutorsInitialized()
+bool Context::areBackgroundExecutorsInitialized() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->are_background_executors_initialized;
@@ -4909,6 +4896,17 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
             return *shared->synchronous_local_fs_reader;
     }
 }
+
+#if USE_LIBURING
+IOUringReader & Context::getIOURingReader() const
+{
+    callOnce(shared->io_uring_reader_initialized, [&] {
+        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
+    });
+
+    return *shared->io_uring_reader;
+}
+#endif
 
 ThreadPool & Context::getThreadPoolWriter() const
 {

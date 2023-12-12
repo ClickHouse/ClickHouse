@@ -547,6 +547,54 @@ namespace
         }
     }
 
+    void mergeNamedTuples(DataTypes & data_types, TypeIndexesSet & type_indexes, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    {
+        if (!type_indexes.contains(TypeIndex::Tuple))
+            return;
+
+        /// Collect all names and their types from all named tuples.
+        std::unordered_map<String, DataTypes> names_to_types;
+        /// Try to save original order of element names.
+        Names element_names;
+        for (auto & type : data_types)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            if (tuple_type && tuple_type->haveExplicitNames())
+            {
+                const auto & elements = tuple_type->getElements();
+                const auto & names = tuple_type->getElementNames();
+                for (size_t i = 0; i != elements.size(); ++i)
+                {
+                    if (!names_to_types.contains(names[i]))
+                        element_names.push_back(names[i]);
+                    names_to_types[names[i]].push_back(elements[i]);
+                }
+            }
+        }
+
+        /// Try to find common type for each tuple element with the same name.
+        DataTypes element_types;
+        element_types.reserve(names_to_types.size());
+        for (const auto & name : element_names)
+        {
+            auto & types = names_to_types[name];
+            transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
+            /// If some element have different types in different tuples, we can't do anything
+            if (!checkIfTypesAreEqual(types))
+                return;
+            element_types.push_back(types.front());
+        }
+
+        DataTypePtr result_tuple = std::make_shared<DataTypeTuple>(element_types, element_names);
+
+        for (auto & type : data_types)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            if (tuple_type && tuple_type->haveExplicitNames())
+                type = result_tuple;
+        }
+    }
+
     template <bool is_json>
     void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
@@ -604,6 +652,9 @@ namespace
 
             if (settings.json.read_objects_as_strings)
                 transformMapsAndStringsToStrings(data_types, type_indexes);
+
+            if (json_info && json_info->allow_merging_named_tuples)
+                mergeNamedTuples(data_types, type_indexes, settings, json_info);
         };
 
         transformTypesRecursively(types, transform_simple_types, transform_complex_types);
@@ -1178,6 +1229,13 @@ void transformInferredJSONTypesIfNeeded(
     transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
     first = std::move(types[0]);
     second = std::move(types[1]);
+}
+
+void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
+{
+    JSONInferenceInfo json_info;
+    json_info.allow_merging_named_tuples = true;
+    transformInferredJSONTypesIfNeeded(first, second, settings, &json_info);
 }
 
 void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
