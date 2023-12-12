@@ -68,6 +68,45 @@ WHERE macro = 'test';
 └───────┴──────────────┘
 ```
 
+## getClientHttpHeader  
+Returns the value of specified http header.
+
+**Syntax**  
+
+```sql
+getClientHTTPHeader(name);
+``` 
+
+**Arguments**  
+
+- `name` — HTTP header name .[String](../../sql-reference/data-types/string.md#string)  
+
+**Returned value**
+
+Value of the specified header.  
+Type:[String](../../sql-reference/data-types/string.md#string).
+
+
+When we use `clickhouse-client` to execute this function, we'll always get empty string, because client doesn't use http protocol.
+```sql
+SELECT getClientHTTPHeader('test')
+```
+result:  
+
+```text
+┌─getClientHTTpHeader('test')─┐
+│                             │
+└─────────────────────────────┘
+```  
+Try to use http request:  
+```shell 
+echo "select getClientHTTPHeader('X-Clickhouse-User')" | curl -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: ' 'http://localhost:8123/' -d @-
+
+#result
+default
+```
+
+
 ## FQDN
 
 Returns the fully qualified domain name of the ClickHouse server.
