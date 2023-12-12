@@ -4064,7 +4064,7 @@ void Context::setClientHTTPHeaderForbiddenHeaders(const FieldVector & forbidden_
 {
     std::unordered_set<String> forbidden_header_list;
     forbidden_header_list.insert("X-ClickHouse-Key");
-    for(auto it = forbidden_headers.begin(); it != forbidden_headers.end(); ++it)
+    for (auto it = forbidden_headers.begin(); it != forbidden_headers.end(); ++it)
     {
         String header;
         it->tryGet<String>(header);
