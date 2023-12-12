@@ -3,6 +3,7 @@ import json
 import os
 import concurrent.futures
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any, Dict, Iterable, List, Optional
@@ -330,6 +331,7 @@ def _configure_jobs(
     s3: S3Helper,
     rebuild_all_binaries: bool,
     pr_labels: Iterable[str],
+    commit_tokens: List[str],
 ) -> Dict:
     # a. digest each item from the config
     job_digester = JobDigester()
@@ -382,6 +384,29 @@ def _configure_jobs(
             }
         else:
             jobs_to_skip += (job,)
+
+    if commit_tokens:
+        requested_jobs = [
+            token[len("#job_") :]
+            for token in commit_tokens
+            if token.startswith("#job_")
+        ]
+        assert any(
+            len(x) > 1 for x in requested_jobs
+        ), f"Invalid job names requested [{requested_jobs}]"
+        if requested_jobs:
+            jobs_to_do_requested = []
+            for job in requested_jobs:
+                job_with_parents = CI_CONFIG.get_job_with_parents(job)
+                # always add requested job itself, even if it could be skipped
+                jobs_to_do_requested.append(job_with_parents[0])
+                for parent in job_with_parents[1:]:
+                    if parent in jobs_to_do and parent not in jobs_to_do_requested:
+                        jobs_to_do_requested.append(parent)
+            print(
+                f"NOTE: Only specific job(s) were requested: [{jobs_to_do_requested}]"
+            )
+            jobs_to_do = jobs_to_do_requested
 
     return {
         "digests": digests,
@@ -471,6 +496,12 @@ def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
         file.unlink()
 
 
+def _fetch_commit_tokens(message: str) -> List[str]:
+    pattern = r"#[\w-]+"
+    matches = re.findall(pattern, message)
+    return matches
+
+
 def main() -> int:
     exit_code = 0
     parser = argparse.ArgumentParser(
@@ -502,9 +533,12 @@ def main() -> int:
         git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
 
         # if '#no-merge-commit' is set in commit message - set git ref to PR branch head to avoid merge-commit
+        tokens = []
         if pr_info.number != 0:
             message = GR.run(f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1")
-            if "#no-merge-commit" in message and CI:
+            tokens = _fetch_commit_tokens(message)
+            print(f"Found commit message tokens: [{tokens}]")
+            if "#no-merge-commit" in tokens and CI:
                 GR.run(f"{GIT_PREFIX} checkout {pr_info.sha}")
                 git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
                 print(
@@ -538,6 +572,7 @@ def main() -> int:
                 s3,
                 args.rebuild_all_binaries,
                 pr_info.labels,
+                tokens,
             )
             if not args.skip_jobs
             else {}

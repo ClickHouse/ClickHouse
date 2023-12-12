@@ -22,6 +22,7 @@ from env_helper import (
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
     TEMP_PATH,
+    REPORT_PATH,
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
@@ -29,6 +30,7 @@ from s3_helper import S3Helper
 from tee_popen import TeePopen
 from clickhouse_helper import get_instance_type, get_instance_id
 from stopwatch import Stopwatch
+from build_download_helper import download_builds_filter
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
@@ -62,6 +64,7 @@ def get_run_command(
         f"docker run --privileged --volume={workspace}:/workspace "
         f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
+        f"--volume={TEMP_PATH}:/artifacts "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
         f"{env_str} {additional_env} "
         f"{image}"
@@ -164,6 +167,11 @@ def main():
         "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
         "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
     }
+
+    download_builds_filter(
+        check_name, REPORT_PATH, TEMP_PATH, lambda url: "performance.tar.zst" in url
+    )
+    assert os.path.exists(f"{TEMP_PATH}/performance.tar.zst"), "Perf artifact not found"
 
     docker_env += "".join([f" -e {name}" for name in env_extra])
 

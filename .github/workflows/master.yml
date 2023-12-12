@@ -164,7 +164,6 @@ jobs:
     with:
       build_name: binary_darwin
       data: ${{ needs.RunConfig.outputs.data }}
-      # FIXME: why 0?
       checkout_depth: 0
   BuilderBinAarch64:
     needs: [RunConfig, BuilderDebRelease]
@@ -207,10 +206,12 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
   BuilderBinAmd64Musl:
-    needs: [DockerHubPush]
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_amd64_musl
+      data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
   BuilderBinAarch64V80Compat:
     needs: [RunConfig, BuilderDebRelease]
@@ -295,6 +296,7 @@ jobs:
       - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy
+      - BuilderBinAmd64Musl
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check

@@ -158,7 +158,10 @@ unit_check_digest = DigestConfig(
     docker=["clickhouse/unit-test"],
 )
 perf_check_digest = DigestConfig(
-    include_paths=["./tests/ci/performance_comparison_check.py", "./tests/performance"],
+    include_paths=[
+        "./tests/ci/performance_comparison_check.py",
+        "./tests/performance/",
+    ],
     exclude_files=[".md"],
     docker=["clickhouse/performance-comparison"],
 )
@@ -279,6 +282,50 @@ class CiConfig:
             res is not None
         ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
+
+    def get_job_with_parents(self, check_name: str) -> List[str]:
+        def _normalize_string(input_string: str) -> str:
+            lowercase_string = input_string.lower()
+            normalized_string = (
+                lowercase_string.replace(" ", "_")
+                .replace("-", "_")
+                .replace("(", "")
+                .replace(")", "")
+                .replace(",", "")
+            )
+            return normalized_string
+
+        res = []
+        check_name = _normalize_string(check_name)
+
+        for config in (
+            self.build_config,
+            self.builds_report_config,
+            self.test_configs,
+            self.other_jobs_configs,
+        ):
+            for job_name in config:  # type: ignore
+                if check_name == _normalize_string(job_name):
+                    res.append(job_name)
+                    if isinstance(config[job_name], TestConfig):  # type: ignore
+                        assert config[
+                            job_name
+                        ].required_build, f"Error: Experimantal feature... Not supported job [{job_name}]"  # type: ignore
+                        res.append(config[job_name].required_build)  # type: ignore
+                        res.append("Fast tests")
+                        res.append("Style check")
+                    elif isinstance(config[job_name], BuildConfig):  # type: ignore
+                        res.append("Fast tests")
+                        res.append("Style check")
+                    else:
+                        assert (
+                            False
+                        ), f"check commit message tags or FIXME: request for job [{check_name}] not yet supported"
+                    break
+        assert (
+            res
+        ), f"Error: Experimantal feature... Invlid request or not supported job [{check_name}]"
+        return res
 
     def get_digest_config(self, check_name: str) -> DigestConfig:
         res = None
@@ -775,7 +822,7 @@ CI_CONFIG = CiConfig(
         ),
         "Performance Comparison Aarch64": TestConfig(
             "package_aarch64",
-            job_config=JobConfig(num_batches=4, **perf_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, run_by_label="pr-performance", **perf_test_common_params),  # type: ignore
         ),
         "SQLancer (release)": TestConfig(
             "package_release", job_config=JobConfig(**sqllancer_test_common_params)  # type: ignore
@@ -789,7 +836,6 @@ CI_CONFIG = CiConfig(
         "SQLTest": TestConfig(
             "package_release", job_config=JobConfig(**sql_test_params)  # type: ignore
         ),
-        "SQLTest": TestConfig("package_release", **sql_test_params),
         "ClickBench (amd64)": TestConfig("package_release"),
         "ClickBench (aarch64)": TestConfig("package_aarch64"),
         # FIXME: add digest and params

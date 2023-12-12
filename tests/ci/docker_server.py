@@ -270,10 +270,12 @@ def build_and_push_image(
         metadata_path = p.join(TEMP_PATH, arch_tag)
         dockerfile = p.join(image.path, f"Dockerfile.{os}")
         cmd_args = list(init_args)
-        if os == "ubuntu" and "clickhouse-server" in image.repo:
-            urls = [url for url in direct_urls[arch] if ".deb" in url]
-        else:
-            urls = [url for url in direct_urls[arch] if ".tgz" in url]
+        urls = []
+        if direct_urls:
+            if os == "ubuntu" and "clickhouse-server" in image.repo:
+                urls = [url for url in direct_urls[arch] if ".deb" in url]
+            else:
+                urls = [url for url in direct_urls[arch] if ".tgz" in url]
         cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls))
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")

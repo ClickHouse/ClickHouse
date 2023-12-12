@@ -247,6 +247,7 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_amd64_compat
+      data: ${{ needs.RunConfig.outputs.data }}
   BuilderBinAmd64Musl:
     needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() }}
