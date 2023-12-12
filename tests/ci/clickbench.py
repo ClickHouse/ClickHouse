@@ -94,7 +94,7 @@ def process_results(
         results_path = result_directory / "test_results.tsv"
 
         if results_path.exists():
-            logging.info("Found test_results.tsv")
+            logging.info("Found %s", results_path.name)
         else:
             logging.info("Files in result folder %s", os.listdir(result_directory))
             return "error", "Not found test_results.tsv", test_results, additional_files
