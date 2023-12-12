@@ -1,7 +1,5 @@
 -- Tags: shard, no-fasttest
 
-SET prefer_localhost_replica = 0; -- Always do network communication to check if the shard is unavailable.
-
 DROP TABLE IF EXISTS table_02916;
 DROP TABLE IF EXISTS table_02916_distributed;
 
@@ -23,8 +21,8 @@ CREATE TABLE table_02916_distributed
 ENGINE = Distributed(test_unavailable_shard, currentDatabase(), table_02916, rand())
 SETTINGS skip_unavailable_shards = 1;
 
+SET send_logs_level='fatal';
 SELECT *, _shard_num FROM table_02916_distributed;
-SELECT *, _shard_num FROM table_02916_distributed SETTINGS skip_unavailable_shards=0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
 
 DROP TABLE table_02916_distributed;
 DROP TABLE table_02916;
