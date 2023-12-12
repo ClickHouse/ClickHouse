@@ -643,7 +643,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers = {});
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers);
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
@@ -1080,7 +1080,7 @@ public:
     void setMaxTableSizeToDrop(size_t max_size);
     size_t getMaxTableSizeToDrop() const;
     void setClientHTTPHeaderForbiddenHeaders(const FieldVector & forbidden_headers);
-    /// Return the forbiddent headers that users cant get via getClientHTTPHeader function
+    /// Return the forbiddent headers that users can't get via getClientHTTPHeader function
     const std::unordered_set<String> & getClientHTTPHeaderForbiddenHeaders() const;
     void setAllowGetHTTPHeaderFunction(bool allow_get_http_header_function);
     bool allowGetHTTPHeaderFunction() const;
