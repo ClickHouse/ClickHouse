@@ -79,7 +79,6 @@ def create_tables(cluster, table_name, node_with_covering_part):
     assert (nodes[0].query(f"select distinct name from clusterAllReplicas({cluster}, system.parts) where table='{table_name}' and active order by name") == expected_active_parts)
 
 
-
 @pytest.mark.parametrize("node_with_covering_part", [0, 1, 2])
 def test_covering_part_in_announcement(start_cluster, node_with_covering_part):
     """create and populate table in special way (see create_table()),
@@ -116,7 +115,10 @@ def test_covering_part_in_announcement(start_cluster, node_with_covering_part):
     # w/o parallel replicas
     assert (
         nodes[node_with_covering_part].query(
-            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}"
+            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}",
+            settings={
+                "allow_experimental_parallel_reading_from_replicas": 0,
+            },
         )
         == expected_full_result
     )
