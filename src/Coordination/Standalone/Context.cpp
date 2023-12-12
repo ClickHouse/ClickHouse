@@ -4,6 +4,7 @@
 #include <Common/Macros.h>
 #include <Common/ThreadPool.h>
 #include <Common/callOnce.h>
+#include <Disks/IO/IOUringReader.h>
 
 #include <Core/ServerSettings.h>
 
@@ -61,6 +62,11 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> synchronous_local_fs_reader;
+
+#if USE_LIBURING
+    mutable OnceFlag io_uring_reader_initialized;
+    mutable std::unique_ptr<IOUringReader> io_uring_reader;
+#endif
 
     mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
@@ -224,6 +230,17 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
             return *shared->synchronous_local_fs_reader;
     }
 }
+
+#if USE_LIBURING
+IOUringReader & Context::getIOURingReader() const
+{
+    callOnce(shared->io_uring_reader_initialized, [&] {
+        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
+    });
+
+    return *shared->io_uring_reader;
+}
+#endif
 
 std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
 {
