@@ -14,6 +14,15 @@ dpkg -i package_folder/clickhouse-client_*.deb
 mkdir /dev/shm/clickhouse
 chown clickhouse:clickhouse /dev/shm/clickhouse
 
+# Allow introspection functions, needed for sending the logs
+echo "
+profiles:
+    default:
+        allow_introspection_functions: 1
+" > /etc/clickhouse-server/allow_introspection_functions.yaml
+
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
+
 clickhouse start
 
 # Wait for the server to start, but not for too long.
