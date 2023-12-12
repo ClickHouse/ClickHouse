@@ -68,8 +68,8 @@ WHERE macro = 'test';
 └───────┴──────────────┘
 ```
 
-## getClientHttpHeader  
-Returns the value of specified http header.
+## getClientHTTPHeader  
+Returns the value of specified HTTP header.
 
 **Syntax**  
 
