@@ -164,11 +164,11 @@ void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announc
     for (auto && part_ranges: announcement.description)
     {
         Part part{.description = std::move(part_ranges), .replicas = {announcement.replica_num}};
+        const MergeTreePartInfo & announced_part = part.description.info;
 
         auto it = std::lower_bound(cbegin(all_parts_to_read), cend(all_parts_to_read), part);
         if (it != all_parts_to_read.cend())
         {
-            const MergeTreePartInfo & announced_part = part.description.info;
             const MergeTreePartInfo & found_part = it->description.info;
             if (found_part == announced_part)
             {
@@ -183,12 +183,19 @@ void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announc
                 bool is_disjoint = found_part.isDisjoint(announced_part);
                 if (it != all_parts_to_read.cbegin() && is_disjoint)
                 {
-                    const MergeTreePartInfo & lesser_part_info = (--it)->description.info;
-                    is_disjoint &= lesser_part_info.isDisjoint(announced_part);
+                    const MergeTreePartInfo & lesser_part = (--it)->description.info;
+                    is_disjoint &= lesser_part.isDisjoint(announced_part);
                 }
                 if (!is_disjoint)
                     continue;
             }
+        }
+        else if (!all_parts_to_read.empty())
+        {
+            /// the announced part is greatest - check if it's disjoint with lesser part
+            const MergeTreePartInfo & lesser_part = all_parts_to_read.crbegin()->description.info;
+            if (!lesser_part.isDisjoint(announced_part))
+                continue;
         }
 
         auto [insert_it, _] = all_parts_to_read.emplace(std::move(part));
