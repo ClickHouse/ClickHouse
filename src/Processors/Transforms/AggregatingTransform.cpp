@@ -726,8 +726,11 @@ void AggregatingTransform::initGenerate()
             auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
             Pipes pipes;
             for (auto & variant : prepared_data)
+            {
                 /// Converts hash tables to blocks with data (finalized or not).
                 pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant));
+            }
+
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
             if (!pipe.empty())
             {
@@ -781,21 +784,23 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        const auto & tmp_data = params->aggregator.getTemporaryData();
+        size_t num_streams = 0;
+        size_t compressed_size = 0;
+        size_t uncompressed_size = 0;
 
-        Pipe pipe;
+        Pipes pipes;
+        /// Merge external data from all aggregators used in query.
+        for (const auto & aggregator : *params->aggregator_list_ptr)
         {
-            Pipes pipes;
-
+            const auto & tmp_data = aggregator.getTemporaryData();
             for (auto * tmp_stream : tmp_data.getStreams())
                 pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
 
-            pipe = Pipe::unitePipes(std::move(pipes));
+            num_streams += tmp_data.getStreams().size();
+            compressed_size += tmp_data.getStat().compressed_size;
+            uncompressed_size += tmp_data.getStat().uncompressed_size;
         }
 
-        size_t num_streams = tmp_data.getStreams().size();
-        size_t compressed_size = tmp_data.getStat().compressed_size;
-        size_t uncompressed_size = tmp_data.getStat().uncompressed_size;
         LOG_DEBUG(
             log,
             "Will merge {} temporary files of size {} compressed, {} uncompressed.",
@@ -803,6 +808,7 @@ void AggregatingTransform::initGenerate()
             ReadableSize(compressed_size),
             ReadableSize(uncompressed_size));
 
+        auto pipe = Pipe::unitePipes(std::move(pipes));
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 
         processors = Pipe::detachProcessors(std::move(pipe));
