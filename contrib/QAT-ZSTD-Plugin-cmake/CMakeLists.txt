@@ -1,4 +1,7 @@
 # Intel® QuickAssist Technology ZSTD Plugin (QAT ZSTD Plugin) is a plugin to Zstandard*(ZSTD*) for accelerating compression by QAT.
+# Out-of-tree means kernel don't have native support, user will build and install driver from external package: https://www.intel.com/content/www/us/en/download/765501.html
+# meanwhile, user need to set ICP_ROOT environment variable which point to the root directory of QAT driver source tree.
+# in-tree means kernel has built-in qat driver, QAT-ZSTD-PLUGIN just has dependency on qatlib.
 
 if (ENABLE_QAT_OUTOFTREE)
 # Intel QATZSTD out-of-tree build
@@ -28,7 +31,7 @@ target_include_directories(_qatzstd_plugin
 target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_QATZSTD_COMPRESSION)
 add_library (ch_contrib::qatzstd_plugin ALIAS _qatzstd_plugin)
 
-else()
+else ()
 
 # Intel QATZSTD in-tree build
 message(STATUS "Intel QATZSTD in-tree build")
@@ -71,7 +74,7 @@ if (ENABLE_USDM_DRV)
 endif()
 
 add_library(_qatzstd_plugin ${QATZSTD_SRC})
-target_link_libraries (_qatzstd_plugin PUBLIC ch_contrib::qat ch_contrib::usdm)
+target_link_libraries (_qatzstd_plugin PUBLIC ch_contrib::qatlib ch_contrib::usdm)
 target_include_directories(_qatzstd_plugin PRIVATE 
     ${QAT_INCLUDE_DIR}
     ${QAT_DC_INCLUDE_DIR}
@@ -82,5 +85,6 @@ target_include_directories(_qatzstd_plugin PRIVATE
 target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_QATZSTD_COMPRESSION -DINTREE)
 target_include_directories(_qatzstd_plugin SYSTEM PUBLIC $<BUILD_INTERFACE:${QATZSTD_SRC_DIR}> $<INSTALL_INTERFACE:include>)
 add_library (ch_contrib::qatzstd_plugin ALIAS _qatzstd_plugin)
+
 endif ()
 
