@@ -7,6 +7,7 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -396,7 +397,8 @@ namespace
 
 BlockIO InterpreterGrantQuery::execute()
 {
-    auto & query = query_ptr->as<ASTGrantQuery &>();
+    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(getContext()->getUserName());
     query.access_rights_elements.eraseNonGrantable();
@@ -430,7 +432,7 @@ BlockIO InterpreterGrantQuery::execute()
         current_user_access->checkGranteesAreAllowed(grantees);
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(updated_query, getContext(), params);
     }
 
     /// Check if the current user has corresponding access rights granted with grant option.
