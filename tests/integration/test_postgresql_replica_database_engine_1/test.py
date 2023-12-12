@@ -416,7 +416,9 @@ def test_many_concurrent_queries(started_cluster):
         database=True,
     )
     cursor = conn.cursor()
-    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10000, table_name_base=table)
+    pg_manager.create_and_fill_postgres_tables(
+        NUM_TABLES, numbers=10000, table_name_base=table
+    )
 
     def attack(thread_id):
         print("thread {}".format(thread_id))
