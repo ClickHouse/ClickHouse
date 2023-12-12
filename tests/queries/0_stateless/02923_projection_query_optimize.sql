@@ -14,7 +14,7 @@ insert into test_b select number, -number, number-1, number+1, number+2, 'other_
 EXPLAIN SYNTAX select * from test_b where src = '42';
 EXPLAIN SYNTAX select * from test_b where c1 = '43' and c2 = '44' and c3 = '45' and dst = '-42';
 
-EXPLAIN SYNTAX select src, c1 as id, c2 as id2 from test_b where lower(id) = '43' and id2 = '44';
+EXPLAIN SYNTAX select c1 as id, c2 as id2 from test_b where lower(id) = '43' and id2 = '44';
 
 DROP TABLE test_a;
 DROP TABLE test_b;

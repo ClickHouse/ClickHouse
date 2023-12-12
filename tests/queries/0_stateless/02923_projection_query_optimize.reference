@@ -45,7 +45,6 @@ WHERE ((c1 = \'43\') AND (c2 = \'44\') AND (c3 = \'45\') AND (dst = \'-42\')) AN
     WHERE c1 = \'43\'
 ))
 SELECT
-    src,
     c1 AS id,
     c2 AS id2
 FROM test_b

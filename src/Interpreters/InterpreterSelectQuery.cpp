@@ -608,26 +608,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
         }
 
-        if (storage && context->getSettings().optimize_project_query
-           && query.where() && !query.hasJoin()
-           && metadata_snapshot->hasProjections()
-           && !options.is_projection_optimized
-        )
-        {
-            // the re-written subquery will use table primary key
-            // insert into required column if it is not there
-            const auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
-            bool contains_pk = false;
-            for (auto & elem: query.select()->children)
-            {
-                String name = elem->getAliasOrColumnName();
-                if (name == primary_key || name == "*")
-                    contains_pk = true;
-            }
-            if (!contains_pk)
-                query.select()->children.push_back(std::make_shared<ASTIdentifier>(primary_key));
-        }
-
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
