@@ -5,7 +5,6 @@ This file is needed to avoid cicle import build_download_helper.py <=> env_helpe
 
 import argparse
 import logging
-import os
 from pathlib import Path
 
 from build_download_helper import download_build_with_progress
@@ -13,8 +12,6 @@ from ci_config import CI_CONFIG
 from env_helper import RUNNER_TEMP, S3_ARTIFACT_DOWNLOAD_TEMPLATE
 from git_helper import Git, commit
 from version_helper import get_version_from_repo, version_arg
-
-TEMP_PATH = os.path.join(RUNNER_TEMP, "download_binary")
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,7 +55,7 @@ def parse_args() -> argparse.Namespace:
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args = parse_args()
-    temp_path = Path(TEMP_PATH)
+    temp_path = Path(RUNNER_TEMP) / Path(__file__).name
     temp_path.mkdir(parents=True, exist_ok=True)
     for build in args.build_names:
         # check if it's in CI_CONFIG

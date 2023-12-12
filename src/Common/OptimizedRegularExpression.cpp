@@ -418,7 +418,7 @@ finish:
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
         bool next_is_trivial = true;
         pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_alternatives);
-        /// For xxx|xxx|xxx, we only conbine the alternatives and return a empty required_substring.
+        /// For xxx|xxx|xxx, we only combine the alternatives and return a empty required_substring.
         if (next_alternatives.empty() || shortest_literal_length(next_alternatives) < required_substring.literal.size())
         {
             global_alternatives.push_back(required_substring);

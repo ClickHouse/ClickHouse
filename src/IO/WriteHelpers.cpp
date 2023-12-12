@@ -122,4 +122,8 @@ void writePointerHex(const void * ptr, WriteBuffer & buf)
     buf.write(hex_str, 2 * sizeof(ptr));
 }
 
+String fourSpaceIndent(size_t indent)
+{
+    return std::string(indent * 4, ' ');
+}
 }

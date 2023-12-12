@@ -200,7 +200,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 }
 
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
 }

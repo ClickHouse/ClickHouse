@@ -28,6 +28,7 @@ import logging
 import os
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from subprocess import CalledProcessError
 from typing import List, Optional
 
@@ -57,25 +58,37 @@ class ReleaseBranch:
     CHERRYPICK_DESCRIPTION = """Original pull-request #{pr_number}
 
 This pull-request is a first step of an automated backporting.
-It contains changes like after calling a local command `git cherry-pick`.
-If you intend to continue backporting this changes, then resolve all conflicts if any.
+It contains changes similar to calling `git cherry-pick` locally.
+If you intend to continue backporting the changes, then resolve all conflicts if any.
 Otherwise, if you do not want to backport them, then just close this pull-request.
 
 The check results does not matter at this step - you can safely ignore them.
 
 ### Note
 
-This pull-request will be merged automatically as it reaches the mergeable state, \
-**do not merge it manually**.
+This pull-request will be merged automatically. Please, **do not merge it manually** \
+(but if you accidentally did, nothing bad will happen).
 
-### If the PR was closed and then reopened
+### Troubleshooting
 
-If it stuck, check {pr_url} for `{backport_created_label}` and delete it if \
-necessary. Manually merging will do nothing, since `{backport_created_label}` \
-prevents the original PR {pr_url} from being processed.
+#### If the PR was manually reopened after being closed
 
-If you want to recreate the PR: delete the `{label_cherrypick}` label and delete this branch.
-You may also need to delete the `{backport_created_label}` label from the original PR.
+If this PR is stuck (i.e. not automatically merged after one day), check {pr_url} for \
+`{backport_created_label}` *label* and delete it.
+
+Manually merging will do nothing. The `{backport_created_label}` *label* prevents the \
+original PR {pr_url} from being processed.
+
+#### If the conflicts were resolved in a wrong way
+
+If this cherry-pick PR is completely screwed by a wrong conflicts resolution, and you \
+want to recreate it:
+
+- delete the `{label_cherrypick}` label from the PR
+- delete this branch from the repository
+
+You also need to check the original PR {pr_url} for `{backport_created_label}`, and \
+delete if it's presented there
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
@@ -288,16 +301,19 @@ close it.
             "Checking if cherry-pick PR #%s needs to be pinged",
             self.cherrypick_pr.number,
         )
-        since_updated = datetime.now() - self.cherrypick_pr.updated_at
+        # The `updated_at` is Optional[datetime]
+        cherrypick_updated_ts = (
+            self.cherrypick_pr.updated_at or datetime.now()
+        ).timestamp()
+        since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
         since_updated_str = (
-            f"{since_updated.days}d{since_updated.seconds // 3600}"
-            f"h{since_updated.seconds // 60 % 60}m{since_updated.seconds % 60}s"
+            f"{since_updated // 86400}d{since_updated // 3600}"
+            f"h{since_updated // 60 % 60}m{since_updated % 60}s"
         )
-        if since_updated < timedelta(days=1):
+        if since_updated < 86400:
             logging.info(
-                "The cherry-pick PR was updated at %s %s ago, "
+                "The cherry-pick PR was updated %s ago, "
                 "waiting for the next running",
-                self.cherrypick_pr.updated_at.isoformat(),
                 since_updated_str,
             )
             return
@@ -617,8 +633,8 @@ def stash():
 
 
 def main():
-    if not os.path.exists(TEMP_PATH):
-        os.makedirs(TEMP_PATH)
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     args = parse_args()
     if args.debug_helpers:
@@ -636,7 +652,7 @@ def main():
         args.backport_created_label,
     )
     # https://github.com/python/mypy/issues/3004
-    bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore
+    bp.gh.cache_path = temp_path / "gh_cache"
     bp.receive_release_prs()
     bp.update_local_release_branches()
     bp.receive_prs_for_backport()

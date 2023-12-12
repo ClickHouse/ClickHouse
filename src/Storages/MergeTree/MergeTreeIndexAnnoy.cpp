@@ -113,17 +113,20 @@ template <typename Distance>
 MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    UInt64 trees_)
+    UInt64 trees_,
+    size_t max_threads_for_creation_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , trees(trees_)
+    , max_threads_for_creation(max_threads_for_creation_)
 {}
 
 template <typename Distance>
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndReset()
 {
-    // NOLINTNEXTLINE(*)
-    index->build(static_cast<int>(trees), /*number_of_threads=*/1);
+    int threads = (max_threads_for_creation == 0) ? -1 : static_cast<int>(max_threads_for_creation);
+    /// clang-tidy reports a false positive: it considers %p with an outdated pointer in fprintf() (used by logging which we don't do) dereferencing
+    index->build(static_cast<int>(trees), threads);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance>>(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
@@ -282,20 +285,20 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 
     chassert(neighbors.size() == distances.size());
 
-    std::vector<size_t> granule_numbers;
-    granule_numbers.reserve(neighbors.size());
+    std::vector<size_t> granules;
+    granules.reserve(neighbors.size());
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
         if (comparison_distance && distances[i] > comparison_distance)
             continue;
-        granule_numbers.push_back(neighbors[i] / index_granularity);
+        granules.push_back(neighbors[i] / index_granularity);
     }
 
     /// make unique
-    std::sort(granule_numbers.begin(), granule_numbers.end());
-    granule_numbers.erase(std::unique(granule_numbers.begin(), granule_numbers.end()), granule_numbers.end());
+    std::sort(granules.begin(), granules.end());
+    granules.erase(std::unique(granules.begin(), granules.end()), granules.end());
 
-    return granule_numbers;
+    return granules;
 }
 
 MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, UInt64 trees_, const String & distance_function_)
@@ -313,13 +316,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
     std::unreachable();
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator(const MergeTreeWriterSettings & settings) const
 {
     /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
     if (distance_function == DISTANCE_FUNCTION_L2)
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees, settings.max_threads_for_annoy_index_creation);
     else if (distance_function == DISTANCE_FUNCTION_COSINE)
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees, settings.max_threads_for_annoy_index_creation);
     std::unreachable();
 }
 

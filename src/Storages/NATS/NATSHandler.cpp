@@ -43,7 +43,7 @@ void NATSHandler::startLoop()
 
     while (loop_state.load() == Loop::RUN && duration.count() < MAX_THREAD_WORK_DURATION_MS)
     {
-        uv_run(loop, UV_RUN_DEFAULT);
+        uv_run(loop, UV_RUN_NOWAIT);
         end_time = std::chrono::steady_clock::now();
         duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     }

@@ -36,6 +36,7 @@ public:
     virtual size_t queueSize() = 0;
 
     virtual String getSubject() const = 0;
+    virtual const String & getCurrentMessage() const = 0;
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
@@ -69,6 +70,7 @@ public:
     size_t queueSize() override { return received.size(); }
 
     String getSubject() const override { return current.subject; }
+    const String & getCurrentMessage() const override { return current.message; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
@@ -121,6 +123,7 @@ public:
     size_t queueSize() override { return received.size(); }
 
     String getSubject() const override { return current.subject; }
+    const String & getCurrentMessage() const override { return current.message; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.

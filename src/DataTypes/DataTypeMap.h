@@ -29,8 +29,8 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
+    std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Map"; }
-    String getSQLCompatibleName() const override { return "JSON"; }
 
     bool canBeInsideNullable() const override { return false; }
 

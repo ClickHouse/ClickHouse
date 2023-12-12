@@ -230,7 +230,7 @@ void JSONCompactEachRowRowSchemaReader::transformTypesIfNeeded(DataTypePtr & typ
 
 void JSONCompactEachRowRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
+    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONCompactEachRow(FormatFactory & factory)

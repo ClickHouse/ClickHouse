@@ -126,6 +126,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -319,6 +320,7 @@ geoDistance
 geohashDecode
 geohashEncode
 geohashesInBox
+getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -430,10 +432,9 @@ mapUpdate
 match
 materialize
 max2
-meiliMatch
 metroHash64
 min2
-minSampleSizeContinous
+minSampleSizeContinuous
 minSampleSizeConversion
 minus
 modulo
