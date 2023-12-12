@@ -68,19 +68,30 @@ public:
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
         const IColumn & src_data = array->getData();
+        const ColumnArray::Offsets & offsets = array->getOffsets();
 
         auto res = ColumnFloat64::create(input_rows_count);
         auto & res_data = res->getData();
 
+        ColumnArray::Offset prev_src_offset = 0;
+
         Float64 period;
         for (size_t i = 0; i < input_rows_count; ++i)
-            if (executeNumber<UInt8>(src_data, period) || executeNumber<UInt16>(src_data, period) || executeNumber<UInt32>(src_data, period)
-                || executeNumber<UInt64>(src_data, period) || executeNumber<Int8>(src_data, period)
-                || executeNumber<Int16>(src_data, period) || executeNumber<Int32>(src_data, period)
-                || executeNumber<Int64>(src_data, period) || executeNumber<Float32>(src_data, period)
-                || executeNumber<Float64>(src_data, period))
+        {
+            ColumnArray::Offset curr_offset = offsets[i];
+            if (executeNumber<UInt8>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<UInt16>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<UInt32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<UInt64>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<Int8>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<Int16>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<Int32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<Int64>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<Float32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumber<Float64>(src_data, period, prev_src_offset, curr_offset))
             {
                 res_data[i] = period;
+                prev_src_offset = curr_offset;
             }
             else
                 throw Exception(
@@ -88,12 +99,12 @@ public:
                     "Illegal column {} of first argument of function {}",
                     arguments[0].column->getName(),
                     getName());
-
+        }
         return res;
     }
 
     template <typename T>
-    bool executeNumber(const IColumn & src_data, Float64 & period) const
+    bool executeNumber(const IColumn & src_data, Float64 & period, ColumnArray::Offset &start, ColumnArray::Offset &end) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
         if (!src_data_concrete)
@@ -101,14 +112,14 @@ public:
 
         const PaddedPODArray<T> & src_vec = src_data_concrete->getData();
 
-        size_t len = src_vec.size();
+        size_t len = end - start;
         if (len < 4)
         {
             period = NAN; // At least four data points are required to detect period
             return true;
         }
 
-        std::vector<Float64> src(src_vec.begin(), src_vec.end());
+        std::vector<Float64> src((src_vec.begin() + start), (src_vec.begin()+ end));
         std::vector<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
