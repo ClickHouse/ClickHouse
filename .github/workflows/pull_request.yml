@@ -242,6 +242,11 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: binary_amd64_compat
+  BuilderBinAmd64Musl:
+    needs: [FastTest, StyleCheck]
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_amd64_musl
   BuilderBinAarch64V80Compat:
     needs: [FastTest, StyleCheck]
     uses: ./.github/workflows/reusable_build.yml
@@ -531,6 +536,11 @@ jobs:
         KILL_TIMEOUT=3600
       run_command: |
         cd "$REPO_COPY/tests/ci"
+
+        mkdir -p "${REPORTS_PATH}/integration"
+        mkdir -p "${REPORTS_PATH}/stateless"
+        cp -r ${REPORTS_PATH}/changed_images* ${REPORTS_PATH}/integration
+        cp -r ${REPORTS_PATH}/changed_images* ${REPORTS_PATH}/stateless
 
         TEMP_PATH="${TEMP_PATH}/integration" \
           REPORTS_PATH="${REPORTS_PATH}/integration" \

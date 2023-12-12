@@ -8,7 +8,7 @@
 
 # See also https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
 
-<<///
+true<<///
 CREATE TABLE build_time_trace
 (
     -- Extra columns:
@@ -44,7 +44,7 @@ ORDER BY (date, file, name, args_name);
 INPUT_DIR=$1
 OUTPUT_DIR=$2
 
-find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | grep -P '\.(c|cpp|cc|cxx)\.json|\.time-trace$' | xargs -P $(nproc) -I{} bash -c "
+find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | grep -P '\.(c|cpp|cc|cxx)\.json|\.time-trace$' | xargs -P "$(nproc)" -I{} bash -c "
 
     ORIGINAL_FILENAME=\$(echo '{}' | sed -r -e 's!\.(json|time-trace)\$!!; s!/CMakeFiles/[^/]+\.dir!!')
     LIBRARY_NAME=\$(echo '{}' | sed -r -e 's!^.*/CMakeFiles/([^/]+)\.dir/.*\$!\1!')
@@ -59,7 +59,7 @@ find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | grep -P '\.(c|cpp|cc
 
 # Additionally, collect information about the sizes of translation units
 
-<<///
+true<<///
 CREATE TABLE binary_sizes
 (
     -- Extra columns:

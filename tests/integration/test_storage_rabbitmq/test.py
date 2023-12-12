@@ -110,7 +110,7 @@ def rabbitmq_setup_teardown():
     ],
 )
 def test_rabbitmq_select(rabbitmq_cluster, secure):
-    if secure and instance.is_built_with_memory_sanitizer():
+    if secure and instance.is_built_with_thread_sanitizer():
         pytest.skip(
             "Data races: see https://github.com/ClickHouse/ClickHouse/issues/56866"
         )

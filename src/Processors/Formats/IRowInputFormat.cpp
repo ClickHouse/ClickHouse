@@ -124,7 +124,7 @@ Chunk IRowInputFormat::read()
 
         RowReadExtension info;
         bool continue_reading = true;
-        for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
+        for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)
         {
             try
             {

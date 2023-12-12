@@ -556,5 +556,10 @@ std::vector<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(con
     return names;
 }
 
+void FormatWithNamesAndTypesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
+}
+
 }
 
