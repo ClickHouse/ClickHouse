@@ -608,7 +608,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
         }
 
-        if (storage && metadata_snapshot->hasProjections())
+        if (storage && context->getSettings().optimize_project_query
+           && query.where() && !query.hasJoin()
+           && metadata_snapshot->hasProjections()
+           && !options.is_projection_optimized
+        )
         {
             // the re-written subquery will use table primary key
             // insert into required column if it is not there
