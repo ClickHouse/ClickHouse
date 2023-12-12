@@ -31,6 +31,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_http_readiness_basic_responses(started_cluster):
     leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
     response = requests.get(
@@ -53,14 +54,13 @@ def test_http_readiness_basic_responses(started_cluster):
     assert readiness_data["details"]["role"] == "follower"
     assert readiness_data["details"]["hasLeader"] == True
 
+
 def test_http_readiness_partitioned_cluster(started_cluster):
     with PartitionManager() as pm:
         leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
         follower = keeper_utils.get_any_follower(cluster, [node1, node2, node3])
 
-        pm.partition_instances(
-            leader, follower
-        )
+        pm.partition_instances(leader, follower)
         time.sleep(3)
 
         response = requests.get(
