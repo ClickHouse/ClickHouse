@@ -1526,7 +1526,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             {
                 array_type = std::make_shared<DataTypeArray>(nested_column.type);
             }
-            return {std::move(array_column), std::move(array_type), column_name};
+            return {std::move(array_column), array_type, column_name};
         }
         case orc::STRUCT: {
             Columns tuple_elements;
