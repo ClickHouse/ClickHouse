@@ -25,13 +25,15 @@ void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTP
     {
         auto is_leader = keeper_dispatcher->isLeader();
         auto is_follower = keeper_dispatcher->isFollower() && keeper_dispatcher->hasLeader();
+        auto is_observer = keeper_dispatcher->isObserver() && keeper_dispatcher->hasLeader();
 
-        auto status = is_leader || is_follower;
+        auto status = is_leader || is_follower || is_observer;
 
         Poco::JSON::Object json, details;
 
         details.set("leader", is_leader);
         details.set("follower", is_follower);
+        details.set("observer", is_observer);
         json.set("details", details);
         json.set("status", status ? "ok": "fail");
 
