@@ -1,5 +1,6 @@
 #include <memory>
 #include <type_traits>
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 
 #include <IO/Operators.h>
@@ -547,12 +548,13 @@ UInt32 ZooKeeper::setClientSessionDeadline(UInt32 min_seconds, UInt32 max_second
 
 void ZooKeeper::sendHandshake()
 {
-    int32_t handshake_length = 44;
+    int32_t handshake_length = 45;
     int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     constexpr int32_t passwd_len = 16;
     std::array<char, passwd_len> passwd {};
+    bool read_only = true;
 
     write(handshake_length);
     if (use_compression)
@@ -563,6 +565,7 @@ void ZooKeeper::sendHandshake()
     write(timeout);
     write(previous_session_id);
     write(passwd);
+    write(read_only);
     flushWriteBuffer();
 }
 
@@ -572,9 +575,10 @@ void ZooKeeper::receiveHandshake()
     int32_t protocol_version_read;
     int32_t timeout;
     std::array<char, PASSWORD_LENGTH> passwd;
+    bool read_only;
 
     read(handshake_length);
-    if (handshake_length != SERVER_HANDSHAKE_LENGTH)
+    if (handshake_length != SERVER_HANDSHAKE_LENGTH && handshake_length != SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected handshake length received: {}", handshake_length);
 
     read(protocol_version_read);
@@ -602,6 +606,8 @@ void ZooKeeper::receiveHandshake()
 
     read(session_id);
     read(passwd);
+    if (handshake_length == SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
+        read(read_only);
 }
 
 

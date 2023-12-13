@@ -349,7 +349,7 @@ Chain buildPushingToViewsChain(
             for (const auto & column : header)
             {
                 /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
+                if (inner_table_columns.hasNotAlias(column.name))
                     insert_columns.emplace_back(column.name);
             }
 

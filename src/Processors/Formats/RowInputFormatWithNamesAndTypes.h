@@ -172,6 +172,8 @@ public:
 
     NamesAndTypesList readSchema() override;
 
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+
 protected:
     virtual std::optional<DataTypes> readRowAndGetDataTypes() override;
 

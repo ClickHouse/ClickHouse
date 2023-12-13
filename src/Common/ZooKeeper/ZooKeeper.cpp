@@ -268,6 +268,9 @@ Coordination::Error ZooKeeper::tryCreate(const std::string & path, const std::st
 {
     Coordination::Error code = createImpl(path, data, mode, path_created);
 
+    if (code == Coordination::Error::ZNOTREADONLY && exists(path))
+        return Coordination::Error::ZNODEEXISTS;
+
     if (!(code == Coordination::Error::ZOK ||
           code == Coordination::Error::ZNONODE ||
           code == Coordination::Error::ZNODEEXISTS ||
@@ -289,6 +292,8 @@ void ZooKeeper::createIfNotExists(const std::string & path, const std::string & 
     Coordination::Error code = createImpl(path, data, CreateMode::Persistent, path_created);
 
     if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
+        return;
+    else if (code == Coordination::Error::ZNOTREADONLY && exists(path))
         return;
     else
         throw KeeperException::fromPath(code, path);
