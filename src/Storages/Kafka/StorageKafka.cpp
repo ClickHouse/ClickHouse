@@ -436,6 +436,8 @@ void StorageKafka::startup()
 
 void StorageKafka::shutdown(bool)
 {
+    shutdown_called = true;
+
     for (auto & task : tasks)
     {
         // Interrupt streaming thread
