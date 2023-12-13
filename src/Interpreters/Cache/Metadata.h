@@ -29,7 +29,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool evicting() const { return removal_candidate.load(); }
 
-    Priority::Iterator getQueueIterator() const { return file_segment->getQueueIterator(); }
+    Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
     std::atomic<bool> removal_candidate{false};
@@ -243,7 +243,7 @@ struct LockedKey : private boost::noncopyable
 
     void markAsRemoved();
 
-    FileSegments sync();
+    std::vector<FileSegment::Info> sync(FileCache & cache);
 
     std::string toString() const;
 

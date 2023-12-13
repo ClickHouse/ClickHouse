@@ -137,7 +137,6 @@ def test_parallel_replicas_over_distributed(
                 "allow_experimental_parallel_reading_from_replicas": 2,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "max_parallel_replicas": max_parallel_replicas,
-                "use_hedged_requests": 0,
             },
         )
         == expected_result

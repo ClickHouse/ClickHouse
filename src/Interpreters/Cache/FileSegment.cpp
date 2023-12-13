@@ -54,7 +54,7 @@ FileSegment::FileSegment(
         bool background_download_enabled_,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
-        Priority::Iterator queue_iterator_)
+        Priority::IteratorPtr queue_iterator_)
     : file_key(key_)
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
@@ -146,13 +146,13 @@ size_t FileSegment::getReservedSize() const
     return reserved_size;
 }
 
-FileSegment::Priority::Iterator FileSegment::getQueueIterator() const
+FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
 {
     auto lock = lockFileSegment();
     return queue_iterator;
 }
 
-void FileSegment::setQueueIterator(Priority::Iterator iterator)
+void FileSegment::setQueueIterator(Priority::IteratorPtr iterator)
 {
     auto lock = lockFileSegment();
     if (queue_iterator)
@@ -480,7 +480,7 @@ bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve
 
     bool is_file_segment_size_exceeded;
     {
-        auto lock = segment_guard.lock();
+        auto lock = lockFileSegment();
 
         assertNotDetachedUnlocked(lock);
         assertIsDownloaderUnlocked("reserve", lock);
@@ -773,7 +773,7 @@ bool FileSegment::assertCorrectness() const
 
 bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const
 {
-    auto check_iterator = [this](const Priority::Iterator & it)
+    auto check_iterator = [this](const Priority::IteratorPtr & it)
     {
         UNUSED(this);
         if (!it)
@@ -833,23 +833,24 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
-FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
+FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment, FileCache & cache)
 {
     auto lock = file_segment->lockFileSegment();
-
-    auto snapshot = std::make_shared<FileSegment>(
-        file_segment->key(),
-        file_segment->offset(),
-        file_segment->range().size(),
-        State::DETACHED,
-        CreateFileSegmentSettings(file_segment->getKind(), file_segment->is_unbound));
-
-    snapshot->hits_count = file_segment->getHitsCount();
-    snapshot->downloaded_size = file_segment->getDownloadedSize();
-    snapshot->download_state = file_segment->download_state.load();
-    snapshot->ref_count = file_segment.use_count();
-
-    return snapshot;
+    return Info{
+        .key = file_segment->key(),
+        .offset = file_segment->offset(),
+        .path = cache.getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->segment_kind),
+        .range_left = file_segment->range().left,
+        .range_right = file_segment->range().right,
+        .kind = file_segment->segment_kind,
+        .state = file_segment->download_state,
+        .size = file_segment->range().size(),
+        .downloaded_size = file_segment->downloaded_size,
+        .cache_hits = file_segment->hits_count,
+        .references = static_cast<uint64_t>(file_segment.use_count()),
+        .is_unbound = file_segment->is_unbound,
+        .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
+    };
 }
 
 bool FileSegment::isDetached() const
@@ -904,7 +905,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     setDetachedState(lock);
 }
 
-void FileSegment::use()
+void FileSegment::increasePriority()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentUseMicroseconds);
 
@@ -918,7 +919,7 @@ void FileSegment::use()
     if (it)
     {
         auto cache_lock = cache->lockCache();
-        hits_count = it->use(cache_lock);
+        hits_count = it->increasePriority(cache_lock);
     }
 }
 

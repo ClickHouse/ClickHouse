@@ -319,9 +319,9 @@ This is a relatively fast non-cryptographic hash function of average quality for
 Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
-## SHA1, SHA224, SHA256, SHA512
+## SHA1, SHA224, SHA256, SHA512, SHA512_256
 
-Calculates SHA-1, SHA-224, SHA-256, SHA-512 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+Calculates SHA-1, SHA-224, SHA-256, SHA-512, SHA-512-256 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Syntax**
 
@@ -1780,12 +1780,11 @@ Result:
 ## sqid
 
 Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).
-To use this function, set setting `allow_experimental_hash_functions = 1`.
 
 **Syntax**
 
 ```sql
-sqid(number1,...)
+sqid(number1, ...)
 ```
 
 **Arguments**
