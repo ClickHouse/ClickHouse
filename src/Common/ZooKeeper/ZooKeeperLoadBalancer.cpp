@@ -115,7 +115,7 @@ void ZooKeeperLoadBalancer::recordKeeperHostError(UInt8 original_index)
         {
             LOG_DEBUG(log, "Load Balancer records a failure on host {}, original index {}", host_info.address, static_cast<UInt32>(original_index));
             // TODO: add the actual implementation to lower the priority/scoring of the host.
-            break;
+            return;
         }
     }
     LOG_ERROR(log, "Does not find host to record the failure with original index {}", static_cast<UInt32>(original_index));
@@ -135,8 +135,9 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
         try
         {
             auto client  = std::make_unique<Coordination::ZooKeeper>(host_info_list[i].toZooKeeperNode(), args, zk_log);
-            // Non optimal case: we connected to a keeper host in different availability zone, so set a session deadline.
-            if (i != 0)
+            // Non optimal case: we connected to a keeper host that is not at highest priority, set a timeout to force reconnect.
+            // Except for RANDOM, as it's random anyway regardless of first or second host.
+            if (i != 0 && args.get_priority_load_balancing.load_balancing != LoadBalancing::RANDOM)
             {
                 auto session_timeout_seconds = client->setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
                 LOG_INFO(log, "Connecting to a different az ZooKeeper with session timeout {} seconds", session_timeout_seconds);
