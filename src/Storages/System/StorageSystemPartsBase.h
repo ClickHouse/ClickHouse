@@ -44,11 +44,11 @@ public:
 
             info.database = (*database_column)[next_row].get<String>();
             info.table = (*table_column)[next_row].get<String>();
+            UUID storage_uuid = (*storage_uuid_column)[next_row].get<UUID>();
 
-            auto is_same_table = [&info, this] (size_t row) -> bool
+            auto is_same_table = [&storage_uuid, this] (size_t row) -> bool
             {
-                return (*database_column)[row].get<String>() == info.database &&
-                    (*table_column)[row].get<String>() == info.table;
+                return (*storage_uuid_column)[row].get<UUID>() == storage_uuid;
             };
 
             /// We may have two rows per table which differ in 'active' value.
@@ -61,7 +61,7 @@ public:
                     info.need_inactive_parts = true;
             }
 
-            info.storage = storages.at(std::make_pair(info.database, info.table));
+            info.storage = storages.at(storage_uuid);
 
             if (needsLock)
             {
@@ -94,11 +94,12 @@ protected:
     ColumnPtr database_column;
     ColumnPtr table_column;
     ColumnPtr active_column;
+    ColumnPtr storage_uuid_column;
 
     size_t next_row;
     size_t rows;
 
-    using StoragesMap = std::map<std::pair<String, String>, StoragePtr>;
+    using StoragesMap = std::unordered_map<UUID, StoragePtr>;
     StoragesMap storages;
 
     bool needsLock = true;

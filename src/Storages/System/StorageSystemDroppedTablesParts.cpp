@@ -36,6 +36,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & que
     MutableColumnPtr table_column_mut = ColumnString::create();
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
+    MutableColumnPtr storage_uuid_column_mut = ColumnUUID::create();
 
     const auto access = context->getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
@@ -47,6 +48,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & que
         if (!storage)
             continue;
 
+        UUID storage_uuid = storage->getStorageID().uuid;
         String database_name = storage->getStorageID().getDatabaseName();
         String table_name = storage->getStorageID().getTableName();
         String engine_name = storage->getName();
@@ -63,7 +65,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & que
         if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
             continue;
 
-        storages[std::make_pair(database_name, table_name)] = storage;
+        storages[storage_uuid] = storage;
 
         /// Add all combinations of flag 'active'.
         for (UInt64 active : {0, 1})
@@ -72,6 +74,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & que
             table_column_mut->insert(table_name);
             engine_column_mut->insert(engine_name);
             active_column_mut->insert(active);
+            storage_uuid_column_mut->insert(storage_uuid);
         }
     }
 
@@ -79,6 +82,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & que
     block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
     block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
     block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(storage_uuid_column_mut), std::make_shared<DataTypeUUID>(), "uuid"));
 
     if (block_to_filter.rows())
     {
@@ -90,6 +94,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & que
     database_column = block_to_filter.getByName("database").column;
     table_column = block_to_filter.getByName("table").column;
     active_column = block_to_filter.getByName("active").column;
+    storage_uuid_column = block_to_filter.getByName("uuid").column;
 }
 
 
