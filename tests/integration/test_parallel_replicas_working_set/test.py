@@ -37,10 +37,12 @@ def create_tables(cluster, table_name, node_with_covering_part):
         f"""CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3')
             ORDER BY (key)"""
     )
-    # stop merges
+    # stop merges to keep original parts
+    # stop fetches to keep only parts created on the nodes
     for i in (0, 1, 2):
         if i != node_with_covering_part:
             nodes[i].query(f"system stop fetches {table_name}")
+            nodes[i].query(f"system stop merges {table_name}")
 
     # populate data, equal number of rows for each replica
     nodes[0].query(
