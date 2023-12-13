@@ -345,27 +345,6 @@ ColumnRawPtrs getRawPointers(const Columns & columns)
     return ptrs;
 }
 
-void convertToFullColumnsInplace(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        auto & col = block.getByPosition(i);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
-        col.type = recursiveRemoveLowCardinality(col.type);
-    }
-}
-
-void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type)
-{
-    for (const String & column_name : names)
-    {
-        auto & col = block.getByName(column_name);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
-        if (change_type)
-            col.type = recursiveRemoveLowCardinality(col.type);
-    }
-}
-
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys)
 {
     for (const auto & column_name : lowcard_keys)

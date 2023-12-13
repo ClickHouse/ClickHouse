@@ -558,7 +558,14 @@ TableJoin::createConvertingActions(
       */
     NameToNameMap left_column_rename;
     NameToNameMap right_column_rename;
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
+
+    /// FullSortingMerge and PartialMerge join algorithms doen't support joining keys with different types
+    /// (e.g. String and LowCardinality(String))
+    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE)
+                                  || isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE)
+                                  || isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE)
+                                  || isEnabledAlgorithm(JoinAlgorithm::AUTO);
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), require_strict_keys_match);
     if (!left_type_map.empty() || !right_type_map.empty())
     {
         left_dag = applyKeyConvertToTable(left_sample_columns, left_type_map, JoinTableSide::Left, left_column_rename);
