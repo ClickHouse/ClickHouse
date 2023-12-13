@@ -2154,34 +2154,20 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
             node_to_replace = &sort_node->getExpression();
 
         auto * constant_node = (*node_to_replace)->as<ConstantNode>();
-
-        if (!constant_node
-            || (constant_node->getValue().getType() != Field::Types::UInt64 && constant_node->getValue().getType() != Field::Types::Int64))
+        if (!constant_node || constant_node->getValue().getType() != Field::Types::UInt64)
             continue;
 
-        UInt64 pos;
-        if (constant_node->getValue().getType() == Field::Types::UInt64)
-        {
-            pos = constant_node->getValue().get<UInt64>();
-        }
-        else // Int64
-        {
-            auto value = constant_node->getValue().get<Int64>();
-            pos = value > 0 ? value : projection_nodes.size() + value + 1;
-        }
-
-
-        if (!pos || pos > projection_nodes.size())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+        UInt64 positional_argument_number = constant_node->getValue().get<UInt64>();
+        if (positional_argument_number == 0 || positional_argument_number > projection_nodes.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Positional argument number {} is out of bounds. Expected in range [1, {}]. In scope {}",
-                pos,
+                positional_argument_number,
                 projection_nodes.size(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        --pos;
-        *node_to_replace = projection_nodes[pos]->clone();
-        if (auto it = resolved_expressions.find(projection_nodes[pos]);
+        --positional_argument_number;
+        *node_to_replace = projection_nodes[positional_argument_number]->clone();
+        if (auto it = resolved_expressions.find(projection_nodes[positional_argument_number]);
             it != resolved_expressions.end())
         {
             resolved_expressions[*node_to_replace] = it->second;
