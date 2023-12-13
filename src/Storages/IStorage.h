@@ -13,7 +13,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
-#include <Storages/SubscriptionQueue.hpp>
+#include <Storages/SubscriptionQueue.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>

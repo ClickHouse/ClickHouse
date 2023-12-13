@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Storages/SubscriptionQueue.hpp>
+#include <Storages/SubscriptionQueue.h>
 
 namespace DB
 {

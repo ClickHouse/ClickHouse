@@ -2,7 +2,7 @@
 
 #include <Common/logger_useful.h>
 
-#include <Processors/SubscribersNotifierProcessor.hpp>
+#include <Processors/SubscribersNotifierProcessor.h>
 
 namespace DB
 {

@@ -4,7 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
-#include <Storages/SubscriptionQueue.hpp>
+#include <Storages/SubscriptionQueue.h>
 
 namespace DB
 {

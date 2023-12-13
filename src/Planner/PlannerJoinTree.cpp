@@ -2,7 +2,7 @@
 #include <Planner/PlannerJoinTree.h>
 
 #include <Common/scope_guard_safe.h>
-#include "Storages/SubscriptionQueue.hpp"
+#include <Storages/SubscriptionQueue.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 

@@ -4,7 +4,7 @@
 
 #include <Processors/Chunk.h>
 
-#include <Storages/SubscriptionQueue.hpp>
+#include <Storages/SubscriptionQueue.h>
 
 namespace DB
 {

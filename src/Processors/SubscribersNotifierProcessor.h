@@ -3,7 +3,7 @@
 #include <optional>
 
 #include <Processors/IProcessor.h>
-#include <Storages/SubscriptionQueue.hpp>
+#include <Storages/SubscriptionQueue.h>
 
 namespace DB
 {
