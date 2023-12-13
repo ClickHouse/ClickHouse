@@ -148,10 +148,11 @@ def test_parallel_replicas_over_distributed(
 
     # w/o parallel replicas
     assert (
-        node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
+        node.query(
+            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 0,
-           }
+            },
         )
         == expected_result
     )
