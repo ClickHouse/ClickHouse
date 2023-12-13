@@ -431,7 +431,8 @@ function test3()
     broken_projections_info test
 
     ${CLICKHOUSE_CLIENT} -nm --query "
-    backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}') settings check_projection_parts=false, backup_restore_keeper_fault_injection_probability=0.0;
+    set backup_restore_keeper_fault_injection_probability=0.0;
+    backup table ${CLICKHOUSE_DATABASE}.test to Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}') settings check_projection_parts=false;
     " | grep -o "BACKUP_CREATED"
 
     ${CLICKHOUSE_CLIENT} -nm --stacktrace --query "
