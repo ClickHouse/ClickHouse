@@ -53,7 +53,6 @@ namespace ErrorCodes
 {
     extern const int NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS;
     extern const int MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD;
-    extern const int NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD;
     extern const int DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD;
     extern const int PROTOBUF_FIELD_NOT_REPEATED;
     extern const int PROTOBUF_BAD_CAST;
@@ -140,7 +139,7 @@ namespace
             return false;
         if (google_wrappers_special_treatment && isGoogleWrapperField(field_descriptor))
             return false;
-        return field_descriptor.message_type() || (field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
+        return field_descriptor.message_type() || !field_descriptor.has_presence();
     }
 
     // Should we pack repeated values while storing them.
@@ -170,7 +169,7 @@ namespace
         }
         if (field_descriptor.options().has_packed())
             return field_descriptor.options().packed();
-        return field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3;
+        return field_descriptor.is_packed();
     }
 
     WriteBuffer & writeIndent(WriteBuffer & out, size_t size) { return out << String(size * 4, ' '); }
@@ -3442,19 +3441,6 @@ namespace
                             }
                         }
                     }
-                }
-            }
-
-            /// Check that we've found matching columns for all the required fields.
-            if ((message_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO2)
-                    && reader_or_writer.writer)
-            {
-                for (int i : collections::range(message_descriptor.field_count()))
-                {
-                    const auto & field_descriptor = *message_descriptor.field(i);
-                    if (field_descriptor.is_required() && !field_descriptors_in_use.count(&field_descriptor))
-                        throw Exception(ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD, "Field {} is required to be set",
-                            quoteString(field_descriptor.full_name()));
                 }
             }
 
