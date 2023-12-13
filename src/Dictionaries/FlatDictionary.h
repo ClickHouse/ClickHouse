@@ -82,11 +82,12 @@ public:
         const DataTypes & key_types,
         const ColumnPtr & default_values_column) const override;
 
-    ColumnPtr getColumnOrDefault(
+    ColumnPtr getColumnOrDefaultShortCircuit(
         const std::string & attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
-        const ColumnWithTypeAndName & default_argument) const override;
+        const ColumnWithTypeAndName & default_argument,
+        const DataTypePtr & result_type_short_circuit) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -170,6 +171,14 @@ private:
         const PaddedPODArray<UInt64> & keys,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        const PaddedPODArray<UInt64> & keys,
+        ValueSetter && set_value,
+        const ColumnWithTypeAndName & default_argument,
+        const DataTypePtr & result_type_short_circuit) const;
 
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);

@@ -491,10 +491,6 @@ public:
                     default_cols.emplace_back(result);
                 }
             }
-            else
-            {
-                default_cols.emplace_back(nullptr);
-            }
 
             ++current_arguments_index;
         }
@@ -601,7 +597,7 @@ public:
 
         auto result_column = executeDictionaryRequest(
             dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols,
-            arguments[current_arguments_index-1], collect_values_limit);
+            collect_values_limit, arguments[current_arguments_index-1], result_type);
 
         if (key_is_nullable)
             result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
@@ -618,8 +614,9 @@ private:
         const DataTypes & key_types,
         const DataTypePtr & result_type,
         const Columns & default_cols,
+        size_t collect_values_limit,
         const ColumnWithTypeAndName & last_argument,
-        size_t collect_values_limit) const
+        const DataTypePtr & result_type_short_circuit) const
     {
         ColumnPtr result;
 
@@ -633,11 +630,10 @@ private:
                 result_columns = dictionary->getColumnsAllValues(
                     attribute_names, result_tuple_type.getElements(), key_columns, key_types, default_cols, collect_values_limit);
             }
-            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault
-                     && default_cols.front() == nullptr)
+            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
             {
-                result_columns = dictionary->getColumnsOrDefault(
-                    attribute_names, result_tuple_type.getElements(), key_columns, last_argument);
+                result_columns = dictionary->getColumnsOrDefaultShortCircuit(
+                    attribute_names, result_tuple_type.getElements(), key_columns, last_argument, result_type_short_circuit);
             }
             else
             {
@@ -654,11 +650,10 @@ private:
                 result = dictionary->getColumnAllValues(
                     attribute_names[0], result_type, key_columns, key_types, default_cols.front(), collect_values_limit);
             }
-            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault
-                     && default_cols.front() == nullptr)
+            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
             {
-                result = dictionary->getColumnOrDefault(
-                    attribute_names[0], result_type, key_columns, last_argument);
+                result = dictionary->getColumnOrDefaultShortCircuit(
+                    attribute_names[0], result_type, key_columns, last_argument, result_type_short_circuit);
             }
             else
             {

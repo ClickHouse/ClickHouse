@@ -253,13 +253,14 @@ public:
     }
 
     /**
-     * Analogous to getColumn, but for dictGetOrDefault
-     */
-    virtual ColumnPtr getColumnOrDefault(
+      * Analogous to getColumn, but for dictGetOrDefault's short circuit case
+      */
+    virtual ColumnPtr getColumnOrDefaultShortCircuit(
         const std::string & attribute_name [[maybe_unused]],
         const DataTypePtr & result_type [[maybe_unused]],
         const Columns & key_columns [[maybe_unused]],
-        const ColumnWithTypeAndName & default_argument [[maybe_unused]]) const
+        const ColumnWithTypeAndName & default_argument [[maybe_unused]],
+        const DataTypePtr & result_type_short_circuit [[maybe_unused]]) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Method getColumnOrDefault is not supported for {} dictionary.",
@@ -271,11 +272,12 @@ public:
       * Default implementation just calls getColumnOrDefault multiple times.
       * Subclasses can provide custom more efficient implementation.
       */
-    virtual Columns getColumnsOrDefault(
+    virtual Columns getColumnsOrDefaultShortCircuit(
         const Strings & attribute_names,
         const DataTypes & result_types,
         const Columns & key_columns,
-        const ColumnWithTypeAndName & default_argument) const
+        const ColumnWithTypeAndName & default_argument,
+        const DataTypePtr & result_type_short_circuit) const
     {
         size_t attribute_names_size = attribute_names.size();
 
@@ -286,8 +288,8 @@ public:
         {
             const auto & attribute_name = attribute_names[i];
             const auto & result_type = result_types[i];
-            result.emplace_back(getColumnOrDefault(attribute_name, result_type,
-                                                   key_columns, default_argument));
+            result.emplace_back(getColumnOrDefaultShortCircuit(attribute_name,
+                result_type, key_columns, default_argument, result_type_short_circuit));
         }
 
         return result;
