@@ -11,7 +11,7 @@ namespace DB
 class SubscribersNotifierProcessor final : public IProcessor
 {
 public:
-    SubscribersNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue& queue);
+    SubscribersNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue & queue);
 
     String getName() const override { return "SubscribersNotifierProcessor"; }
 
@@ -22,7 +22,7 @@ private:
     InputPort & input;
     OutputPort & output;
 
-    SubscriptionQueue& subscription_queue;
+    SubscriptionQueue & subscription_queue;
     std::optional<Chunk> subscriber_chunk;
 };
 

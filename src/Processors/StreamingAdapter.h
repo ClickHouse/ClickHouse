@@ -1,9 +1,9 @@
 #pragma once
 
 #include <optional>
+#include <Core/SortDescription.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
-#include <Core/SortDescription.h>
 #include <Storages/SubscriptionQueue.hpp>
 
 namespace DB
@@ -21,7 +21,8 @@ public:
     int schedule() override;
 
 private:
-    enum class PortsDataState {
+    enum class PortsDataState
+    {
         ReadingFromStorage,
         ReadingFromSubscription,
         Finished,
@@ -38,9 +39,9 @@ private:
         PortsDataState state = PortsDataState::ReadingFromStorage;
     };
 
-    void updateState(PortsData& data);
-    Status prepareStoragePair(PortsData& data);
-    Status prepareSubscriptionPair(PortsData& data);
+    void updateState(PortsData & data);
+    Status prepareStoragePair(PortsData & data);
+    Status prepareSubscriptionPair(PortsData & data);
 
     SubscriberPtr subscriber;
     std::list<Chunk> subscriber_chunks;

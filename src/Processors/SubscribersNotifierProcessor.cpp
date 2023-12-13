@@ -7,7 +7,7 @@
 namespace DB
 {
 
-SubscribersNotifierProcessor::SubscribersNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue& queue)
+SubscribersNotifierProcessor::SubscribersNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue & queue)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , input(inputs.front())
     , output(outputs.front())
@@ -15,44 +15,47 @@ SubscribersNotifierProcessor::SubscribersNotifierProcessor(const Block & header_
 {
 }
 
-IProcessor::Status SubscribersNotifierProcessor::prepare() {
-  /// check ports are finished
-  if (output.isFinished() || input.isFinished())
-  {
-      input.close();
-      output.finish();
-      return Status::Finished;
-  }
+IProcessor::Status SubscribersNotifierProcessor::prepare()
+{
+    /// check ports are finished
+    if (output.isFinished() || input.isFinished())
+    {
+        input.close();
+        output.finish();
+        return Status::Finished;
+    }
 
-  /// check can push chunk
-  if (!output.canPush())
-  {
-      input.setNotNeeded();
-      return Status::PortFull;
-  }
+    /// check can push chunk
+    if (!output.canPush())
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
 
-  /// push already pushed to subscribers chunk
-  if (subscriber_chunk.has_value()) {
-    output.push(std::move(subscriber_chunk.value()));
-    subscriber_chunk = std::nullopt;
-  }
+    /// push already pushed to subscribers chunk
+    if (subscriber_chunk.has_value())
+    {
+        output.push(std::move(subscriber_chunk.value()));
+        subscriber_chunk = std::nullopt;
+    }
 
-  /// request next chunk
-  if (!input.hasData())
-  {
-      input.setNeeded();
-      return Status::NeedData;
-  }
+    /// request next chunk
+    if (!input.hasData())
+    {
+        input.setNeeded();
+        return Status::NeedData;
+    }
 
-  /// got new chunk, push it to subscribers
-  subscriber_chunk = input.pull(true);
+    /// got new chunk, push it to subscribers
+    subscriber_chunk = input.pull(true);
 
-  return Status::Ready;
+    return Status::Ready;
 }
 
-void SubscribersNotifierProcessor::work() {
-  chassert(subscriber_chunk.has_value());
-  subscription_queue.pushChunk(subscriber_chunk->clone());
+void SubscribersNotifierProcessor::work()
+{
+    chassert(subscriber_chunk.has_value());
+    subscription_queue.pushChunk(subscriber_chunk->clone());
 }
 
 }

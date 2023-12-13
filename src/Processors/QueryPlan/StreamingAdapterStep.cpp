@@ -8,8 +8,7 @@ namespace DB
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits
-    {
+    return ITransformingStep::Traits{
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
@@ -17,18 +16,17 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = true,
-        }
-    };
+        }};
 }
 
 StreamingAdapterStep::StreamingAdapterStep(const DataStream & input_stream, SubscriberPtr sub)
-    : ITransformingStep(input_stream, input_stream.header, getTraits())
-    , subscriber(std::move(sub)) {}
+    : ITransformingStep(input_stream, input_stream.header, getTraits()), subscriber(std::move(sub))
+{
+}
 
 void StreamingAdapterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto transform = std::make_shared<StreamingAdapter>(
-        pipeline.getHeader(), pipeline.getNumStreams(), subscriber);
+    auto transform = std::make_shared<StreamingAdapter>(pipeline.getHeader(), pipeline.getNumStreams(), subscriber);
 
     pipeline.addTransform(std::move(transform));
 }

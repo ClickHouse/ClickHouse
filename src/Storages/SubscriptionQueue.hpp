@@ -11,7 +11,8 @@
 namespace DB
 {
 
-class Subscriber {
+class Subscriber
+{
 public:
     void push(Chunk chunk);
     std::list<Chunk> extractAll();
@@ -30,7 +31,8 @@ using SubscriberPtr = std::shared_ptr<Subscriber>;
 
 // Structure for managing the subscriptions,
 // necessary for streaming requests to work
-class SubscriptionQueue {
+class SubscriptionQueue
+{
     void clean();
 
     // returns locked mutex
