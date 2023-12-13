@@ -1349,12 +1349,8 @@ bool StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
 
-    const auto & old_columns = metadata_snapshot->getColumns();
-
-    /// Replicated tables on different replicas must have exactly same column definitions
-    /// We cannot compare column descriptions with `==` here because data types like SimpleAggregateFunction
-    /// may have different aggregate function in 1st argument but still compatible if 2nd argument is same.
-    if (columns_from_zk.identical(old_columns))
+    const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
+    if (columns_from_zk == old_columns)
         return true;
 
     if (!strict_check && metadata_stat.version != 0)
@@ -1382,7 +1378,6 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
-
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 }
@@ -1873,7 +1868,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             }
         }
 
-        throw zkutil::KeeperException(e);
+        throw zkutil::KeeperMultiException(e, ops, responses);
     }
 }
 
@@ -5343,7 +5338,7 @@ void StorageReplicatedMergeTree::read(
         return readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 
     if (local_context->canUseParallelReplicasOnInitiator())
-        return readParallelReplicasImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+        return readParallelReplicasImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage);
 
     readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
@@ -5372,18 +5367,11 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    QueryProcessingStage::Enum processed_stage)
 {
-    auto table_id = getStorageID();
-
-    auto scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
-    String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
-    auto parallel_replicas_cluster = local_context->getCluster(cluster_for_parallel_replicas);
-
     ASTPtr modified_query_ast;
     Block header;
+
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
         auto modified_query_tree = buildQueryTreeForShard(query_info, query_info.query_tree);
@@ -5394,6 +5382,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
     }
     else
     {
+        const auto table_id = getStorageID();
         modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
             table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
         header
@@ -5412,8 +5401,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
         select_stream_factory,
         modified_query_ast,
         local_context,
-        query_info.storage_limits,
-        parallel_replicas_cluster);
+        query_info.storage_limits);
 }
 
 void StorageReplicatedMergeTree::readLocalImpl(

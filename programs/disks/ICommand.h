@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/IDisk.h>
+#include <Disks/DiskSelector.h>
 
 #include <boost/program_options.hpp>
 
@@ -25,7 +26,7 @@ public:
 
     virtual void execute(
         const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
+        std::shared_ptr<DiskSelector> & disk_selector,
         Poco::Util::LayeredConfiguration & config) = 0;
 
     const std::optional<ProgramOptionsDescription> & getCommandOptions() const { return command_option_description; }
