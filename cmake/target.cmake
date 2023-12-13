@@ -73,8 +73,3 @@ if (CMAKE_CROSSCOMPILING)
 
     message (STATUS "Cross-compiling for target: ${CMAKE_CXX_COMPILE_TARGET}")
 endif ()
-
-if (USE_MUSL)
-    # Does not work for unknown reason
-    set (ENABLE_RUST OFF CACHE INTERNAL "")
-endif ()

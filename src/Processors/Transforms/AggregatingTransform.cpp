@@ -123,7 +123,10 @@ protected:
         UInt32 bucket_num = shared_data->next_bucket_to_merge.fetch_add(1);
 
         if (bucket_num >= NUM_BUCKETS)
+        {
+            data.reset();
             return {};
+        }
 
         Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
         Chunk chunk = convertToChunk(block);
@@ -169,6 +172,8 @@ protected:
             single_level_converted = true;
             return convertToChunk(block);
         }
+
+        variant.reset();
 
         return {};
     }
@@ -400,26 +405,28 @@ private:
             }
         }
 
-        if (!shared_data->is_bucket_processed[current_bucket_num])
-            return Status::NeedData;
-
-        if (!two_level_chunks[current_bucket_num])
-            return Status::NeedData;
-
-        auto chunk = std::move(two_level_chunks[current_bucket_num]);
-        const auto has_rows = chunk.hasRows();
-        if (has_rows)
-            output.push(std::move(chunk));
-
-        ++current_bucket_num;
-        if (current_bucket_num == NUM_BUCKETS)
+        while (current_bucket_num < NUM_BUCKETS)
         {
-            output.finish();
-            /// Do not close inputs, they must be finished.
-            return Status::Finished;
+            if (!shared_data->is_bucket_processed[current_bucket_num])
+                return Status::NeedData;
+
+            if (!two_level_chunks[current_bucket_num])
+                return Status::NeedData;
+
+            auto chunk = std::move(two_level_chunks[current_bucket_num]);
+            ++current_bucket_num;
+
+            const auto has_rows = chunk.hasRows();
+            if (has_rows)
+            {
+                output.push(std::move(chunk));
+                return Status::PortFull;
+            }
         }
 
-        return has_rows ? Status::PortFull : Status::Ready;
+        output.finish();
+        /// Do not close inputs, they must be finished.
+        return Status::Finished;
     }
 
     AggregatingTransformParamsPtr params;
@@ -489,6 +496,7 @@ private:
             single_level_chunks.emplace_back(convertToChunk(block));
 
         finished = true;
+        data.reset();
     }
 
     void createSources()
@@ -504,6 +512,8 @@ private:
 
             processors.emplace_back(std::move(source));
         }
+
+        data.reset();
     }
 };
 
@@ -710,7 +720,12 @@ void AggregatingTransform::initGenerate()
     }
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
+    {
+        /// Note: we reset aggregation state here to release memory earlier.
+        /// It might cause extra memory usage for complex queries othervise.
+        many_data.reset();
         return;
+    }
 
     if (!params->aggregator.hasTemporaryData())
     {
@@ -807,6 +822,8 @@ void AggregatingTransform::initGenerate()
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
+
+    many_data.reset();
 }
 
 }

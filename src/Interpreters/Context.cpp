@@ -153,6 +153,9 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderForegroundThreadsActive;
     extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
+    extern const Metric AttachedTable;
+    extern const Metric AttachedDatabase;
+    extern const Metric PartsActive;
 }
 
 
@@ -344,6 +347,9 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     /// No lock required for format_schema_path modified only during initialization
+    std::atomic_size_t max_database_num_to_warn = 1000lu;
+    std::atomic_size_t max_table_num_to_warn = 5000lu;
+    std::atomic_size_t max_part_num_to_warn = 100000lu;
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
@@ -875,6 +881,12 @@ Strings Context::getWarnings() const
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
+        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<DB::Int64>(shared->max_table_num_to_warn))
+            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
+        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<DB::Int64>(shared->max_database_num_to_warn))
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_table_num_to_warn));
+        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<DB::Int64>(shared->max_part_num_to_warn))
+            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
     std::set<String> obsolete_settings;
@@ -3423,6 +3435,24 @@ UInt16 Context::getServerPort(const String & port_name) const
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
     else
         return it->second;
+}
+
+void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_part_num_to_warn = max_part_to_warn;
+}
+
+void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_table_num_to_warn= max_table_to_warn;
+}
+
+void Context::setMaxDatabaseNumToWarn(size_t max_database_to_warn)
+{
+    SharedLockGuard lock(shared->mutex);
+    shared->max_database_num_to_warn= max_database_to_warn;
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
