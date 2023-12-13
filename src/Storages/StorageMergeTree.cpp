@@ -211,17 +211,12 @@ void StorageMergeTree::read(
 {
     if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
     {
-        auto table_id = getStorageID();
-
+        const auto table_id = getStorageID();
         const auto & modified_query_ast =  ClusterProxy::rewriteSelectQuery(
             local_context, query_info.query,
             table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
 
-        String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
-        auto cluster = local_context->getCluster(cluster_for_parallel_replicas);
-
         Block header;
-
         if (local_context->getSettingsRef().allow_experimental_analyzer)
             header = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
         else
@@ -240,17 +235,22 @@ void StorageMergeTree::read(
             select_stream_factory,
             modified_query_ast,
             local_context,
-            query_info.storage_limits,
-            cluster);
+            query_info.storage_limits);
     }
     else
     {
         const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
 
         if (auto plan = reader.read(
-            column_names, storage_snapshot, query_info,
-            local_context, max_block_size, num_streams,
-            processed_stage, nullptr, enable_parallel_reading))
+                column_names,
+                storage_snapshot,
+                query_info,
+                local_context,
+                max_block_size,
+                num_streams,
+                processed_stage,
+                nullptr,
+                enable_parallel_reading))
             query_plan = std::move(*plan);
     }
 }
