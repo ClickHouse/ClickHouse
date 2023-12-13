@@ -1,5 +1,8 @@
 #!/bin/bash
 
+SCRIPT_PID=$!
+(sleep 1200 && kill -9 $SCRIPT_PID) &
+
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
 
