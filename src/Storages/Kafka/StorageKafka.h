@@ -9,6 +9,7 @@
 
 #include <Poco/Semaphore.h>
 
+#include <condition_variable>
 #include <mutex>
 #include <list>
 #include <atomic>
@@ -102,7 +103,6 @@ private:
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
     Poco::Logger * log;
-    Poco::Semaphore semaphore;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 
@@ -112,6 +112,7 @@ private:
     std::vector<KafkaConsumerWeakPtr> all_consumers; /// busy (belong to a KafkaSource) and vacant consumers
 
     std::mutex mutex;
+    std::condition_variable cv;
 
     // Stream thread
     struct TaskContext
@@ -157,6 +158,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
+    void cleanConsumers();
 };
 
 }
