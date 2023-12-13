@@ -59,6 +59,8 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
         }
     }
 
+    updateKeeperMemorySoftLimit(config);
+
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
@@ -373,6 +375,12 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
     }
 
     feature_flags.logFlags(&Poco::Logger::get("KeeperContext"));
+}
+
+void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
+        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
 }
 
 }

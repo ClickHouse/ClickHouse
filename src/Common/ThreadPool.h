@@ -109,6 +109,8 @@ public:
     void addOnDestroyCallback(OnDestroyCallback && callback);
 
 private:
+    friend class GlobalThreadPool;
+
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
@@ -205,6 +207,7 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 public:
     static void initialize(size_t max_threads = 10000, size_t max_free_threads = 1000, size_t queue_size = 10000);
     static GlobalThreadPool & instance();
+    static void shutdown();
 };
 
 
