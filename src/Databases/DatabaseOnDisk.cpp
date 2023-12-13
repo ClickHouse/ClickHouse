@@ -115,7 +115,8 @@ std::pair<String, StoragePtr> createTableFromAST(
             context->getGlobalContext(),
             columns,
             constraints,
-            force_restore)
+            force_restore,
+            false)
     };
 }
 

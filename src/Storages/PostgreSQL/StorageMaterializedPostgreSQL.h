@@ -63,6 +63,9 @@ namespace DB
 class StorageMaterializedPostgreSQL final : public IStorage, WithContext
 {
 public:
+    static constexpr auto NESTED_TABLE_SUFFIX = "_nested";
+    static constexpr auto TMP_SUFFIX = "_tmp";
+
     StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
                                 const String & postgres_database_name, const String & postgres_table_name);
 
@@ -72,6 +75,7 @@ public:
     StorageMaterializedPostgreSQL(
         const StorageID & table_id_,
         bool is_attach_,
+        bool is_restore_,
         const String & remote_database_name,
         const String & remote_table_name,
         const postgres::ConnectionInfo & connection_info,
@@ -99,6 +103,10 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    void backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &) override;
+
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_

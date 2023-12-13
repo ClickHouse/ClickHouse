@@ -47,14 +47,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static const auto NESTED_TABLE_SUFFIX = "_nested";
-static const auto TMP_SUFFIX = "_tmp";
-
 
 /// For the case of single storage.
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     const StorageID & table_id_,
     bool is_attach_,
+    bool is_restore_,
     const String & remote_database_name,
     const String & remote_table_name_,
     const postgres::ConnectionInfo & connection_info,
@@ -85,12 +83,12 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             toString(table_id_.uuid),
             connection_info,
             getContext(),
-            is_attach,
+            is_attach || is_restore_,
             *replication_settings,
             /* is_materialized_postgresql_database */false);
 
     replication_handler->addStorage(remote_table_name, this);
-    replication_handler->startup(/* delayed */is_attach);
+    replication_handler->startup(/* delayed */is_attach || is_restore_);
 }
 
 
@@ -231,13 +229,28 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 }
 
 
-void StorageMaterializedPostgreSQL::shutdown(bool)
+void StorageMaterializedPostgreSQL::shutdown(bool is_drop)
 {
     if (replication_handler)
-        replication_handler->shutdown();
+    {
+        if (is_drop)
+        {
+            bool drop_replication;
+            if (auto context = CurrentThread::getQueryContext())
+                drop_replication = context->getSettingsRef().materialized_postgresql_drop_replication_on_drop_table;
+            else
+                drop_replication = Context::getGlobalContextInstance()->getSettingsRef().materialized_postgresql_drop_replication_on_drop_table;
+
+            LOG_DEBUG(log, "KSSENII CHECK 2 {}", drop_replication);
+            replication_handler->shutdownFinal(drop_replication);
+        }
+        else
+            replication_handler->shutdown();
+    }
     auto nested = tryGetNested();
     if (nested)
         nested->shutdown();
+
 }
 
 
@@ -247,9 +260,6 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
     /// internal tables is managed there.
     if (is_materialized_postgresql_database)
         return;
-
-    replication_handler->shutdownFinal();
-    replication_handler.reset();
 
     auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
@@ -567,6 +577,24 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     return create_table_query;
 }
 
+void StorageMaterializedPostgreSQL::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (is_materialized_postgresql_database)
+        return;
+
+    auto table = getNested();
+    table->backupData(backup_entries_collector, data_path_in_backup, partitions);
+}
+
+void StorageMaterializedPostgreSQL::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (is_materialized_postgresql_database)
+        return;
+
+    createNestedIfNeeded(nullptr, nullptr);
+    auto table = getNested();
+    table->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+}
 
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
@@ -603,7 +631,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.attach, configuration.database, configuration.table, connection_info,
+                args.table_id, args.attach, args.backup_restore, configuration.database, configuration.table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };

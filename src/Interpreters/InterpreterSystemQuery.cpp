@@ -766,7 +766,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         system_context->getGlobalContext(),
         columns,
         constraints,
-        false);
+        false, false);
 
     database->attachTable(system_context, replica.table_name, table, data_path);
 

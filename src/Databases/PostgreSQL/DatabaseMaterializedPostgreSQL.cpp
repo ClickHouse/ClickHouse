@@ -458,7 +458,10 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 {
     std::lock_guard lock(handler_mutex);
     if (replication_handler)
-        replication_handler->shutdownFinal();
+    {
+        bool drop_replication = local_context->getSettingsRef().materialized_postgresql_drop_replication_on_drop_table;
+        replication_handler->shutdownFinal(drop_replication);
+    }
 
     DatabaseAtomic::drop(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
 }
@@ -469,6 +472,52 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
 {
     /// Modify context into nested_context and pass query to Atomic database.
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
+}
+
+std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMaterializedPostgreSQL::getTablesForBackup(
+    const FilterByNameFunction & filter,
+    const ContextPtr & local_context) const
+{
+    std::vector<std::pair<ASTPtr, StoragePtr>> res;
+
+    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
+    {
+        auto storage = it->table();
+        if (!storage)
+            continue; /// Probably the table has been just dropped.
+
+        auto create_table_query = tryGetCreateTableQuery(it->name(), StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
+        if (!create_table_query)
+        {
+            LOG_WARNING(log, "Couldn't get a create query for table {}.{}",
+                        backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+            continue;
+        }
+
+        auto * create = create_table_query->as<ASTCreateQuery>();
+        if (create->getTable() != it->name())
+        {
+            /// Probably the database has been just renamed. Use the older name for backup to keep the backup consistent.
+            LOG_WARNING(log, "Got a create query with unexpected name {} for table {}.{}",
+                        backQuoteIfNeed(create->getTable()), backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+            create_table_query = create_table_query->clone();
+            create = create_table_query->as<ASTCreateQuery>();
+            create->setTable(it->name());
+        }
+
+        storage->adjustCreateQueryForBackup(create_table_query);
+        res.emplace_back(create_table_query, storage);
+    }
+
+    return res;
+}
+
+void createTableRestoredFromBackup(
+    const ASTPtr & create_table_query,
+    ContextMutablePtr local_context,
+    std::shared_ptr<IRestoreCoordination> restore_coordination,
+    UInt64 timeout_ms)
+{
 }
 
 }
