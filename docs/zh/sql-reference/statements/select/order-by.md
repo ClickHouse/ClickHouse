@@ -61,6 +61,22 @@ sidebar_label: ORDER BY
 
 我们只建议使用 `COLLATE` 对于少量行的最终排序，因为排序与 `COLLATE` 比正常的按字节排序效率低。
 
+## ORDER BY ALL
+
+`ORDER BY ALL` 对所有选定的列进行升序排序。
+
+示例:
+
+``` sql
+SELECT a, b, c FROM t ORDER BY ALL
+```
+
+等同于：
+
+``` sql
+SELECT a, b, c FROM t ORDER BY a, b, c
+```
+
 ## 实现细节 {#implementation-details}
 
 更少的RAM使用，如果一个足够小 [LIMIT](../../../sql-reference/statements/select/limit.md) 除了指定 `ORDER BY`. 否则，所花费的内存量与用于排序的数据量成正比。 对于分布式查询处理，如果 [GROUP BY](../../../sql-reference/statements/select/group-by.md) 省略排序，在远程服务器上部分完成排序，并将结果合并到请求者服务器上。 这意味着对于分布式排序，要排序的数据量可以大于单个服务器上的内存量。

@@ -268,23 +268,30 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
-        if (!order_list.parse(pos, order_expression_list, expected))
-            return false;
-
-        /// if any WITH FILL parse possible INTERPOLATE list
-        if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
-                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+        if (s_all.ignore(pos, expected))
         {
-            if (s_interpolate.ignore(pos, expected))
+            select_query->order_by_all = true;
+        }
+        else
+        {
+            if (!order_list.parse(pos, order_expression_list, expected))
+                return false;
+
+            /// if any WITH FILL parse possible INTERPOLATE list
+            if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
+                            [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
             {
-                if (open_bracket.ignore(pos, expected))
+                if (s_interpolate.ignore(pos, expected))
                 {
-                    if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
-                        return false;
-                    if (!close_bracket.ignore(pos, expected))
-                        return false;
-                } else
-                    interpolate_expression_list = std::make_shared<ASTExpressionList>();
+                    if (open_bracket.ignore(pos, expected))
+                    {
+                        if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                            return false;
+                        if (!close_bracket.ignore(pos, expected))
+                            return false;
+                    } else
+                        interpolate_expression_list = std::make_shared<ASTExpressionList>();
+                }
             }
         }
     }

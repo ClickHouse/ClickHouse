@@ -776,6 +776,22 @@ void expandGroupByAll(ASTSelectQuery * select_query)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
 }
 
+void expandOrderByAll(ASTSelectQuery * select_query)
+{
+    auto order_expression_list = std::make_shared<ASTExpressionList>();
+
+    for (const auto & expr : select_query->select()->children)
+    {
+        auto elem = std::make_shared<ASTOrderByElement>();
+        elem->direction = 1;
+        elem->nulls_direction = 1;
+        elem->children.push_back(expr);
+        order_expression_list->children.push_back(elem);
+    }
+
+    select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_expression_list);
+}
+
 ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -1291,6 +1307,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     // expand GROUP BY ALL
     if (select_query->group_by_all)
         expandGroupByAll(select_query);
+
+    // expand ORDER BY ALL
+    if (select_query->order_by_all)
+        expandOrderByAll(select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.

@@ -241,6 +241,22 @@ Result:
 └───┴─────────┘
 ```
 
+## ORDER BY ALL
+
+`ORDER BY ALL` is sorts all selected columns in ascending order.
+
+For example:
+
+``` sql
+SELECT a, b, c FROM t ORDER BY ALL
+```
+
+is the same as
+
+``` sql
+SELECT a, b, c FROM t ORDER BY a, b, c
+```
+
 ## Implementation Details
 
 Less RAM is used if a small enough [LIMIT](../../../sql-reference/statements/select/limit.md) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if [GROUP BY](../../../sql-reference/statements/select/group-by.md) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
