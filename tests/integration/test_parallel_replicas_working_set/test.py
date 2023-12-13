@@ -102,8 +102,12 @@ def test_covering_part_in_announcement(start_cluster, node_with_covering_part):
     table_name = "test_table"
     create_tables(cluster, table_name, node_with_covering_part)
 
+    # query result can be one of the following outcomes
+    # (1) query result if parallel replicas working set contains all_0_5_1
     expected_full_result = "60\t0\t59\t1770\n"
     expected_results = {expected_full_result}
+
+    # (2) query result if parallel replicas working set DOESN'T contain all_0_5_1
     if node_with_covering_part == 0:
         expected_results.add("40\t20\t59\t1580\n")
     if node_with_covering_part == 1:
