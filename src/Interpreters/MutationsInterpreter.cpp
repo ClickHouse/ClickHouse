@@ -269,9 +269,9 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
         std::make_shared<ASTLiteral>(Field(0)));
 
     if (command.predicate)
-        alter_command->predicate = makeASTFunction("and", row_exists_predicate, command.predicate);
-    else
-        alter_command->predicate = row_exists_predicate;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutation command APPLY DELETED MASK does not support WHERE clause");
+
+    alter_command->predicate = row_exists_predicate;
 
     auto mutation_command = MutationCommand::parse(alter_command.get());
     if (!mutation_command)
