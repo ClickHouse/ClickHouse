@@ -833,7 +833,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
 
-                if (table_expression_query_info.isStream()) {
+                if (table_expression_query_info.isStream() && query_context->getSettingsRef().allow_experimental_streaming) {
                     if (!query_plan.isInitialized()) {
                         /// Create step which reads from empty source if storage has no data.
                         addReadFromNullSourceStep(query_plan, storage_snapshot, table_expression_data);
