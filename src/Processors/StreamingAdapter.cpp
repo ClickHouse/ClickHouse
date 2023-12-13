@@ -1,8 +1,9 @@
-#include <cstddef>
+#include <ranges>
+
+#include <Common/logger_useful.h>
+
 #include <Processors/StreamingAdapter.h>
-#include "Interpreters/Context.h"
-#include "Processors/Port.h"
-#include "base/defines.h"
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 
 namespace DB
 {
@@ -13,18 +14,9 @@ StreamingAdapter::StreamingAdapter(const Block & header_, size_t num_streams, Su
 {
     ports_data.resize(num_streams);
 
-    size_t cur_stream = 0;
-    for (auto & input : inputs)
-    {
-        ports_data[cur_stream].input_port = &input;
-        ++cur_stream;
-    }
-
-    cur_stream = 0;
-    for (auto & output : outputs)
-    {
-        ports_data[cur_stream].output_port = &output;
-        ++cur_stream;
+    for (const auto [data, input, output] : std::views::zip(ports_data, inputs, outputs)) {
+      data.input_port = &input;
+      data.output_port = &output;
     }
 }
 
@@ -186,8 +178,10 @@ IProcessor::Status StreamingAdapter::prepareSubscriptionPair(PortsData& data) {
 }
 
 void StreamingAdapter::work() {
-  auto new_chunks = subscriber->extractAll();
-  subscriber_chunks.splice(subscriber_chunks.end(), new_chunks);
+  if (subscriber_chunks.empty()) {
+    auto new_chunks = subscriber->extractAll();
+    subscriber_chunks.splice(subscriber_chunks.end(), new_chunks);
+  }
 
   LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "processing subscriber chunks, count: {}", subscriber_chunks.size());
 

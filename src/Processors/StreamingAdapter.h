@@ -12,16 +12,13 @@ namespace DB
 class StreamingAdapter final : public IProcessor
 {
 public:
-    StreamingAdapter(const Block & header_, size_t num_streams, SubscriberPtr subscriber);
+    StreamingAdapter(const Block & header_, size_t num_streams, SubscriberPtr sub);
 
     String getName() const override { return "StreamingAdapter"; }
 
     Status prepare() override;
     void work() override;
     int schedule() override;
-
-    // InputPort & getInputPort() { return inputs.front(); }
-    // OutputPort & getOutputPort() { return outputs.front(); }
 
 private:
     enum class PortsDataState {
