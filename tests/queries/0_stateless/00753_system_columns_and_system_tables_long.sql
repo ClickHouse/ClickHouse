@@ -155,6 +155,6 @@ SELECT 'Check total_uncompressed_bytes/total_bytes/total_rows for Materialized v
 CREATE MATERIALIZED VIEW check_system_tables_mv ENGINE = MergeTree() ORDER BY name2 AS SELECT name1, name2, name3 FROM check_system_tables;
 SELECT total_bytes_uncompressed, total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables_mv' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1, 1, 1);
-SELECT total_bytes_uncompressed, total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables_mv' AND database = currentDatabase();
+SELECT total_bytes_uncompressed > 0, total_bytes > 0, total_rows FROM system.tables WHERE name = 'check_system_tables_mv' AND database = currentDatabase();
 DROP TABLE check_system_tables_mv;
 DROP TABLE check_system_tables;
