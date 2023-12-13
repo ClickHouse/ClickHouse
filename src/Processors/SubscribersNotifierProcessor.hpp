@@ -8,12 +8,12 @@
 namespace DB
 {
 
-class SubscriberNotifierProcessor final : public IProcessor
+class SubscribersNotifierProcessor final : public IProcessor
 {
 public:
-    SubscriberNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue& queue);
+    SubscribersNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue& queue);
 
-    String getName() const override { return "SubscriberNotifierProcessor"; }
+    String getName() const override { return "SubscribersNotifierProcessor"; }
 
     Status prepare() override;
     void work() override;

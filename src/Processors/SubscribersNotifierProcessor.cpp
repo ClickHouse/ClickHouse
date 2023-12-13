@@ -2,12 +2,12 @@
 
 #include <Common/logger_useful.h>
 
-#include <Processors/SubscriberNotifierProcessor.hpp>
+#include <Processors/SubscribersNotifierProcessor.hpp>
 
 namespace DB
 {
 
-SubscriberNotifierProcessor::SubscriberNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue& queue)
+SubscribersNotifierProcessor::SubscribersNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue& queue)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , input(inputs.front())
     , output(outputs.front())
@@ -15,7 +15,7 @@ SubscriberNotifierProcessor::SubscriberNotifierProcessor(const Block & header_, 
 {
 }
 
-IProcessor::Status SubscriberNotifierProcessor::prepare() {
+IProcessor::Status SubscribersNotifierProcessor::prepare() {
   /// check ports are finished
   if (output.isFinished() || input.isFinished())
   {
@@ -50,7 +50,7 @@ IProcessor::Status SubscriberNotifierProcessor::prepare() {
   return Status::Ready;
 }
 
-void SubscriberNotifierProcessor::work() {
+void SubscribersNotifierProcessor::work() {
   chassert(subscriber_chunk.has_value());
   subscription_queue.pushChunk(subscriber_chunk->clone());
 }
