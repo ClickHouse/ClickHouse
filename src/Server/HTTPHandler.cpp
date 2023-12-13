@@ -553,36 +553,12 @@ void HTTPHandler::processQuery(
     HTMLForm & params,
     HTTPServerResponse & response,
     Output & used_output,
-    std::optional<CurrentThread::QueryScope> & query_scope)
+    std::optional<CurrentThread::QueryScope> & query_scope,
+    ContextMutablePtr & context,
+    QueryStatusPtr & query_status)
 {
     using namespace Poco::Net;
-
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
-
-    if (!authenticateUser(request, params, response))
-        return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
-
-    /// The user could specify session identifier and session timeout.
-    /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
-    String session_id;
-    std::chrono::steady_clock::duration session_timeout;
-    bool session_is_set = params.has("session_id");
     const auto & config = server.config();
-
-    if (session_is_set)
-    {
-        session_id = params.get("session_id");
-        session_timeout = parseSessionTimeout(config, params);
-        std::string session_check = params.get("session_check", "");
-        session->makeSessionContext(session_id, session_timeout, session_check == "1");
-    }
-    else
-    {
-        /// We should create it even if we don't have a session_id
-        session->makeSessionContext();
-    }
-
-    auto context = session->makeQueryContext();
 
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
@@ -885,6 +861,7 @@ void HTTPHandler::processQuery(
         *used_output.out_maybe_delayed_and_compressed,
         /* allow_into_outfile = */ false,
         context,
+        query_status,
         set_query_result,
         QueryFlags{},
         {},
@@ -901,15 +878,23 @@ void HTTPHandler::processQuery(
 }
 
 void HTTPHandler::trySendExceptionToClient(
-    const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+    const std::string & s,
+    int exception_code,
+    bool exception_retryable,
+    HTTPServerRequest & request,
+    HTTPServerResponse & response,
+    Output & used_output)
 try
 {
     /// In case data has already been sent, like progress headers, try using the output buffer to
     /// set the exception code since it will be able to append it if it hasn't finished writing headers
     if (response.sent() && used_output.out)
-        used_output.out->setExceptionCode(exception_code);
+        used_output.out->setExceptionCode(exception_code, exception_retryable);
     else
+    {
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+        response.set("X-ClickHouse-Exception-Retryable", toString<int>(exception_retryable));
+    }
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
 
@@ -1001,6 +986,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     std::optional<CurrentThread::QueryScope> query_scope;
 
     Output used_output;
+    ContextMutablePtr query_context = nullptr;
+    QueryStatusPtr query_status; /// Make sure it leaves until we finish processing the query
 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
@@ -1061,7 +1048,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(default_settings, request);
-        with_stacktrace = params.getParsed<bool>("stacktrace", false);
         close_session = params.getParsed<bool>("close_session", false);
         if (close_session)
             session_id = params.get("session_id");
@@ -1075,7 +1061,33 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
                             "is no Content-Length header for POST request");
         }
 
-        processQuery(request, params, response, used_output, query_scope);
+        LOG_TRACE(log, "Request URI: {}", request.getURI());
+
+        if (authenticateUser(request, params, response))
+        {
+            /// The user could specify session identifier and session timeout.
+            /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+            std::chrono::steady_clock::duration session_timeout;
+            bool session_is_set = params.has("session_id");
+            const auto & config = server.config();
+
+            if (session_is_set)
+            {
+                session_id = params.get("session_id");
+                session_timeout = parseSessionTimeout(config, params);
+                std::string session_check = params.get("session_check", "");
+                session->makeSessionContext(session_id, session_timeout, session_check == "1");
+            }
+            else
+            {
+                /// We should create it even if we don't have a session_id
+                session->makeSessionContext();
+            }
+
+            query_context = session->makeQueryContext();
+            processQuery(request, params, response, used_output, query_scope, query_context, query_status);
+        }
+
         if (request_credentials)
             LOG_DEBUG(log, "Authentication in progress...");
         else
@@ -1105,7 +1117,12 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
           * If exception is thrown on local server, then stack trace is in separate field.
           */
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-        trySendExceptionToClient(status.message, status.code, request, response, used_output);
+        bool is_retryable = false;
+        if (query_context)
+            is_retryable = query_context->isExceptionCodeRetryable(status.code);
+        else
+            LOG_WARNING(log, "No context");
+        trySendExceptionToClient(status.message, status.code, is_retryable, request, response, used_output);
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);

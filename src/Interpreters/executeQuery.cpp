@@ -647,6 +647,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
     ContextMutablePtr context,
+    QueryStatusPtr & query_status,
     QueryFlags flags,
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
@@ -874,6 +875,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, ast.get(), context, start_watch.getStart());
+            query_status = process_list_entry->getQueryStatus();
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
@@ -1284,7 +1286,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
-    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);
+    QueryStatusPtr query_status;
+    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, query_status, flags, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -1304,6 +1307,7 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     ContextMutablePtr context,
+    QueryStatusPtr & query_status,
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
@@ -1394,7 +1398,7 @@ void executeQuery(
 
     try
     {
-        std::tie(ast, streams) = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr);
+        std::tie(ast, streams) = executeQueryImpl(begin, end, context, query_status, flags, QueryProcessingStage::Complete, &istr);
     }
     catch (...)
     {

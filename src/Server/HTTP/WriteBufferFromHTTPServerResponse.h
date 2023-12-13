@@ -75,7 +75,11 @@ public:
         send_progress_interval_ms = send_progress_interval_ms_;
     }
 
-    void setExceptionCode(int exception_code_) { exception_code = exception_code_; }
+    void setExceptionCode(int code, bool is_retryable)
+    {
+        exception_code = code;
+        exception_retryable = is_retryable;
+    }
 
 private:
     /// Send at least HTTP headers if no data has been sent yet.
@@ -127,6 +131,7 @@ private:
     Stopwatch progress_watch;
 
     int exception_code = 0;
+    bool exception_retryable = false;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

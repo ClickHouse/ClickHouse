@@ -491,7 +491,15 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
 
-        executeQuery(istr, ostr, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
+        QueryStatusPtr query_status;
+        executeQuery(
+            istr,
+            ostr,
+            !task.is_initial_query,
+            query_context,
+            query_status,
+            {},
+            QueryFlags{.internal = false, .distributed_backup_restore = task.entry.is_backup_restore});
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {

@@ -179,6 +179,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int NO_ZOOKEEPER;
+    extern const int UNEXPECTED_ZOOKEEPER_ERROR;
+    extern const int TABLE_IS_READ_ONLY;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int UNKNOWN_STATUS_OF_INSERT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -5067,4 +5073,35 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
+bool Context::isExceptionCodeRetryable(int error_code) const
+{
+    auto const process_list_element = getProcessListElement();
+
+    if (error_code == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
+        return true;
+
+    auto info = process_list_element->getInfo(false /* get_thread_list */, true /* get_profile_events */, false /* get_settings */);
+
+    /// This should evolve to accept more cases
+    if (info.query_kind == IAST::QueryKind::Select)
+        return true;
+
+    if (info.query_kind == IAST::QueryKind::Insert)
+    {
+        auto const & settings = getSettingsRef();
+        if (!settings.log_profile_events)
+            return false;
+
+        std::unordered_set retryable_insert_errors
+            = {ErrorCodes::NO_ZOOKEEPER,
+               ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+               ErrorCodes::TABLE_IS_READ_ONLY,
+               ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+               ErrorCodes::TIMEOUT_EXCEEDED};
+
+        return retryable_insert_errors.contains(error_code) && info.written_rows == 0;
+    }
+
+    return false;
+}
 }

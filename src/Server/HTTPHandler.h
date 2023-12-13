@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -31,6 +32,8 @@ class Credentials;
 class IServer;
 struct Settings;
 class WriteBufferFromHTTPServerResponse;
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
@@ -135,11 +138,14 @@ private:
         HTMLForm & params,
         HTTPServerResponse & response,
         Output & used_output,
-        std::optional<CurrentThread::QueryScope> & query_scope);
+        std::optional<CurrentThread::QueryScope> & query_scope,
+        ContextMutablePtr & query_context,
+        QueryStatusPtr & query_status);
 
     void trySendExceptionToClient(
         const std::string & s,
         int exception_code,
+        bool exception_retryable,
         HTTPServerRequest & request,
         HTTPServerResponse & response,
         Output & used_output);
