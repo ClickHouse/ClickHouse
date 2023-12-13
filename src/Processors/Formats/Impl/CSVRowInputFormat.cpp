@@ -402,6 +402,11 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
     String field;
     readCSVField(field, *buf, format_settings.csv);
     ReadBufferFromString tmp_buf(field);
+    if (tmp_buf.eof())
+    {
+        column.insertDefault();
+        return false;
+    }
     bool is_bad_value = false;
     bool res = false;
 
