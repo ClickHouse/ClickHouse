@@ -256,13 +256,13 @@ public:
         MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
         if (!result_type->isNullable()) \
         { \
-            executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res); \
+            executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res, settings.allow_execute_multiif_columnar_by_memcpy); \
             return std::move(res); \
         } \
         else \
         { \
             MutableColumnPtr null_map = ColumnUInt8::create(rows); \
-            executeInstructionsColumnarForNullable<TYPE, INDEX>(instructions, rows, res, null_map); \
+            executeInstructionsColumnarForNullable<TYPE, INDEX>(instructions, rows, res, null_map, settings.allow_execute_multiif_columnar_by_memcpy); \
             return ColumnNullable::create(std::move(res), std::move(null_map)); \
         } \
     }
@@ -383,7 +383,8 @@ private:
     }
 
     template<typename T, typename S>
-    static void executeInstructionsColumnarForNullable(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res, const MutableColumnPtr & null_map)
+    static void executeInstructionsColumnarForNullable(std::vector<Instruction> & instructions, size_t rows, 
+        const MutableColumnPtr & res, const MutableColumnPtr & null_map, bool execute_by_memcpy)
     {
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
@@ -414,27 +415,87 @@ private:
             }
         }
 
-        for (size_t row_i = 0; row_i < rows; ++row_i)
+        if (!execute_by_memcpy)
         {
-            auto & instruction = instructions[inserts[row_i]];
-            size_t index = instruction.source_is_constant ? 0 : row_i;
-            res_data[row_i] = data_cols[inserts[row_i]]->getData()[index];
-            null_map_data[row_i] = null_map_cols[inserts[row_i]] ? null_map_cols[inserts[row_i]]->getData()[index] : 0;
+            for (size_t row_i = 0; row_i < rows; ++row_i)
+            {
+                auto & instruction = instructions[inserts[row_i]];
+                size_t index = instruction.source_is_constant ? 0 : row_i;
+                res_data[row_i] = data_cols[inserts[row_i]]->getData()[index];
+                null_map_data[row_i] = null_map_cols[inserts[row_i]] ? null_map_cols[inserts[row_i]]->getData()[index] : 0;
+            }
+        }
+        else
+        {
+            size_t insert_start_pos = 0;
+            for (size_t row_i = 0; row_i < rows; ++row_i)
+            {
+                S curr_insert = inserts[row_i];
+                if (row_i != rows -1 && curr_insert == inserts[row_i + 1])
+                {
+                    continue;
+                }
+                else
+                {
+                    if (instructions[curr_insert].source_is_constant)
+                    {
+                        for (size_t i = insert_start_pos; i <= row_i; ++i)
+                        {
+                            res_data[i] = data_cols[curr_insert]->getData()[0];
+                            null_map_data[i] = null_map_cols[curr_insert]->getData()[0];
+                        }
+                    }
+                    else
+                    {
+                        memcpy(res_data.data() + insert_start_pos,
+                            data_cols[curr_insert]->getData().data() + insert_start_pos, sizeof(T) * (row_i + 1 - insert_start_pos));
+                        memcpy(null_map_data.data() + insert_start_pos,
+                            null_map_cols[curr_insert]->getData().data() + insert_start_pos, sizeof(UInt8) * (row_i + 1 - insert_start_pos));
+                    }
+                    insert_start_pos = row_i + 1;
+                }
+            }
         }
     }
 
     template <typename T, typename S>
-    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res, bool execute_by_memcpy)
     {
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
         PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
-        for (size_t row_i = 0; row_i < rows; ++row_i)
+        if (!execute_by_memcpy)
         {
-            auto & instruction = instructions[inserts[row_i]];
-            auto ref = instruction.source->getDataAt(row_i);
-            res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
+            for (size_t row_i = 0; row_i < rows; ++row_i)
+            {
+                auto & instruction = instructions[inserts[row_i]];
+                auto ref = instruction.source->getDataAt(row_i);
+                res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
+            }
+        }
+        else
+        {
+            size_t insert_start_pos = 0;
+            std::vector<const ColumnVector<T> *> data_cols(instructions.size());
+            for (size_t i = 0; i < instructions.size(); ++i)
+            {
+                data_cols[i] = assert_cast<const ColumnVector<T> *>(instructions[i].source.get());
+            }
+            for (size_t row_i = 0; row_i < rows; ++row_i)
+            {
+                S curr_insert = inserts[row_i];
+                if (row_i != rows -1 && curr_insert == inserts[row_i + 1])
+                {
+                    continue;
+                }
+                else
+                {
+                    memcpy(res_data.data() + insert_start_pos,
+                        data_cols[curr_insert]->getData().data() + insert_start_pos, sizeof(T) * (row_i + 1 - insert_start_pos));
+                    insert_start_pos = row_i + 1;
+                }
+            }
         }
     }
 
