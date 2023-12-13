@@ -1653,8 +1653,15 @@ namespace
         {
         }
 
-        std::unique_ptr<ReadBuffer> next() override
+        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
         {
+            /// For default mode check cached columns for currently read keys on first iteration.
+            if (first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            {
+                if (auto cached_columns = tryGetColumnsFromCache(read_keys.begin(), read_keys.end()))
+                    return {nullptr, cached_columns};
+            }
+
             while (true)
             {
                 current_key_with_info = (*file_iterator)();
@@ -1668,34 +1675,40 @@ namespace
                             "in S3 or all files are empty. You must specify table structure manually",
                             configuration.format);
 
-                    return nullptr;
+                    return {nullptr, std::nullopt};
                 }
 
-                /// S3 file iterator could get new keys after new iteration, check them in schema cache.
-                if (getContext()->getSettingsRef().schema_inference_use_cache_for_s3 && read_keys.size() > prev_read_keys_size)
+                /// S3 file iterator could get new keys after new iteration, check them in schema cache if schema inference mode is default.
+                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT && read_keys.size() > prev_read_keys_size)
                 {
-                    columns_from_cache = StorageS3::tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, getContext());
+                    auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
                     prev_read_keys_size = read_keys.size();
                     if (columns_from_cache)
-                        return nullptr;
+                        return {nullptr, columns_from_cache};
                 }
 
                 if (getContext()->getSettingsRef().s3_skip_empty_files && current_key_with_info->info && current_key_with_info->info->size == 0)
                     continue;
+
+                /// In union mode, check cached columns only for current key.
+                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
+                {
+                    StorageS3::KeysWithInfo keys = {current_key_with_info};
+                    if (auto columns_from_cache = tryGetColumnsFromCache(keys.begin(), keys.end()))
+                    {
+                        first = false;
+                        return {nullptr, columns_from_cache};
+                    }
+                }
 
                 int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
                 auto impl = std::make_unique<ReadBufferFromS3>(configuration.client, configuration.url.bucket, current_key_with_info->key, configuration.url.version_id, configuration.request_settings, getContext()->getReadSettings());
                 if (!getContext()->getSettingsRef().s3_skip_empty_files || !impl->eof())
                 {
                     first = false;
-                    return wrapReadBufferWithCompressionMethod(std::move(impl), chooseCompressionMethod(current_key_with_info->key, configuration.compression_method), zstd_window_log_max);
+                    return {wrapReadBufferWithCompressionMethod(std::move(impl), chooseCompressionMethod(current_key_with_info->key, configuration.compression_method), zstd_window_log_max), std::nullopt};
                 }
             }
-        }
-
-        std::optional<ColumnsDescription> getCachedColumns() override
-        {
-            return columns_from_cache;
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -1708,12 +1721,90 @@ namespace
             StorageS3::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
+        void setSchemaToLastFile(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
+                return;
+
+            String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket / current_key_with_info->key;
+            auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
+            StorageS3::getSchemaCache(getContext()).addColumns(cache_key, columns);
+        }
+
+        void setResultingSchema(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
+                return;
+
+            auto host_and_bucket = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket;
+            Strings sources;
+            sources.reserve(read_keys.size());
+            std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket / elem->key; });
+            auto cache_keys = getKeysForSchemaCache(sources, configuration.format, format_settings, getContext());
+            StorageS3::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
+        }
+
+        String getLastFileName() const override
+        {
+            if (current_key_with_info)
+                return current_key_with_info->key;
+            return "";
+        }
+
     private:
+        std::optional<ColumnsDescription> tryGetColumnsFromCache(
+            const StorageS3::KeysWithInfo::const_iterator & begin,
+            const StorageS3::KeysWithInfo::const_iterator & end)
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3)
+                return std::nullopt;
+
+            auto & schema_cache = StorageS3::getSchemaCache(getContext());
+            for (auto it = begin; it < end; ++it)
+            {
+                auto get_last_mod_time = [&]
+                {
+                    time_t last_modification_time = 0;
+                    if ((*it)->info)
+                    {
+                        last_modification_time = (*it)->info->last_modification_time;
+                    }
+                    else
+                    {
+                        /// Note that in case of exception in getObjectInfo returned info will be empty,
+                        /// but schema cache will handle this case and won't return columns from cache
+                        /// because we can't say that it's valid without last modification time.
+                        last_modification_time = S3::getObjectInfo(
+                             *configuration.client,
+                             configuration.url.bucket,
+                             (*it)->key,
+                             configuration.url.version_id,
+                             configuration.request_settings,
+                             /*with_metadata=*/ false,
+                             /*for_disk_s3=*/ false,
+                             /*throw_on_error= */ false).last_modification_time;
+                    }
+
+                    return last_modification_time ? std::make_optional(last_modification_time) : std::nullopt;
+                };
+
+                String path = fs::path(configuration.url.bucket) / (*it)->key;
+                String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / path;
+                auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
+                auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
+                if (columns)
+                    return columns;
+            }
+
+            return std::nullopt;
+        }
+
         std::shared_ptr<StorageS3Source::IIterator> file_iterator;
         const StorageS3Source::KeysWithInfo & read_keys;
         const StorageS3::Configuration & configuration;
         const std::optional<FormatSettings> & format_settings;
-        std::optional<ColumnsDescription> columns_from_cache;
         StorageS3Source::KeyWithInfoPtr current_key_with_info;
         size_t prev_read_keys_size;
         bool first = true;
@@ -1730,27 +1821,9 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
     auto file_iterator = createFileIterator(configuration, false, ctx, {}, {}, {}, &read_keys);
 
-    std::optional<ColumnsDescription> columns_from_cache;
-    if (ctx->getSettingsRef().schema_inference_use_cache_for_s3)
-        columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), configuration, format_settings, ctx);
-
-    ColumnsDescription columns;
-    if (columns_from_cache)
-    {
-        columns = *columns_from_cache;
-    }
-    else
-    {
-        ReadBufferIterator read_buffer_iterator(file_iterator, read_keys, configuration, format_settings, ctx);
-        columns = readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
-    }
-
-    if (ctx->getSettingsRef().schema_inference_use_cache_for_s3)
-        addColumnsToCache(read_keys, configuration, columns, configuration.format, format_settings, ctx);
-
-    return columns;
+    ReadBufferIterator read_buffer_iterator(file_iterator, read_keys, configuration, format_settings, ctx);
+    return readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
 }
-
 
 void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
@@ -1844,70 +1917,6 @@ SchemaCache & StorageS3::getSchemaCache(const ContextPtr & ctx)
 {
     static SchemaCache schema_cache(ctx->getConfigRef().getUInt("schema_inference_cache_max_elements_for_s3", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
-}
-
-std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
-    const KeysWithInfo::const_iterator & begin,
-    const KeysWithInfo::const_iterator & end,
-    const Configuration & configuration,
-    const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & ctx)
-{
-    auto & schema_cache = getSchemaCache(ctx);
-    for (auto it = begin; it < end; ++it)
-    {
-        auto get_last_mod_time = [&]
-        {
-            time_t last_modification_time = 0;
-            if ((*it)->info)
-            {
-                last_modification_time = (*it)->info->last_modification_time;
-            }
-            else
-            {
-                /// Note that in case of exception in getObjectInfo returned info will be empty,
-                /// but schema cache will handle this case and won't return columns from cache
-                /// because we can't say that it's valid without last modification time.
-                last_modification_time = S3::getObjectInfo(
-                    *configuration.client,
-                    configuration.url.bucket,
-                    (*it)->key,
-                    configuration.url.version_id,
-                    configuration.request_settings,
-                    /*with_metadata=*/ false,
-                    /*for_disk_s3=*/ false,
-                    /*throw_on_error= */ false).last_modification_time;
-            }
-
-            return last_modification_time ? std::make_optional(last_modification_time) : std::nullopt;
-        };
-
-        String path = fs::path(configuration.url.bucket) / (*it)->key;
-        String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / path;
-        auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, ctx);
-        auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-        if (columns)
-            return columns;
-    }
-
-    return std::nullopt;
-}
-
-void StorageS3::addColumnsToCache(
-    const KeysWithInfo & keys,
-    const Configuration & configuration,
-    const ColumnsDescription & columns,
-    const String & format_name,
-    const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & ctx)
-{
-    auto host_and_bucket = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket;
-    Strings sources;
-    sources.reserve(keys.size());
-    std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket / elem->key; });
-    auto cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
-    auto & schema_cache = getSchemaCache(ctx);
-    schema_cache.addManyColumns(cache_keys, columns);
 }
 
 }
