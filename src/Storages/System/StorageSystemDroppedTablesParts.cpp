@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeUUID.h>
 
 
-
 namespace DB
 {
 
