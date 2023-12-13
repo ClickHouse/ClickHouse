@@ -3,7 +3,7 @@
 # meanwhile, user need to set ICP_ROOT environment variable which point to the root directory of QAT driver source tree.
 # in-tree means kernel has built-in qat driver, QAT-ZSTD-PLUGIN just has dependency on qatlib.
 
-if (ENABLE_QAT_OUTOFTREE)
+if (ENABLE_QAT_OUT_OF_TREE_BUILD)
 # Intel QATZSTD out-of-tree build
 message(STATUS "Intel QATZSTD out-of-tree build, ICP_ROOT:${ICP_ROOT}")
 
@@ -16,7 +16,7 @@ set(QAT_AL_INCLUDE_DIR "${ICP_ROOT}/quickassist/lookaside/access_layer/include")
 set(QAT_USDM_INCLUDE_DIR "${ICP_ROOT}/quickassist/utilities/libusdm_drv")
 set(USDM_LIBRARY "${ICP_ROOT}/build/libusdm_drv_s.so")
 set(QAT_S_LIBRARY "${ICP_ROOT}/build/libqat_s.so")
-if (ENABLE_USDM_DRV)
+if (ENABLE_QAT_USDM_DRIVER)
     add_definitions(-DENABLE_USDM_DRV)
 endif()
 add_library(_qatzstd_plugin ${QATZSTD_SRC})
@@ -69,7 +69,7 @@ file(COPY "${LIBQAT_ROOT_DIR}/quickassist/utilities/libusdm_drv/qae_mem.h"
     DESTINATION "${LIBQAT_HEADER_DIR}/qat/"
 )
 
-if (ENABLE_USDM_DRV)
+if (ENABLE_QAT_USDM_DRIVER)
     add_definitions(-DENABLE_USDM_DRV)
 endif()
 

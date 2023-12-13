@@ -1,4 +1,5 @@
-#ifdef ENABLE_QATZSTD_COMPRESSION
+#ifdef ENABLE_ZSTDQAT_COMPRESSION
+#include <CompressionCodecZSTD.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <zstd.h>
@@ -8,8 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include "qatseqprod.h"
-#include "CompressionCodecZSTD.h"
+#include <qatseqprod.h>
 
 namespace DB
 {
@@ -20,13 +20,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
-class CompressionCodecQATZSTD : public CompressionCodecZSTD
+class CompressionCodecZSTDQAT : public CompressionCodecZSTD
 {
 public:
-    static constexpr auto QATZSTD_SUPPORTED_MIN_LEVEL = 1;
-    static constexpr auto QATZSTD_SUPPORTED_MAX_LEVEL = 12;
-    explicit CompressionCodecQATZSTD(int level_);
-    ~CompressionCodecQATZSTD() override;
+    static constexpr auto ZSTDQAT_SUPPORTED_MIN_LEVEL = 1;
+    static constexpr auto ZSTDQAT_SUPPORTED_MAX_LEVEL = 12;
+    explicit CompressionCodecZSTDQAT(int level_);
+    ~CompressionCodecZSTDQAT() override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -39,7 +39,7 @@ private:
     Poco::Logger * log;
 };
 
-UInt32 CompressionCodecQATZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
+UInt32 CompressionCodecZSTDQAT::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     if (!initialized)
     {
@@ -68,39 +68,39 @@ UInt32 CompressionCodecQATZSTD::doCompressData(const char * source, UInt32 sourc
     return static_cast<UInt32>(compressed_size);
 }
 
-void registerCodecQATZSTD(CompressionCodecFactory & factory)
+void registerCodecZSTDQAT(CompressionCodecFactory & factory)
 {
-    factory.registerCompressionCodec("QATZSTD", {}, [&](const ASTPtr & arguments) -> CompressionCodecPtr
+    factory.registerCompressionCodec("ZSTDQAT", {}, [&](const ASTPtr & arguments) -> CompressionCodecPtr
     {
         int level = CompressionCodecZSTD::ZSTD_DEFAULT_LEVEL;
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "QATZSTD codec must have 1 parameter, given {}", arguments->children.size());
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "ZSTDQAT codec must have 1 parameter, given {}", arguments->children.size());
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
             if (!literal)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "QATZSTD codec argument must be integer");
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTDQAT codec argument must be integer");
 
             level = static_cast<int>(literal->value.safeGet<UInt64>());
-            if (level > CompressionCodecQATZSTD::QATZSTD_SUPPORTED_MAX_LEVEL || level < CompressionCodecQATZSTD::QATZSTD_SUPPORTED_MIN_LEVEL)
+            if (level > CompressionCodecZSTDQAT::ZSTDQAT_SUPPORTED_MAX_LEVEL || level < CompressionCodecZSTDQAT::ZSTDQAT_SUPPORTED_MIN_LEVEL)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
-                    "QATZSTD codec doesn't support level more than {} and lower than {} , given {}",
-                    CompressionCodecQATZSTD::QATZSTD_SUPPORTED_MAX_LEVEL, CompressionCodecQATZSTD::QATZSTD_SUPPORTED_MIN_LEVEL, level);
+                    "ZSTDQAT codec doesn't support level more than {} and lower than {} , given {}",
+                    CompressionCodecZSTDQAT::ZSTDQAT_SUPPORTED_MAX_LEVEL, CompressionCodecZSTDQAT::ZSTDQAT_SUPPORTED_MIN_LEVEL, level);
         }
 
-        return std::make_shared<CompressionCodecQATZSTD>(level);
+        return std::make_shared<CompressionCodecZSTDQAT>(level);
     });
 }
 
-CompressionCodecQATZSTD::CompressionCodecQATZSTD(int level_)
-    : CompressionCodecZSTD(level_), level(level_), initialized(false), log(&Poco::Logger::get("CompressionCodecQATZSTD"))
+CompressionCodecZSTDQAT::CompressionCodecZSTDQAT(int level_)
+    : CompressionCodecZSTD(level_), level(level_), initialized(false), log(&Poco::Logger::get("CompressionCodecZSTDQAT"))
 {
-    setCodecDescription("QATZSTD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
+    setCodecDescription("ZSTDQAT", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
-CompressionCodecQATZSTD::~CompressionCodecQATZSTD()
+CompressionCodecZSTDQAT::~CompressionCodecZSTDQAT()
 {
     if (initialized)
     {

@@ -167,12 +167,12 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
+#ifdef ENABLE_ZSTDQAT_COMPRESSION
+void registerCodecZSTDQAT(CompressionCodecFactory & factory);
+#endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
 #ifdef ENABLE_QPL_COMPRESSION
 void registerCodecDeflateQpl(CompressionCodecFactory & factory);
-#endif
-#ifdef ENABLE_QATZSTD_COMPRESSION
-void registerCodecQATZSTD(CompressionCodecFactory & factory);
 #endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
@@ -192,6 +192,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
+#ifdef ENABLE_ZSTDQAT_COMPRESSION
+    registerCodecZSTDQAT(*this);
+#endif
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
@@ -203,9 +206,6 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecFPC(*this);
 #ifdef ENABLE_QPL_COMPRESSION
     registerCodecDeflateQpl(*this);
-#endif
-#ifdef ENABLE_QATZSTD_COMPRESSION
-    registerCodecQATZSTD(*this);
 #endif
     registerCodecGCD(*this);
 #endif
