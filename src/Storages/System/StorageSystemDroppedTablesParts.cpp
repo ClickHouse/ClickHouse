@@ -2,20 +2,9 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
-#include <atomic>
-#include <memory>
-#include <string_view>
-
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Parsers/queryToString.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <Interpreters/Context.h>
+
 
 
 namespace DB
