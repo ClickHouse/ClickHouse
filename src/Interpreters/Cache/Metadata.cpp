@@ -700,7 +700,7 @@ void CacheMetadata::shutdown()
 
 bool CacheMetadata::isBackgroundDownloadEnabled()
 {
-    return download_threads_num && download_queue->queue_size_limit;
+    return download_threads_num;
 }
 
 bool CacheMetadata::setBackgroundDownloadThreads(size_t threads_num)
@@ -718,7 +718,8 @@ bool CacheMetadata::setBackgroundDownloadThreads(size_t threads_num)
             download_threads.emplace_back(std::make_shared<DownloadThread>());
             try
             {
-                download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>([this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
+                download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
+                    [this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
             }
             catch (...)
             {
