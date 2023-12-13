@@ -118,7 +118,7 @@ using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
 {
     TableExpressionSet res;
-    for (const auto & expr : extractTableExpressions(node))
+    for (const auto & expr : extractTableExpressions(node, true))
         res.insert(expr.get());
 
     return res;
