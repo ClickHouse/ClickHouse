@@ -16,7 +16,7 @@ Positions: 3 0 1
   Type: INNER
   Strictness: ALL
   Algorithm: HashJoin
-  Clauses: [(id_0) = (id)]
+  Clauses: [(__table1.id) = (id)]
     Filter (( + (JOIN actions + Change column names to column identifiers)))
     Header: __table1.id UInt64
             __table1.value String
