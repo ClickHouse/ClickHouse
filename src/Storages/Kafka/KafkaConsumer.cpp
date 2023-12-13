@@ -604,6 +604,7 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
         .exceptions_buffer = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
             return exceptions_buffer;}(),
         .in_use = in_use.load(),
+        .last_used_usec = last_used_usec.load(),
         .rdkafka_stat = [&](){std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
             return rdkafka_stat;}(),
     };

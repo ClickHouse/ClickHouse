@@ -41,6 +41,7 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"num_rebalance_revocations", std::make_shared<DataTypeUInt64>()},
         {"num_rebalance_assignments", std::make_shared<DataTypeUInt64>()},
         {"is_currently_used", std::make_shared<DataTypeUInt8>()},
+        {"last_used", std::make_shared<DataTypeDateTime64>(6)},
         {"rdkafka_stat", std::make_shared<DataTypeString>()},
     };
     return names_and_types;
@@ -78,6 +79,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & num_rebalance_revocations = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & num_rebalance_assigments = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & is_currently_used = assert_cast<ColumnUInt8 &>(*res_columns[index++]);
+    auto & last_used = assert_cast<ColumnDateTime64 &>(*res_columns[index++]);
     auto & rdkafka_stat = assert_cast<ColumnString &>(*res_columns[index++]);
 
     const auto access = context->getAccess();
@@ -144,6 +146,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                 num_rebalance_assigments.insert(consumer_stat.num_rebalance_assignments);
 
                 is_currently_used.insert(consumer_stat.in_use);
+                last_used.insert(consumer_stat.last_used_usec);
 
                 rdkafka_stat.insertData(consumer_stat.rdkafka_stat.data(), consumer_stat.rdkafka_stat.size());
             }
