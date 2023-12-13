@@ -370,12 +370,12 @@ private:
             for (size_t i = 0; i != size; ++i)
             {
                 result_data[i] = 0;
-                if (scale_on_interval < scale_on_time)
-                    /// if we have a time argument that has bigger scale than the interval can contain, we need
+                if (scale_on_interval < scale_on_time && scale_on_interval != 1)
+                    /// If we have a time argument that has bigger scale than the interval can contain and interval is not default, we need
                     /// to return a value with bigger precision and thus we should multiply result on the scale difference.
-                    result_data[i] += static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_on_interval)) * scale_diff;
+                    result_data[i] += static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_on_time)) * scale_diff;
                 else
-                    result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_on_time));
+                   result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_on_time));
             }
         }
         else
