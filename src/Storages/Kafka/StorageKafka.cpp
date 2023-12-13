@@ -343,7 +343,7 @@ Pipe StorageKafka::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    if (num_created_consumers == 0)
+    if (all_consumers.empty())
         return {};
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
@@ -357,12 +357,12 @@ Pipe StorageKafka::read(
 
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
-    pipes.reserve(num_created_consumers);
+    pipes.reserve(all_consumers.size());
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
 
     // Claim as many consumers as requested, but don't block
-    for (size_t i = 0; i < num_created_consumers; ++i)
+    for (size_t i = 0; i < all_consumers.size(); ++i)
     {
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
@@ -419,7 +419,6 @@ void StorageKafka::startup()
             auto consumer = createConsumer(i);
             pushConsumer(consumer);
             all_consumers.push_back(consumer);
-            ++num_created_consumers;
         }
         catch (const cppkafka::Exception &)
         {
@@ -447,7 +446,7 @@ void StorageKafka::shutdown(bool)
     }
 
     LOG_TRACE(log, "Closing consumers");
-    for (size_t i = 0; i < num_created_consumers; ++i)
+    for (size_t i = 0; i < all_consumers.size(); ++i)
         auto consumer = popConsumer();
     LOG_TRACE(log, "Consumers closed");
 
@@ -756,7 +755,7 @@ void StorageKafka::threadFunc(size_t idx)
             mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!task->stream_cancelled && num_created_consumers > 0)
+            while (!task->stream_cancelled && !all_consumers.empty())
             {
                 if (!checkDependencies(table_id))
                     break;
@@ -844,7 +843,7 @@ bool StorageKafka::streamToViews()
     std::vector<std::shared_ptr<KafkaSource>> sources;
     Pipes pipes;
 
-    auto stream_count = thread_per_consumer ? 1 : num_created_consumers;
+    auto stream_count = thread_per_consumer ? 1 : all_consumers.size();
     sources.reserve(stream_count);
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)

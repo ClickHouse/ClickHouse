@@ -108,10 +108,6 @@ private:
 
     std::atomic<bool> mv_attached = false;
 
-    /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
-    /// In this case we still need to be able to shutdown() properly.
-    size_t num_created_consumers = 0; /// number of actually created consumers.
-
     std::vector<KafkaConsumerPtr> consumers; /// available consumers
     std::vector<KafkaConsumerWeakPtr> all_consumers; /// busy (belong to a KafkaSource) and vacant consumers
 
