@@ -2210,31 +2210,38 @@ void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr 
     if (optimized)
         return;
 
-    const auto * ast_function_node = ast->as<ASTFunction>();
-    auto arg_size = ast_function_node->arguments ? ast_function_node->arguments->children.size() : 0;
-    if (ast_function_node->name == "equals" && arg_size == 2)
+    // Does not support other condition except for "="
+    if (const auto * ast_function_node = ast->as<ASTFunction>())
     {
-        auto lhs_argument = ast_function_node->arguments->children.at(0);
-        String lhs = getIdentifier(lhs_argument);
-        if (proj_pks.contains(lhs) && !optimized_where_keys.contains(lhs) && lhs != main_primary_key)
+        auto arg_size = ast_function_node->arguments ? ast_function_node->arguments->children.size() : 0;
+        if (ast_function_node->name == "equals" && arg_size == 2)
         {
-            optimized_where_keys.insert(lhs);
-            ASTPtr new_ast = create_proj_optimized_ast(ast, main_table, main_primary_key);
-            auto * function_node = func->as<ASTFunction>();
-            function_node->arguments->children.push_back(new_ast);
-            optimized = true;
+            auto lhs_argument = ast_function_node->arguments->children.at(0);
+            String lhs = getIdentifier(lhs_argument);
+            if (proj_pks.contains(lhs) && !optimized_where_keys.contains(lhs) && lhs != main_primary_key)
+            {
+                optimized_where_keys.insert(lhs);
+                ASTPtr new_ast = create_proj_optimized_ast(ast, main_table, main_primary_key);
+                auto * function_node = func->as<ASTFunction>();
+                function_node->arguments->children.push_back(new_ast);
+                optimized = true;
+                return;
+            }
+        }
+        else if (ast_function_node->name == "and" || ast_function_node->name == "or")
+        {
+            for (size_t i = 0; i < arg_size; i++)
+            {
+                auto argument = ast_function_node->arguments->children[i];
+                analyze_where_ast(argument, func, proj_pks, optimized_where_keys, main_table, main_primary_key, optimized);
+            }
+        }
+        else /* TBD: conditions that are not "=" */
+        {
             return;
         }
     }
-    else if (ast_function_node->name == "and" || ast_function_node->name == "or")
-    {
-        for (size_t i = 0; i < arg_size; i++)
-        {
-            auto argument = ast_function_node->arguments->children[i];
-            analyze_where_ast(argument, func, proj_pks, optimized_where_keys, main_table, main_primary_key, optimized);
-        }
-    }
-    else /* TBD: conditions that are not "=" */
+    else
     {
         return;
     }
