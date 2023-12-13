@@ -47,7 +47,7 @@ public:
 
     static void shutdownIfNeed()
     {
-#ifdef USE_FDB
+#if USE_FDB
         shutdownIfNeedImpl();
 #endif
     }

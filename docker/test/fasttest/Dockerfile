@@ -44,24 +44,6 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && mkdir -p /var/lib/clickhouse \
   && chmod 777 /var/lib/clickhouse
 
-# Install foundationdb
-COPY setup_fdb.sh / 
-ARG TARGETARCH
-ENV FOUNDATIONDB_VERSION 7.1.27
-RUN arch=${TARGETARCH:-amd64} \
-    && case $arch in \
-        amd64) wget -O /tmp/foundationdb-clients_${FOUNDATIONDB_VERSION}-1_${arch}.deb "https://github.com/apple/foundationdb/releases/download/${FOUNDATIONDB_VERSION}/foundationdb-clients_${FOUNDATIONDB_VERSION}-1_${arch}.deb" \
-            && wget -O /tmp/foundationdb-server_${FOUNDATIONDB_VERSION}-1_${arch}.deb "https://github.com/apple/foundationdb/releases/download/${FOUNDATIONDB_VERSION}/foundationdb-server_${FOUNDATIONDB_VERSION}-1_${arch}.deb" \
-            && dpkg -i /tmp/foundationdb-*.deb \
-            && rm /tmp/foundationdb-*.deb \
-            # Remove auto generated data during dpkg -i
-            && /etc/init.d/foundationdb stop \
-            && rm -rf /etc/foundationdb/fdb.cluster /var/lib/foundationdb/data/* \
-            && chmod 777 -R /etc/foundationdb \
-            && chmod 777 /var/lib/foundationdb/data ;; \
-        arm64) rm /setup_fdb.sh ;; \
-    esac
-
 # chmod 777 to make the container user independent
 
 ENV TZ=Europe/Amsterdam
@@ -72,5 +54,6 @@ ENV PULL_REQUEST_NUMBER=''
 ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
 
 COPY run.sh /
+COPY setup_fdb.sh /
 
 CMD ["/bin/bash", "/run.sh"]
