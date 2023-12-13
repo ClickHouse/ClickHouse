@@ -2662,3 +2662,5 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+QuickAssist
+ZSTDQAT
