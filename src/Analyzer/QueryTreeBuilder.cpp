@@ -27,12 +27,14 @@
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/Streaming/ASTEmitQuery.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/EmitNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
@@ -430,6 +432,25 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     else if (select_offset)
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
+    // TODO: proton, emit section
+    auto select_emit = select_query_typed.emit();
+    if (select_emit)
+    {
+        // current_query_tree->getEmit() = buildExpression(select_emit, current_context);
+        auto & emit_query = select_emit->as<ASTEmitQuery &>();
+        EmitType emit_type;
+
+        ASTPtr interval_func = nullptr;
+        if (emit_query.periodic_interval)
+        {
+            emit_type = EmitType::PERIODIC;
+            interval_func = emit_query.periodic_interval;
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown emit type");
+
+        current_query_tree->getEmit() = std::make_shared<EmitNode>(emit_type, buildExpression(interval_func, current_context));
+    }
     return current_query_tree;
 }
 

@@ -46,6 +46,9 @@ bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto query = std::make_shared<ASTEmitQuery>();
     query->periodic_interval = periodic_interval;
 
+    if (query->periodic_interval)
+        query->children.push_back(query->periodic_interval);
+
     node = query;
 
     return true;

@@ -347,7 +347,7 @@ Pipe StorageKafka::read(
         return {};
 
     /// We allow (ad-hoc) streaming query always
-    bool is_streaming_query = (local_context->getSettingsRef().query_mode.value == "streaming");
+    bool is_streaming_query = (local_context->getSettingsRef().allow_experimental_streaming_query_mode.value == "streaming");
     if (!is_streaming_query && !local_context->getSettingsRef().stream_like_engine_allow_direct_select)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");

@@ -432,8 +432,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
         RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
     }
-    /// proton: porting starts. TODO: remove comments, FIXME: seems a simple function can checking Emit AST (Or a Visitor)
-    /// proton: starts. Try to process the streaming query extension grammar.
+    /// FIXME: seems a simple function can checking Emit AST (Or a Visitor)
+    /// Try to process the streaming query extension grammar.
     /// we need to process before table storage generation (maybe has table function)
     if (auto emit = getSelectQuery().emit())
     {
@@ -3314,7 +3314,7 @@ void InterpreterSelectQuery::initSettings()
 
     if (query.emit())
         /// Setup request query mode as streaming
-        context->setSetting("query_mode", Field("streaming"));
+        context->setSetting("allow_experimental_streaming_query_mode", Field("streaming"));
 }
 
 bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
@@ -3389,12 +3389,12 @@ bool InterpreterSelectQuery::isStreamingQuery() const
         if (auto * view = storage->as<StorageView>(); view)
             streaming = view->isStreamingQuery(context);
         else if (storage->supportsStreamingQuery())
-            streaming = context->getSettingsRef().query_mode.value == "streaming";
+            streaming = context->getSettingsRef().allow_experimental_streaming_query_mode.value == "streaming";
     }
     else if (interpreter_subquery)
     {
         /// We already setup query mode in context settings before init `interpreter_subquery`,
-        /// so the query_mode will be propagated to subquery correctly.
+        /// so the allow_experimental_streaming_query_mode will be propagated to subquery correctly.
         streaming = interpreter_subquery->isStreamingQuery();
     }
 

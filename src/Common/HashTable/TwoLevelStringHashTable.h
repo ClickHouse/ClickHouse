@@ -246,7 +246,7 @@ public:
         return res;
     }
 
-    std::vector<size_t> buckets() const
+    std::vector<size_t> getBucketIds() const
     {
         std::vector<size_t> bucket_ids(256);
         std::iota(bucket_ids.begin(), bucket_ids.end(), 0);

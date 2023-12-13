@@ -78,6 +78,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Analyzer/EmitNode.h>
 
 namespace ProfileEvents
 {
@@ -5777,6 +5778,16 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
             break;
         }
+        case QueryTreeNodeType::EMIT:
+        {
+            auto & emit_node = node->as<EmitNode &>();
+            if (emit_node.hasIntervalFunction())
+            {
+                auto & interval_function = emit_node.getIntervalFunction();
+                resolveExpressionNode(interval_function, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            }
+            break;
+        }
         case QueryTreeNodeType::TRANSFORMER:
             [[fallthrough]];
         case QueryTreeNodeType::SORT:
@@ -7232,6 +7243,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         convertLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
+    }
+
+    if (query_node_typed.hasEmit())
+    {
+        resolveExpressionNode(query_node_typed.getEmit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
 
     if (scope.group_by_use_nulls)

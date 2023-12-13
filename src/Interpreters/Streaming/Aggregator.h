@@ -512,11 +512,11 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
-        /// `keep_state` tell Aggregator if it needs to hold state in-memory for streaming
+        /// `force_keep_state` tell Aggregator if it needs to hold state in-memory for streaming
         /// processing. In normal case, it is true. However for global over global aggregation
         /// etc cases, we don't want the outer global aggregation to accumulate states in-memory.
-        /// There is another case we will set keep_state to false : when we cancel
-        bool keep_state = true;
+        /// There is another case we will set force_keep_state to false : when we cancel
+        bool force_keep_state = true;
 
         enum class GroupBy
         {
@@ -536,7 +536,7 @@ public:
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
             const Block & intermediate_header_ = {},
-            bool keep_state_ = true,
+            bool force_keep_state_ = true,
             GroupBy streaming_group_by_ = GroupBy::OTHER)
         : src_header(src_header_),
             intermediate_header(intermediate_header_),
@@ -549,7 +549,7 @@ public:
             min_free_disk_space(min_free_disk_space_),
             compile_aggregate_expressions(compile_aggregate_expressions_),
             min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_),
-            keep_state(keep_state_),
+            force_keep_state(force_keep_state_),
             group_by(streaming_group_by_)
         {
         }
@@ -608,7 +608,7 @@ public:
       * If final = true, then columns with ready values are created as aggregate columns.
       *
       * For streaming processing, the internal aggregate state may be pruned or kept depending on different scenarios
-      * 1. During checkpointing, never prune the aggregate states, `keep_state = true` in this case
+      * 1. During checkpointing, never prune the aggregate states, `force_keep_state = true` in this case
       * 2. In `EMIT changelog` case, never prune the states. Examples
       *    a. SELECT count(), avg(i), sum(k) FROM my_stream EMIT changelog;
       *    b. SELECT count(), avg(i), sum(k) FROM (

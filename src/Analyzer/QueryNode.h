@@ -45,6 +45,8 @@ namespace DB
   * id, value - LIMIT BY section.
   * 14. LIMIT section.
   * 15. OFFSET section.
+  * Example: SELECT count() FROM test_table EMIT STREAM PERIODIC 1s
+  * 16. EMIT section.
   *
   * Query node contains settings changes that must be applied before query analysis or execution.
   * Example: SELECT * FROM test_table SETTINGS prefer_column_name_to_alias = 1, join_use_nulls = 1;
@@ -561,6 +563,24 @@ public:
         return children[offset_child_index];
     }
 
+    /// Returns true if query node EMIT section is not empty, false otherwise
+    bool hasEmit() const
+    {
+        return children[emit_child_index] != nullptr;
+    }
+
+    /// Get query node emit section
+    const QueryTreeNodePtr & getEmit() const
+    {
+        return children[emit_child_index];
+    }
+
+    /// Get query node emit section
+    QueryTreeNodePtr & getEmit()
+    {
+        return children[emit_child_index];
+    }
+
     /// Get query node projection columns
     const NamesAndTypes & getProjectionColumns() const
     {
@@ -624,7 +644,8 @@ private:
     static constexpr size_t limit_by_child_index = 12;
     static constexpr size_t limit_child_index = 13;
     static constexpr size_t offset_child_index = 14;
-    static constexpr size_t children_size = offset_child_index + 1;
+    static constexpr size_t emit_child_index = 15;
+    static constexpr size_t children_size = emit_child_index + 1;
 };
 
 }

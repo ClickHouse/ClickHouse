@@ -84,6 +84,16 @@ public:
         is_cte = is_cte_value;
     }
 
+    bool isStreaming() const
+    {
+        return is_streaming;
+    }
+
+    void setIsStreaming(bool is_streaming_value)
+    {
+        is_streaming = is_streaming_value;
+    }
+
     /// Get union node CTE name
     const std::string & getCTEName() const
     {
@@ -154,6 +164,7 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_streaming = false;
     std::string cte_name;
     ContextMutablePtr context;
     SelectUnionMode union_mode;

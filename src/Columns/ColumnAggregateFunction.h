@@ -83,7 +83,7 @@ private:
 
     std::optional<size_t> version;
 
-    bool keep_state = false;
+    bool force_keep_state = false;
 
     ColumnAggregateFunction() = default;
 
@@ -254,6 +254,6 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    void setKeepState(bool keep_state_) noexcept { keep_state = keep_state_; }
+    void setForceKeepState(bool force_keep_state_) noexcept { force_keep_state = force_keep_state_; }
 };
 }

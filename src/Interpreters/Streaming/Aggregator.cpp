@@ -1068,9 +1068,9 @@ void Aggregator::writeToTemporaryFileImpl(
             max_temporary_block_size_bytes = block_size_bytes;
     };
 
-    for (auto bucket : method.data.buckets())
+    for (auto bucketId : method.data.getBucketIds())
     {
-        Block block = convertOneBucketToBlock(data_variants, method, data_variants.aggregates_pool, false, ConvertAction::WRITE_TO_TEMP_FS, bucket);
+        Block block = convertOneBucketToBlock(data_variants, method, data_variants.aggregates_pool, false, ConvertAction::WRITE_TO_TEMP_FS, bucketId);
         out.write(block);
         update_max_sizes(block);
     }
@@ -1196,7 +1196,7 @@ inline void Aggregator::insertAggregatesIntoColumns(
     }
 
     /// For streaming aggregation, we hold up to the states
-    if (params.keep_state)
+    if (params.force_keep_state)
     {
         if (exception)
             std::rethrow_exception(exception);
@@ -1405,7 +1405,7 @@ Block Aggregator::prepareBlockAndFill(
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
 
-            column_aggregate_func.setKeepState(params.keep_state);
+            column_aggregate_func.setForceKeepState(params.force_keep_state);
 
             /// Add arenas to ColumnAggregateFunction, which can result in moving ownership to it if reference count
             /// get dropped in other places
@@ -1637,7 +1637,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
     for (size_t i = data_variants.aggregates_pools.size(); i < max_threads; ++i)
         data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
 
-    auto buckets = method.data.buckets();
+    auto bucketIds = method.data.getBucketIds();
     std::atomic<UInt32> next_bucket_idx_to_merge = 0;
 
     auto converter = [&](size_t thread_id, ThreadGroupPtr thread_group)
@@ -1654,16 +1654,16 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
         {
             UInt32 bucket_idx = next_bucket_idx_to_merge.fetch_add(1);
 
-            if (bucket_idx >= buckets.size())
+            if (bucket_idx >= bucketIds.size())
                 break;
 
-            auto bucket = buckets[bucket_idx];
-            if (method.data.impls[bucket].empty())
+            auto bucketId = bucketIds[bucket_idx];
+            if (method.data.impls[bucketId].empty())
                 continue;
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            blocks.emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, action, bucket));
+            blocks.emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, action, bucketId));
         }
         return blocks;
     };
@@ -1934,7 +1934,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i], res->aggregates_pool);
 
-        if (!params.keep_state)
+        if (!params.force_keep_state)
         {
             for (size_t i = 0; i < params.aggregates_size; ++i)
                 aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
@@ -2594,7 +2594,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block) const
 
 #define M(NAME) \
     else if (data.type == AggregatedDataVariants::Type::NAME) \
-        num_buckets = data.NAME->data.buckets().size();
+        num_buckets = data.NAME->data.getBucketIds().size();
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_STATIC_BUCKET_TWO_LEVEL(M)
@@ -2687,7 +2687,7 @@ void Aggregator::initStatesForWithoutKeyOrOverflow(AggregatedDataVariants & data
 
 bool Aggregator::shouldClearStates(ConvertAction /*action*/, bool /*final_*/) const
 {
-    return !params.keep_state;
+    return !params.force_keep_state;
 }
 
 }

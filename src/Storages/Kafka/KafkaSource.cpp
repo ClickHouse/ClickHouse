@@ -49,7 +49,7 @@ KafkaSource::KafkaSource(
     , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
-    setStreaming(context->getSettingsRef().query_mode.value == "streaming");
+    setStreaming(context->getSettingsRef().allow_experimental_streaming_query_mode.value == "streaming");
 }
 
 KafkaSource::~KafkaSource()
