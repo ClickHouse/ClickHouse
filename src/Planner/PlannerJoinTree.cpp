@@ -570,6 +570,14 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     return 0;
 }
 
+void addReadFromNullSourceStep(QueryPlan& query_plan, const StorageSnapshotPtr& storage_snapshot, const TableExpressionData table_expression_data) {
+    auto source_header = storage_snapshot->getSampleBlockForColumns(table_expression_data.getColumnNames());
+    Pipe pipe(std::make_shared<NullSource>(source_header));
+    auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+    read_from_pipe->setStepDescription("Read from NullSource");
+    query_plan.addStep(std::move(read_from_pipe));
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -826,20 +834,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
 
                 if (table_expression_query_info.isStream()) {
-                    LOG_DEBUG(&Poco::Logger::get("Planner"), "STREAM mode is ON");
-
-                    if (query_plan.isInitialized()) {
-                        auto subscriber = storage->subscribeForChanges();
-
-                        auto streaming_step = std::make_unique<StreamingAdapterStep>(
-                            query_plan.getCurrentDataStream(), std::move(subscriber));
-
-                        streaming_step->setStepDescription(fmt::format("table: {}", storage->getStorageID().getFullTableName()));
-
-                        query_plan.addStep(std::move(streaming_step));
-
-                        LOG_DEBUG(&Poco::Logger::get("Planner"), "Streaming Adapter is configured for table: {}", storage->getStorageID());
+                    if (!query_plan.isInitialized()) {
+                        /// Create step which reads from empty source if storage has no data.
+                        addReadFromNullSourceStep(query_plan, storage_snapshot, table_expression_data);
                     }
+
+                    auto streaming_step = std::make_unique<StreamingAdapterStep>(
+                        query_plan.getCurrentDataStream(), storage->subscribeForChanges());
+
+                    streaming_step->setStepDescription(fmt::format("table: {}", storage->getStorageID().getFullTableName()));
+
+                    query_plan.addStep(std::move(streaming_step));
                 }
 
                 for (const auto & filter_info_and_description : where_filters)
@@ -887,11 +892,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
             {
                 /// Create step which reads from empty source if storage has no data.
-                auto source_header = storage_snapshot->getSampleBlockForColumns(table_expression_data.getColumnNames());
-                Pipe pipe(std::make_shared<NullSource>(source_header));
-                auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-                read_from_pipe->setStepDescription("Read from NullSource");
-                query_plan.addStep(std::move(read_from_pipe));
+                addReadFromNullSourceStep(query_plan, storage_snapshot, table_expression_data);
             }
         }
     }
