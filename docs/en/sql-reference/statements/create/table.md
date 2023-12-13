@@ -376,6 +376,12 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
+#### ZSTDQAT
+
+`ZSTDQAT[(level)]` — ZSTD QAT (hardware-accelerated compression) implemented by [QAT-ZSTD-Plugin](https://github.com/intel/QAT-ZSTD-Plugin) with configurable level. Default level: 1. Setting `level <= 0` applies the default level. Possible levels: \[1, 12\]. Recommended level range: \[6, 12\].
+
+ZSTDQAT works best if the system has Intel® QAT ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)) offloading device. If no device available, it will fallback to native ZSTD compression.
+
 #### DEFLATE_QPL
 
 `DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
