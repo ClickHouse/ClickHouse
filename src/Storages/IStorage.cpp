@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/SubscriberNotifierProcessor.hpp>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/Estimator.h>
 #include <Backups/RestorerFromBackup.h>
@@ -184,7 +185,12 @@ Chain IStorage::write(
 {
     Chain chain = writeImpl(query, metadata_snapshot, context, async_insert);
 
-    // TODO: add subscription-queue pushed
+    if (!chain.empty()) {
+        auto subscribers_notifier = std::make_shared<SubscriberNotifierProcessor>(
+            chain.getOutputHeader(), /*num_streams=*/1, subscription_queue);
+
+        chain.addSink(std::move(subscribers_notifier));
+    }
 
     return chain;
 }

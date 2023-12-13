@@ -1,4 +1,3 @@
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -35,8 +34,11 @@ std::unique_lock<std::shared_mutex> SubscriptionQueue::lockExclusive() const {
 }
 
 SubscriberPtr SubscriptionQueue::subscribe() {
+  auto lock = lockExclusive();
+
   auto sub = std::make_shared<Subscriber>();
   subscribers.push_back(sub);
+
   return sub;
 }
 
