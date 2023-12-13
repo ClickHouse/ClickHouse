@@ -269,7 +269,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             /// It's also possible just because reads in [Zoo]Keeper are not lineariazable.
             ///
             /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
-            zero_copy_lock->lock->unlock();
+            if (zero_copy_lock)
+            {
+                zero_copy_lock->lock->unlock();
+            }
+
             disk->unlock(vfs_lock_path);
 
             LOG_DEBUG(log,

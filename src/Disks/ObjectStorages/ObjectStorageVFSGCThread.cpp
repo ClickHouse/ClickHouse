@@ -13,9 +13,17 @@ using enum VFSTransactionLogItem::Type;
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 static constexpr std::string_view VFS_SNAPSHOT_PREFIX = "vfs_snapshot_";
+
+bool canKeepSnapshot()
+{
+    auto limit = background_memory_tracker.getSoftLimit();
+    auto amount = background_memory_tracker.get();
+    return limit == 0 || amount < limit;
+}
 
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
     : storage(storage_)
@@ -137,6 +145,15 @@ VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntri
 
         previous_snapshot_log_item.type = Unlink;
         // Issue previous snapshot remote file for removal (no local metadata file as we use direct readObject)
+
+
+        if (!canKeepSnapshot())
+        {
+            throw Exception(
+                ErrorCodes::MEMORY_LIMIT_EXCEEDED, "log_batch size {}", log_batch.size());
+        }
+
+
         log_batch.emplace_back(previous_snapshot_log_item);
 
         auto snapshot_buf = storage.object_storage->readObject(previous_snapshot_log_item);
