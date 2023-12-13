@@ -113,11 +113,22 @@ String JoinClause::dump() const
 namespace
 {
 
+using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
+
+TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
+{
+    TableExpressionSet res;
+    for (const auto & expr : extractTableExpressions(node))
+        res.insert(expr.get());
+
+    return res;
+}
+
 std::optional<JoinTableSide> extractJoinTableSideFromExpression(//const ActionsDAG::Node * expression_root_node,
     const IQueryTreeNode * expression_root_node,
     //const std::unordered_set<const ActionsDAG::Node *> & join_expression_dag_input_nodes,
-    // const NameSet & left_table_expression_columns_names,
-    // const NameSet & right_table_expression_columns_names,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
     const JoinNode & join_node)
 {
     std::optional<JoinTableSide> table_side;
@@ -138,8 +149,8 @@ std::optional<JoinTableSide> extractJoinTableSideFromExpression(//const ActionsD
     // for (const auto & r : right_table_expression_columns_names)
     //     std::cerr << r << std::endl;
 
-    const auto * left_table_expr = join_node.getLeftTableExpression().get();
-    const auto * right_table_expr = join_node.getRightTableExpression().get();
+    // const auto * left_table_expr = join_node.getLeftTableExpression().get();
+    // const auto * right_table_expr = join_node.getRightTableExpression().get();
 
     while (!nodes_to_process.empty())
     {
@@ -180,16 +191,16 @@ std::optional<JoinTableSide> extractJoinTableSideFromExpression(//const ActionsD
         if (!column_source)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No source for column {} in JOIN {}", input_name, join_node.formatASTForErrorMessage());
 
-        bool is_column_from_left_expr = column_source == left_table_expr;
-        bool is_column_from_right_expr = column_source == right_table_expr;
+        bool is_column_from_left_expr = left_table_expressions.contains(column_source);
+        bool is_column_from_right_expr = right_table_expressions.contains(column_source);
 
         if (!is_column_from_left_expr && !is_column_from_right_expr)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "JOIN {} actions has column {} that do not exist in left {} or right {} table expression columns",
                 join_node.formatASTForErrorMessage(),
-                input_name,
-                left_table_expr->formatASTForErrorMessage(),
-                right_table_expr->formatASTForErrorMessage());
+                column_source->formatASTForErrorMessage(),
+                join_node.getLeftTableExpression()->formatASTForErrorMessage(),
+                join_node.getRightTableExpression()->formatASTForErrorMessage());
 
         auto input_table_side = is_column_from_left_expr ? JoinTableSide::Left : JoinTableSide::Right;
         if (table_side && (*table_side) != input_table_side)
@@ -227,8 +238,8 @@ void buildJoinClause(
     //const std::unordered_set<const ActionsDAG::Node *> & join_expression_dag_input_nodes,
     //const ActionsDAG::Node * join_expressions_actions_node,
     const QueryTreeNodePtr & join_expression,
-    // const NameSet & left_table_expression_columns_names,
-    // const NameSet & right_table_expression_columns_names,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
     const JoinNode & join_node,
     JoinClause & join_clause)
 {
@@ -253,8 +264,8 @@ void buildJoinClause(
                 right_dag,
                 planner_context,
                 child,
-                // left_table_expression_columns_names,
-                // right_table_expression_columns_names,
+                left_table_expressions,
+                right_table_expressions,
                 join_node,
                 join_clause);
         }
@@ -272,14 +283,14 @@ void buildJoinClause(
 
         auto left_expression_side_optional = extractJoinTableSideFromExpression(left_child.get(),
             //join_expression_dag_input_nodes,
-            // left_table_expression_columns_names,
-            // right_table_expression_columns_names,
+            left_table_expressions,
+            right_table_expressions,
             join_node);
 
         auto right_expression_side_optional = extractJoinTableSideFromExpression(right_child.get(),
             //join_expression_dag_input_nodes,
-            // left_table_expression_columns_names,
-            // right_table_expression_columns_names,
+            left_table_expressions,
+            right_table_expressions,
             join_node);
 
         if (!left_expression_side_optional && !right_expression_side_optional)
@@ -350,8 +361,8 @@ void buildJoinClause(
     auto expression_side_optional = extractJoinTableSideFromExpression(//join_expressions_actions_node,
         //join_expression_dag_input_nodes,
         join_expression.get(),
-        // left_table_expression_columns_names,
-        // right_table_expression_columns_names,
+        left_table_expressions,
+        right_table_expressions,
         join_node);
 
     if (!expression_side_optional)
@@ -372,7 +383,10 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
     //ActionsDAGPtr join_expression_actions = std::make_shared<ActionsDAG>(join_expression_input_columns);
 
     ActionsDAGPtr left_join_actions = std::make_shared<ActionsDAG>(left_table_expression_columns);
-    ActionsDAGPtr right_join_actions = std::make_shared<ActionsDAG>(left_table_expression_columns);
+    ActionsDAGPtr right_join_actions = std::make_shared<ActionsDAG>(right_table_expression_columns);
+
+    // LOG_TRACE(&Poco::Logger::get("Planner"), "buildJoinClausesAndActions cols {} ", left_join_actions->dumpDAG());
+    // LOG_TRACE(&Poco::Logger::get("Planner"), "buildJoinClausesAndActions cols {} ", right_join_actions->dumpDAG());
 
     /** In ActionsDAG if input node has constant representation additional constant column is added.
       * That way we cannot simply check that node has INPUT type during resolution of expression join table side.
@@ -449,6 +463,9 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
         join_right_actions_names_set.insert(right_table_expression_column.name);
     }
 
+    auto join_left_table_expressions = extractTableExpressionsSet(join_node.getLeftTableExpression());
+    auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
+
     JoinClausesAndActions result;
     //result.join_expression_actions = join_expression_actions;
 
@@ -465,8 +482,8 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
                 right_join_actions,
                 planner_context,
                 child,
-                // join_left_actions_names_set,
-                // join_right_actions_names_set,
+                join_left_table_expressions,
+                join_right_table_expressions,
                 join_node,
                 result.join_clauses.back());
         }
@@ -482,8 +499,8 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
                 //join_expression_actions,
                 //join_expression_dag_input_nodes,
                 join_expression, //join_expressions_actions_root_node,
-                // join_left_actions_names_set,
-                // join_right_actions_names_set,
+                join_left_table_expressions,
+                join_right_table_expressions,
                 join_node,
                 result.join_clauses.back());
     }
