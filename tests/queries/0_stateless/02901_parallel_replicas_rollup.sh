@@ -29,7 +29,6 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --prefer_localhost_replica 1 \
-  --use_hedged_requests 0 \
   --cluster_for_parallel_replicas "parallel_replicas" \
   --allow_experimental_parallel_reading_from_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
@@ -63,7 +62,6 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --prefer_localhost_replica 1 \
-  --use_hedged_requests 0 \
   --cluster_for_parallel_replicas "parallel_replicas" \
   --allow_experimental_parallel_reading_from_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
