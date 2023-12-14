@@ -386,17 +386,17 @@ private:
     }
 
     template<typename S>
-    static void calculateWhetherUseMemoryCopy(PaddedPODArray<S> & inserts, size_t instructions_size, std::optional<int> & instruction_use_memory_copy,
+    static void calculateWhetherUseMemoryCopy(PaddedPODArray<S> & inserts, std::vector<Instruction> & instructions, std::optional<int> & instruction_use_memory_copy,
         double threshold_use_memcpy)
     {
         if (!instruction_use_memory_copy.has_value())
         {
-            std::vector<UInt64> instruction_insert_sizes(instructions_size);
+            std::vector<UInt64> instruction_insert_sizes(instructions.size());
             for (size_t i = 0; i < inserts.size(); ++i)
                 instruction_insert_sizes[inserts[i]] += 1;
             for (size_t i = 0; i < instruction_insert_sizes.size(); ++i)
             {
-                if (instruction_insert_sizes[i] * 1.0 / inserts.size() >= threshold_use_memcpy)
+                if (!instructions[i].source_is_constant && instruction_insert_sizes[i] * 1.0 / inserts.size() >= threshold_use_memcpy)
                     instruction_use_memory_copy.emplace(static_cast<int>(i));
             }
         }
@@ -413,7 +413,7 @@ private:
         PaddedPODArray<UInt8> & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
         std::vector<const T*> data_cols(instructions.size());
         std::vector<const UInt8 *> null_map_cols(instructions.size());
-        calculateWhetherUseMemoryCopy(inserts, instructions.size(), instruction_use_memory_copy, threshold_use_memcpy);
+        calculateWhetherUseMemoryCopy(inserts, instructions, instruction_use_memory_copy, threshold_use_memcpy);
         for (size_t i = 0; i < instructions.size(); ++i)
         {
             if (instructions[i].source->isNullable())
@@ -471,7 +471,7 @@ private:
         calculateInserts(instructions, rows, inserts);
 
         PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
-        calculateWhetherUseMemoryCopy(inserts, instructions.size(), instruction_use_memory_copy, threshold_use_memcpy);
+        calculateWhetherUseMemoryCopy(inserts, instructions, instruction_use_memory_copy, threshold_use_memcpy);
         if (!instruction_use_memory_copy.has_value())
         {
             for (size_t row_i = 0; row_i < rows; ++row_i)
