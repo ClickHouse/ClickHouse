@@ -57,6 +57,7 @@ private:
     void restartReplica(const StorageID & replica, ContextMutablePtr system_context);
     void restartReplicas(ContextMutablePtr system_context);
     void syncReplica(ASTSystemQuery & query);
+    void setReplicaReadiness(bool ready);
     void waitLoadingParts();
 
     void syncReplicatedDatabase(ASTSystemQuery & query);

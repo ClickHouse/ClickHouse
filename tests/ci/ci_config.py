@@ -329,6 +329,8 @@ CI_CONFIG = CiConfig(
         "SQLancer (debug)": TestConfig("package_debug"),
         "Sqllogic test (release)": TestConfig("package_release"),
         "SQLTest": TestConfig("package_release"),
+        "ClickBench (amd64)": TestConfig("package_release"),
+        "ClickBench (aarch64)": TestConfig("package_aarch64"),
         "libFuzzer tests": TestConfig("fuzzers"),
     },
 )
@@ -506,6 +508,11 @@ CHECK_DESCRIPTIONS = [
         "upgrade it to the version from the PR. It checks if the new server can "
         "successfully startup without any errors, crashes or sanitizer asserts",
         lambda x: x.startswith("Upgrade check ("),
+    ),
+    CheckDescription(
+        "ClickBench",
+        "Runs [ClickBench](https://github.com/ClickHouse/ClickBench/) with instant-attach table",
+        lambda x: x.startswith("ClickBench"),
     ),
     CheckDescription(
         "Falback for unknown",

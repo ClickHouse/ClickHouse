@@ -169,7 +169,7 @@ def process_results(
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found test_results.tsv")
+        logging.info("Found %s", status_path.name)
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
 
