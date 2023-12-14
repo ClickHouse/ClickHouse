@@ -615,10 +615,10 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
         }
     }
 
-    result.left_join_expressions_actions = std::move(left_join_actions);
+    result.left_join_expressions_actions = left_join_actions->clone();
     result.left_join_expressions_actions->removeUnusedActions(join_left_actions_names);
 
-    result.right_join_expressions_actions = std::move(right_join_actions);
+    result.right_join_expressions_actions = right_join_actions->clone();
     result.right_join_expressions_actions->removeUnusedActions(join_right_actions_names);
 
     return result;
