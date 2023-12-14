@@ -1460,7 +1460,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
 
     client_configuration.requestTimeoutMs = request_settings.request_timeout_ms;
 
-    auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
+    auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key, auth_settings.session_token);
     client = S3::ClientFactory::instance().create(
         client_configuration,
         url.is_virtual_hosted_style,

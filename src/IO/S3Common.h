@@ -80,6 +80,7 @@ struct AuthSettings
 
     std::string access_key_id;
     std::string secret_access_key;
+    std::string session_token;
     std::string region;
     std::string server_side_encryption_customer_key_base64;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
