@@ -144,6 +144,7 @@ public:
     void shutdown();
 
     bool setBackgroundDownloadThreads(size_t threads_num);
+    size_t getBackgroundDownloadThreads() const { return download_threads.size(); }
     bool setBackgroundDownloadQueueSizeLimit(size_t size);
 
     bool isBackgroundDownloadEnabled();

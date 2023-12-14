@@ -1353,7 +1353,18 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         actual_settings.background_download_queue_size_limit = new_settings.background_download_queue_size_limit;
     }
 
-    if (metadata.setBackgroundDownloadThreads(new_settings.background_download_threads))
+    bool updated;
+    try
+    {
+        updated = metadata.setBackgroundDownloadThreads(new_settings.background_download_threads);
+    }
+    catch (...)
+    {
+        actual_settings.background_download_threads = metadata.getBackgroundDownloadThreads();
+        throw;
+    }
+
+    if (updated)
     {
         LOG_INFO(log, "Changed background_download_threads from {} to {}",
                  actual_settings.background_download_threads,

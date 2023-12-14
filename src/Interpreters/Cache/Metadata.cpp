@@ -743,7 +743,7 @@ bool CacheMetadata::setBackgroundDownloadThreads(size_t threads_num)
 
         for (size_t i = 0; i < remove_threads; ++i)
         {
-            chassert(download_threads.back()->stop_flag == true);
+            chassert(download_threads.back()->stop_flag);
 
             auto & thread = download_threads.back()->thread;
             if (thread && thread->joinable())
