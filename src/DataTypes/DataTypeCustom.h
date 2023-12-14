@@ -55,7 +55,7 @@ public:
     String getName() const override { return name; }
     bool identical(const IDataTypeCustomName & rhs_) const override
     {
-        if (const auto * rhs = typeid_cast<decltype(this)>(&rhs_))
+        if (const auto * rhs = dynamic_cast<decltype(this)>(&rhs_))
             return name == rhs->getName();
         return false;
     }
