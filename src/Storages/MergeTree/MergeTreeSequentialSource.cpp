@@ -20,7 +20,9 @@ namespace ErrorCodes
 }
 
 
-/// Lightweight (in terms of logic) stream for reading single part from MergeTree
+/// Lightweight (in terms of logic) stream for reading single part from
+/// MergeTree, used for merges and mutations.
+///
 /// NOTE:
 ///  It doesn't filter out rows that are deleted with lightweight deletes.
 ///  Use createMergeTreeSequentialSource filter out those rows.
