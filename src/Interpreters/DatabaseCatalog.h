@@ -400,10 +400,6 @@ public:
         auto & database_catalog = DatabaseCatalog::instance();
         auto all_databases = database_catalog.getDatabases();
 
-        /// For returning a pair of hint, which will be the database_name and table_name
-        /// that's closest to the given table_name.
-        std::pair<String, String> result;
-
         for (const auto & [db_name, db] : all_databases)
         {
             /// this case should be covered already by getHintForTable
@@ -413,16 +409,12 @@ public:
             TableNameHints hints(db, context);
             auto results = hints.getHints(table_name);
 
-            /// if results are empty continue, else, break and return the first instance of
-            /// table_name and database_name that's found.
-            if (results.empty())
-                continue;
-
-            result = std::make_pair(db_name, results[0]);
-            break;
+            /// if the results are not empty, return the first instance of the table_name
+            /// and the corresponding database_name that was found.
+            if (!results.empty())
+                return std::make_pair(db_name, results[0]);
         }
-
-        return result;
+        return {};
     }
 
     Names getAllRegisteredNames() const override
