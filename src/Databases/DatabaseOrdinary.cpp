@@ -28,7 +28,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include "Core/Defines.h"
+#include <Core/Defines.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <boost/algorithm/string/replace.hpp>
