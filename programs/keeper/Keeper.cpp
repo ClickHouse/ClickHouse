@@ -14,6 +14,7 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Server/waitServersToFinish.h>
+#include <base/getMemoryAmount.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <Poco/Net/NetException.h>
@@ -32,6 +33,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/TCPServer.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/KeeperReadinessHandler.h>
 
 #include "Core/Defines.h"
 #include "config.h"
@@ -289,6 +291,33 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
+    auto updateMemorySoftLimitInConfig = [&](Poco::Util::AbstractConfiguration & config)
+    {
+        UInt64 memory_soft_limit = 0;
+        if (config.has("keeper_server.max_memory_usage_soft_limit"))
+        {
+            memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+        }
+
+        /// if memory soft limit is not set, we will use default value
+        if (memory_soft_limit == 0)
+        {
+            Float64 ratio = 0.9;
+            if (config.has("keeper_server.max_memory_usage_soft_limit_ratio"))
+                ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio");
+
+            size_t physical_server_memory = getMemoryAmount();
+            if (ratio > 0 && physical_server_memory > 0)
+            {
+                memory_soft_limit = static_cast<UInt64>(physical_server_memory * ratio);
+                config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
+            }
+        }
+        LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
+    };
+
+    updateMemorySoftLimitInConfig(config());
+
     std::string path;
 
     if (config().has("keeper_server.storage_path"))
@@ -466,6 +495,29 @@ try
                 std::make_unique<HTTPServer>(
                     std::move(my_http_context), createPrometheusMainHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
+
+        /// HTTP control endpoints
+        port_name = "keeper_server.http_control.port";
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
+        {
+            auto my_http_context = httpContext();
+            Poco::Timespan my_keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+            Poco::Net::HTTPServerParams::Ptr my_http_params = new Poco::Net::HTTPServerParams;
+            my_http_params->setTimeout(my_http_context->getReceiveTimeout());
+            my_http_params->setKeepAliveTimeout(my_keep_alive_timeout);
+
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
+            socket.setSendTimeout(my_http_context->getSendTimeout());
+            servers->emplace_back(
+                listen_host,
+                port_name,
+                "HTTP Control: http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params)
+                    );
+        });
     }
 
     for (auto & server : *servers)
@@ -498,6 +550,8 @@ try
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
             updateLevels(*config, logger());
+
+            updateMemorySoftLimitInConfig(*config);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);

@@ -9,10 +9,16 @@
 #include <Storages/StorageFactory.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric AttachedTable;
+}
 
 
 namespace DB
@@ -243,6 +249,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     res = it->second;
     tables.erase(it);
     res->is_detached = true;
+    CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
 
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
@@ -277,6 +284,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(ContextPtr, const String & n
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
+    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
 }
 
 void DatabaseWithOwnTablesBase::registerLazyTableUnlocked(const String & table_name, LazyTableCreator table_creator, const String & relative_table_path)
