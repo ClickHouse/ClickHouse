@@ -394,7 +394,6 @@ private:
             std::vector<UInt64> instruction_insert_sizes(instructions_size);
             for (size_t i = 0; i < inserts.size(); ++i)
                 instruction_insert_sizes[inserts[i]] += 1;
-            
             for (size_t i = 0; i < instruction_insert_sizes.size(); ++i)
             {
                 if (instruction_insert_sizes[i] * 1.0 / inserts.size() >= threshold_use_memcpy)
@@ -404,8 +403,8 @@ private:
     }
 
     template<typename T, typename S>
-    static void executeInstructionsColumnarForNullable(std::vector<Instruction> & instructions, size_t rows, 
-        const MutableColumnPtr & res, const MutableColumnPtr & null_map, std::optional<int> & instruction_use_memory_copy, double threshold_use_memcpy)
+    static void executeInstructionsColumnarForNullable(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res,
+        const MutableColumnPtr & null_map, std::optional<int> & instruction_use_memory_copy, double threshold_use_memcpy)
     {
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
@@ -415,7 +414,6 @@ private:
         std::vector<const T*> data_cols(instructions.size());
         std::vector<const UInt8 *> null_map_cols(instructions.size());
         calculateWhetherUseMemoryCopy(inserts, instructions.size(), instruction_use_memory_copy, threshold_use_memcpy);
-        
         for (size_t i = 0; i < instructions.size(); ++i)
         {
             if (instructions[i].source->isNullable())
@@ -456,9 +454,7 @@ private:
             for (size_t row_i = 0; row_i < rows; ++row_i)
             {
                 if (inserts[row_i] == val)
-                {
                     continue;
-                }
                 auto & instruction = instructions[inserts[row_i]];
                 size_t index = instruction.source_is_constant ? 0 : row_i;
                 res_data[row_i] = *(data_cols[inserts[row_i]] + index);
@@ -489,10 +485,7 @@ private:
         {
             std::vector<const T*> data_cols(instructions.size());
             for (size_t i = 0; i < instructions.size(); ++i)
-            {
                data_cols[i]= assert_cast<const ColumnVector<T> &>(*instructions[i].source).getData().data();
-            }
-            
             int val = instruction_use_memory_copy.value();
             memcpy(res_data.data(), data_cols[val], sizeof(T) * rows);
             for (size_t row_i = 0; row_i < rows; ++row_i)
