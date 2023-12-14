@@ -46,20 +46,18 @@ WithRetries::RetriesControlHolder WithRetries::createRetriesControlHolder(const 
 
 void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
 {
-    if (my_faulty_zookeeper->isNull() || my_faulty_zookeeper->expired())
+    std::lock_guard lock(zookeeper_mutex);
+
+    if (!zookeeper || zookeeper->expired())
     {
-        my_faulty_zookeeper->setKeeper(get_zookeeper());
-        try
-        {
-            /// The callback might itself fail with a new ZK error
-            callback(my_faulty_zookeeper);
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (!Coordination::isHardwareError(e.code))
-                throw;
-            my_faulty_zookeeper->setKeeper(nullptr);
-        }
+        zookeeper = get_zookeeper();
+        my_faulty_zookeeper->setKeeper(zookeeper);
+
+        callback(my_faulty_zookeeper);
+    }
+    else
+    {
+        my_faulty_zookeeper->setKeeper(zookeeper);
     }
 }
 
@@ -74,7 +72,11 @@ WithRetries::FaultyKeeper WithRetries::getFaultyZooKeeper() const
     /// The reason is that ZooKeeperWithFaultInjection may reset the underlying pointer and there could be a race condition
     /// when the same object is used from multiple threads.
     auto faulty_zookeeper = ZooKeeperWithFaultInjection::createInstance(
-        settings.keeper_fault_injection_probability, settings.keeper_fault_injection_seed, get_zookeeper(), log->name(), log);
+        settings.keeper_fault_injection_probability,
+        settings.keeper_fault_injection_seed,
+        zookeeper,
+        log->name(),
+        log);
 
     return faulty_zookeeper;
 }

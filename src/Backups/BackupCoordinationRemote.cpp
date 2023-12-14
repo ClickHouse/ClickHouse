@@ -5,16 +5,14 @@
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationStage.h>
-#include <Core/ServerUUID.h>
+#include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/escapeForFileName.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
-#include <Common/escapeForFileName.h>
 
 
 namespace DB
@@ -254,7 +252,7 @@ void BackupCoordinationRemote::removeAllNodes()
         /// at `zookeeper_path` which might cause such hosts to stop with exception "ZNONODE". Or such hosts might still do some useless part
         /// of their backup work before that. Anyway in this case backup won't be finalized (because only an initiator can do that).
         with_retries.renewZooKeeper(zk);
-        zk->tryRemoveRecursive(zookeeper_path);
+        zk->removeRecursive(zookeeper_path);
     });
 }
 

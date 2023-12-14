@@ -1,13 +1,11 @@
 #include <Backups/BackupCoordinationRemote.h>
 #include <Backups/BackupCoordinationStage.h>
-#include <Backups/BackupCoordinationStageSync.h>
 #include <Backups/RestoreCoordinationRemote.h>
-#include <Core/ServerUUID.h>
-#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Backups/BackupCoordinationStageSync.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -307,7 +305,7 @@ void RestoreCoordinationRemote::removeAllNodes()
         [&, &zk = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zk);
-            zk->tryRemoveRecursive(zookeeper_path);
+            zk->removeRecursive(zookeeper_path);
         });
 }
 
