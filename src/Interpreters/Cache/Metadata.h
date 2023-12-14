@@ -29,7 +29,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool evicting() const { return removal_candidate.load(); }
 
-    Priority::Iterator getQueueIterator() const { return file_segment->getQueueIterator(); }
+    Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
     std::atomic<bool> removal_candidate{false};
@@ -102,7 +102,7 @@ public:
     using Key = FileCacheKey;
     using IterateFunc = std::function<void(LockedKey &)>;
 
-    explicit CacheMetadata(const std::string & path_);
+    explicit CacheMetadata(const std::string & path_, size_t background_download_queue_size_limit_);
 
     const String & getBaseDirectory() const { return path; }
 
@@ -233,7 +233,7 @@ struct LockedKey : private boost::noncopyable
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
-    void addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
+    bool addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 
     bool isLastOwnerOfFileSegment(size_t offset) const;
 
@@ -243,7 +243,7 @@ struct LockedKey : private boost::noncopyable
 
     void markAsRemoved();
 
-    FileSegments sync();
+    std::vector<FileSegment::Info> sync(FileCache & cache);
 
     std::string toString() const;
 

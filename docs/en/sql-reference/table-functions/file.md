@@ -1,4 +1,4 @@
- --
+---
 slug: /en/sql-reference/table-functions/file
 sidebar_position: 60
 sidebar_label: file

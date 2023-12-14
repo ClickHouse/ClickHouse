@@ -38,6 +38,7 @@ SELECT
     hex(SHA224(ipv6)),
     hex(SHA256(ipv6)),
     hex(SHA512(ipv6)),
+    hex(SHA512_256(ipv6)),
     farmFingerprint64(ipv6),
     javaHash(ipv6),
     xxh3(ipv6),
