@@ -396,10 +396,6 @@ if (TARGET ch_contrib::nuraft)
     target_link_libraries (clickhouse_compression PUBLIC ch_contrib::nuraft)
 endif()
 
-if (TARGET ch_contrib::seasonal-decompose)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::seasonal-decompose)
-endif ()
-
 dbms_target_link_libraries (
     PRIVATE
         boost::filesystem
