@@ -103,12 +103,27 @@ def test_parallel_replicas_custom_key_failover(
         node.query("system flush logs")
 
     # the subqueries should be spread over available nodes
-    query_id = node1.query(f"select query_id from system.query_log where current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id")
-    assert(query_id != '')
+    query_id = node1.query(
+        f"select query_id from system.query_log where current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id"
+    )
+    assert query_id != ""
     query_id = query_id[:-1]
 
-    assert(node1.query(f"SELECT count() > 0 FROM system.query_log WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id ") == '1\n')
-    assert(node3.query(f"SELECT count() > 0 FROM system.query_log WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id ") == '1\n')
+    assert (
+        node1.query(
+            f"SELECT count() > 0 FROM system.query_log WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id "
+        )
+        == "1\n"
+    )
+    assert (
+        node3.query(
+            f"SELECT count() > 0 FROM system.query_log WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id "
+        )
+        == "1\n"
+    )
 
-    query_count = node1.query(f"SELECT h, count() > 0 FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id group by hostname() as h settings skip_unavailable_shards=1""")
-    assert(query_count == 'n1\t1\nn3\t1\n')
+    query_count = node1.query(
+        f"SELECT h, count() > 0 FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id group by hostname() as h settings skip_unavailable_shards=1"
+        ""
+    )
+    assert query_count == "n1\t1\nn3\t1\n"
