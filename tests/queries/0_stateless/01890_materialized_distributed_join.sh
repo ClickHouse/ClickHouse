@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -nm -q "
     insert into test_shard  values (1, 1);
     insert into test_local  values (1, 2);
 
-    create materialized view test_distributed engine Distributed('test_cluster_two_shards', $CLICKHOUSE_DATABASE, 'test_shard', k) as select k, v from test_source;
+    create materialized view $CLICKHOUSE_DATABASE.test_distributed engine Distributed('test_cluster_two_shards', $CLICKHOUSE_DATABASE, 'test_shard', k) as select k, v from test_source;
 
     select * from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v;
     select td.v, td.k, td.v, tl.v, tl.k, td.v from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v FORMAT TSVWithNamesAndTypes;

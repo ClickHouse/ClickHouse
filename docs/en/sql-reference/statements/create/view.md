@@ -53,7 +53,9 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 ## Materialized View
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] 
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
+AS SELECT ...
 ```
 
 :::tip
@@ -111,9 +113,16 @@ Note that regardless of the SQL security option, in every case it is still requi
 Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order to create a view with this option.
 :::
 
-If `DEFINER`/`SQL SECURITY` weren't specified, the default values will be used:
+If `DEFINER`/`SQL SECURITY` aren't specified, the default values are used:
 - `SQL SECURITY`: `DEFINER` ([configurable by settings](../../../operations/settings/settings.md#default_view_sql_security))
 - `DEFINER`: `CURRENT_USER` ([configurable by settings](../../../operations/settings/settings.md#default_view_definer))
+
+If a view is attached without `DEFINER`/`SQL SECURITY` specified, the default value is `SQL SECURITY NONE`.
+
+To change SQL security for an existing view, use 
+```sql
+ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
+```
 
 ### Examples sql security
 ```sql
