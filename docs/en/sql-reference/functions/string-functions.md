@@ -1251,7 +1251,7 @@ This function also replaces numeric character references with Unicode characters
 **Syntax**
 
 ``` sql
-decodeHTMComponent(x)
+decodeHTMLComponent(x)
 ```
 
 **Arguments**
