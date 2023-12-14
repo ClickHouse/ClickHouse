@@ -16,13 +16,12 @@ extern const int LOGICAL_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-static constexpr std::string_view VFS_SNAPSHOT_PREFIX = "vfs_snapshot_";
-
-bool canKeepSnapshot()
+static void checkIfCanLoadBatch()
 {
-    auto limit = background_memory_tracker.getSoftLimit();
-    auto amount = background_memory_tracker.get();
-    return limit == 0 || amount < limit;
+    const Int64 limit = background_memory_tracker.getSoftLimit();
+    const Int64 amount = background_memory_tracker.get();
+    if (limit > 0 && amount >= limit)
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Can't load log batch");
 }
 
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
@@ -30,6 +29,8 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
     , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
     , zookeeper_lock(storage.zookeeper, storage.traits.locks_node, "gc_lock")
 {
+    storage.zookeeper->createIfNotExists(storage.traits.last_snapshot_node, "");
+
     task = context->getSchedulePool().createTask(
         log->name(),
         [this]
@@ -63,138 +64,95 @@ void ObjectStorageVFSGCThread::run()
         return;
     }
 
-    const Strings batch = storage.zookeeper->getChildren(storage.traits.log_base_node);
+    Strings batch = storage.zookeeper->getChildren(storage.traits.log_base_node);
     constexpr size_t batch_min_size = 1; // TODO myrrc should be a setting
     if (batch.size() < batch_min_size)
         return;
-
     const auto [start_str, end_str] = std::ranges::minmax(batch);
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
     const size_t end_logpointer = parseFromString<size_t>(end_str.substr(4));
+    batch = {};
 
     LOG_DEBUG(log, "Acquired lock for log range [{};{}]", start_logpointer, end_logpointer);
     auto [snapshot, obsolete_objects] = getSnapshotWithLogEntries(start_logpointer, end_logpointer);
 
-    const String snapshot_name = fmt::format("{}{}", VFS_SNAPSHOT_PREFIX, end_logpointer);
-    writeSnapshot(std::move(snapshot), snapshot_name);
+    const String snapshot_name = fmt::format("vfs_snapshot_{}", end_logpointer);
+    const String snapshot_remote_path = writeSnapshot(std::move(snapshot), snapshot_name);
 
     LOG_TRACE(log, "Removing objects from storage: {}", fmt::join(obsolete_objects, "\n"));
     storage.object_storage->removeObjects(obsolete_objects);
 
-    removeLogEntries(start_logpointer, end_logpointer);
+    onBatchProcessed(start_logpointer, end_logpointer, snapshot_remote_path);
 
     LOG_DEBUG(log, "Removed lock for log range [{};{}]", start_logpointer, end_logpointer);
 }
 
 VFSSnapshotWithObsoleteObjects ObjectStorageVFSGCThread::getSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer)
 {
-    const bool has_previous_snapshot = start_logpointer > 0;
+    const bool should_have_previous_snapshot = start_logpointer > 0;
     const size_t log_batch_length = end_logpointer - start_logpointer + 1;
     VFSSnapshotWithObsoleteObjects out;
 
-    Coordination::Requests requests(log_batch_length);
-    for (size_t i = 0; i < log_batch_length; ++i)
-        requests[i] = zkutil::makeGetRequest(getNode(start_logpointer + i));
-
-    std::vector<VFSTransactionLogItem> log_batch(log_batch_length);
-    VFSTransactionLogItem previous_snapshot_log_item;
-
-    /// Precondition: when we write a snapshot on a previous replica, the snapshot writing operation is
-    /// put in log, so when we process next batch, we can get the snapshot remote path from log. Then we
-    /// construct a StoredObject and read directly from it.
-    const Coordination::Responses responses = storage.zookeeper->multi(requests);
-
-    for (size_t i = 0; i < log_batch_length; ++i)
+    // TODO myrrc what if replica capturing log entry doesn't get correct snapshot due to stale read?
+    // Should write snapshot logpointer here, read first child of log, and if lp + 1 != first_child issue
+    // storage.zookeeper->sync(storage.traits.log_base_node)
+    if (should_have_previous_snapshot)
     {
-        const String & log_item_str = dynamic_cast<const Coordination::GetResponse &>(*responses[i]).data;
-        auto log_item = VFSTransactionLogItem::deserialize(log_item_str);
-
-        if (log_item.type == CreateInode && log_item.local_path.starts_with(VFS_SNAPSHOT_PREFIX))
-        {
-            if (!previous_snapshot_log_item.remote_path.empty())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "More than one snapshot entry ({}, {}) found for log batch [{};{}]",
-                    previous_snapshot_log_item,
-                    log_item,
-                    start_logpointer,
-                    end_logpointer);
-
-            previous_snapshot_log_item = log_item;
-        }
-
-        log_batch[i] = std::move(log_item);
-    }
-
-    if (has_previous_snapshot)
-    {
-        // TODO myrrc what if replica capturing log entry doesn't get snapshot due to stale read?
-        // Consider using zk->sync(VFS_LOG_BASE_NODE)
-        if (previous_snapshot_log_item.remote_path.empty())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "No snapshot for {} found in log entries [{};{}]",
-                start_logpointer - 1,
-                start_logpointer,
-                end_logpointer);
-        const size_t snapshot_logpointer
-            = parseFromString<size_t>(previous_snapshot_log_item.local_path.substr(VFS_SNAPSHOT_PREFIX.size()));
-        if (snapshot_logpointer + 1 != start_logpointer)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Snapshot logpointer {} != start logpointer {}", snapshot_logpointer, start_logpointer);
-
-        previous_snapshot_log_item.type = Unlink;
-        // Issue previous snapshot remote file for removal (no local metadata file as we use direct readObject)
-
-
-        if (!canKeepSnapshot())
-        {
-            throw Exception(
-                ErrorCodes::MEMORY_LIMIT_EXCEEDED, "log_batch size {}", log_batch.size());
-        }
-
-
-        log_batch.emplace_back(previous_snapshot_log_item);
-
-        auto snapshot_buf = storage.object_storage->readObject(previous_snapshot_log_item);
+        auto last_snapshot = StoredObject{storage.zookeeper->get(storage.traits.last_snapshot_node)};
+        auto snapshot_buf = storage.object_storage->readObject(last_snapshot);
         auto snapshot_compressed_buf = CompressedReadBuffer{*snapshot_buf};
         String snapshot_str;
         readStringUntilEOF(snapshot_str, snapshot_compressed_buf);
-
         out.snapshot = VFSSnapshot::deserialize(snapshot_str);
+        out.obsolete_objects.emplace_back(std::move(last_snapshot));
+        LOG_TRACE(log, "Loaded snapshot {}", out.snapshot);
     }
 
-    LOG_TRACE(log, "Loaded snapshot {}\nGot log batch\n{}", out.snapshot, fmt::join(log_batch, "\n"));
+    checkIfCanLoadBatch();
+    zkutil::ZooKeeper::MultiGetResponse responses;
+    {
+        Strings nodes(log_batch_length);
+        for (size_t i = 0; i < log_batch_length; ++i)
+            nodes[i] = getNode(start_logpointer + i);
+        responses = storage.zookeeper->get(nodes);
+    }
 
-    out.obsolete_objects = out.snapshot.update(log_batch);
+    for (size_t i = 0; i < log_batch_length; ++i)
+    {
+        auto entry = VFSTransactionLogItem::deserialize(std::move(responses[i].data));
+        out.snapshot.update(entry, out.obsolete_objects);
+        LOG_TRACE(log, "Log entry {}", entry);
+    }
 
     return out;
 }
 
-void ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name)
+String ObjectStorageVFSGCThread::writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name)
 {
     LOG_DEBUG(log, "Writing snapshot {}", snapshot_name);
+    LOG_TRACE(log, "{}", snapshot);
 
-    auto buf = storage.writeFile(snapshot_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+    const ObjectStorageKey key = storage.object_storage->generateObjectKeyForPath(snapshot_name);
+    auto object = StoredObject{key.serialize()};
+
+    auto buf = storage.object_storage->writeObject(object, WriteMode::Rewrite);
     auto compressed_buf = CompressedWriteBuffer{*buf};
     writeString(snapshot.serialize(), compressed_buf);
     compressed_buf.finalize();
     buf->finalize();
 
-    // Local metadata file which we don't need (snapshot will be deleted by replica processing next batch)
-    auto tx = storage.metadata_storage->createTransaction();
-    tx->unlinkFile(snapshot_name);
-    tx->commit();
+    return std::move(object.remote_path);
 }
 
-void ObjectStorageVFSGCThread::removeLogEntries(size_t start_logpointer, size_t end_logpointer)
+void ObjectStorageVFSGCThread::onBatchProcessed(size_t start_logpointer, size_t end_logpointer, const String & snapshot_remote_path)
 {
-    LOG_DEBUG(log, "Removing log range [{};{}]", start_logpointer, end_logpointer);
+    LOG_DEBUG(log, "Removing log range [{};{}], latest snapshot {}", start_logpointer, end_logpointer, snapshot_remote_path);
 
     const size_t log_batch_length = end_logpointer - start_logpointer + 1;
-    Coordination::Requests requests(log_batch_length);
+    Coordination::Requests requests(log_batch_length + 1);
     for (size_t i = 0; i < log_batch_length; ++i)
         requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), -1);
+    requests[log_batch_length] = zkutil::makeSetRequest(storage.traits.last_snapshot_node, snapshot_remote_path, -1);
 
     storage.zookeeper->multi(requests);
 }

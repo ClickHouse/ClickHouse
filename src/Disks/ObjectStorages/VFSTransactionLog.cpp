@@ -54,46 +54,42 @@ void getStoredObjectsVFSLogOps(
     }
 }
 
-VFSSnapshot::ObsoleteObjects VFSSnapshot::update(const std::vector<VFSTransactionLogItem> & logs)
+void VFSSnapshot::update(const VFSTransactionLogItem & item, ObsoleteObjects & obsolete)
 {
     using enum VFSTransactionLogItem::Type;
-    ObsoleteObjects out;
 
     // TODO myrrc instead of throwing, we should dedicate a snapshot part to invalid objects
     // and keep track of them so that some entity could clear object storage
-    for (const VFSTransactionLogItem & item : logs)
-        switch (item.type)
-        {
-            case CreateInode: {
-                if (auto it = items.find(item.remote_path); it != items.end()) [[unlikely]]
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Items with same remote path found in snapshot ({}) and log ({})", it->second.obj, item);
-                items.emplace(item.remote_path, ObjectWithRefcount{item, 0});
-                break;
-            }
-            case Link: {
-                auto it = items.find(item.remote_path);
-                if (it == items.end()) [[unlikely]]
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Item {} not found in snapshot", item);
-
-                ++it->second.links;
-                break;
-            }
-            case Unlink: {
-                auto it = items.find(item.remote_path);
-                if (it == items.end()) [[unlikely]]
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Item {} not found in snapshot", item);
-
-                if (--it->second.links == 0)
-                {
-                    out.emplace_back(it->second.obj);
-                    items.erase(it);
-                }
-                break;
-            }
+    switch (item.type)
+    {
+        case CreateInode: {
+            if (auto it = items.find(item.remote_path); it != items.end()) [[unlikely]]
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Items with same remote path found in snapshot ({}) and log ({})", it->second.obj, item);
+            items.emplace(item.remote_path, ObjectWithRefcount{item, 0});
+            break;
         }
+        case Link: {
+            auto it = items.find(item.remote_path);
+            if (it == items.end()) [[unlikely]]
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Item {} not found in snapshot", item);
 
-    return out;
+            ++it->second.links;
+            break;
+        }
+        case Unlink: {
+            auto it = items.find(item.remote_path);
+            if (it == items.end()) [[unlikely]]
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Item {} not found in snapshot", item);
+
+            if (--it->second.links == 0)
+            {
+                obsolete.emplace_back(it->second.obj);
+                items.erase(it);
+            }
+            break;
+        }
+    }
 }
 
 VFSSnapshot VFSSnapshot::deserialize(std::string_view str)

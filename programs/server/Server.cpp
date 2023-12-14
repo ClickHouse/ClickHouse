@@ -607,7 +607,8 @@ static void sanityChecks(Server & server)
 
         if (server.context()->getMergeTreeSettings().allow_object_storage_vfs)
         {
-            server.context()->addWarningMessage("Object storage VFS options disables zero-copy replication");
+            server.context()->addWarningMessage(
+                "allow_object_storage_vfs option disables zero-copy replication");
             throw;
         }
     }

@@ -10,7 +10,7 @@ namespace DB
 // A wrapper for object storage which counts references to objects using a transaction log in Keeper.
 // Disk operations don't remove data from object storage immediately, a garbage collector is responsible
 // for that.
-class DiskObjectStorageVFS : public DiskObjectStorage
+class DiskObjectStorageVFS final: public DiskObjectStorage
 {
 public:
     // TODO myrrc should just "using DiskObjectStorage::DiskObjectStorage" and fill zookeeper
@@ -31,6 +31,8 @@ public:
     void startupImpl(ContextPtr context) override;
     void shutdown() override;
 
+    // TODO myrrc support changing disk settings in runtime e.g. GC interval
+
     bool isObjectStorageVFS() const override { return true; }
     bool supportZeroCopyReplication() const override { return false; }
     DiskObjectStoragePtr createDiskObjectStorage() override;
@@ -42,10 +44,10 @@ public:
 private:
     friend class ObjectStorageVFSGCThread;
     std::optional<ObjectStorageVFSGCThread> garbage_collector;
-    bool allow_gc;
 
-    UInt64 gc_thread_sleep_ms;
-    VFSTraits traits;
+    const bool allow_gc;
+    const UInt64 gc_thread_sleep_ms;
+    const VFSTraits traits;
 
     zkutil::ZooKeeperPtr zookeeper;
 

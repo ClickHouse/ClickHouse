@@ -73,9 +73,9 @@ bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
 {
     using enum Coordination::Error;
     const String lock_path_full = lockPathToFullPath(path);
-    const auto mode = zkutil::CreateMode::Persistent;
+    const auto mode = zkutil::CreateMode::Ephemeral;
 
-    LOG_DEBUG(log, "Creating lock {} (zk path {}), block={}", path, lock_path_full, block);
+    LOG_TRACE(log, "Creating lock {} (zk path {}), block={}", path, lock_path_full, block);
 
     // TODO myrrc need something better for blocking case as now we should nearly always lose in tryCreate
     // in case there's contention on node
@@ -96,7 +96,7 @@ bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
 void DiskObjectStorageVFS::unlock(std::string_view path)
 {
     const String lock_path_full = lockPathToFullPath(path);
-    LOG_DEBUG(log, "Removing lock {} (zk path {})", path, lock_path_full);
+    LOG_TRACE(log, "Removing lock {} (zk path {})", path, lock_path_full);
     zookeeper->remove(lock_path_full);
 }
 

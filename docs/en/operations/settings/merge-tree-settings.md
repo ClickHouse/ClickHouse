@@ -304,10 +304,11 @@ Default value: 10800
 An alternate reference counting mechanism for object storages. Mutually exclusive with
 `allow_remote_fs_zero_copy_replication`. Unlike the 0copy setting, can't be set in runtime,
 a server restart is needed.
-This setting is unavailable when using ClickHouse Keeper (thus Keeper can't connect to a VFS disk).
+ClickHouse Keeper can not use VFS disk as a storage backend.
 
-When turned on, reuses `remote_fs_execute_merges_on_single_replica_time_threshold`
-and `zero_copy_merge_mutation_min_parts_size_sleep_before_lock` settings.
+When turned on, reuses the following settings:
+- `remote_fs_execute_merges_on_single_replica_time_threshold`
+- `zero_copy_merge_mutation_min_parts_size_sleep_before_lock`
 
 Possible values: 0, 1
 Default value: 0

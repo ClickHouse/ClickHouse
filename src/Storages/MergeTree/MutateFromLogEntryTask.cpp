@@ -139,8 +139,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             && (!zero_copy_lock || !zero_copy_lock->isLocked());
 
         // TODO myrrc revisit whether we need table shared id
-        const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
-        const bool vfs_lock_already_acquired = !disk->lock(vfs_lock_path, false);
+        const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name / "mutate";
+        const bool vfs_lock_already_acquired = is_vfs && !disk->lock(vfs_lock_path, false);
 
         if (zerocopy_lock_already_acquired || vfs_lock_already_acquired)
         {
@@ -257,7 +257,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         LOG_DEBUG(log, "Removing zero-copy lock");
         zero_copy_lock->lock->unlock();
     }
-    const String lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name;
+    const String lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name / "mutate";
     disk->unlock(lock_path);
 
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.

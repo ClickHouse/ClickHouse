@@ -40,8 +40,7 @@ struct VFSSnapshot
 
     std::unordered_map<String /*object_storage_path*/, ObjectWithRefcount> items;
 
-    // Update snapshot with logs, return a list of objects that have zero references
-    ObsoleteObjects update(const std::vector<VFSTransactionLogItem> & logs);
+    void update(const VFSTransactionLogItem & item, ObsoleteObjects & obsolete);
     static VFSSnapshot deserialize(std::string_view str);
     String serialize() const;
 };

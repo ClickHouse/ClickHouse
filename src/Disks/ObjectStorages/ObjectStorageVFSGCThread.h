@@ -33,8 +33,8 @@ private:
     // Given a pair of log pointers, load a snapshot before start_logpointer and apply [start_logpointer;
     // end_logpointer] updates to it
     VFSSnapshotWithObsoleteObjects getSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
-    void writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name);
-    void removeLogEntries(size_t start_logpointer, size_t end_logpointer);
+    String writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name);
+    void onBatchProcessed(size_t start_logpointer, size_t end_logpointer, const String & snapshot_remote_path);
 
     String getNode(size_t id) const;
 };
