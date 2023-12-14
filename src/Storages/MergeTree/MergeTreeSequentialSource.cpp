@@ -144,10 +144,14 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
     }
 
-    ReadSettings read_settings;
+    const auto & context = storage.getContext();
+    ReadSettings read_settings = context->getReadSettings();
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+    /// It does not make sense to use pthread_threadpool for background merges/mutations
+    /// And also to preserve backward compatibility
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
         read_settings.direct_io_threshold = 1;
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     MergeTreeReaderSettings reader_settings =
     {
