@@ -4,9 +4,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/Context.h>
@@ -16,7 +14,6 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageMergeTree.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -25,9 +22,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-
-#include <boost/algorithm/string/replace.hpp>
-#include <fmt/core.h>
 
 #include <filesystem>
 
@@ -499,116 +493,6 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
 
     LOG_INFO(&Poco::Logger::get("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
     fs::remove(convert_flag_path);
-}
-
-static void convertMergeTreeToReplicated(Poco::Logger * log, ContextMutablePtr context, const DatabasePtr & database, StorageID id)
-{
-    ASTPtr as_create_ptr = database->getCreateTableQuery(id.table_name, context);
-    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
-    const auto & storage = as_create.storage->as<ASTStorage &>();
-    String storage_definition = queryToString(storage);
-
-    /// Get storage definition
-    /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
-    auto uuid = UUIDHelpers::generateV4();
-    String replica_path = context->getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
-    replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", uuid));
-    String replica_name = context->getConfigRef().getString("default_replica_name", "{replica}");
-    String replicated_args = fmt::format("('{}', '{}')", replica_path, replica_name);
-    String replicated_engine = "Replicated" + storage.engine->name + replicated_args;
-
-    storage_definition = boost::algorithm::replace_first_copy(storage_definition, storage.engine->name, replicated_engine);
-
-    /// Get names
-    String table_name = id.getTableName();
-    String database_name = id.getDatabaseName();
-    String qualified_quoted_name = id.getFullTableName();
-    id.table_name = id.table_name + "_temp";
-    String tmp_qualified_quoted_name = id.getFullTableName();
-
-    try
-    {    
-        String create_table_query = fmt::format("CREATE TABLE {} UUID '{}' AS {} {}", tmp_qualified_quoted_name, uuid, qualified_quoted_name, storage_definition);
-        auto res = executeQuery(create_table_query, context, QueryFlags{ .internal = true }).second;
-        executeTrivialBlockIO(res, context);
-
-        String exchange_tables_query = fmt::format("EXCHANGE TABLES {} AND {}", qualified_quoted_name, tmp_qualified_quoted_name);
-        res = executeQuery(exchange_tables_query, context, QueryFlags{ .internal = true }).second;
-        executeTrivialBlockIO(res, context);
-
-        /// Get partition ids
-        String get_attach_queries_query = fmt::format("SELECT DISTINCT partition_id FROM system.parts WHERE table = '{}' AND database = '{}' AND active;", id.table_name, database_name);
-        WriteBufferFromOwnString buffer2;
-        ReadBufferFromOwnString buffer3 {std::move(get_attach_queries_query)};
-        auto select_query_context = Context::createCopy(context);
-        select_query_context->makeQueryContext();
-        select_query_context->setCurrentQueryId("");
-
-        executeQuery(buffer3, buffer2, false, select_query_context, {}, {.internal=true});
-
-        std::stringstream partition_ids_string{buffer2.str()};
-        std::string line;
-
-        /// Attach partitions
-        while (std::getline(partition_ids_string, line, '\n'))
-        {
-            String query3 = fmt::format("ALTER TABLE {} ATTACH PARTITION ID '{}' FROM {};", qualified_quoted_name, line, tmp_qualified_quoted_name);
-            executeQuery(query3, select_query_context, {.internal=true});
-        }
-
-        LOG_INFO(log, "Table {} is converted from MergeTree to replicated", qualified_quoted_name);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(
-            "Exception while trying to convert table {} from MergeTree to replicated. Tables may be in some intermediate state."
-            , qualified_quoted_name
-        );
-        throw;
-    }
-}
-
-static void findAndConvertMergeTreeTablesToReplicated(ContextMutablePtr context, const String & database_name)
-{
-    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
-
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
-    if (!database)
-    {
-        LOG_WARNING(log, "Database {} not found (while trying to convert it's tables from MergeTree to ReplicatedMergeTree)", database_name);
-        return;
-    }
-
-    auto local_context = Context::createCopy(context);
-
-    for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
-    {
-        if (const auto * merge_tree = dynamic_cast<const StorageMergeTree *>(iterator->table().get()))
-        {
-            auto id = merge_tree->getStorageID();
-
-            /// Check if convert flag is set
-            auto convert_flag_path = fs::path(context->getPath()) / "data" / database_name / id.getTableName() / "flags" / "convert_to_replicated";
-            if (fs::exists(convert_flag_path))
-            {
-                LOG_INFO(log, "Will convert table {} from MergeTree to replicated", id.getFullTableName());
-                convertMergeTreeToReplicated(log, local_context, database, id);
-                LOG_INFO(log, "Removing convert_to_replicated flag after convertation");
-                convert_flag_path = fs::path(local_context->getPath()) / "data" / database_name / (id.getTableName() + "_temp") / "flags" / "convert_to_replicated";
-                fs::remove(convert_flag_path);
-            }
-        }
-    }
-}
-
-void convertMergeTreeToReplicatedIfNeed(ContextMutablePtr context)
-{
-    LOG_INFO(&Poco::Logger::get("loadMetadata"), "Start searching for MergeTree tables with convert_to_replicated flag");
-
-    for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
-        findAndConvertMergeTreeTablesToReplicated(context, name);
-
-    LOG_INFO(&Poco::Logger::get("loadMetadata"), "All MergTree tables with convert_to_replicated flag are converted");
 }
 
 LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context)

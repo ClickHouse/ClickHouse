@@ -28,6 +28,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include "Core/Defines.h"
+#include <Storages/StorageReplicatedMergeTree.h>
+
+#include <boost/algorithm/string/replace.hpp>
 
 namespace fs = std::filesystem;
 
@@ -106,6 +110,59 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 }
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
+
+                if (create_query->storage && create_query->storage->engine->name.ends_with("MergeTree") && !create_query->storage->engine->name.starts_with("Replicated"))
+                {
+                    auto convert_to_replicated_flag_path = fs::path(getContext()->getPath()) / "data" / qualified_name.database / qualified_name.table / "flags" / "convert_to_replicated";
+                
+                    LOG_INFO(log, "Searching for convert_to_replicated flag at {}.", backQuote(convert_to_replicated_flag_path.string()));
+                    
+                    if (fs::exists(convert_to_replicated_flag_path))
+                    {
+                        LOG_INFO(log, "Found convert_to_replicated flag for table {}. Will try to load it as replicated table.", backQuote(qualified_name.getFullName()));
+
+                        /// Get storage definition
+                        /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
+                        auto * storage = create_query->storage->as<ASTStorage>();
+                        String storage_definition = queryToString(*storage);
+
+                        String replica_path = getContext()->getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
+                        replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", create_query->uuid));
+                        String replica_name = getContext()->getConfigRef().getString("default_replica_name", "{replica}");
+                        String replicated_args = fmt::format("('{}', '{}')", replica_path, replica_name);
+                        String replicated_engine = "Replicated" + storage->engine->name + replicated_args;
+
+                        String create_query_string = queryToString(*ast);
+
+                        create_query_string = boost::algorithm::replace_first_copy(create_query_string, storage->engine->name, replicated_engine);
+
+                        ParserCreateQuery parser_create_query;
+                        auto new_ast = parseQuery(parser_create_query, create_query_string, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+                        ast = new_ast;
+
+                        /// Write changes to metadata
+                        String table_metadata_path = full_path;
+                        String table_metadata_tmp_path = table_metadata_path + ".tmp";
+                        String statement = getObjectDefinitionFromCreateQuery(ast);
+                        {
+                            WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+                            writeString(statement, out);
+                            out.next();
+                            if (getContext()->getSettingsRef().fsync_metadata)
+                                out.sync();
+                            out.close();
+                        }
+                        fs::rename(table_metadata_tmp_path, table_metadata_path);
+
+                        LOG_INFO
+                        (
+                            log, 
+                            "Table {} is loaded as replicated. Not removing convert_to_replicated flag until metadata in zookeeper is restored.", 
+                            backQuote(qualified_name.getFullName())
+                        );
+                    }
+                }
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
@@ -208,6 +265,36 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
                 /// until startup finished.
                 auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
                 table->startup();
+
+                /// If table is ReplicatedMergeTree after conversion from MergeTree,
+                /// it is in readonly mode due to metadata in zookeeper missing.
+                if (auto * rmt = table->as<StorageReplicatedMergeTree>())
+                {
+                    auto convert_to_replicated_flag_path = fs::path(getContext()->getPath()) / "data" / name.database / name.table / "flags" / "convert_to_replicated";
+                    if (fs::exists(convert_to_replicated_flag_path))
+                    {
+                        if (rmt->isTableReadOnly())
+                        {
+                            rmt->restoreMetadataInZooKeeper();
+                            LOG_INFO
+                            (
+                                log, 
+                                "Metadata in zookeeper for {} is restored. Removing convert_to_replicated flag.", 
+                                backQuote(name.getFullName())
+                            );
+                        }
+                        else 
+                        {
+                            LOG_INFO
+                            (
+                                log, 
+                                "Table {} is not in readonly mode but convert_to_replicated flag is set. Removing flag.", 
+                                backQuote(name.getFullName())
+                            );
+                        }
+                        fs::remove(convert_to_replicated_flag_path);
+                    }
+                } 
                 logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
             }
             else

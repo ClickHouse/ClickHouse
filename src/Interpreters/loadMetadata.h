@@ -26,8 +26,4 @@ void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system
 /// Waits for `load_metadata` task before conversions
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context);
 
-/// Converts MergeTree tables to replicated if convert_to_replicated flag exists
-/// Flag must be set at /clickhouse/data/database_name/table_name/flags/
-void convertMergeTreeToReplicatedIfNeed(ContextMutablePtr context);
-
 }
