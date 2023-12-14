@@ -157,7 +157,7 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
         if (!version_column.empty())
             out << "version column: " << version_column << "\n";
         if (!is_deleted_column.empty())
-            out << "is delete column: " << is_deleted_column << "\n";
+            out << "is_deleted column: " << is_deleted_column << "\n";
         if (!columns_to_sum.empty())
             out << "columns to sum: " << columns_to_sum << "\n";
         if (!graphite_params_hash.empty())
