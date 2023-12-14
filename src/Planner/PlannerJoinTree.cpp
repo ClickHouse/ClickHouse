@@ -570,7 +570,8 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     return 0;
 }
 
-void addReadFromNullSourceStep(QueryPlan& query_plan, const StorageSnapshotPtr& storage_snapshot, const TableExpressionData table_expression_data) {
+void addReadFromNullSourceStep(QueryPlan& query_plan, const StorageSnapshotPtr& storage_snapshot, const TableExpressionData table_expression_data)
+{
     auto source_header = storage_snapshot->getSampleBlockForColumns(table_expression_data.getColumnNames());
     Pipe pipe(std::make_shared<NullSource>(source_header));
     auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -833,8 +834,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
 
-                if (table_expression_query_info.isStream() && query_context->getSettingsRef().allow_experimental_streaming) {
-                    if (!query_plan.isInitialized()) {
+                if (table_expression_query_info.isStream() && query_context->getSettingsRef().allow_experimental_streaming)
+                {
+                    if (!query_plan.isInitialized())
+                    {
                         /// Create step which reads from empty source if storage has no data.
                         addReadFromNullSourceStep(query_plan, storage_snapshot, table_expression_data);
                     }

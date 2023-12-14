@@ -177,17 +177,14 @@ void IStorage::readFromPipe(
     }
 }
 
-Chain IStorage::write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        bool async_insert)
+Chain IStorage::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert)
 {
     Chain chain = writeImpl(query, metadata_snapshot, context, async_insert);
 
-    if (!chain.empty() && context && context->getSettingsRef().allow_experimental_streaming) {
-        auto subscribers_notifier = std::make_shared<SubscribersNotifierProcessor>(
-            chain.getOutputHeader(), /*num_streams=*/1, subscription_queue);
+    if (!chain.empty() && context && context->getSettingsRef().allow_experimental_streaming)
+    {
+        auto subscribers_notifier
+            = std::make_shared<SubscribersNotifierProcessor>(chain.getOutputHeader(), /*num_streams=*/1, subscription_queue);
 
         chain.addSink(std::move(subscribers_notifier));
     }

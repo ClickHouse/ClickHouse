@@ -358,7 +358,8 @@ public:
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
-    virtual SubscriberPtr subscribeForChanges() {
+    virtual SubscriberPtr subscribeForChanges()
+    {
         return subscription_queue.subscribe();
     }
 

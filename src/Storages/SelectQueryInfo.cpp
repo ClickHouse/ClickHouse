@@ -1,5 +1,5 @@
-#include <Storages/SelectQueryInfo.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -14,7 +14,8 @@ bool SelectQueryInfo::isFinal() const
 }
 
 
-bool SelectQueryInfo::isStream() const {
+bool SelectQueryInfo::isStream() const
+{
     return table_expression_modifiers && table_expression_modifiers->hasStream();
 }
 

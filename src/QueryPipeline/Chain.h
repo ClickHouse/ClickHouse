@@ -16,7 +16,8 @@ class Chain
 {
 public:
     template <class Sink, class... Args>
-    static Chain fromSink(Args&&... args) {
+    static Chain fromSink(Args &&... args)
+    {
         auto sink = std::make_shared<Sink>(std::forward<Args>(args)...);
         return Chain(std::move(sink));
     }

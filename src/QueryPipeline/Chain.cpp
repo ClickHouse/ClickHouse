@@ -1,6 +1,6 @@
 #include <IO/WriteHelpers.h>
-#include <QueryPipeline/Chain.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <QueryPipeline/Chain.h>
 
 namespace DB
 {
@@ -102,7 +102,8 @@ void Chain::addSink(ProcessorPtr processor)
 
 void Chain::pushBackChain(Chain chain)
 {
-    if (processors.empty()) {
+    if (processors.empty())
+    {
         *this = std::move(chain);
         return;
     }
@@ -113,8 +114,10 @@ void Chain::pushBackChain(Chain chain)
     num_threads += chain.num_threads;
 }
 
-void Chain::pushFrontChain(Chain chain) {
-    if (processors.empty()) {
+void Chain::pushFrontChain(Chain chain)
+{
+    if (processors.empty())
+    {
         *this = std::move(chain);
         return;
     }
@@ -151,11 +154,9 @@ OutputPort & Chain::getOutputPort() const
 
 void Chain::setRuntimeData(ThreadStatus * thread_status_, std::atomic_uint64_t * elapsed_counter_ms_)
 {
-    for (auto& processor : processors) {
-        if (auto * casted = dynamic_cast<ExceptionKeepingTransform*>(processor.get())) {
+    for (auto & processor : processors)
+        if (auto * casted = dynamic_cast<ExceptionKeepingTransform *>(processor.get()))
             casted->setRuntimeData(thread_status_, elapsed_counter_ms_);
-        }
-    }
 }
 
 void Chain::reset()

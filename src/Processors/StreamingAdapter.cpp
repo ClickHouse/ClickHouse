@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StreamingAdapter::StreamingAdapter(const Block & header_, size_t num_streams, SubscriberPtr sub)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_)), subscriber(std::move(sub))
 {
