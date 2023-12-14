@@ -11,8 +11,7 @@ Below functions are used for time series analysis.
 ## seriesPeriodDetectFFT
 
 Finds the period of the given time series data using FFT
-Detect Period in time series data using FFT.
-FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transform)
+FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
 
 **Syntax**
 

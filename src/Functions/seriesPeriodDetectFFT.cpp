@@ -79,16 +79,16 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnArray::Offset curr_offset = offsets[i];
-            if (executeNumber<UInt8>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<UInt16>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<UInt32>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<UInt64>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<Int8>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<Int16>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<Int32>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<Int64>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<Float32>(src_data, period, prev_src_offset, curr_offset)
-                || executeNumber<Float64>(src_data, period, prev_src_offset, curr_offset))
+            if (executeNumbers<UInt8>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<UInt16>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<UInt32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<UInt64>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Int8>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Int16>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Int32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Int64>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Float32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Float64>(src_data, period, prev_src_offset, curr_offset))
             {
                 res_data[i] = period;
                 prev_src_offset = curr_offset;
@@ -104,7 +104,7 @@ public:
     }
 
     template <typename T>
-    bool executeNumber(const IColumn & src_data, Float64 & period, ColumnArray::Offset &start, ColumnArray::Offset &end) const
+    bool executeNumbers(const IColumn & src_data, Float64 & period, ColumnArray::Offset & start, ColumnArray::Offset & end) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
         if (!src_data_concrete)
@@ -112,6 +112,7 @@ public:
 
         const PaddedPODArray<T> & src_vec = src_data_concrete->getData();
 
+        chassert(start <= end);
         size_t len = end - start;
         if (len < 4)
         {
@@ -119,7 +120,7 @@ public:
             return true;
         }
 
-        std::vector<Float64> src((src_vec.begin() + start), (src_vec.begin()+ end));
+        std::vector<Float64> src((src_vec.begin() + start), (src_vec.begin() + end));
         std::vector<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
@@ -173,7 +174,6 @@ REGISTER_FUNCTION(SeriesPeriodDetectFFT)
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(FunctionDocumentation{
         .description = R"(
 Finds the period of the given time series data using FFT
-Detect Period in time series data using FFT.
 FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transform)
 
 **Syntax**
