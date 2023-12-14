@@ -609,7 +609,7 @@ bool HDFSSource::initialize()
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
-        /// Instead, we use special ConstChunkGenerator that will generate chunks
+        /// Instead, we use a special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
         auto source = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
         builder.init(Pipe(source));
@@ -636,7 +636,7 @@ bool HDFSSource::initialize()
     }
 
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
-    /// from chunk read by IInputFormat.
+    /// from the chunk read by IInputFormat.
     builder.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
