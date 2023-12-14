@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnNullable.h>
@@ -1373,6 +1374,8 @@ private:
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
     NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
+
+    void resolveEmitNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
@@ -5780,12 +5783,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         }
         case QueryTreeNodeType::EMIT:
         {
-            auto & emit_node = node->as<EmitNode &>();
-            if (emit_node.hasIntervalFunction())
-            {
-                auto & interval_function = emit_node.getIntervalFunction();
-                resolveExpressionNode(interval_function, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            }
+            resolveEmitNode(node, scope);
             break;
         }
         case QueryTreeNodeType::TRANSFORMER:
@@ -6075,6 +6073,40 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
     }
 
     return projection_columns;
+}
+
+void QueryAnalyzer::resolveEmitNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    auto & emit_node = node->as<EmitNode &>();
+    if (!emit_node.hasIntervalFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Emit {} is not allowed in expression context. In scope {}",
+            node->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+
+    auto & interval_function = emit_node.getIntervalFunction();
+    resolveExpressionNode(interval_function, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    if (interval_function->getNodeType() != QueryTreeNodeType::CONSTANT)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Emit interval function must be constant. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    auto & interval_constant = interval_function->as<ConstantNode &>();
+    auto * result_type = checkAndGetDataType<DataTypeInterval>(interval_constant.getResultType().get());
+    if (result_type == nullptr)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Emit interval function must be constant of interval type. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    auto interval_kind = result_type->getKind();
+    if (interval_kind <= IntervalKind::Day)
+    {
+        emit_node.setWindowInterval(interval_constant.getValue().get<Int64>());
+        emit_node.setWindowIntervalUnit(interval_kind);
+    }
+    else
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The max interval kind of emit interval function supported is DAY. In scope {}", scope.scope_node->formatASTForErrorMessage());
 }
 
 /** Initialize query join tree node.

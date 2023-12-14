@@ -214,6 +214,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         limitOffset()->formatImpl(s, state, frame);
     }
 
+    if (emit())
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "EMIT " << (s.hilite ? hilite_none : "");
+        emit()->formatImpl(s, state, frame);
+    }
+
     if (settings() && assert_cast<ASTSetQuery *>(settings().get())->print_in_format)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");

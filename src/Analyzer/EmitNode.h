@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Interpreters/Streaming/WindowCommon.h>
 
 namespace DB
 {
@@ -45,6 +46,26 @@ public:
         return children[interval_function_child_index];
     }
 
+    Int64 getWindowInterval() const
+    {
+        return window_interval.interval;
+    }
+
+    void setWindowInterval(Int64 interval)
+    {
+        window_interval.interval = interval;
+    }
+
+    IntervalKind getWindowIntervalUnit() const
+    {
+        return window_interval.unit;
+    }
+
+    void setWindowIntervalUnit(IntervalKind unit)
+    {
+        window_interval.unit = unit;
+    }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
@@ -56,6 +77,7 @@ protected:
 
 private:
     EmitType emit_type;
+    Streaming::WindowInterval window_interval;
 
     static constexpr size_t interval_function_child_index = 0;
     static constexpr size_t children_size = interval_function_child_index + 1;

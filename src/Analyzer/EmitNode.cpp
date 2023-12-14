@@ -1,8 +1,12 @@
 #include <Analyzer/EmitNode.h>
 
+#include <Analyzer/ConstantNode.h>
+#include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/Streaming/ASTEmitQuery.h>
 
 namespace DB
 {
@@ -29,25 +33,31 @@ void EmitNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     getIntervalFunction()->dumpTreeImpl(buffer, format_state, indent + 2);
 }
 
-bool EmitNode::isEqualImpl(const IQueryTreeNode & /* rhs */) const
+bool EmitNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
-    // TODO: proton
-    return true;
+    const auto & rhs_typed = assert_cast<const EmitNode &>(rhs);
+    return emit_type == rhs_typed.emit_type;
 }
 
-void EmitNode::updateTreeHashImpl(HashState & /* state */) const
+void EmitNode::updateTreeHashImpl(HashState & state) const
 {
-    // TODO: proton
+    state.update(emit_type);
+    state.update(window_interval.interval);
+    state.update(window_interval.unit);
 }
 
 QueryTreeNodePtr EmitNode::cloneImpl() const
 {
-    return std::make_shared<EmitNode>(emit_type, getIntervalFunction());
+    auto res = std::make_shared<EmitNode>(emit_type, getIntervalFunction());
+    res->window_interval = window_interval;
+    return res;
 }
 
-ASTPtr EmitNode::toASTImpl(const ConvertToASTOptions & /* options */) const
+ASTPtr EmitNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    // TODO: proton
+    auto emit_ast = std::make_shared<ASTEmitQuery>();
+    emit_ast->periodic_interval = children[interval_function_child_index]->toAST(options);
+
     return nullptr;
 }
 
