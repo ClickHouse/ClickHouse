@@ -30,7 +30,7 @@ def build_url(base_url, dataset):
     return os.path.join(base_url, dataset, "partitions", AVAILABLE_DATASETS[dataset])
 
 
-def dowload_with_progress(url, path):
+def download_with_progress(url, path):
     logging.info("Downloading from %s to temp path %s", url, path)
     for i in range(RETRIES_COUNT):
         try:
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         temp_archive_path = _get_temp_file_name()
         try:
             download_url_for_dataset = build_url(args.url_prefix, dataset)
-            dowload_with_progress(download_url_for_dataset, temp_archive_path)
+            download_with_progress(download_url_for_dataset, temp_archive_path)
             unpack_to_clickhouse_directory(temp_archive_path, args.clickhouse_data_path)
         except Exception as ex:
             logging.info("Some exception occured %s", str(ex))

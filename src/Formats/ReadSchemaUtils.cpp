@@ -1,12 +1,9 @@
-#include <DataTypes/DataTypeMap.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
-#include <IO/WithFileName.h>
 #include <IO/WithFileSize.h>
-
+#include <IO/EmptyReadBuffer.h>
 
 namespace DB
 {
@@ -17,6 +14,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int TYPE_MISMATCH;
 }
 
 static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndTypesList & columns_list, const Names & columns_order_hint)
@@ -55,6 +53,17 @@ ColumnsDescription readSchemaFromFormat(
 try
 {
     NamesAndTypesList names_and_types;
+    SchemaInferenceMode mode = context->getSettingsRef().schema_inference_mode;
+    if (mode == SchemaInferenceMode::UNION && !FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings))
+    {
+        String additional_message;
+        /// Better exception message for WithNames(AndTypes) formats.
+        if (format_name.ends_with("WithNames") || format_name.ends_with("WithNamesAndTypes"))
+            additional_message = " (formats -WithNames(AndTypes) support reading subset of columns only when setting input_format_with_names_use_header is enabled)";
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION schema inference mode is not supported for format {}, because it doesn't support reading subset of columns{}", format_name, additional_message);
+    }
+
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
     {
         auto external_schema_reader = FormatFactory::instance().getExternalSchemaReader(format_name, context, format_settings);
@@ -71,6 +80,11 @@ try
     }
     else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
     {
+        if (mode == SchemaInferenceMode::UNION)
+            retry = false;
+
+        std::vector<std::pair<NamesAndTypesList, String>> schemas_for_union_mode;
+        std::optional<ColumnsDescription> cached_columns;
         std::string exception_messages;
         SchemaReaderPtr schema_reader;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference
@@ -84,7 +98,15 @@ try
             try
             {
                 read_buffer_iterator.setPreviousReadBuffer(std::move(buf));
-                buf = read_buffer_iterator.next();
+                std::tie(buf, cached_columns) = read_buffer_iterator.next();
+                if (cached_columns)
+                {
+                    if (mode == SchemaInferenceMode::DEFAULT)
+                        return *cached_columns;
+                    schemas_for_union_mode.emplace_back(cached_columns->getAll(), read_buffer_iterator.getLastFileName());
+                    continue;
+                }
+
                 if (!buf)
                     break;
 
@@ -136,12 +158,19 @@ try
                 auto num_rows = schema_reader->readNumberOrRows();
                 if (num_rows)
                     read_buffer_iterator.setNumRowsToLastFile(*num_rows);
-                break;
+
+                /// In default mode, we finish when schema is inferred successfully from any file.
+                if (mode == SchemaInferenceMode::DEFAULT)
+                    break;
+
+                if (!names_and_types.empty())
+                    read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
+                schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
             }
             catch (...)
             {
                 auto exception_message = getCurrentExceptionMessage(false);
-                if (schema_reader)
+                if (schema_reader && mode == SchemaInferenceMode::DEFAULT)
                 {
                     size_t rows_read = schema_reader->getNumRowsRead();
                     assert(rows_read <= max_rows_to_read);
@@ -190,8 +219,58 @@ try
             }
         }
 
-        if (auto cached_columns = read_buffer_iterator.getCachedColumns())
-            return *cached_columns;
+        /// If we got all schemas from cache, schema_reader can be uninitialized.
+        /// But we still need some stateless methods of ISchemaReader,
+        /// let's initialize it with empty buffer.
+        EmptyReadBuffer empty;
+        if (!schema_reader)
+            schema_reader = FormatFactory::instance().getSchemaReader(format_name, empty, context, format_settings);
+
+        if (mode == SchemaInferenceMode::UNION)
+        {
+            Names names_order; /// Try to save original columns order;
+            std::unordered_map<String, DataTypePtr> names_to_types;
+
+
+            for (const auto & [schema, file_name] : schemas_for_union_mode)
+            {
+                for (const auto & [name, type] : schema)
+                {
+                    auto it = names_to_types.find(name);
+                    if (it == names_to_types.end())
+                    {
+                        names_order.push_back(name);
+                        names_to_types[name] = type;
+                    }
+                    else
+                    {
+                        /// We already have column with such name.
+                        /// Check if types are the same.
+                        if (!type->equals(*it->second))
+                        {
+                            /// If types are not the same, try to transform them according
+                            /// to the format to find common type.
+                            auto new_type_copy = type;
+                            schema_reader->transformTypesFromDifferentFilesIfNeeded(it->second, new_type_copy);
+
+                            /// If types are not the same after transform, we cannot do anything, throw an exception.
+                            if (!it->second->equals(*new_type_copy))
+                                throw Exception(
+                                    ErrorCodes::TYPE_MISMATCH,
+                                    "Automatically inferred type {} for column '{}'{} differs from type inferred from previous files: {}",
+                                    type->getName(),
+                                    name,
+                                    file_name.empty() ? "" : " in file " + file_name,
+                                    it->second->getName());
+                        }
+                    }
+                }
+            }
+
+            names_and_types.clear();
+            for (const auto & name : names_order)
+                names_and_types.emplace_back(name, names_to_types[name]);
+        }
 
         if (names_and_types.empty())
             throw Exception(
@@ -206,7 +285,7 @@ try
         /// It will allow to execute simple data loading with query
         /// "INSERT INTO table SELECT * FROM ..."
         const auto & insertion_table = context->getInsertionTable();
-        if (!schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
+        if (schema_reader && !schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
         {
             auto storage = DatabaseCatalog::instance().getTable(insertion_table, context);
             auto metadata = storage->getInMemoryMetadataPtr();
@@ -226,13 +305,15 @@ try
     names_and_types.erase(
         std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
         names_and_types.end());
-    return ColumnsDescription(names_and_types);
+
+    auto columns = ColumnsDescription(names_and_types);
+    if (mode == SchemaInferenceMode::DEFAULT)
+        read_buffer_iterator.setResultingSchema(columns);
+    return columns;
 }
 catch (Exception & e)
 {
-    if (!buf)
-        throw;
-    auto file_name = getFileNameFromReadBuffer(*buf);
+    auto file_name = read_buffer_iterator.getLastFileName();
     if (!file_name.empty())
         e.addMessage(fmt::format("(in file/uri {})", file_name));
     throw;
@@ -256,9 +337,9 @@ SchemaCache::Key getKeyForSchemaCache(
     return getKeysForSchemaCache({source}, format, format_settings, context).front();
 }
 
-static SchemaCache::Key makeSchemaCacheKey(const String & source, const String & format, const String & additional_format_info)
+static SchemaCache::Key makeSchemaCacheKey(const String & source, const String & format, const String & additional_format_info, const String & schema_inference_mode)
 {
-    return SchemaCache::Key{source, format, additional_format_info};
+    return SchemaCache::Key{source, format, additional_format_info, schema_inference_mode};
 }
 
 SchemaCache::Keys getKeysForSchemaCache(
@@ -270,13 +351,14 @@ SchemaCache::Keys getKeysForSchemaCache(
     /// For example, for Protobuf format additional information is the path to the schema
     /// and message name.
     String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);
+    String schema_inference_mode(magic_enum::enum_name(context->getSettingsRef().schema_inference_mode.value));
     SchemaCache::Keys cache_keys;
     cache_keys.reserve(sources.size());
     std::transform(
         sources.begin(),
         sources.end(),
         std::back_inserter(cache_keys),
-        [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info); });
+        [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info, schema_inference_mode); });
     return cache_keys;
 }
 
