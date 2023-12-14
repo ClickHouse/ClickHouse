@@ -9,24 +9,66 @@
 namespace DB
 {
 
+#if defined(OS_LINUX)
+
+void Subscriber::push(Chunk chunk)
+{
+    {
+        std::unique_lock guard(mutex);
+        ready_chunks.emplace_back(std::move(chunk));
+    }
+    new_chunks_event.write(1);
+}
+
+std::list<Chunk> Subscriber::extractAll()
+{
+    new_chunks_event.read();
+    std::unique_lock guard(mutex);
+    return std::exchange(ready_chunks, {});
+}
+
+std::optional<int> Subscriber::fd() const
+{
+    return new_chunks_event.fd;
+}
+
+void Subscriber::cancel()
+{
+    new_chunks_event.write(1);
+}
+
+#else
+
 void Subscriber::push(Chunk chunk)
 {
     std::unique_lock guard(mutex);
     ready_chunks.emplace_back(std::move(chunk));
-    event_fd.write(1);
+    empty_chunks.notify_one();
 }
 
 std::list<Chunk> Subscriber::extractAll()
 {
     std::unique_lock guard(mutex);
-    event_fd.read();
+
+    while (ready_chunks.empty() && !cancelled)
+        empty_chunks.wait(guard);
+
     return std::exchange(ready_chunks, {});
 }
 
-int Subscriber::fd() const
+std::optional<int> Subscriber::fd() const
 {
-    return event_fd.fd;
+    return std::nullopt;
 }
+
+void Subscriber::cancel()
+{
+    std::unique_lock guard(mutex);
+    cancelled = true;
+    empty_chunks.notify_one();
+}
+
+#endif
 
 std::shared_lock<std::shared_mutex> SubscriptionQueue::lockShared() const
 {

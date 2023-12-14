@@ -1,5 +1,7 @@
 #include <ranges>
 
+#include <base/defines.h>
+
 #include <Common/logger_useful.h>
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -23,10 +25,25 @@ StreamingAdapter::StreamingAdapter(const Block & header_, size_t num_streams, Su
         data.input_port = &input;
         data.output_port = &output;
     }
+
+    fd = subscriber->fd();
 }
 
 IProcessor::Status StreamingAdapter::prepare()
 {
+    if (isCancelled())
+    {
+        LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "cancelling processor");
+
+        for (const auto & data : ports_data)
+        {
+            data.input_port->close();
+            data.output_port->finish();
+        }
+
+        return Status::Finished;
+    }
+
     size_t ports_count = ports_data.size();
 
     size_t reading_from_storage_count = 0;
@@ -121,7 +138,7 @@ IProcessor::Status StreamingAdapter::prepare()
         if (has_full_port)
             return Status::PortFull;
 
-        if (subscriber_chunks.empty())
+        if (subscriber_chunks.empty() && fd.has_value())
             return Status::Async;
         else
             return Status::Ready;
@@ -205,8 +222,12 @@ IProcessor::Status StreamingAdapter::prepareSubscriptionPair(PortsData & data)
 
 void StreamingAdapter::work()
 {
+    if (isCancelled())
+        return;
+
     if (subscriber_chunks.empty())
     {
+        LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "extracting new chunk batch");
         auto new_chunks = subscriber->extractAll();
         subscriber_chunks.splice(subscriber_chunks.end(), new_chunks);
     }
@@ -234,9 +255,15 @@ void StreamingAdapter::work()
 
 int StreamingAdapter::schedule()
 {
-    int fd = subscriber->fd();
-    LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "waiting on descriptor: {}", fd);
-    return fd;
+    chassert(fd.has_value());
+    LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "waiting on descriptor: {}", fd.value());
+    return fd.value();
+}
+
+void StreamingAdapter::onCancel()
+{
+    LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "cancelling subscription");
+    subscriber->cancel();
 }
 
 }

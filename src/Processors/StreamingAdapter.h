@@ -20,6 +20,8 @@ public:
     void work() override;
     int schedule() override;
 
+    void onCancel() override;
+
 private:
     enum class PortsDataState
     {
@@ -46,6 +48,7 @@ private:
     SubscriberPtr subscriber;
     std::list<Chunk> subscriber_chunks;
 
+    std::optional<int> fd;
     std::vector<PortsData> ports_data;
 };
 

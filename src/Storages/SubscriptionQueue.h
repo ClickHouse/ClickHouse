@@ -1,7 +1,10 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
 #include <list>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 
 #include <Common/EventFD.h>
@@ -17,14 +20,24 @@ public:
     void push(Chunk chunk);
     std::list<Chunk> extractAll();
 
-    int fd() const;
+    // returns event_fd's native handle for unix systems
+    // otherwise returns nullopt
+    std::optional<int> fd() const;
+
+    // cancels waiting for new data
+    void cancel();
 
 private:
-    EventFD event_fd;
-
     // data
     std::mutex mutex;
     std::list<Chunk> ready_chunks;
+
+    // for unix realization
+    EventFD new_chunks_event;
+
+    // for other os
+    bool cancelled = false;
+    std::condition_variable empty_chunks;
 };
 
 using SubscriberPtr = std::shared_ptr<Subscriber>;
