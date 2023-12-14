@@ -42,11 +42,14 @@ struct LastElementCache
     Value value;
     bool empty = true;
     bool found = false;
+    bool value_changed = false;
 
-    bool check(const Value & value_) { return !empty && value == value_; }
+    bool check(const Value & value_) const { return value == value_; }
 
     template <typename Key>
-    bool check(const Key & key) { return !empty && value.first == key; }
+    bool check(const Key & key) const { return value.first == key; }
+
+    bool hasOnlyOneValue() const { return !empty && found && !value_changed; }
 };
 
 template <typename Data>
@@ -166,6 +169,7 @@ public:
                     return EmplaceResult(!has_null_key);
             }
         }
+
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return emplaceImpl(key_holder, data);
     }
@@ -192,6 +196,23 @@ public:
     {
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return data.hash(keyHolderGetKey(key_holder));
+    }
+
+    ALWAYS_INLINE void resetCache()
+    {
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.empty = true;
+            cache.found = false;
+            cache.value_changed = false;
+        }
+    }
+
+    ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const
+    {
+        if constexpr (consecutive_keys_optimization)
+            return cache.hasOnlyOneValue();
+        return false;
     }
 
     ALWAYS_INLINE bool isNullAt(size_t row) const
@@ -225,11 +246,9 @@ protected:
             else
                 cache.value = Value();
         }
-        if constexpr (nullable)
-        {
 
+        if constexpr (nullable)
             null_map = &checkAndGetColumn<ColumnNullable>(column)->getNullMapColumn();
-        }
     }
 
     template <typename Data, typename KeyHolder>
@@ -237,12 +256,19 @@ protected:
     {
         if constexpr (Cache::consecutive_keys_optimization)
         {
-            if (cache.found && cache.check(keyHolderGetKey(key_holder)))
+            if (!cache.empty)
             {
-                if constexpr (has_mapped)
-                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                if (cache.found && cache.check(keyHolderGetKey(key_holder)))
+                {
+                    if constexpr (has_mapped)
+                        return EmplaceResult(cache.value.second, cache.value.second, false);
+                    else
+                        return EmplaceResult(false);
+                }
                 else
-                    return EmplaceResult(false);
+                {
+                    cache.value_changed = true;
+                }
             }
         }
 
@@ -293,12 +319,19 @@ protected:
             /// It's possible to support such combination, but code will became more complex.
             /// Now there's not place where we need this options enabled together
             static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
-            if (cache.check(key))
+            if (!cache.empty)
             {
-                if constexpr (has_mapped)
-                    return FindResult(&cache.value.second, cache.found, 0);
+                if (cache.check(key))
+                {
+                    if constexpr (has_mapped)
+                        return FindResult(&cache.value.second, cache.found, 0);
+                    else
+                        return FindResult(cache.found, 0);
+                }
                 else
-                    return FindResult(cache.found, 0);
+                {
+                    cache.value_changed = true;
+                }
             }
         }
 
