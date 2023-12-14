@@ -2169,7 +2169,6 @@ ASTPtr InterpreterSelectQuery::pkOptimization(
     const String & main_primary_key,
     bool & optimized) const
 {
-    auto where_column_name = where_ast->getColumnName();
     NameSet proj_pks = {};
     for (auto & projection: projections)
     {
@@ -2217,10 +2216,13 @@ void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr 
         if (ast_function_node->name == "equals" && arg_size == 2)
         {
             auto lhs_argument = ast_function_node->arguments->children.at(0);
+            auto rhs_argument = ast_function_node->arguments->children.at(1);
             String lhs = getIdentifier(lhs_argument);
-            if (proj_pks.contains(lhs) && !optimized_where_keys.contains(lhs) && lhs != main_primary_key)
+            String rhs = getIdentifier(rhs_argument);
+            auto col_name = (lhs != "") ? lhs:rhs;
+            if (proj_pks.contains(col_name) && !optimized_where_keys.contains(col_name) && col_name != main_primary_key)
             {
-                optimized_where_keys.insert(lhs);
+                optimized_where_keys.insert(col_name);
                 ASTPtr new_ast = create_proj_optimized_ast(ast, main_table, main_primary_key);
                 auto * function_node = func->as<ASTFunction>();
                 function_node->arguments->children.push_back(new_ast);
@@ -3425,11 +3427,12 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
     return result;
 }
 
-// if (const auto * lhs_func = lhs_argument->as<ASTFunction>())
 String InterpreterSelectQuery::getIdentifier(ASTPtr & argument) const
 {
     if (const auto * id = argument->as<ASTIdentifier>())
         return id->name();
+    else if (argument->as<ASTLiteral>())
+        return "";
     else
         return getIdentifier(argument->children.at(0));
 }
