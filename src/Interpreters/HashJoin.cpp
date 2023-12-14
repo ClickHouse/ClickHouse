@@ -1100,18 +1100,26 @@ public:
 #ifndef NDEBUG
         for (size_t j = 0; j < right_indexes.size(); ++j)
         {
-            const auto & column_from_block = block.getByPosition(right_indexes[j]);
+            const auto * column_from_block = block.getByPosition(right_indexes[j]).column.get();
             const auto * dest_column = columns[j].get();
             if (auto * nullable_col = nullable_column_ptrs[j])
             {
                 if (!is_join_get)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Columns {} and {} can have different nullability only in joinGetOrNull",
-                        dest_column->getName(), column_from_block.column->getName());
+                        dest_column->getName(), column_from_block->getName());
                 dest_column = nullable_col->getNestedColumnPtr().get();
             }
-            if (!dest_column->structureEquals(*column_from_block.column))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} are not structure equals", dest_column->getName(), column_from_block.column->getName());
+            /** Using dest_column->structureEquals(*column_from_block) will not work for low cardinality columns,
+              * because dictionaries can be different, while calling insertFrom on them is safe, for example:
+              * ColumnLowCardinality(size = 0, UInt8(size = 0), ColumnUnique(size = 1, String(size = 1)))
+              * and
+              * ColumnLowCardinality(size = 0, UInt16(size = 0), ColumnUnique(size = 1, String(size = 1)))
+              */
+            if (typeid(*dest_column) != typeid(*column_from_block))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} have different types {} and {}",
+                    dest_column->getName(), column_from_block->getName(),
+                    demangle(typeid(*dest_column).name()), demangle(typeid(*column_from_block).name()));
         }
 #endif
 
