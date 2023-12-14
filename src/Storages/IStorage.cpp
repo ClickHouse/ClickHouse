@@ -185,7 +185,7 @@ Chain IStorage::write(
 {
     Chain chain = writeImpl(query, metadata_snapshot, context, async_insert);
 
-    if (!chain.empty() && context->getSettingsRef().allow_experimental_streaming) {
+    if (!chain.empty() && context && context->getSettingsRef().allow_experimental_streaming) {
         auto subscribers_notifier = std::make_shared<SubscribersNotifierProcessor>(
             chain.getOutputHeader(), /*num_streams=*/1, subscription_queue);
 

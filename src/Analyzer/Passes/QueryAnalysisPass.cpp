@@ -2229,7 +2229,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Streaming query does not compatible with other table expression modifiers");
 
-                if (!scope.context->getSettingsRef().allow_experimental_streaming)
+                if (scope.context && !scope.context->getSettingsRef().allow_experimental_streaming)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Mode support is disabled");
             }
         }
