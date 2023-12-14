@@ -160,7 +160,7 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                it->size, metadata->size(), metadata->getFileSegment().getInfoForLog());
+                it->size, metadata->size(), metadata->file_segment->getInfoForLog());
         }
 
         auto result = func(*locked_key, metadata);
@@ -277,7 +277,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(LRUIterator & it, L
     return LRUIterator(this, it.iterator);
 }
 
-std::vector<FileSegmentInfo> LRUFileCachePriority::dump(FileCache & cache)
+std::vector<FileSegmentInfo> LRUFileCachePriority::dump(const CacheGuard::Lock & lock)
 {
     std::vector<FileSegmentInfo> res;
     iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)

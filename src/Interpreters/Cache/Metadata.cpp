@@ -563,7 +563,7 @@ void CacheMetadata::downloadThreadFunc()
                     auto file_segment = file_segment_weak.lock();
 
                     if (!file_segment
-                        || file_segment.get() != &file_segment_metadata->getFileSegment()
+                        || file_segment != file_segment_metadata->file_segment
                         || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
                         continue;
 
@@ -673,64 +673,6 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 void CacheMetadata::cancelDownload()
 {
     download_queue->cancel();
-}
-
-CacheMetadata::Iterator CacheMetadata::iterate()
-{
-    return Iterator(this);
-}
-
-FileSegmentMetadataPtr CacheMetadata::Iterator::next()
-{
-    if (current_bucket == buckets_num)
-    {
-        reset();
-        return nullptr;
-    }
-
-    auto & bucket = metadata->metadata_buckets[current_bucket];
-    if (!bucket_lock)
-    {
-        bucket_lock = std::make_unique<CacheMetadataGuard::Lock>(bucket.lock());
-        bucket_iterator = bucket.begin();
-    }
-
-    if (bucket_iterator == bucket.end())
-    {
-        bucket_iterator = {};
-        bucket_lock.reset();
-
-        ++current_bucket;
-        return next();
-    }
-
-    if (!locked_key)
-    {
-        locked_key = bucket_iterator->second->lock();
-        key_iterator = locked_key->begin();
-    }
-
-    if (key_iterator == locked_key->end())
-    {
-        key_iterator = {};
-        locked_key.reset();
-
-        ++bucket_iterator;
-        return next();
-    }
-
-    return (key_iterator++)->second;
-}
-
-void CacheMetadata::Iterator::reset()
-{
-    key_iterator = {};
-    bucket_iterator = {};
-
-    locked_key.reset();
-    bucket_lock.reset();
-
-    current_bucket = buckets_num;
 }
 
 LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)

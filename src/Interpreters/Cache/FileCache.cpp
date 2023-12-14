@@ -839,9 +839,13 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
     return true;
 }
 
-CacheMetadata::Iterator FileCache::iterate()
+void FileCache::iterate(IterateFunc && func)
 {
-    return metadata.iterate();
+    return metadata.iterate([&](const LockedKey & locked_key)
+    {
+        for (const auto & file_segment_metadata : locked_key)
+            func(FileSegment::getInfo(file_segment_metadata.second->file_segment));
+    });
 }
 
 void FileCache::removeKey(const Key & key)
@@ -1181,7 +1185,7 @@ std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const Key & key)
 std::vector<FileSegment::Info> FileCache::dumpQueue()
 {
     assertInitialized();
-    return main_priority->dump(*this);
+    return main_priority->dump(lockCache());
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
@@ -1218,7 +1222,7 @@ void FileCache::assertCacheCorrectness()
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
         {
-            chassert(file_segment_metadata->getFileSegment().assertCorrectness());
+            chassert(file_segment_metadata->file_segment->assertCorrectness());
         }
     });
 }

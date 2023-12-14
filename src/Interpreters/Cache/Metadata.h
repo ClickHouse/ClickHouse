@@ -17,11 +17,8 @@ using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 
 
-class FileSegmentMetadata : private boost::noncopyable
+struct FileSegmentMetadata : private boost::noncopyable
 {
-    friend class FileCache;
-    friend struct LockedKey;
-public:
     using Priority = IFileCachePriority;
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
@@ -34,11 +31,6 @@ public:
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
-    const FileSegment & getFileSegment() const { return *file_segment; }
-
-    FileSegment::Info getFileSegmentInfo() const { return FileSegment::getInfo(file_segment); }
-
-private:
     FileSegmentPtr file_segment;
     std::atomic<bool> removal_candidate{false};
 };
@@ -106,14 +98,6 @@ using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 struct CacheMetadata
 {
-private:
-    struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
-    {
-        CacheMetadataGuard::Lock lock() const;
-    private:
-        mutable CacheMetadataGuard guard;
-    };
-
 public:
     using Key = FileCacheKey;
     using IterateFunc = std::function<void(LockedKey &)>;
@@ -131,6 +115,7 @@ public:
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateFunc && func);
+
     bool isEmpty() const;
 
     enum class KeyNotFoundPolicy
@@ -170,27 +155,6 @@ public:
 
     void cancelDownload();
 
-    class Iterator
-    {
-    public:
-        explicit Iterator(CacheMetadata * metadata_) : metadata(metadata_) {}
-
-        FileSegmentMetadataPtr next();
-
-        void reset();
-
-    private:
-        CacheMetadata * metadata;
-        size_t current_bucket = 0;
-
-        std::unique_ptr<CacheMetadataGuard::Lock> bucket_lock{nullptr};
-        CacheMetadata::MetadataBucket::iterator bucket_iterator{};
-
-        LockedKeyPtr locked_key{nullptr};
-        KeyMetadata::iterator key_iterator{};
-    };
-    Iterator iterate();
-
 private:
     const std::string path; /// Cache base path
     const CleanupQueuePtr cleanup_queue;
@@ -198,6 +162,13 @@ private:
 
     std::shared_mutex key_prefix_directory_mutex;
     Poco::Logger * log;
+
+    struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
+    {
+        CacheMetadataGuard::Lock lock() const;
+    private:
+        mutable CacheMetadataGuard guard;
+    };
 
     static constexpr size_t buckets_num = 1024;
     std::vector<MetadataBucket> metadata_buckets{buckets_num};
