@@ -301,12 +301,14 @@ void buildJoinClause(
         }
         else if (left_expression_side_optional && !right_expression_side_optional)
         {
-            const auto * node = appendExpression(left_dag, join_expression, planner_context, join_node);
+            auto & dag = *left_expression_side_optional == JoinTableSide::Left ? left_dag : right_dag;
+            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
             join_clause.addCondition(*left_expression_side_optional, node);
         }
         else if (!left_expression_side_optional && right_expression_side_optional)
         {
-            const auto * node = appendExpression(right_dag, join_expression, planner_context, join_node);
+            auto & dag = *right_expression_side_optional == JoinTableSide::Left ? left_dag : right_dag;
+            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
             join_clause.addCondition(*right_expression_side_optional, node);
         }
         else
@@ -618,6 +620,11 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
     result.left_join_expressions_actions = left_join_actions->clone();
     result.left_join_tmp_expression_actions = std::move(left_join_actions);
     result.left_join_expressions_actions->removeUnusedActions(join_left_actions_names);
+
+    // for (const auto & name : join_right_actions_names)
+    //     std::cerr << ".. " << name << std::endl;
+
+    // std::cerr << right_join_actions->dumpDAG() << std::endl;
 
     result.right_join_expressions_actions = right_join_actions->clone();
     result.right_join_tmp_expression_actions = std::move(right_join_actions);
