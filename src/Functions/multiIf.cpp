@@ -35,13 +35,13 @@ namespace
 ///
 /// Additionally the arguments, conditions or branches, support nullable types
 /// and the NULL value, with a NULL condition treated as false.
-class FunctionMultiIf : public FunctionIfBase
+class FunctionMultiIf final : public FunctionIfBase
 {
 public:
     static constexpr auto name = "multiIf";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionMultiIf>(context_); }
 
-    explicit FunctionMultiIf(ContextPtr context_) : context(context_) {}
+    explicit FunctionMultiIf(ContextPtr context_) : context(context_) { }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
