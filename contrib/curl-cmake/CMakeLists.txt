@@ -10,7 +10,7 @@ set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/curl")
 set (SRCS
     "${LIBRARY_DIR}/lib/altsvc.c"
     "${LIBRARY_DIR}/lib/amigaos.c"
-    "${LIBRARY_DIR}/lib/asyn-thread.c"
+    "${LIBRARY_DIR}/lib/asyn-ares.c"
     "${LIBRARY_DIR}/lib/base64.c"
     "${LIBRARY_DIR}/lib/bufq.c"
     "${LIBRARY_DIR}/lib/bufref.c"
@@ -165,13 +165,14 @@ target_compile_definitions (_curl PRIVATE
     libcurl_EXPORTS
     OS="${CMAKE_SYSTEM_NAME}"
 )
+
 target_include_directories (_curl SYSTEM PUBLIC
     "${LIBRARY_DIR}/include"
     "${LIBRARY_DIR}/lib"
     . # curl_config.h
 )
 
-target_link_libraries (_curl PRIVATE OpenSSL::SSL)
+target_link_libraries (_curl PRIVATE OpenSSL::SSL ch_contrib::c-ares)
 
 # The library is large - avoid bloat (XXX: is it?)
 if (OMIT_HEAVY_DEBUG_SYMBOLS)

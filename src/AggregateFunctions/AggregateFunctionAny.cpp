@@ -110,7 +110,7 @@ public:
                 }
             }
         }
-        else
+        else if (row_begin < row_end)
         {
             size_t pos = First ? row_begin : row_end - 1;
             add(place, columns, pos, arena);
