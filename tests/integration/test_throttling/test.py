@@ -34,8 +34,8 @@ node = cluster.add_instance(
     "node",
     stay_alive=True,
     main_configs=[
-        "configs/server_backups.xml",
-        "configs/server_overrides.xml",
+        "configs/static_overrides.xml",
+        "configs/dynamic_overrides.xml",
         "configs/ssl.xml",
     ],
     user_configs=[
@@ -64,7 +64,7 @@ def revert_config():
         [
             "bash",
             "-c",
-            f"echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/config.d/server_overrides.xml",
+            f"echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/config.d/dynamic_overrides.xml",
         ]
     )
     node.exec_in_container(
@@ -96,7 +96,7 @@ def node_update_config(mode, setting, value=None):
     if mode is None:
         return
     if mode == "server":
-        config_path = "/etc/clickhouse-server/config.d/server_overrides.xml"
+        config_path = "/etc/clickhouse-server/config.d/dynamic_overrides.xml"
         config_content = f"""
         <clickhouse><{setting}>{value}</{setting}></clickhouse>
         """
