@@ -95,7 +95,7 @@ void FileCacheQueryLimit::QueryContext::remove(
     records.erase({key, offset});
 }
 
-IFileCachePriority::Iterator FileCacheQueryLimit::QueryContext::tryGet(
+IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
     const Key & key,
     size_t offset,
     const CacheGuard::Lock &)

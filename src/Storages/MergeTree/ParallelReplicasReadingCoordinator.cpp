@@ -161,26 +161,44 @@ void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announc
     PartRefs parts_diff;
 
     /// To get rid of duplicates
-    for (auto && part: announcement.description)
+    for (auto && part_ranges: announcement.description)
     {
-        auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return other.description.info.getPartNameV1() == part.info.getPartNameV1(); });
+        Part part{.description = std::move(part_ranges), .replicas = {announcement.replica_num}};
+        const MergeTreePartInfo & announced_part = part.description.info;
 
-        /// We have the same part - add the info about presence on current replica to it
-        if (the_same_it != all_parts_to_read.end())
+        auto it = std::lower_bound(cbegin(all_parts_to_read), cend(all_parts_to_read), part);
+        if (it != all_parts_to_read.cend())
         {
-            the_same_it->replicas.insert(announcement.replica_num);
-            continue;
+            const MergeTreePartInfo & found_part = it->description.info;
+            if (found_part == announced_part)
+            {
+                /// We have the same part - add the info about presence on current replica
+                it->replicas.insert(announcement.replica_num);
+                continue;
+            }
+            else
+            {
+                /// check if it is covering or covered part
+                /// need to compare with 2 nearest parts in set, - lesser and greater than the part from the announcement
+                bool is_disjoint = found_part.isDisjoint(announced_part);
+                if (it != all_parts_to_read.cbegin() && is_disjoint)
+                {
+                    const MergeTreePartInfo & lesser_part = (--it)->description.info;
+                    is_disjoint &= lesser_part.isDisjoint(announced_part);
+                }
+                if (!is_disjoint)
+                    continue;
+            }
+        }
+        else if (!all_parts_to_read.empty())
+        {
+            /// the announced part is greatest - check if it's disjoint with lesser part
+            const MergeTreePartInfo & lesser_part = all_parts_to_read.crbegin()->description.info;
+            if (!lesser_part.isDisjoint(announced_part))
+                continue;
         }
 
-        auto covering_or_the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return !other.description.info.isDisjoint(part.info); });
-
-        /// It is covering part or we have covering - skip it
-        if (covering_or_the_same_it != all_parts_to_read.end())
-            continue;
-
-        auto [insert_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        auto [insert_it, _] = all_parts_to_read.emplace(std::move(part));
         parts_diff.push_back(insert_it);
     }
 
@@ -300,20 +318,20 @@ void DefaultCoordinator::selectPartsAndRanges(const PartRefs & container, size_t
         while (!part->description.ranges.empty() && current_mark_size < min_number_of_marks)
         {
             auto & range = part->description.ranges.front();
+            const size_t needed = min_number_of_marks - current_mark_size;
 
-            if (range.getNumberOfMarks() > min_number_of_marks)
+            if (range.getNumberOfMarks() > needed)
             {
-                auto new_range = range;
-                range.begin += min_number_of_marks;
-                new_range.end = new_range.begin + min_number_of_marks;
+                auto range_we_take = MarkRange{range.begin, range.begin + needed};
+                response.description.back().ranges.emplace_back(range_we_take);
+                current_mark_size += range_we_take.getNumberOfMarks();
 
-                response.description.back().ranges.emplace_back(new_range);
-                current_mark_size += new_range.getNumberOfMarks();
-                continue;
+                range.begin += needed;
+                break;
             }
 
-            current_mark_size += part->description.ranges.front().getNumberOfMarks();
-            response.description.back().ranges.emplace_back(part->description.ranges.front());
+            response.description.back().ranges.emplace_back(range);
+            current_mark_size += range.getNumberOfMarks();
             part->description.ranges.pop_front();
         }
     }
@@ -473,23 +491,21 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
         {
             while (!global_part_it->description.ranges.empty() && current_mark_size < request.min_number_of_marks)
             {
-                auto range = global_part_it->description.ranges.back();
+                auto & range = global_part_it->description.ranges.back();
+                const size_t needed = request.min_number_of_marks - current_mark_size;
 
-                if (range.getNumberOfMarks() > request.min_number_of_marks)
+                if (range.getNumberOfMarks() > needed)
                 {
-                    auto new_range = range;
-                    range.end -= request.min_number_of_marks;
-                    new_range.begin = new_range.end - request.min_number_of_marks;
+                    auto range_we_take = MarkRange{range.end - needed, range.end};
+                    part.ranges.emplace_front(range_we_take);
+                    current_mark_size += range_we_take.getNumberOfMarks();
 
-                    global_part_it->description.ranges.back() = range;
-
-                    part.ranges.emplace_front(new_range);
-                    current_mark_size += new_range.getNumberOfMarks();
-                    continue;
+                    range.end -= needed;
+                    break;
                 }
 
-                current_mark_size += global_part_it->description.ranges.back().getNumberOfMarks();
-                part.ranges.emplace_front(global_part_it->description.ranges.back());
+                part.ranges.emplace_front(range);
+                current_mark_size += range.getNumberOfMarks();
                 global_part_it->description.ranges.pop_back();
             }
         }
@@ -497,23 +513,21 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
         {
             while (!global_part_it->description.ranges.empty() && current_mark_size < request.min_number_of_marks)
             {
-                auto range = global_part_it->description.ranges.front();
+                auto & range = global_part_it->description.ranges.front();
+                const size_t needed = request.min_number_of_marks - current_mark_size;
 
-                if (range.getNumberOfMarks() > request.min_number_of_marks)
+                if (range.getNumberOfMarks() > needed)
                 {
-                    auto new_range = range;
-                    range.begin += request.min_number_of_marks;
-                    new_range.end = new_range.begin + request.min_number_of_marks;
+                    auto range_we_take = MarkRange{range.begin, range.begin + needed};
+                    part.ranges.emplace_back(range_we_take);
+                    current_mark_size += range_we_take.getNumberOfMarks();
 
-                    global_part_it->description.ranges.front() = range;
-
-                    part.ranges.emplace_back(new_range);
-                    current_mark_size += new_range.getNumberOfMarks();
-                    continue;
+                    range.begin += needed;
+                    break;
                 }
 
-                current_mark_size += global_part_it->description.ranges.front().getNumberOfMarks();
-                part.ranges.emplace_back(global_part_it->description.ranges.front());
+                part.ranges.emplace_back(range);
+                current_mark_size += range.getNumberOfMarks();
                 global_part_it->description.ranges.pop_front();
             }
         }
