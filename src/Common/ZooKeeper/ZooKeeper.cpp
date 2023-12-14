@@ -497,6 +497,17 @@ bool ZooKeeper::exists(const std::string & path, Coordination::Stat * stat, cons
     return existsWatch(path, stat, callbackForEvent(watch));
 }
 
+bool ZooKeeper::anyExists(const std::vector<std::string> & paths)
+{
+    auto exists_multi_response = exists(paths);
+    for (size_t i = 0; i < exists_multi_response.size(); ++i)
+    {
+        if (exists_multi_response[i].error == Coordination::Error::ZOK)
+            return true;
+    }
+    return false;
+}
+
 bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
 {
     Coordination::Error code = existsImpl(path, stat, watch_callback);

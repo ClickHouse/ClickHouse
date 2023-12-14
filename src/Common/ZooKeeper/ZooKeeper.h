@@ -290,6 +290,8 @@ public:
         return exists(paths.begin(), paths.end());
     }
 
+    bool anyExists(const std::vector<std::string> & paths);
+
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
@@ -426,8 +428,9 @@ public:
     /// Performs several operations in a transaction.
     /// Throws on every error.
     Coordination::Responses multi(const Coordination::Requests & requests);
-    /// Throws only if some operation has returned an "unexpected" error
-    /// - an error that would cause the corresponding try- method to throw.
+    /// Throws only if some operation has returned an "unexpected" error - an error that would cause
+    /// the corresponding try- method to throw.
+    /// On exception, `responses` may or may not be populated.
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
     /// Throws nothing (even session expired errors)
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
@@ -571,7 +574,10 @@ public:
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
+
     bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
+
+    uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
 
     void setServerCompletelyStarted();
 

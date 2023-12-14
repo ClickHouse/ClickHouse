@@ -1061,8 +1061,13 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(default_settings, request);
-        with_stacktrace = params.getParsed<bool>("stacktrace", false);
-        close_session = params.getParsed<bool>("close_session", false);
+
+        if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
+            with_stacktrace = true;
+
+        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
+            close_session = true;
+
         if (close_session)
             session_id = params.get("session_id");
 
