@@ -121,7 +121,11 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     auto new_context = Context::createCopy(context->getGlobalContext());
     new_context->setClientInfo(context->getClientInfo());
     new_context->setQueryContext(std::const_pointer_cast<Context>(context));
-    new_context->setCurrentDatabase(context->getCurrentDatabase());
+
+    const auto & database = context->getCurrentDatabase();
+    if (!database.empty())
+        new_context->setCurrentDatabase(database);
+
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
