@@ -947,6 +947,8 @@ class TestCase:
             else ""
         )
 
+        self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
+
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
@@ -1146,7 +1148,7 @@ class TestCase:
         )
 
         if result_is_different:
-            diff = Popen(
+            diff_proc = Popen(
                 [
                     "diff",
                     "-U",
@@ -1157,7 +1159,14 @@ class TestCase:
                 encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
-            ).communicate()[0]
+            )
+            if self.show_whitespaces_in_diff:
+                cat_proc = Popen(["cat", "-te"], stdin=diff_proc.stdout, stdout=PIPE)
+                diff_proc.stdout.close()  # Allow diff to receive a SIGPIPE if cat exits.
+                diff = cat_proc.communicate()[0].decode("utf-8", errors="ignore")
+            else:
+                diff = diff_proc.communicate()[0]
+
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
                 file = open(self.stdout_file, "rb")
@@ -2753,6 +2762,12 @@ def parse_args():
         "--run-by-hash-total",
         type=int,
         help="Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num",
+    )
+
+    parser.add_argument(
+        "--show-whitespaces-in-diff",
+        action="store_true",
+        help="Display TAB characters as ^I and trailing spaces as $ in diff",
     )
 
     group = parser.add_mutually_exclusive_group(required=False)
