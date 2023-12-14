@@ -2574,6 +2574,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             LOG_DEBUG(log, "Part {} is not found on remote replicas", part_desc->new_part_name);
 
             /// Fallback to covering part
+            entry.actual_new_part_name.clear();
             replica = findReplicaHavingCoveringPartImplLowLevel(&entry, part_desc->new_part_name, found_part_name, true);
 
             if (replica.empty())
