@@ -880,7 +880,7 @@ void HTTPHandler::processQuery(
 void HTTPHandler::trySendExceptionToClient(
     const std::string & s,
     int exception_code,
-    bool exception_retryable,
+    std::optional<bool> exception_retryable,
     HTTPServerRequest & request,
     HTTPServerResponse & response,
     Output & used_output)
@@ -893,7 +893,8 @@ try
     else
     {
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
-        response.set("X-ClickHouse-Exception-Retryable", toString<int>(exception_retryable));
+        if (exception_retryable.has_value())
+            response.set("X-ClickHouse-Exception-Retryable", toString<int>(*exception_retryable));
     }
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
@@ -1122,11 +1123,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
           * If exception is thrown on local server, then stack trace is in separate field.
           */
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-        bool is_retryable = false;
+        std::optional<bool> is_retryable = std::nullopt;
         if (query_context)
-            is_retryable = query_context->isExceptionCodeRetryable(status.code);
-        else
-            LOG_WARNING(log, "No context");
+            is_retryable = query_context->isExceptionSafeToRetry(status.code);
         trySendExceptionToClient(status.message, status.code, is_retryable, request, response, used_output);
 
         if (thread_trace_context)

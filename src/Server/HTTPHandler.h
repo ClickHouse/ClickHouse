@@ -8,6 +8,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 
+#include <optional>
+
 #ifdef __clang__
 #  pragma clang diagnostic push
 #  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
@@ -145,7 +147,7 @@ private:
     void trySendExceptionToClient(
         const std::string & s,
         int exception_code,
-        bool exception_retryable,
+        std::optional<bool> exception_retryable,
         HTTPServerRequest & request,
         HTTPServerResponse & response,
         Output & used_output);

@@ -75,10 +75,10 @@ public:
         send_progress_interval_ms = send_progress_interval_ms_;
     }
 
-    void setExceptionCode(int code, bool is_retryable)
+    void setExceptionCode(int code, std::optional<bool> retryable)
     {
         exception_code = code;
-        exception_retryable = is_retryable;
+        exception_retryable = retryable;
     }
 
 private:
@@ -131,7 +131,7 @@ private:
     Stopwatch progress_watch;
 
     int exception_code = 0;
-    bool exception_retryable = false;
+    std::optional<bool> exception_retryable = {};
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };
