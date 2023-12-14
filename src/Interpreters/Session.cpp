@@ -293,6 +293,10 @@ Session::Session(const ContextPtr & global_context_, ClientInfo::Interface inter
 
 Session::~Session()
 {
+    /// Early release a NamedSessionData.
+    if (named_session)
+        named_session->release();
+
     if (notified_session_log_about_login)
     {
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
@@ -700,6 +704,10 @@ void Session::releaseSessionID()
 {
     if (!named_session)
         return;
+
+    prepared_client_info = getClientInfo();
+    session_context.reset();
+
     named_session->release();
     named_session = nullptr;
 }

@@ -569,6 +569,8 @@ void HTTPHandler::processQuery(
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 
+    SCOPE_EXIT({ session->releaseSessionID(); });
+
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
@@ -903,6 +905,8 @@ void HTTPHandler::processQuery(
         QueryFlags{},
         {},
         handle_exception_in_output_format);
+
+    session->releaseSessionID();
 
     if (used_output.hasDelayed())
     {
