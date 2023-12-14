@@ -1153,6 +1153,63 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
+bool StorageMerge::supportsTrivialCountOptimization() const
+{
+    bool is_support = true;
+
+    auto database_table_iterators = getDatabaseIterators(getContext());
+    for (auto & iterator : database_table_iterators)
+    {
+        while (iterator->isValid())
+        {
+            const auto & table = iterator->table();
+            is_support = table->supportsTrivialCountOptimization();
+            iterator->next();
+        }
+    }
+    return is_support;
+}
+
+std::optional<UInt64> StorageMerge::totalRows(const Settings &) const
+{
+    UInt64 total_rows = 0;
+    
+    auto database_table_iterators = getDatabaseIterators(getContext());
+    for (auto & iterator : database_table_iterators)
+    {
+        while (iterator->isValid())
+        {
+            const auto & table = iterator->table();
+            auto table_rows = table->totalRows(getContext()->getSettingsRef());
+            if (table_rows){
+                total_rows += *table_rows;
+            }
+            iterator->next();
+        }
+    }
+    return std::make_optional<UInt64>(total_rows);
+}
+
+std::optional<UInt64> StorageMerge::totalBytes(const Settings & ) const
+{
+    UInt64 total_bytes = 0;
+    
+    auto database_table_iterators = getDatabaseIterators(getContext());
+    for (auto & iterator : database_table_iterators)
+    {
+        while (iterator->isValid())
+        {
+            const auto & table = iterator->table();
+            auto table_bytes = table->totalBytes(getContext()->getSettingsRef());
+            if (total_bytes){
+                total_bytes += *table_bytes;
+            }
+            iterator->next();
+        }
+    }
+    return std::make_optional<UInt64>(total_bytes);
+}
+
 
 void registerStorageMerge(StorageFactory & factory)
 {
