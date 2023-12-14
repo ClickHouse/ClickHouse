@@ -132,6 +132,7 @@ private:
     /// For block numbers.
     SimpleIncrement increment;
 
+    time_t last_time_clean {0};
     /// For clearOldParts
     AtomicStopwatch time_after_previous_cleanup_parts;
     /// For clearOldTemporaryDirectories.

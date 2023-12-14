@@ -1338,6 +1338,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
     }
 
+    bool need_force_clean = last_time_force_clean + getSettings()->max_wait_clean_timeout < static_cast<UInt64>(time(nullptr));
+
     bool has_mutations = false;
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
@@ -1353,7 +1355,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         has_mutations = !current_mutations_by_version.empty();
     }
 
-    if (merge_entry)
+    if (merge_entry && !need_force_clean)
     {
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, /* cleanup */ false, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
@@ -1364,7 +1366,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             getContext()->getMergeList().cancelMergeWithTTL();
         return scheduled;
     }
-    if (mutate_entry)
+    if (mutate_entry && !need_force_clean)
     {
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
         /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
@@ -1398,6 +1400,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, shared_lock] ()
             {
+                last_time_clean = time(nullptr);
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
                 size_t cleared_count = 0;
