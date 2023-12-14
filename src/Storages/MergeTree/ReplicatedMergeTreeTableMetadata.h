@@ -45,7 +45,7 @@ struct ReplicatedMergeTreeTableMetadata
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
-    void read(ReadBufferFromString & in);
+    void read(ReadBuffer & in);
     static ReplicatedMergeTreeTableMetadata parse(const String & s);
 
     void write(WriteBuffer & out) const;

@@ -39,21 +39,6 @@ static String formattedASTNormalized(const ASTPtr & ast)
     return buf.str();
 }
 
-static bool peekString(const char * s, ReadBufferFromString & buf)
-{
-    auto * current_pos = buf.position();
-    for (; *s; ++s)
-    {
-        if (buf.eof() || *buf.position() != *s)
-        {
-            buf.position() = current_pos;
-            return false;
-        }
-        ++buf.position();
-    }
-    return true;
-}
-
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -119,6 +104,22 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 {
+    /// Important notes: new added field must always be append to the end of serialized metadata
+    /// for backward compatible.
+
+    /// In addition, two consecutive fields should not share any prefix, otherwise deserialize may fails.
+    /// For example, if you have two field `v1` and `v2` serialized as:
+    ///     if (!v1.empty()) out << "v1: " << v1 << "\n";
+    ///     if (!v2.empty()) out << "v2: " << v2 << "\n";
+    /// Let say if `v1` is empty and v2 is non-empty, then `v1` is not in serialized metadata.
+    /// Later, to deserialize the metadata, `read` will sequentially check if each field with `checkString`.
+    /// When it begin to check for `v1` and `v2`, the metadata buffer look like this:
+    ///     v2: <v2 value>
+    ///     ^
+    ///   cursor
+    /// `checkString("v1: ", in)` will be called first and it moves the cursor to `2` instead of `v`, so the
+    /// subsequent call `checkString("v2: ", in)` will also fails.
+
     out << "metadata format version: 1\n"
         << "date column: " << date_column << "\n"
         << "sampling expression: " << sampling_expression << "\n"
@@ -172,7 +173,7 @@ String ReplicatedMergeTreeTableMetadata::toString() const
     return out.str();
 }
 
-void ReplicatedMergeTreeTableMetadata::read(ReadBufferFromString & in)
+void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 {
     in >> "metadata format version: 1\n";
     in >> "date column: " >> date_column >> "\n";
@@ -184,25 +185,25 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBufferFromString & in)
 
     if (in.eof())
         data_format_version = 0;
-    else if (peekString("data format version: ", in))
+    else if (checkString("data format version: ", in))
         in >> data_format_version.toUnderType() >> "\n";
 
     if (data_format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         in >> "partition key: " >> partition_key >> "\n";
 
-    if (peekString("sorting key: ", in))
+    if (checkString("sorting key: ", in))
         in >> sorting_key >> "\n";
 
-    if (peekString("ttl: ", in))
+    if (checkString("ttl: ", in))
         in >> ttl_table >> "\n";
 
-    if (peekString("indices: ", in))
+    if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
 
-    if (peekString("projections: ", in))
+    if (checkString("projections: ", in))
         in >> projections >> "\n";
 
-    if (peekString("granularity bytes: ", in))
+    if (checkString("granularity bytes: ", in))
     {
         in >> index_granularity_bytes >> "\n";
         index_granularity_bytes_found_in_zk = true;
@@ -210,26 +211,26 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBufferFromString & in)
     else
         index_granularity_bytes = 0;
 
-    if (peekString("constraints: ", in))
+    if (checkString("constraints: ", in))
         in >> constraints >> "\n";
 
-    if (peekString("merge parameters format version: ", in))
+    if (checkString("merge parameters format version: ", in))
         in >> merge_params_version >> "\n";
     else
         merge_params_version = REPLICATED_MERGE_TREE_METADATA_LEGACY_VERSION;
 
     if (merge_params_version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
     {
-        if (peekString("version column: ", in))
+        if (checkString("version column: ", in))
             in >> version_column >> "\n";
 
-        if (peekString("is delete column: ", in))
+        if (checkString("is_deleted column: ", in))
             in >> is_deleted_column >> "\n";
 
-        if (peekString("columns to sum: ", in))
+        if (checkString("columns to sum: ", in))
             in >> columns_to_sum >> "\n";
 
-        if (peekString("graphite hash: ", in))
+        if (checkString("graphite hash: ", in))
             in >> graphite_params_hash >> "\n";
     }
 }
