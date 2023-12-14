@@ -1,5 +1,16 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 
+namespace
+{
+DB::CoordinationMode getCoordinationMode(DB::ContextPtr context)
+{
+    /// TODO: more accurate check. Essentially we want to check that we're not dealing with a distributed table.
+    const bool can_use_single_shard_coordinator
+        = context->hasQueryContext() && !context->getQueryContext()->getScalars().contains("_shard_num");
+    return can_use_single_shard_coordinator ? DB::CoordinationMode::SingleShard : DB::CoordinationMode::Default;
+}
+}
+
 namespace DB
 {
 
@@ -30,12 +41,10 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         settings_,
         context_)
     , extension(std::move(extension_))
+    , coordination_mode(getCoordinationMode(context_))
 {
-    extension.all_callback(InitialAllRangesAnnouncement(
-        CoordinationMode::Default,
-        parts_ranges.getDescriptions(),
-        extension.number_of_current_replica
-    ));
+    extension.all_callback(
+        InitialAllRangesAnnouncement(coordination_mode, parts_ranges.getDescriptions(), extension.number_of_current_replica));
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)
@@ -48,7 +57,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     if (buffered_ranges.empty())
     {
         auto result = extension.callback(ParallelReadRequest(
-            CoordinationMode::Default,
+            coordination_mode,
             extension.number_of_current_replica,
             pool_settings.min_marks_for_concurrent_read * pool_settings.threads,
             /// For Default coordination mode we don't need to pass part names.

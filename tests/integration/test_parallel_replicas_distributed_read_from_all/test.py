@@ -130,11 +130,11 @@ def test_read_equally_from_each_replica(start_cluster, prefer_localhost_replica)
 
     # each replica has 2 distinct parts (non-intersecting with another replicas),
     # each part less then index granularity, therefore 2 marks for each replica to handle
-    coordinator_statistic = "replica 0 - {requests: 3 marks: 2}; replica 1 - {requests: 3 marks: 2}; replica 2 - {requests: 3 marks: 2}"
+    coordinator_statistic = "{requests: 3 marks: 2 [^}]*};.*{requests: 3 marks: 2 [^}]*};.*{requests: 3 marks: 2 [^}]*}"
     assert (
-        nodes[0].contains_in_log(coordinator_statistic)
-        or nodes[1].contains_in_log(coordinator_statistic)
-        or nodes[2].contains_in_log(coordinator_statistic)
+        int(nodes[0].count_in_log(coordinator_statistic))
+        + int(nodes[1].count_in_log(coordinator_statistic))
+        + int(nodes[2].count_in_log(coordinator_statistic))
     )
 
     # w/o parallel replicas

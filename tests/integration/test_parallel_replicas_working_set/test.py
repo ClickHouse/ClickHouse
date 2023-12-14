@@ -37,6 +37,21 @@ def create_tables(cluster, table_name, node_with_covering_part):
         f"""CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3')
             ORDER BY (key)"""
     )
+
+    # a little hack - we'll use distributed table to force usage of the default coordinator
+    nodes[0].query(f"DROP TABLE IF EXISTS {table_name}_d ON CLUSTER {cluster} SYNC")
+    nodes[0].query(
+        f"""
+            CREATE TABLE {table_name}_d ON CLUSTER {cluster} AS {table_name}
+            Engine=Distributed(
+                {cluster},
+                currentDatabase(),
+                {table_name},
+                rand()
+            )
+            """
+    )
+
     # stop merges to keep original parts
     # stop fetches to keep only parts created on the nodes
     for i in (0, 1, 2):
@@ -117,7 +132,7 @@ def test_covering_part_in_announcement(start_cluster, node_with_covering_part):
 
     # parallel replicas
     result = nodes[0].query(
-        f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}",
+        f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
         settings={
             "allow_experimental_parallel_reading_from_replicas": 2,
             "prefer_localhost_replica": 0,
@@ -131,7 +146,7 @@ def test_covering_part_in_announcement(start_cluster, node_with_covering_part):
     # w/o parallel replicas
     assert (
         nodes[node_with_covering_part].query(
-            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}",
+            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d",
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 0,
             },
