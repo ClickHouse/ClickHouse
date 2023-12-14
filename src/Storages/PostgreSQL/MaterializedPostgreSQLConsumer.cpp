@@ -140,7 +140,7 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
 
 MaterializedPostgreSQLConsumer::StorageData::Buffer & MaterializedPostgreSQLConsumer::StorageData::getLastBuffer()
 {
-    if (!buffers.empty())
+    if (buffers.empty())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No data buffer for {}",
                         storage->getStorageID().getNameForLogs());
