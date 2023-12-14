@@ -22,3 +22,34 @@ SELECT 'Non-const arrays';
 SELECT arrayFold( acc,x -> acc+x,  range(number), number) FROM system.numbers LIMIT 5;
 SELECT arrayFold( acc,x -> arrayPushFront(acc,x),  range(number), emptyArrayUInt64()) FROM system.numbers LIMIT 5;
 SELECT arrayFold( acc,x -> x%2 ? arrayPushFront(acc,x) : arrayPushBack(acc,x),  range(number), emptyArrayUInt64()) FROM system.numbers LIMIT 5;
+
+SELECT 'Bugs 57816 and 57458';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (line String, patterns Array(String)) ENGINE = MergeTree ORDER BY line;
+INSERT INTO tab VALUES ('abcdef', ['c']), ('ghijkl', ['h', 'k']), ('mnopqr', ['n']);
+SELECT
+    line,
+    patterns,
+    arrayFold(acc, pat -> position(line, pat), patterns, 0::UInt64)
+FROM s
+ORDER BY line;
+
+-- boom, TBD
+-- SELECT arrayFold(acc, x -> arrayIntersect(acc, x), [['qwe', 'asd'], ['qwe','asde']], []);
+
+DROP TABLE tab;
+CREATE TABLE tab (line String) ENGINE = Memory();
+INSERT INTO tab VALUES ('xxx..yyy..'), ('..........'), ('..xx..yyy.'), ('..........'), ('xxx.......');
+SELECT
+    line,
+    splitByNonAlpha(line),
+    arrayFold(
+        (acc, str) -> position(line, str),
+        splitByNonAlpha(line),
+        0::UInt64
+    )
+FROM
+    tab;
+
+

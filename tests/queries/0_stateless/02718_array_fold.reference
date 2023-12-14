@@ -23,3 +23,12 @@ Non-const arrays
 [1,0]
 [1,0,2]
 [3,1,0,2]
+Bugs 57816 and 57458
+abcdef	['c']	3
+ghijkl	['h','k']	5
+mnopqr	['n']	2
+xxx..yyy..	['xxx','yyy']	6
+..........	[]	0
+..xx..yyy.	['xx','yyy']	7
+..........	[]	0
+xxx.......	['xxx']	1
