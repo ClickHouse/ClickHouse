@@ -30,6 +30,7 @@ class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(
+        MergeTreeSequentialSourceType type,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
@@ -85,6 +86,7 @@ private:
 
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
+    MergeTreeSequentialSourceType type,
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     MergeTreeData::DataPartPtr data_part_,
@@ -152,6 +154,17 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     read_settings.local_fs_method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
         read_settings.direct_io_threshold = 1;
+    /// Configure throttling
+    switch (type)
+    {
+        case Mutation:
+            read_settings.local_throttler = context->getMutationsThrottler();
+            break;
+        case Merge:
+            read_settings.local_throttler = context->getMergesThrottler();
+            break;
+    }
+    read_settings.remote_throttler = read_settings.local_throttler;
 
     MergeTreeReaderSettings reader_settings =
     {
@@ -244,6 +257,7 @@ MergeTreeSequentialSource::~MergeTreeSequentialSource() = default;
 
 
 Pipe createMergeTreeSequentialSource(
+    MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
@@ -264,7 +278,7 @@ Pipe createMergeTreeSequentialSource(
     if (need_to_filter_deleted_rows && !has_filter_column)
         columns_to_read.emplace_back(filter_column.name);
 
-    auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
+    auto column_part_source = std::make_shared<MergeTreeSequentialSource>(type,
         storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges),
         /*apply_deleted_mask=*/ false, read_with_direct_io, take_column_types_from_storage, quiet);
 
@@ -292,6 +306,7 @@ class ReadFromPart final : public ISourceStep
 {
 public:
     ReadFromPart(
+        MergeTreeSequentialSourceType type_,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
@@ -301,6 +316,7 @@ public:
         ContextPtr context_,
         Poco::Logger * log_)
         : ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)})
+        , type(type_)
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , data_part(std::move(data_part_))
@@ -337,7 +353,7 @@ public:
             }
         }
 
-        auto source = createMergeTreeSequentialSource(
+        auto source = createMergeTreeSequentialSource(type,
             storage,
             storage_snapshot,
             data_part,
@@ -353,6 +369,7 @@ public:
     }
 
 private:
+    MergeTreeSequentialSourceType type;
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
     MergeTreeData::DataPartPtr data_part;
@@ -364,6 +381,7 @@ private:
 };
 
 void createReadFromPartStep(
+    MergeTreeSequentialSourceType type,
     QueryPlan & plan,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
@@ -374,7 +392,7 @@ void createReadFromPartStep(
     ContextPtr context,
     Poco::Logger * log)
 {
-    auto reading = std::make_unique<ReadFromPart>(
+    auto reading = std::make_unique<ReadFromPart>(type,
         storage, storage_snapshot, std::move(data_part),
         std::move(columns_to_read), apply_deleted_mask,
         filter, std::move(context), log);
