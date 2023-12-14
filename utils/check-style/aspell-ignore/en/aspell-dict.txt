@@ -261,6 +261,7 @@ FOSDEM
 FQDN
 Failover
 FarmHash
+FileCluster
 FileLog
 FilesystemCacheBytes
 FilesystemCacheElements
@@ -865,12 +866,13 @@ SystemReplicasThreadsActive
 TABLUM
 TCPConnection
 TCPThreads
+TDigest
 TINYINT
-TKSV
 TLSv
 TPCH
 TSDB
 TSVRaw
+TSVWithNames
 TSVs
 TSan
 TThe
@@ -882,8 +884,10 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
-TablesLoaderThreads
-TablesLoaderThreadsActive
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -1230,6 +1234,7 @@ changelogs
 charset
 charsets
 chconn
+cheatsheet
 checkouting
 checksummed
 checksumming
@@ -1382,6 +1387,7 @@ denormalized
 denormalizing
 denormals
 dequeued
+dequeues
 deserialization
 deserialized
 deserializing
@@ -1441,6 +1447,7 @@ endian
 endianness
 endsWith
 endsWithUTF
+enqueued
 enum
 enum's
 enums
@@ -1471,6 +1478,7 @@ fastops
 fcoverage
 fibonacci
 fifo
+fileCluster
 filelog
 filesystem
 filesystemAvailable
@@ -1535,7 +1543,6 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
-getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1783,6 +1790,7 @@ logTrace
 logagent
 loghouse
 london
+lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -2225,7 +2233,6 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID
@@ -2269,6 +2276,7 @@ splitByRegexp
 splitByString
 splitByWhitespace
 splitby
+sqid
 sql
 sqlalchemy
 sqlinsert

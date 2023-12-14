@@ -1678,7 +1678,7 @@ TCP порт для защищённого обмена данными с кли
 
 ## user_files_path {#server_configuration_parameters-user_files_path}
 
-Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../operations/server-configuration-parameters/settings.md).
+Каталог с пользовательскими файлами. Используется в табличных функциях [file()](../../sql-reference/table-functions/fileCluster.md) и [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
 
 **Пример**
 

@@ -23,6 +23,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
+#include <Common/PoolId.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -742,16 +743,16 @@ void LocalServer::processConfig()
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        loadMetadataSystem(global_context);
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        auto startup_system_tasks = loadMetadataSystem(global_context);
+        attachSystemTablesLocal</* lazy= */ true>(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        startupSystemTables();
+        waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
 
         if (!config().has("only-system-tables"))
         {
             DatabaseCatalog::instance().createBackgroundTasks();
-            loadMetadata(global_context);
+            waitLoad(loadMetadata(global_context));
             DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
@@ -760,9 +761,9 @@ void LocalServer::processConfig()
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
-    else if (!config().has("no-system-tables"))
+    else
     {
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal</* lazy= */ true>(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
@@ -841,7 +842,6 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
 
-        ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path")
         ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
@@ -870,8 +870,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("table-file", options["file"].as<std::string>());
     if (options.count("structure"))
         config().setString("table-structure", options["structure"].as<std::string>());
-    if (options.count("no-system-tables"))
-        config().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         config().setBool("only-system-tables", true);
     if (options.count("database"))

@@ -27,8 +27,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <QueryCoordination/QueryCoordinationMetaInfo.h>
-#include <Poco/Net/NameValueCollection.h>
-#include <Core/Types.h>
 
 #include "config.h"
 

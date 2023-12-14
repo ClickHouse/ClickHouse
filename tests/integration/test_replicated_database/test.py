@@ -799,7 +799,7 @@ def test_recover_staled_replica(started_cluster):
             settings=settings,
         )
         main_node.query_with_retry(
-            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1",
+            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m as n FROM recover.rmt1",
             settings=settings,
         )
         main_node.query_with_retry(

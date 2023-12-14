@@ -57,12 +57,13 @@ std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
 
 /** Notes:
   * Only one query from the table can be processed at the moment of time.
-  * This is ensured by the mutex in fillData function.
+  * This is ensured by the mutex in StorageSystemStackTraceSource.
   * We obtain information about threads by sending signal and receiving info from the signal handler.
   * Information is passed via global variables and pipe is used for signaling.
   * Actually we can send all information via pipe, but we read from it with timeout just in case,
-  * so it's convenient to use is only for signaling.
+  * so it's convenient to use it only for signaling.
   */
+std::mutex mutex;
 
 StackTrace stack_trace{NoCapture{}};
 
@@ -189,7 +190,7 @@ ThreadIdToName getFilteredThreadNames(ASTPtr query, ContextPtr context, const Pa
         tid_to_name[tid] = thread_name;
         all_thread_names->insert(thread_name);
     }
-    LOG_TEST(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
+    LOG_TRACE(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
 
     Block block { ColumnWithTypeAndName(std::move(all_thread_names), std::make_shared<DataTypeString>(), "thread_name") };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -229,6 +230,8 @@ public:
         , pipe_read_timeout_ms(static_cast<int>(context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds()))
         , log(log_)
         , proc_it("/proc/self/task")
+        /// It shouldn't be possible to do concurrent reads from this table.
+        , lock(mutex)
     {
         /// Create a mask of what columns are needed in the result.
         NameSet names_set(column_names.begin(), column_names.end());
@@ -241,16 +244,13 @@ public:
 protected:
     Chunk generate() override
     {
-        /// It shouldn't be possible to do concurrent reads from this table.
-        std::lock_guard lock(mutex);
-
         MutableColumns res_columns = header.cloneEmptyColumns();
 
         ColumnPtr thread_ids;
         {
             Stopwatch watch;
             thread_ids = getFilteredThreadIds();
-            LOG_TEST(log, "Read {} threads, took {} ms", thread_ids->size(), watch.elapsedMilliseconds());
+            LOG_TRACE(log, "Read {} threads, took {} ms", thread_ids->size(), watch.elapsedMilliseconds());
         }
         if (thread_ids->empty())
             return Chunk();
@@ -332,7 +332,7 @@ protected:
                 ++sequence_num;
             }
         }
-        LOG_TEST(log, "Send signal to {} threads (total), took {} ms", signals_sent, signals_sent_ms);
+        LOG_TRACE(log, "Send signal to {} threads (total), took {} ms", signals_sent, signals_sent_ms);
 
         UInt64 num_rows = res_columns.at(0)->size();
         Chunk chunk(std::move(res_columns), num_rows);
@@ -357,7 +357,7 @@ private:
     size_t signals_sent = 0;
     size_t signals_sent_ms = 0;
 
-    std::mutex mutex;
+    std::unique_lock<std::mutex> lock;
 
     ColumnPtr getFilteredThreadIds()
     {
