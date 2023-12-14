@@ -4,9 +4,6 @@ CREATE TABLE 02918_parallel_replicas (x String, y Int32) ENGINE = MergeTree ORDE
 
 INSERT INTO 02918_parallel_replicas SELECT toString(number), number % 4 FROM numbers(1000);
 
--- SET async_socket_for_remote=0;
--- SET async_query_sending_for_remote=0;
--- SET load_balancing='round_robin';
 SET prefer_localhost_replica=0;
 
 -- { echoOn }

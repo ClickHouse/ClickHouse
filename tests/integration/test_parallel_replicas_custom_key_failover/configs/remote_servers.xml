@@ -9,10 +9,14 @@
                 </replica>
                 <replica>
                     <host>n2</host>
-                    <port>9000</port>
+                    <port>1234</port>
                 </replica>
                 <replica>
                     <host>n3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n4</host>
                     <port>1234</port>
                 </replica>
             </shard>
