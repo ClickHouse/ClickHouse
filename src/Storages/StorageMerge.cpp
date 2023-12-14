@@ -1173,7 +1173,6 @@ bool StorageMerge::supportsTrivialCountOptimization() const
 std::optional<UInt64> StorageMerge::totalRows(const Settings &) const
 {
     UInt64 total_rows = 0;
-    
     auto database_table_iterators = getDatabaseIterators(getContext());
     for (auto & iterator : database_table_iterators)
     {
@@ -1181,7 +1180,8 @@ std::optional<UInt64> StorageMerge::totalRows(const Settings &) const
         {
             const auto & table = iterator->table();
             auto table_rows = table->totalRows(getContext()->getSettingsRef());
-            if (table_rows){
+            if (table_rows)
+            {
                 total_rows += *table_rows;
             }
             iterator->next();
@@ -1190,10 +1190,9 @@ std::optional<UInt64> StorageMerge::totalRows(const Settings &) const
     return std::make_optional<UInt64>(total_rows);
 }
 
-std::optional<UInt64> StorageMerge::totalBytes(const Settings & ) const
+std::optional<UInt64> StorageMerge::totalBytes(const Settings &) const
 {
     UInt64 total_bytes = 0;
-    
     auto database_table_iterators = getDatabaseIterators(getContext());
     for (auto & iterator : database_table_iterators)
     {
@@ -1201,7 +1200,8 @@ std::optional<UInt64> StorageMerge::totalBytes(const Settings & ) const
         {
             const auto & table = iterator->table();
             auto table_bytes = table->totalBytes(getContext()->getSettingsRef());
-            if (total_bytes){
+            if (total_bytes)
+            {
                 total_bytes += *table_bytes;
             }
             iterator->next();
