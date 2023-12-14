@@ -786,10 +786,23 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
         else
         {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                getContext(),
-                false /* is_subquery */,
-                create.isParameterizedView());
+            /** To get valid sample block we need to prepare query without only_analyze, because we need to execute scalar
+              * subqueries. Otherwise functions that expect only constant arguments will throw error during query analysis,
+              * because the result of scalar subquery is not a constant.
+              *
+              * Example:
+              * CREATE MATERIALIZED VIEW test_mv ENGINE=MergeTree ORDER BY arr
+              * AS
+              * WITH (SELECT '\d[a-z]') AS constant_value
+              * SELECT extractAll(concat(toString(number), 'a'), assumeNotNull(constant_value)) AS arr
+              * FROM test_table;
+              *
+              * For new analyzer this issue does not exists because we always execute scalar subqueries.
+              * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
+              * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
+              */
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), {});
+            as_select_sample = interpreter.getSampleBlock();
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
@@ -1213,28 +1226,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             getContext()
         ))
         {
-            Block input_block;
-
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
-            {
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-            }
-            else
-            {
-                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
-            }
-
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-
             ColumnsWithTypeAndName input_columns;
             ColumnsWithTypeAndName output_columns;
-            for (const auto & input_column : input_block)
+            for (const auto & input_column : properties.columns)
             {
                 if (const auto * output_column = output_block.findByName(input_column.name))
                 {
-                    input_columns.push_back(input_column.cloneEmpty());
+                    input_columns.push_back({input_column.type, input_column.name});
                     output_columns.push_back(output_column->cloneEmpty());
                 }
             }
