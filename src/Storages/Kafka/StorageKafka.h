@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ThreadPool_fwd.h>
 #include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
@@ -106,6 +107,7 @@ private:
 
     std::mutex mutex;
     std::condition_variable cv;
+    std::condition_variable cleanup_cv;
 
     // Stream thread
     struct TaskContext
@@ -118,6 +120,8 @@ private:
     };
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
+
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     /// For memory accounting in the librdkafka threads.
     std::mutex thread_statuses_mutex;
