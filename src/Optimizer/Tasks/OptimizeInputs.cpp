@@ -17,30 +17,35 @@ OptimizeInputs::OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_con
     : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_))
 {
     auto & group = task_context->getCurrentGroup();
-    log = &Poco::Logger::get(
-        "OptimizeInputs group(" + std::to_string(group.getId()) + ") group node(" + group_node->getStep()->getName() + ")");
+    log = &Poco::Logger::get(fmt::format("OptimizeInputs #{}#{} ({})", group.getId(), group_node->getId(), group_node->getStep()->getName()));
 }
 
 void OptimizeInputs::execute()
 {
     if (group_node->isEnforceNode())
+    {
+        LOG_TRACE(log, "Skip enforce node");
         return;
+    }
 
     auto & group = task_context->getCurrentGroup();
+    LOG_TRACE(log, "Upper bound cost of current group is {}", task_context->getUpperBoundCost().toString());
+
     const auto & required_prop = task_context->getRequiredProp();
+    LOG_TRACE(log, "Required properties is {}", required_prop.distribution.toString());
 
     std::vector<Stats> children_statistics;
     for (auto & child_group : group_node->getChildren())
         children_statistics.emplace_back(child_group->getStatistics());
 
+    /// If frame is null, means it is the first time optimize node.
     if (!frame)
         frame = std::make_unique<Frame>(group_node, task_context->getQueryContext());
 
-    LOG_TRACE(log, "upper bound cost: {}", task_context->getUpperBoundCost().toString());
-
-    /// every alternative prop, required to child
+    /// Each alternative children properties is actually a child problem.
     for (; frame->prop_idx < static_cast<Int32>(frame->alternative_child_prop.size()); ++frame->prop_idx)
     {
+        LOG_TRACE(log, "Evaluate alternative children properties {}", required_prop.distribution.toString());
         auto & required_child_props = frame->alternative_child_prop[frame->prop_idx];
 
         if (frame->newAlternativeCalc())
@@ -65,8 +70,17 @@ void OptimizeInputs::execute()
                 frame->pre_child_idx = frame->child_idx;
                 auto child_upper_bound_cost = task_context->getUpperBoundCost() - frame->total_cost;
 
+                if (child_upper_bound_cost.get() <= 0.0)
+                    LOG_INFO(
+                        log,
+                        "upper bound cost of child group {} is {}, which is lower than 0, which means it will have no solution",
+                        child_group.getId(),
+                        child_upper_bound_cost.get());
+
+                /// Push current task frame to the task stack.
                 pushTask(clone());
 
+                /// Child group is not optimized, push child task to the task stack.
                 TaskContextPtr child_task_context = std::make_shared<TaskContext>(
                     child_group, required_child_prop, task_context->getOptimizeContext(), child_upper_bound_cost);
                 pushTask(std::make_unique<OptimizeGroup>(child_task_context));
@@ -80,7 +94,7 @@ void OptimizeInputs::execute()
             frame->actual_children_prop.emplace_back(best_node->first);
         }
 
-        /// all child problem has solution
+        /// All child problem has solution
         if (frame->child_idx == static_cast<Int32>(group_node->getChildren().size()))
         {
             /// derive output prop by required_prop and children_prop

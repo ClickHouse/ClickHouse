@@ -111,4 +111,11 @@ String PhysicalProperties::toString() const
     return distribution.toString();
 }
 
+String toString(std::vector<PhysicalProperties> properties_list) const
+{
+    if (properties_list.empty())
+        return {};
+    for (const auto & properties :properties_list)
+}
+
 }

@@ -43,7 +43,7 @@ public:
 
         /// Alternative children properties, actually they are child problems, for example as to join,
         /// there are 2 child problems broadcast join and shuffle join.
-        /// For leaf node of query plan, alternative_child_prop has one element which has no child property.
+        /// Note that for leaf node of query plan, alternative_child_prop has one element which has no child property.
         AlternativeChildrenProp alternative_child_prop;
         Int32 prop_idx;
 
