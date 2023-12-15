@@ -513,19 +513,11 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        bool first = true;
-        if (first)
-            first = false;
-        else
-            message << ", ";
-
         if (node.secure)
             message << "secure://";
-
         message << node.address.toString();
-
         message << fail_reasons.str() << "\n";
-        throw Exception(Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper. nodes: {}", message.str());
+        throw Exception(Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper node: {}", message.str());
     }
     else
     {
