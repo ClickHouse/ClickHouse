@@ -31,7 +31,7 @@
             </s3_cache_02933>
             <s3_cache_02944>
                 <type>cache</type>
-                <disk>s3disk</disk>
+                <disk>s3_disk</disk>
                 <path>s3_cache_02944/</path>
                 <max_size>100</max_size>
                 <max_elements>100</max_elements>
