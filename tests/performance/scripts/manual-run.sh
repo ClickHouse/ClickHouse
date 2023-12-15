@@ -51,4 +51,3 @@ run
 
 rm output.7z
 7z a output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/{performance,db/preprocessed_configs}
-
