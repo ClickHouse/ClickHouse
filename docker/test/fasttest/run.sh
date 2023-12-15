@@ -35,10 +35,6 @@ if [ "$HOME" == "/" ]; then
     export HOME
 fi
 
-if [ -f "setup_fdb.sh" ]; then
-    ./setup_fdb.sh
-fi
-
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
 export FASTTEST_WORKSPACE
@@ -237,6 +233,8 @@ function configure
     cp -a "$FASTTEST_SOURCE/programs/server/config.d/log_to_console.xml" "$FASTTEST_DATA/config.d"
     # doesn't support SSL
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
+    # doesn't support FDBKeeper
+    rm -f "$FASTTEST_DATA/config.d/fdbkeeper.xml"
 }
 
 function run_tests

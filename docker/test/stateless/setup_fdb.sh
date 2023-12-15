@@ -14,6 +14,7 @@ FDB_HOME=/tmp/foundationdb
 FDB_CONF_PATH="$FDB_HOME/foundationdb.conf"
 FDB_CLUSTER="$FDB_HOME/fdb.cluster"
 export FDB_CLUSTER
+export FDB_CONF_PATH
 FDBSERVER="$FDB_HOME/fdbserver"
 FDBCLI="$FDB_HOME/fdbcli"
 
