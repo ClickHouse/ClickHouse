@@ -25,6 +25,12 @@ FileCacheSettings FileCacheFactory::FileCacheData::getSettings() const
     return settings;
 }
 
+void FileCacheFactory::FileCacheData::setSettings(const FileCacheSettings & new_settings)
+{
+    std::lock_guard lock(settings_mutex);
+    settings = new_settings;
+}
+
 FileCacheFactory & FileCacheFactory::instance()
 {
     static FileCacheFactory ret;
@@ -100,21 +106,23 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
         FileCacheSettings new_settings;
         new_settings.loadFromConfig(config, cache_info->config_path);
 
-        FileCacheSettings old_settings;
-        {
-            std::lock_guard lock(cache_info->settings_mutex);
-            if (new_settings == cache_info->settings)
-                continue;
+        FileCacheSettings old_settings = cache_info->getSettings();
+        if (old_settings == new_settings)
+            continue;
 
-            old_settings = cache_info->settings;
+        try
+        {
+            cache_info->cache->applySettingsIfPossible(new_settings, old_settings);
+        }
+        catch (...)
+        {
+            /// Settings changes could be partially applied in case of exception,
+            /// make sure cache_info->settings show correct state of applied settings.
+            cache_info->setSettings(old_settings);
+            throw;
         }
 
-        cache_info->cache->applySettingsIfPossible(new_settings, old_settings);
-
-        {
-            std::lock_guard lock(cache_info->settings_mutex);
-            cache_info->settings = old_settings;
-        }
+        cache_info->setSettings(old_settings);
     }
 }
 
