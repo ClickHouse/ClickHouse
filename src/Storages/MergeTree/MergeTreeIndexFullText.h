@@ -90,8 +90,10 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_IN,
+            FUNCTION_MATCH,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
+            FUNCTION_MULTI_MATCH,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,

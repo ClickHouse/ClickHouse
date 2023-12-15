@@ -17,6 +17,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Core/Defines.h>
+#include <Common/OptimizedRegularExpression.h>
 
 #include <Poco/Logger.h>
 
@@ -201,6 +202,8 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_IN
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
+             || element.function == RPNElement::FUNCTION_MATCH
+             || element.function == RPNElement::FUNCTION_MULTI_MATCH
              || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
@@ -233,6 +236,7 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
 /// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
 bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
+    std::cout<<"======== Flag into mayBeTrueOnGranule"<<std::endl;
     std::shared_ptr<MergeTreeIndexGranuleFullText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
     if (!granule)
@@ -285,6 +289,41 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
             rpn_stack.emplace_back(
                     std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+        }
+        else if (element.function == RPNElement::FUNCTION_MATCH)
+        {
+            // If bloom filter is not null means we got required substring
+
+            if (!element.set_bloom_filters.empty())
+            {
+
+                std::vector<bool> result(element.set_bloom_filters.back().size(), true);
+
+                const auto & bloom_filters = element.set_bloom_filters[0];
+
+                for (size_t row = 0; row < bloom_filters.size(); ++row)
+                    result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
+
+                if (element.bloom_filter)
+                {
+                    //auto required = rpn_stack.back();
+                    //rpn_stack.pop_back();
+                    //auto alternative = std::find(std::cbegin(result), std::cend(result), true) != std::end(result);
+                    //rpn_stack.emplace_back(required.can_be_true && alternative, true);
+                    auto alternative = std::find(std::cbegin(result), std::cend(result), true) != std::end(result);
+                    rpn_stack.emplace_back(alternative, true);
+                }
+                else
+                    rpn_stack.emplace_back(
+                            std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            }
+            //TODO: Need to check why bloom_filter is not null while set_bloom_filters is not empty
+            else if (element.bloom_filter)
+            {
+                std::cout<<"=========== Bloom Filter is not null"<<std::endl;
+                rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
+            }
+
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -390,6 +429,8 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
                  function_name == "notEquals" ||
                  function_name == "has" ||
                  function_name == "mapContains" ||
+                 function_name == "match" ||
+                 function_name == "multiMatchAny" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name.starts_with("hasToken") ||
@@ -507,6 +548,64 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
         out.function = RPNElement::FUNCTION_HAS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         auto & value = const_value.get<String>();
+        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        return true;
+    }
+
+    if (function_name == "match")
+    {
+        out.key_column = *key_index;
+        out.function = RPNElement::FUNCTION_MATCH;
+        out.bloom_filter = std::make_unique<BloomFilter>(params);
+
+        auto & string_view = const_value.get<String>();
+        String required_substring;
+        bool is_trivial;
+        bool required_substring_is_prefix;
+        std::vector<String> alternatives;
+        OptimizedRegularExpression::analyze(string_view, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+        std::cout<<"========= is trivial:"<<is_trivial<<std::endl;
+        std::cout<<"========= required_substring_is_prefix:"<<required_substring_is_prefix<<std::endl;
+        std::cout<<"========= regex string is:"<<string_view<<std::endl;
+        std::cout<<"========= required sub string is:"<<required_substring<<std::endl;
+        for (const auto & alternative : alternatives)
+            std::cout<<"========= alternative string:"<<alternative<<std::endl;
+
+        if (required_substring.empty() && alternatives.empty())
+            return false;
+
+        if (!alternatives.empty())
+        {
+            std::vector<std::vector<BloomFilter>> bloom_filters;
+            bloom_filters.emplace_back();
+            for (const auto & alternative : alternatives)
+            {
+                bloom_filters.back().emplace_back(params);
+                token_extractor->stringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back());
+            }
+            out.set_bloom_filters = std::move(bloom_filters);
+        }
+        else if (!required_substring.empty())
+           token_extractor->stringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter);
+
+        return true;
+    }
+
+    if (function_name == "notEquals")
+    {
+        out.key_column = *key_index;
+        out.function = RPNElement::FUNCTION_NOT_EQUALS;
+        out.bloom_filter = std::make_unique<BloomFilter>(params);
+        const auto & value = const_value.get<String>();
+        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        return true;
+    }
+    else if (function_name == "equals")
+    {
+        out.key_column = *key_index;
+        out.function = RPNElement::FUNCTION_EQUALS;
+        out.bloom_filter = std::make_unique<BloomFilter>(params);
+        const auto & value = const_value.get<String>();
         token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }

@@ -106,6 +106,7 @@ public:
         bool & required_substring_is_prefix,
         std::vector<std::string> & alternatives);
 
+
 private:
     bool is_trivial;
     bool required_substring_is_prefix;
