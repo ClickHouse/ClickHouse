@@ -801,7 +801,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
               * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
               * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
               */
-            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), {});
+
+            SelectQueryOptions options;
+            if (create.isParameterizedView())
+                options = options.createParameterizedView();
+
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), options);
             as_select_sample = interpreter.getSampleBlock();
         }
 
@@ -1226,14 +1231,28 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             getContext()
         ))
         {
+            Block input_block;
+
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            {
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            }
+            else
+            {
+                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
+                    getContext(),
+                    {}).getSampleBlock();
+            }
+
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
+
             ColumnsWithTypeAndName input_columns;
             ColumnsWithTypeAndName output_columns;
-            for (const auto & input_column : properties.columns)
+            for (const auto & input_column : input_block)
             {
                 if (const auto * output_column = output_block.findByName(input_column.name))
                 {
-                    input_columns.push_back({input_column.type, input_column.name});
+                    input_columns.push_back(input_column.cloneEmpty());
                     output_columns.push_back(output_column->cloneEmpty());
                 }
             }
