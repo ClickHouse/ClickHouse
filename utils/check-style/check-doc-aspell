@@ -19,10 +19,10 @@ CHECK_LANG=en
 ASPELL_IGNORE_PATH="${ROOT_PATH}/utils/check-style/aspell-ignore/${CHECK_LANG}"
 
 if [[ ${1:-} == "-i" ]]; then
-    if [[ ! -z ${2:-} ]]; then
-        FILES_TO_CHECK=${ROOT_PATH}/docs/${CHECK_LANG}/${2}
+    if [[ -n ${2:-} ]]; then
+        FILES_TO_CHECK="${ROOT_PATH}/docs/${CHECK_LANG}/${2}"
     else
-        FILES_TO_CHECK=${ROOT_PATH}/docs/${CHECK_LANG}/**/*.md
+        FILES_TO_CHECK="${ROOT_PATH}/docs/${CHECK_LANG}/**/*.md"
     fi
     for fname in ${FILES_TO_CHECK}; do
         echo "Checking $fname"
@@ -32,8 +32,24 @@ if [[ ${1:-} == "-i" ]]; then
 fi
 
 STATUS=0
-for fname in ${ROOT_PATH}/docs/${CHECK_LANG}/**/*.md; do
-    errors=$(cat "$fname" \
+if [ -z "$1" ]; then
+    DIR=$(readlink -f $(dirname $0))
+    . "$DIR/functions.sh"
+    FILES=$(get_files_to_check)
+else
+    FILES="$1"
+fi
+
+pattern="docs/${CHECK_LANG}/**/*.md"
+while IFS= read -r file; do
+    # Check if the file does not match the pattern
+    if [[ $file == $pattern ]]; then
+        FILES_TO_CHECK+="$file"$'\n'
+    fi
+done <<< "$FILES"
+
+for fname in $FILES_TO_CHECK; do
+    errors=$(cat "$ROOT_PATH/$fname" \
         | aspell list \
             -W 3 \
             --personal=aspell-dict.txt \

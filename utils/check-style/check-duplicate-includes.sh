@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 
-ROOT_PATH=$(git rev-parse --show-toplevel)
-
 # Find duplicate include directives
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | while read file; do grep -P '^#include ' $file | sort | uniq -c | grep -v -P '^\s+1\s' && echo $file; done | sed '/^[[:space:]]*$/d'
+
+if [ -z "$1" ]; then
+    DIR=$(readlink -f $(dirname $0))
+    . "$DIR/functions.sh"
+    CHANGED_FILES=$(get_files_to_check)
+else
+    CHANGED_FILES="$1"
+fi
+
+ROOT_PATH=$(git rev-parse --show-toplevel)
+cd $ROOT_PATH
+
+echo "$CHANGED_FILES" | while read file; do grep -P '^#include ' $file | sort | uniq -c | grep -v -P '^\s+1\s' && echo $file; done | sed '/^[[:space:]]*$/d'

@@ -6,10 +6,24 @@
 # Unless it's done, mypy only runs against tests/ci
 # Let's leave here a room for improvement and redo it when mypy will test anything else
 
+if [ -z "$1" ]; then
+    DIR=$(readlink -f $(dirname $0))
+    . "$DIR/functions.sh"
+    FILES=$(get_files_to_check)
+else
+    FILES="$1"
+fi
+
+PY_FILES="$(echo "$FILES" | grep -E '.py$')"
+if [ -z "$PY_FILES" ]; then
+  exit 0
+fi
+
 GIT_ROOT=$(git rev-parse --show-cdup)
 GIT_ROOT=${GIT_ROOT:-.}
 CONFIG="$GIT_ROOT/tests/ci/.mypy.ini"
 DIRS=("$GIT_ROOT/tests/ci/" "$GIT_ROOT/tests/ci/"*/)
+
 tmp=$(mktemp)
 for dir in "${DIRS[@]}"; do
   if ! compgen -G "$dir"/*.py > /dev/null; then

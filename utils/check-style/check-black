@@ -2,16 +2,25 @@
 
 set -e
 
-# We check only our code, that's why we skip contrib
+if [ -z "$1" ]; then
+    DIR=$(readlink -f $(dirname $0))
+    . "$DIR/functions.sh"
+    FILES=$(get_files_to_check)
+else
+    FILES="$1"
+fi
+
 GIT_ROOT=$(git rev-parse --show-cdup)
 GIT_ROOT=${GIT_ROOT:-./}
+cd "$GIT_ROOT"
 tmp=$(mktemp)
 
+FILES=$(echo $FILES | tr '\n' ' ')
 # Find all *.py, *.python files and executable files without extension
 # that are determined as python scripts by 'file' util
 # in the repo except the contrib directory.
 find_cmd=(
-  find "$GIT_ROOT" -type f -not -path "${GIT_ROOT}contrib/*"
+  find $FILES -type f -not -path "contrib/*"
     \(
       \(
         -name '*.py' -or -name "*.python" -or

@@ -1,14 +1,34 @@
 #!/usr/bin/env bash
+
+DIR=$(readlink -f $(dirname "$0"))
+if [ -z "$1" ]; then
+    . "$DIR/functions.sh"
+    FILES=$(get_files_to_check)
+else
+    FILES="$1"
+fi
+
 ROOT_PATH=$(git rev-parse --show-toplevel)
 NPROC=$(($(nproc) + 3))
+cd "$ROOT_PATH" || exit
+
 # Check sh tests with Shellcheck
-( cd "$ROOT_PATH/tests/queries/0_stateless/" && \
-  find "$ROOT_PATH/tests/queries/"{0_stateless,1_stateful} -name '*.sh' -print0 | \
-    xargs -0 -P "$NPROC" -n 20 shellcheck --check-sourced --external-sources --severity info --exclude SC1071,SC2086,SC2016
-)
+FILES_TO_CHECK=$(echo "$FILES" | grep -E "tests/queries.*sh" )
+if [ -n "$FILES_TO_CHECK" ]; then
+  echo "$FILES_TO_CHECK" | \
+    xargs -P "$NPROC" -n 20 shellcheck --check-sourced --external-sources --severity info --exclude SC1071,SC2086,SC2016
+fi
 
 # Check docker scripts with shellcheck
-find "$ROOT_PATH/docker" -executable -type f -exec file -F'	' --mime-type {} \; | \
-  awk -F'	' '$2==" text/x-shellscript" {print $1}' | \
-  grep -v "compare.sh" | \
-  xargs -P "$NPROC" -n 20 shellcheck
+FILES_TO_CHECK=$(echo "$FILES" | grep -E ^docker | xargs file -i | grep -E 'text/x-shellscript|application/x-shellscript' | cut -d: -f1 | grep -v "compare.sh" )
+if [ -n "$FILES_TO_CHECK" ]; then
+      echo "$FILES_TO_CHECK" | \
+        xargs -P "$NPROC" -n 20 shellcheck
+fi
+
+# Check docker scripts with shellcheck
+# FILES_TO_CHECK=$(echo "$FILES" | grep -E ^utils | xargs file -i | grep -E 'text/x-shellscript|application/x-shellscript' | cut -d: -f1 | grep -v "compare.sh" )
+# if [ -n "$FILES_TO_CHECK" ]; then
+#       echo "$FILES_TO_CHECK" | \
+#         xargs -P "$NPROC" -n 20 sh -c "for file; do shellcheck -x --source-path="$(dirname "$file")" "$file"; done" sh
+# fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-dir=$(dirname $0)
+dir=$(dirname "$0")
 $dir/check-style -n
 $dir/check-typos
 $dir/check-whitespaces -n
