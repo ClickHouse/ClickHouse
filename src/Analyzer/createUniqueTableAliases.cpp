@@ -1,9 +1,11 @@
 #include <memory>
 #include <unordered_map>
 #include <Analyzer/createUniqueTableAliases.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -26,6 +28,7 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto node_type = node->getNodeType();
+
         switch (node_type)
         {
             case QueryTreeNodeType::QUERY:
@@ -89,6 +92,24 @@ public:
                 scope_to_nodes_with_aliases.erase(it);
             }
             scope_nodes_stack.pop_back();
+        }
+
+        /// Here we revisit subquery for IN function. Reasons:
+        /// * For remote query execution, query tree may be traversed a few times.
+        ///   In such a case, it is possible to get AST like
+        ///   `IN ((SELECT ... FROM table AS __table4) AS __table1)` which result in
+        ///   `Multiple expressions for the alias` exception
+        /// * Tables in subqueries could have different aliases => different three hashes,
+        ///   which is important to be able to find a set in PreparedSets
+        /// See 01253_subquery_in_aggregate_function_JustStranger.
+        ///
+        /// So, we revisit this subquery to make aliases stable.
+        /// This should be safe cause columns from IN subquery can't be used in main query anyway.
+        if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
+        {
+            auto * function_node = node->as<FunctionNode>();
+            if (isNameOfInFunction(function_node->getFunctionName()))
+                CreateUniqueTableAliasesVisitor(getContext()).visit(function_node->getArguments().getNodes().back());
         }
     }
 
