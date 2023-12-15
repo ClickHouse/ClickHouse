@@ -16,10 +16,10 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
 )
-from docker_images_helper import pull_image, get_docker_image
+from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_RUN_URL,
-    REPORT_PATH,
+    REPORTS_PATH,
     TEMP_PATH,
 )
 from get_robot_token import get_best_robot_token
@@ -50,13 +50,9 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    check_name = sys.argv[1]
 
     temp_path.mkdir(parents=True, exist_ok=True)
 
@@ -70,7 +66,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = pull_image(get_docker_image(IMAGE_NAME))
+    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)
@@ -154,9 +150,7 @@ def main():
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
-    )
+    post_commit_status(commit, status, report_url, description, check_name, pr_info)
 
 
 if __name__ == "__main__":
