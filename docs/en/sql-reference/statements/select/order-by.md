@@ -5,12 +5,20 @@ sidebar_label: ORDER BY
 
 # ORDER BY Clause
 
-The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it’s usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`.  Sorting is case-sensitive.
+The `ORDER BY` clause contains
 
-If you want to sort by column numbers instead of column names, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).
+- a list of expressions, e.g. `ORDER BY visits, search_phrase`,
+- a list of numbers referring to columns in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
+- `ALL` which means all columns of the `SELECT` clause, e.g. `ORDER BY ALL`.
 
-Rows that have identical values for the list of sorting expressions are output in an arbitrary order, which can also be non-deterministic (different each time).
-If the ORDER BY clause is omitted, the order of the rows is also undefined, and may be non-deterministic as well.
+To disable sorting by column numbers, set setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) = 0.
+
+Sort expressions or column numbers in `ORDER BY` can be attributed by a `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction.
+If no sort order is specified explicitly, `ASC` is used as default.
+The sorting direction applies to a single expression, not to the entire list, e.g. `ORDER BY Visits DESC, SearchPhrase`. Sorting is performed case-sensitively.
+
+Rows with identical values for a sort expressions are returned in an arbitrary and non-deterministic order.
+If the `ORDER BY` clause is omitted in a `SELECT` statement, the row order is also arbitrary and non-deterministic.
 
 ## Sorting of Special Values
 
@@ -239,22 +247,6 @@ Result:
 │ 4 │ (2,'z') │
 │ 6 │ (2,'Z') │
 └───┴─────────┘
-```
-
-## ORDER BY ALL
-
-`ORDER BY ALL` is sorts all selected columns in ascending order.
-
-For example:
-
-``` sql
-SELECT a, b, c FROM t ORDER BY ALL
-```
-
-is the same as
-
-``` sql
-SELECT a, b, c FROM t ORDER BY a, b, c
 ```
 
 ## Implementation Details
