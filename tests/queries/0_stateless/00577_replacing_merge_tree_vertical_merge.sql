@@ -7,7 +7,7 @@ create table tab_00577 (date Date, version UInt64, val UInt64) engine = Replacin
 insert into tab_00577 values ('2018-01-01', 2, 2), ('2018-01-01', 1, 1);
 insert into tab_00577 values ('2018-01-01', 0, 0);
 select * from tab_00577 order by version;
-OPTIMIZE TABLE tab_00577 FINAL CLEANUP;
+OPTIMIZE TABLE tab_00577 FINAL;
 select * from tab_00577;
 drop table tab_00577;
 
@@ -22,7 +22,7 @@ INSERT INTO testCleanupR1 (*) VALUES ('d3', 2, 1);
 INSERT INTO testCleanupR1 (*) VALUES ('d1', 2, 1);
 SYSTEM SYNC REPLICA testCleanupR1; -- Avoid "Cannot select parts for optimization: Entry for part all_2_2_0 hasn't been read from the replication log yet"
 
-OPTIMIZE TABLE testCleanupR1 FINAL CLEANUP;
+OPTIMIZE TABLE testCleanupR1 FINAL;
 
 -- Only d3 to d5 remain
 SELECT '== (Replicas) Test optimize ==';
