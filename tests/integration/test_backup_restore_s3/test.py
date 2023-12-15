@@ -184,6 +184,32 @@ def test_backup_to_disk(storage_policy, to_disk):
     check_backup_and_restore(storage_policy, backup_destination)
 
 
+@pytest.mark.parametrize(
+    "storage_policy, to_disk",
+    [
+        pytest.param(
+            "policy_s3",
+            "disk_s3_other_bucket",
+            id="from_s3_to_s3",
+        ),
+        pytest.param(
+            "policy_s3_other_bucket",
+            "disk_s3",
+            id="from_s3_to_s3_other_bucket",
+        ),
+    ],
+)
+def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
+    backup_name = new_backup_name()
+    backup_destination = f"Disk('{to_disk}', '{backup_name}')"
+    (backup_events, restore_events) = check_backup_and_restore(
+        storage_policy, backup_destination
+    )
+
+    assert backup_events["S3CopyObject"] > 0
+    assert restore_events["S3CopyObject"] > 0
+
+
 def test_backup_to_s3():
     storage_policy = "default"
     backup_name = new_backup_name()
