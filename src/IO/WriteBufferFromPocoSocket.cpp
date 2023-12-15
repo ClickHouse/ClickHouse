@@ -69,9 +69,6 @@ ssize_t WriteBufferFromPocoSocket::socketSendBytesImpl(const char * ptr, size_t 
         res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
     }
 
-    if (res > 0 && write_event != ProfileEvents::end())
-        ProfileEvents::increment(write_event, res);
-
     return res;
 }
 
@@ -86,6 +83,8 @@ void WriteBufferFromPocoSocket::socketSendBytes(const char * ptr, size_t size)
     SCOPE_EXIT({
         ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
+        if (write_event != ProfileEvents::end())
+            ProfileEvents::increment(write_event, bytes_written);
     });
 
     while (bytes_written < size)
