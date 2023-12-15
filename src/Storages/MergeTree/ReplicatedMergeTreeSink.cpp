@@ -911,8 +911,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             });
 
             /// Independently of how many retries we had left we want to do at least one check of this inner retry
-            /// at least once so a) we try to verify at least once if metadata was written and b) we set the proper
-            /// final error (UNKNOWN_STATUS_OF_INSERT) if we fail to reconnect to keeper
+            /// so a) we try to verify at least once if metadata was written and b) we set the proper final error
+            /// (UNKNOWN_STATUS_OF_INSERT) if we fail to reconnect to keeper
             new_retry_controller.requestUnconditionalRetry();
 
             bool node_exists = false;
@@ -944,6 +944,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 transaction.rollbackPartsToTemporaryState();
                 part->is_temp = true;
                 part->renameTo(temporary_part_relative_path, false);
+                /// Throw an exception to set the proper keeper error and force a retry (if possible)
                 zkutil::KeeperMultiException::check(multi_code, ops, responses);
             }
         }
