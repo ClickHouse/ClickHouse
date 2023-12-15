@@ -474,8 +474,8 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
 {
-    DataTypePtr left_type_strict = removeNullable(left_type);
-    DataTypePtr right_type_strict = removeNullable(right_type);
+    DataTypePtr left_type_strict = removeNullable(removeLowCardinality(left_type));
+    DataTypePtr right_type_strict = removeNullable(removeLowCardinality(right_type));
     return left_type_strict->equals(*right_type_strict);
 }
 

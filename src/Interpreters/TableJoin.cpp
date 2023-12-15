@@ -34,6 +34,7 @@
 #include <type_traits>
 #include <vector>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -617,10 +618,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
 {
     /// FullSortingMerge and PartialMerge join algorithms don't support joining keys with different types
     /// (e.g. String and LowCardinality(String))
-    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE)
-                                  || isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE)
-                                  || isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE)
-                                  || isEnabledAlgorithm(JoinAlgorithm::AUTO);
+    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
 
