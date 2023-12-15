@@ -242,6 +242,18 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
+    auto multi_funtion_processor = [&rpn_stack, &granule] (const RPNElement & element)
+    {
+        std::vector<bool> result(element.set_bloom_filters.back().size(), true);
+
+        const auto & bloom_filters = element.set_bloom_filters[0];
+
+        for (size_t row = 0; row < bloom_filters.size(); ++row)
+            result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
+
+        rpn_stack.emplace_back(
+                std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+    };
     for (const auto & element : rpn)
     {
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
@@ -278,50 +290,19 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
         }
         else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH)
         {
-            std::vector<bool> result(element.set_bloom_filters.back().size(), true);
-
-            const auto & bloom_filters = element.set_bloom_filters[0];
-
-            for (size_t row = 0; row < bloom_filters.size(); ++row)
-                result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
-
-            rpn_stack.emplace_back(
-                    std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            multi_funtion_processor(element);
         }
         else if (element.function == RPNElement::FUNCTION_MATCH)
         {
-            // If bloom filter is not null means we got required substring
-
+            // If set_bloom_filters is not empty means we got alternative substring
             if (!element.set_bloom_filters.empty())
             {
-
-                std::vector<bool> result(element.set_bloom_filters.back().size(), true);
-
-                const auto & bloom_filters = element.set_bloom_filters[0];
-
-                for (size_t row = 0; row < bloom_filters.size(); ++row)
-                    result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
-
-                if (element.bloom_filter)
-                {
-                    //auto required = rpn_stack.back();
-                    //rpn_stack.pop_back();
-                    //auto alternative = std::find(std::cbegin(result), std::cend(result), true) != std::end(result);
-                    //rpn_stack.emplace_back(required.can_be_true && alternative, true);
-                    auto alternative = std::find(std::cbegin(result), std::cend(result), true) != std::end(result);
-                    rpn_stack.emplace_back(alternative, true);
-                }
-                else
-                    rpn_stack.emplace_back(
-                            std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                multi_funtion_processor(element);
             }
-            //TODO: Need to check why bloom_filter is not null while set_bloom_filters is not empty
             else if (element.bloom_filter)
             {
-                std::cout<<"=========== Bloom Filter is not null"<<std::endl;
                 rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
             }
-
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -428,7 +409,6 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
                  function_name == "has" ||
                  function_name == "mapContains" ||
                  function_name == "match" ||
-                 function_name == "multiMatchAny" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name.starts_with("hasToken") ||
