@@ -93,7 +93,6 @@ private:
             FUNCTION_MATCH,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
-            FUNCTION_MULTI_MATCH,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,

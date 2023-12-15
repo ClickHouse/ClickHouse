@@ -203,7 +203,6 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
              || element.function == RPNElement::FUNCTION_MATCH
-             || element.function == RPNElement::FUNCTION_MULTI_MATCH
              || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
@@ -236,7 +235,6 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
 /// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
 bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    std::cout<<"======== Flag into mayBeTrueOnGranule"<<std::endl;
     std::shared_ptr<MergeTreeIndexGranuleFullText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
     if (!granule)
@@ -564,10 +562,6 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
         bool required_substring_is_prefix;
         std::vector<String> alternatives;
         OptimizedRegularExpression::analyze(string_view, required_substring, is_trivial, required_substring_is_prefix, alternatives);
-        std::cout<<"========= is trivial:"<<is_trivial<<std::endl;
-        std::cout<<"========= required_substring_is_prefix:"<<required_substring_is_prefix<<std::endl;
-        std::cout<<"========= regex string is:"<<string_view<<std::endl;
-        std::cout<<"========= required sub string is:"<<required_substring<<std::endl;
         for (const auto & alternative : alternatives)
             std::cout<<"========= alternative string:"<<alternative<<std::endl;
 
