@@ -51,7 +51,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 }
 
 
-void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & /*write_metric*/)
+void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());

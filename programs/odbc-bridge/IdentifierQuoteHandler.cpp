@@ -21,7 +21,7 @@
 
 namespace DB
 {
-void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & /*write_metric*/)
+void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());

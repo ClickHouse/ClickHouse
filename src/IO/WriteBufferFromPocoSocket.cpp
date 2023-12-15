@@ -69,8 +69,8 @@ ssize_t WriteBufferFromPocoSocket::socketSendBytesImpl(const char * ptr, size_t 
         res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
     }
 
-    if (res > 0 && write_metric != CurrentMetrics::end())
-        CurrentMetrics::add(write_metric, res);
+    if (res > 0 && write_event != ProfileEvents::end())
+        ProfileEvents::increment(write_event, res);
 
     return res;
 }
@@ -188,10 +188,10 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 {
 }
 
-WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, const CurrentMetrics::Metric & write_metric_, size_t buf_size)
+WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size)
     : WriteBufferFromPocoSocket(socket_, buf_size)
 {
-    write_metric = write_metric_;
+    write_event = write_event_;
 }
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()

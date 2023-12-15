@@ -556,7 +556,7 @@ void HTTPHandler::processQuery(
     HTTPServerResponse & response,
     Output & used_output,
     std::optional<CurrentThread::QueryScope> & query_scope,
-    const CurrentMetrics::Metric & write_metric)
+    const ProfileEvents::Event & write_event)
 {
     using namespace Poco::Net;
 
@@ -627,7 +627,7 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef().enable_http_compression);
     Int64 http_zlib_compression_level = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef().http_zlib_compression_level);
 
-    used_output.out_holder = std::make_shared<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_metric);
+    used_output.out_holder = std::make_shared<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
     used_output.out = used_output.out_holder;
     used_output.out_maybe_compressed = used_output.out_holder;
 
@@ -1007,7 +1007,7 @@ catch (...)
 }
 
 
-void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & write_metric)
+void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
@@ -1096,7 +1096,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
                             "is no Content-Length header for POST request");
         }
 
-        processQuery(request, params, response, used_output, query_scope, write_metric);
+        processQuery(request, params, response, used_output, query_scope, write_event);
         if (request_credentials)
             LOG_DEBUG(log, "Authentication in progress...");
         else

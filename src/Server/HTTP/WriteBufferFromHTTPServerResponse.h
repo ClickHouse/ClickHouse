@@ -7,7 +7,6 @@
 #include <IO/WriteBuffer.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Poco/Net/StreamSocket.h>
-#include "Common/CurrentMetrics.h"
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 
@@ -31,7 +30,7 @@ public:
         HTTPServerResponse & response_,
         bool is_http_method_head_,
         size_t keep_alive_timeout_,
-        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     ~WriteBufferFromHTTPServerResponse() override;
 

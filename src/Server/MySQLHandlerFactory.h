@@ -4,7 +4,7 @@
 #include <memory>
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
-#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 
 #include "config.h"
 
@@ -39,10 +39,10 @@ private:
 
     std::atomic<unsigned> last_connection_id = 0;
 
-    CurrentMetrics::Metric read_metric;
-    CurrentMetrics::Metric write_metric;
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 public:
-    explicit MySQLHandlerFactory(IServer & server_, const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(), const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+    explicit MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     void readRSAKeys();
 

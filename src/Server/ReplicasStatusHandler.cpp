@@ -22,7 +22,7 @@ ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(ser
 {
 }
 
-void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & /*write_metric*/)
+void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     try
     {

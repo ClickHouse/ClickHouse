@@ -87,7 +87,7 @@ static inline void trySendExceptionToClient(
     }
 }
 
-void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & /*write_metric*/)
+void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
     auto out = responseWriteBuffer(request, response, keep_alive_timeout);

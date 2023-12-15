@@ -21,8 +21,8 @@ public:
         Poco::ThreadPool & thread_pool,
         Poco::Net::ServerSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params,
-        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
-        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     ~HTTPServer() override;
 

@@ -17,7 +17,7 @@ class WriteBufferFromPocoSocket : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
-    explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, const CurrentMetrics::Metric & write_metric_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~WriteBufferFromPocoSocket() override;
 
@@ -53,7 +53,7 @@ protected:
     Poco::Net::SocketAddress peer_address;
     Poco::Net::SocketAddress our_address;
 
-    CurrentMetrics::Metric write_metric;
+    ProfileEvents::Event write_event;
 
 private:
     AsyncCallback async_callback;

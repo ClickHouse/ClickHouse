@@ -20,8 +20,8 @@ public:
         const Poco::Net::StreamSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params,
         HTTPRequestHandlerFactoryPtr factory,
-        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
-        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     HTTPServerConnection(
         HTTPContextPtr context_,
@@ -30,9 +30,9 @@ public:
         Poco::Net::HTTPServerParams::Ptr params_,
         HTTPRequestHandlerFactoryPtr factory_,
         const String & forwarded_for_,
-        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
-        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end())
-    : HTTPServerConnection(context_, tcp_server_, socket_, params_, factory_, read_metric_, write_metric_)
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end())
+    : HTTPServerConnection(context_, tcp_server_, socket_, params_, factory_, read_event_, write_event_)
     {
         forwarded_for = forwarded_for_;
     }
@@ -48,8 +48,8 @@ private:
     Poco::Net::HTTPServerParams::Ptr params;
     HTTPRequestHandlerFactoryPtr factory;
     String forwarded_for;
-    CurrentMetrics::Metric read_metric;
-    CurrentMetrics::Metric write_metric;
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
     bool stopped;
     std::mutex mutex;  // guards the |factory| with assumption that creating handlers is not thread-safe.
 };

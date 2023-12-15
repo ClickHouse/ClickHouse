@@ -253,18 +253,6 @@
     M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
-    M(InterfaceHTTPSendBytes, "Bytes sent through HTTP interfaces") \
-    M(InterfaceHTTPReceiveBytes, "Bytes received through HTTP interfaces") \
-    M(InterfaceNativeSendBytes, "Bytes sent through native interfaces") \
-    M(InterfaceNativeReceiveBytes, "Bytes received through native interfaces") \
-    M(InterfacePrometheusSendBytes, "Bytes sent through Prometheus interfaces") \
-    M(InterfacePrometheusReceiveBytes, "Bytes received through Prometheus interfaces") \
-    M(InterfaceInterserverSendBytes, "Bytes sent through interserver interfaces") \
-    M(InterfaceInterserverReceiveBytes, "Bytes received through interserver interfaces") \
-    M(InterfaceMySQLSendBytes, "Bytes sent through MySQL interfaces") \
-    M(InterfaceMySQLReceiveBytes, "Bytes received through MySQL interfaces") \
-    M(InterfacePostgreSQLSendBytes, "Bytes sent through PostgreSQL interfaces") \
-    M(InterfacePostgreSQLReceiveBytes, "Bytes received through PostgreSQL interfaces") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

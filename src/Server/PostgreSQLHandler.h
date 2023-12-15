@@ -34,8 +34,8 @@ public:
         bool ssl_enabled_,
         Int32 connection_id_,
         std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
-        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
-        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     void run() final;
 
@@ -53,8 +53,8 @@ private:
     std::shared_ptr<WriteBuffer> out;
     std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
 
-    CurrentMetrics::Metric read_metric;
-    CurrentMetrics::Metric write_metric;
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 
 #if USE_SSL
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;

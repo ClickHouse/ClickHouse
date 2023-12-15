@@ -147,8 +147,8 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(), const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(), const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
     ~TCPHandler() override;
 
     void run() override;
@@ -191,8 +191,8 @@ private:
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
-    CurrentMetrics::Metric read_metric;
-    CurrentMetrics::Metric write_metric;
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_check_cancelled;

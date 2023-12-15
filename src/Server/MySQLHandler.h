@@ -43,8 +43,8 @@ public:
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
         uint32_t connection_id_,
-        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
-        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     void run() final;
 
@@ -105,8 +105,8 @@ protected:
     std::shared_ptr<WriteBuffer> out;
     bool secure_connection = false;
 
-    CurrentMetrics::Metric read_metric;
-    CurrentMetrics::Metric write_metric;
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 };
 
 #if USE_SSL
@@ -121,8 +121,8 @@ public:
         uint32_t connection_id_,
         RSA & public_key_,
         RSA & private_key_,
-        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
-        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
 private:
     void authPluginSSL() override;

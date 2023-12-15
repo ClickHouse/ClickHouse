@@ -21,8 +21,8 @@ private:
     Poco::Logger * log;
     std::string server_display_name;
 
-    CurrentMetrics::Metric read_metric;
-    CurrentMetrics::Metric write_metric;
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
     {
@@ -36,11 +36,11 @@ public:
       * and set the information about forwarded address accordingly.
       * See https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
       */
-    TCPHandlerFactory(IServer & server_, bool secure_, bool parse_proxy_protocol_, const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(), const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end())
+    TCPHandlerFactory(IServer & server_, bool secure_, bool parse_proxy_protocol_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end())
         : server(server_), parse_proxy_protocol(parse_proxy_protocol_)
         , log(&Poco::Logger::get(std::string("TCP") + (secure_ ? "S" : "") + "HandlerFactory"))
-        , read_metric(read_metric_)
-        , write_metric(write_metric_)
+        , read_event(read_event_)
+        , write_event(write_event_)
     {
         server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
@@ -50,7 +50,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPHandler(server, tcp_server, socket, parse_proxy_protocol, server_display_name, read_metric, write_metric);
+            return new TCPHandler(server, tcp_server, socket, parse_proxy_protocol, server_display_name, read_event, write_event);
         }
         catch (const Poco::Net::NetException &)
         {
@@ -64,7 +64,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPHandler(server, tcp_server, socket, stack_data, server_display_name, read_metric, write_metric);
+            return new TCPHandler(server, tcp_server, socket, stack_data, server_display_name, read_event, write_event);
         }
         catch (const Poco::Net::NetException &)
         {

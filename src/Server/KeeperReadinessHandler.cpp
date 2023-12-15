@@ -19,7 +19,7 @@
 namespace DB
 {
 
-void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponse & response, const CurrentMetrics::Metric & /*write_metric*/)
+void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     try
     {

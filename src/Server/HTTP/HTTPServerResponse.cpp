@@ -15,9 +15,9 @@
 namespace DB
 {
 
-HTTPServerResponse::HTTPServerResponse(Poco::Net::HTTPServerSession & session_, const CurrentMetrics::Metric & write_metric_)
+HTTPServerResponse::HTTPServerResponse(Poco::Net::HTTPServerSession & session_, const ProfileEvents::Event & write_event_)
     : session(session_)
-    , write_metric(write_metric_)
+    , write_event(write_event_)
 {
 }
 
@@ -37,21 +37,21 @@ std::shared_ptr<WriteBufferFromPocoSocket> HTTPServerResponse::send()
         // Send header
         Poco::Net::HTTPHeaderOutputStream hs(session);
         write(hs);
-        stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_metric);
+        stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_event);
     }
     else if (getChunkedTransferEncoding())
     {
         // Send header
         Poco::Net::HTTPHeaderOutputStream hs(session);
         write(hs);
-        stream = std::make_shared<HTTPWriteBufferChunked>(session.socket(), write_metric);
+        stream = std::make_shared<HTTPWriteBufferChunked>(session.socket(), write_event);
     }
     else if (hasContentLength())
     {
         // Send header
         Poco::Net::HTTPHeaderOutputStream hs(session);
         write(hs);
-        stream = std::make_shared<HTTPWriteBufferFixedLength>(session.socket(), getContentLength(), write_metric);
+        stream = std::make_shared<HTTPWriteBufferFixedLength>(session.socket(), getContentLength(), write_event);
     }
     else
     {
@@ -59,7 +59,7 @@ std::shared_ptr<WriteBufferFromPocoSocket> HTTPServerResponse::send()
         // Send header
         Poco::Net::HTTPHeaderOutputStream hs(session);
         write(hs);
-        stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_metric);
+        stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_event);
     }
 
     return stream;
@@ -88,13 +88,13 @@ std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBuffe
     beginWrite(header);
     // Send header
     auto str = header.str();
-    header_stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_metric, str.size());
+    header_stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_event, str.size());
     header_stream->write(str);
 
     if (getChunkedTransferEncoding())
-        stream = std::make_shared<HTTPWriteBufferChunked>(session.socket(), write_metric);
+        stream = std::make_shared<HTTPWriteBufferChunked>(session.socket(), write_event);
     else
-        stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_metric);
+        stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_event);
 
     return std::make_pair(header_stream, stream);
 }
@@ -109,7 +109,7 @@ void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)
     hs.flush();
 
     if (request && request->getMethod() != HTTPRequest::HTTP_HEAD)
-        WriteBufferFromPocoSocket(session.socket(), write_metric).write(static_cast<const char *>(buffer), length);
+        WriteBufferFromPocoSocket(session.socket(), write_event).write(static_cast<const char *>(buffer), length);
 }
 
 void HTTPServerResponse::requireAuthentication(const std::string & realm)

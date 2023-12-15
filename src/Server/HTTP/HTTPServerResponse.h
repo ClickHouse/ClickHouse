@@ -47,8 +47,8 @@ public:
     {
         fixed_length = fixed_length_;
     }
-    explicit HTTPWriteBufferFixedLength(Poco::Net::Socket & socket_, size_t fixed_length_, const CurrentMetrics::Metric & write_metric_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-        : WriteBufferFromPocoSocket(socket_, write_metric_, buf_size)
+    explicit HTTPWriteBufferFixedLength(Poco::Net::Socket & socket_, size_t fixed_length_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+        : WriteBufferFromPocoSocket(socket_, write_event_, buf_size)
     {
         fixed_length = fixed_length_;
     }
@@ -79,8 +79,8 @@ public:
         : WriteBufferFromPocoSocket(socket_, buf_size)
     {
     }
-    explicit HTTPWriteBuffer(Poco::Net::Socket & socket_, const CurrentMetrics::Metric & write_metric_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-        : WriteBufferFromPocoSocket(socket_, write_metric_, buf_size)
+    explicit HTTPWriteBuffer(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+        : WriteBufferFromPocoSocket(socket_, write_event_, buf_size)
     {
     }
 
@@ -189,7 +189,7 @@ class HTTPServerRequest;
 class HTTPServerResponse : public HTTPResponse
 {
 public:
-    explicit HTTPServerResponse(Poco::Net::HTTPServerSession & session, const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
+    explicit HTTPServerResponse(Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     void sendContinue(); /// Sends a 100 Continue response to the client.
 
@@ -238,7 +238,7 @@ public:
 private:
     Poco::Net::HTTPServerSession & session;
     HTTPServerRequest * request = nullptr;
-    CurrentMetrics::Metric write_metric;
+    ProfileEvents::Event write_event;
     std::shared_ptr<WriteBufferFromPocoSocket> stream;
     std::shared_ptr<WriteBufferFromPocoSocket> header_stream;
 };

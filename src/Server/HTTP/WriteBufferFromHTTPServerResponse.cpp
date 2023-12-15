@@ -113,8 +113,8 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
     size_t keep_alive_timeout_,
-    const CurrentMetrics::Metric & write_metric_)
-    : HTTPWriteBuffer(response_.getSocket(), write_metric_)
+    const ProfileEvents::Event & write_event_)
+    : HTTPWriteBuffer(response_.getSocket(), write_event_)
     , response(response_)
     , is_http_method_head(is_http_method_head_)
     , keep_alive_timeout(keep_alive_timeout_)
