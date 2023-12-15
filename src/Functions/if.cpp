@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -55,24 +56,48 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
     {
         size_t a_index = 0, b_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[b_index++]);
+        {
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
+                a_index += cond[i];
+                b_index += !cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[b_index++]);
+        }
     }
     else if (a_is_short)
     {
         size_t a_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[i]);
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+                a_index += cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[i]);
     }
     else if (b_is_short)
     {
         size_t b_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index++]);
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
+                b_index += !cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index++]);
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+            if constexpr (std::is_integral_v<ResultType>)
+                res[i] = cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
     }
 }
 
@@ -85,12 +110,21 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
     {
         size_t a_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b);
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b);
+                a_index += cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b);
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+            if constexpr (std::is_integral_v<ResultType>)
+                res[i] = cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
     }
 }
 
@@ -103,12 +137,21 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
     {
         size_t b_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index++]);
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b_index);
+                b_index += !cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index++]);
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+            if constexpr (std::is_integral_v<ResultType>)
+                res[i] = cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
     }
 }
 
