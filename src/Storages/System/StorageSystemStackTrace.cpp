@@ -1,4 +1,4 @@
-#ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
+#ifdef OS_LINUX /// Because of 'rt_tgsigqueueinfo' functions and RT signals.
 
 #include <csignal>
 #include <poll.h>
@@ -28,6 +28,12 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/getThreadId.h>
+#include <sys/syscall.h>
+
+int rt_tgsigqueueinfo(pid_t tgid, pid_t tid, int sig, siginfo_t *info)
+{
+    return static_cast<int>(syscall(__NR_rt_tgsigqueueinfo, tgid, tid, sig, info));
+}
 
 
 namespace DB
@@ -48,7 +54,7 @@ namespace
 {
 
 // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
-std::atomic<pid_t> expected_pid;
+std::atomic<pid_t> server_pid;
 const int sig = SIGRTMIN;
 
 std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
@@ -80,7 +86,7 @@ void signalHandler(int, siginfo_t * info, void * context)
 
     /// In case malicious user is sending signals manually (for unknown reason).
     /// If we don't check - it may break our synchronization.
-    if (info->si_pid != expected_pid)
+    if (info->si_pid != server_pid)
         return;
 
     /// Signal received too late.
@@ -287,20 +293,22 @@ protected:
                 Stopwatch watch;
                 SCOPE_EXIT({ signals_sent_ms += watch.elapsedMilliseconds(); });
 
-                sigval sig_value{};
+                siginfo_t sig_info{};
+                sig_info.si_code = SI_QUEUE; /// sigqueue()
+                sig_info.si_pid = server_pid;
+                sig_info.si_value.sival_int = sequence_num.load(std::memory_order_acquire);
 
-                sig_value.sival_int = sequence_num.load(std::memory_order_acquire);
-                if (0 != ::sigqueue(static_cast<int>(tid), sig, sig_value))
+                if (0 != ::rt_tgsigqueueinfo(server_pid, static_cast<pid_t>(tid), sig, &sig_info))
                 {
                     /// The thread may has been already finished.
                     if (ESRCH == errno)
                         continue;
 
-                    throw ErrnoException(ErrorCodes::CANNOT_SIGQUEUE, "Cannot send signal with sigqueue");
+                    throw ErrnoException(ErrorCodes::CANNOT_SIGQUEUE, "Cannot queue a signal");
                 }
 
                 /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
-                if (wait(pipe_read_timeout_ms) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
+                if (wait(pipe_read_timeout_ms) && sig_info.si_value.sival_int == data_ready_num.load(std::memory_order_acquire))
                 {
                     size_t stack_trace_size = stack_trace.getSize();
                     size_t stack_trace_offset = stack_trace.getOffset();
@@ -317,7 +325,7 @@ protected:
                 }
                 else
                 {
-                    LOG_DEBUG(log, "Cannot obtain a stack trace for thread {}", tid);
+                    LOG_DEBUG(log, "Cannot obtain a stack trace for thread {} ({})", tid, thread_name);
 
                     res_columns[res_index++]->insert(thread_name);
                     res_columns[res_index++]->insert(tid);
@@ -396,7 +404,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     notification_pipe.open();
 
     /// Setup signal handler.
-    expected_pid = getpid();
+    server_pid = getpid();
     struct sigaction sa{};
     sa.sa_sigaction = signalHandler;
     sa.sa_flags = SA_SIGINFO;
