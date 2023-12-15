@@ -137,8 +137,8 @@ function list_keeper_nodes() {
 
 list_keeper_nodes "${table_shared_id}"
 
-$CLICKHOUSE_CLIENT -nm -q "drop table r1;" &
-$CLICKHOUSE_CLIENT -nm -q "drop table r2;" &
+$CLICKHOUSE_CLIENT -nm -q "drop table r1;" --send_logs_level="error"  &
+$CLICKHOUSE_CLIENT -nm -q "drop table r2;" --send_logs_level="error"  &
 wait
 
 list_keeper_nodes "${table_shared_id}"

@@ -1115,7 +1115,10 @@ void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeepe
         {
             LOG_INFO(logger, "Zero copy locks directory {} is absent on ZooKeeper.", zero_copy_locks_root);
         }
-        chassert(code == Coordination::Error::ZOK);
+        else
+        {
+            chassert(code == Coordination::Error::ZOK);
+        }
     }
 }
 
