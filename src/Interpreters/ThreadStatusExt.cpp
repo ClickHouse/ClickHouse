@@ -221,7 +221,7 @@ void ThreadStatus::applyQuerySettings()
         LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
 
         if (0 != setpriority(PRIO_PROCESS, static_cast<unsigned>(thread_id), new_os_thread_priority))
-            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+            throw ErrnoException(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, "Cannot 'setpriority'");
 
         os_thread_priority = new_os_thread_priority;
     }

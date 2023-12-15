@@ -82,9 +82,9 @@ int main(int argc, char ** argv)
     {
         pthread_t thread;
         if (pthread_create(&thread, nullptr, g, nullptr))
-            DB::throwFromErrno("Cannot create thread.", DB::ErrorCodes::PTHREAD_ERROR);
+            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot create thread");
         if (pthread_join(thread, nullptr))
-            DB::throwFromErrno("Cannot join thread.", DB::ErrorCodes::PTHREAD_ERROR);
+            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot join thread");
     });
 
     test(n, "Create and destroy std::thread each iteration", []

@@ -299,13 +299,13 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != fstat(table_fd, &file_stat))
-            throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
+            throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat table file descriptor, inside {}", storage_name);
     }
     else
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != stat(current_path.c_str(), &file_stat))
-            throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
+            throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat file {}", current_path);
     }
 
     return file_stat;
@@ -813,7 +813,7 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     struct stat buf;
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
-        throwFromErrno("Cannot execute fstat", res, ErrorCodes::CANNOT_FSTAT);
+        throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
     total_bytes_to_read = buf.st_size;
 
     if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
@@ -1793,7 +1793,7 @@ void StorageFile::truncate(
     if (use_table_fd)
     {
         if (0 != ::ftruncate(table_fd, 0))
-            throwFromErrno("Cannot truncate file at fd " + toString(table_fd), ErrorCodes::CANNOT_TRUNCATE_FILE);
+            throw ErrnoException(ErrorCodes::CANNOT_TRUNCATE_FILE, "Cannot truncate file at fd {}", toString(table_fd));
     }
     else
     {
@@ -1803,7 +1803,7 @@ void StorageFile::truncate(
                 continue;
 
             if (0 != ::truncate(path.c_str(), 0))
-                throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
+                ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
         }
     }
 }

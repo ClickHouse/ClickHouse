@@ -797,7 +797,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
             int64_t hz = sysconf(_SC_CLK_TCK);
             if (-1 == hz)
-                throwFromErrno("Cannot call 'sysconf' to obtain system HZ", ErrorCodes::CANNOT_SYSCONF);
+                throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
 
             double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_after_previous_update).count() / 1e9);
             size_t num_cpus = 0;
