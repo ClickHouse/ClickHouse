@@ -812,7 +812,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                const auto & table_expression_alias = table_expression->getAlias();
+                const auto & table_expression_alias = table_expression->getOriginalAlias();
                 auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
                 add_filter(additional_filters_info, "additional filter");
 
