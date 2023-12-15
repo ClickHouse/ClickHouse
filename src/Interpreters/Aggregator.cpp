@@ -1014,7 +1014,9 @@ void Aggregator::mergeOnBlockSmall(
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
         mergeStreamsImpl(result.aggregates_pool, *result.NAME, result.NAME->data, \
-                         result.without_key, /* no_more_keys= */ false, \
+                         result.without_key, \
+                         result.consecutive_keys_cache_stats, \
+                         /* no_more_keys= */ false, \
                          row_begin, row_end, \
                          aggregate_columns_data, key_columns, result.aggregates_pool);
 
@@ -1067,10 +1069,7 @@ void NO_INLINE Aggregator::executeImpl(
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
-
-        auto current_stats = state.getCacheStatsSinceLastReset();
-        consecutive_keys_cache_stats.hits += current_stats.hits;
-        consecutive_keys_cache_stats.misses += current_stats.misses;
+        consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
@@ -2921,20 +2920,17 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     return non_empty_data;
 }
 
-template <bool no_more_keys, typename Method, typename Table>
+template <bool no_more_keys, typename State, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
     Arena * aggregates_pool,
-    Method & method [[maybe_unused]],
+    State & state,
     Table & data,
     AggregateDataPtr overflow_row,
     size_t row_begin,
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data,
-    const ColumnRawPtrs & key_columns,
     Arena * arena_for_keys) const
 {
-    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
 
     if (!arena_for_keys)
@@ -2990,6 +2986,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Method & method,
     Table & data,
     AggregateDataPtr overflow_row,
+    LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     Arena * arena_for_keys) const
 {
@@ -2997,15 +2994,17 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const ColumnRawPtrs & key_columns = params.makeRawKeyColumns(block);
 
     mergeStreamsImpl<Method, Table>(
-        aggregates_pool, method, data, overflow_row, no_more_keys, 0, block.rows(), aggregate_columns_data, key_columns, arena_for_keys);
+        aggregates_pool, method, data, overflow_row, consecutive_keys_cache_stats,
+        no_more_keys, 0, block.rows(), aggregate_columns_data, key_columns, arena_for_keys);
 }
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * aggregates_pool,
-    Method & method,
+    Method & method [[maybe_unused]],
     Table & data,
     AggregateDataPtr overflow_row,
+    LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     size_t row_begin,
     size_t row_end,
@@ -3013,12 +3012,30 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const ColumnRawPtrs & key_columns,
     Arena * arena_for_keys) const
 {
-    if (!no_more_keys)
-        mergeStreamsImplCase<false>(
-            aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns, arena_for_keys);
+    UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
+    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / (total_rows) : 1.0;
+    bool use_cache = cache_hit_rate >= 0.5;
+
+    if (use_cache)
+    {
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+
+        if (!no_more_keys)
+            mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
+        else
+            mergeStreamsImplCase<true>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
+
+        consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
+    }
     else
-        mergeStreamsImplCase<true>(
-            aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns, arena_for_keys);
+    {
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+
+        if (!no_more_keys)
+            mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
+        else
+            mergeStreamsImplCase<true>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
+    }
 }
 
 
@@ -3078,7 +3095,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
+        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -3183,7 +3200,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             {
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
+                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, result.consecutive_keys_cache_stats, false);
 
                 if (false) {} // NOLINT
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -3238,7 +3255,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
+                mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -3316,7 +3333,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false, arena_for_keys.get());
+        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, result.consecutive_keys_cache_stats, false, arena_for_keys.get());
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M

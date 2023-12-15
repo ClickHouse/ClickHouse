@@ -1467,16 +1467,15 @@ private:
         bool final,
         ThreadPool * thread_pool) const;
 
-    template <bool no_more_keys, typename Method, typename Table>
+    template <bool no_more_keys, typename State, typename Table>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
-        Method & method,
+        State & state,
         Table & data,
         AggregateDataPtr overflow_row,
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
-        const ColumnRawPtrs & key_columns,
         Arena * arena_for_keys) const;
 
     /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
@@ -1488,6 +1487,7 @@ private:
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
+        LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         Arena * arena_for_keys = nullptr) const;
 
@@ -1497,6 +1497,7 @@ private:
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
+        LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         size_t row_begin,
         size_t row_end,
@@ -1507,6 +1508,7 @@ private:
     void mergeBlockWithoutKeyStreamsImpl(
         Block block,
         AggregatedDataVariants & result) const;
+
     void mergeWithoutKeyStreamsImpl(
         AggregatedDataVariants & result,
         size_t row_begin,

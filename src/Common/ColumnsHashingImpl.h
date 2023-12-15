@@ -35,6 +35,12 @@ struct LastElementCacheStats
 {
     UInt64 hits = 0;
     UInt64 misses = 0;
+
+    void update(size_t num_tries, size_t num_misses)
+    {
+        hits += num_tries - num_misses;
+        misses += num_misses;
+    }
 };
 
 namespace columns_hashing_impl
@@ -48,15 +54,15 @@ struct LastElementCache
     Value value;
     bool empty = true;
     bool found = false;
-    LastElementCacheStats stats;
+    UInt64 misses = 0;
 
     bool check(const Value & value_) const { return value == value_; }
 
     template <typename Key>
     bool check(const Key & key) const { return value.first == key; }
 
-    bool hasOnlyOneValue() const { return !empty && found && stats.misses == 0; }
-    LastElementCacheStats getStats() const { return stats; }
+    bool hasOnlyOneValue() const { return found && misses == 1; }
+    UInt64 getMisses() const { return misses; }
 };
 
 template <typename Data>
@@ -212,7 +218,7 @@ public:
         {
             cache.empty = true;
             cache.found = false;
-            cache.stats = {};
+            cache.misses = 0;
         }
     }
 
@@ -223,11 +229,11 @@ public:
         return false;
     }
 
-    ALWAYS_INLINE LastElementCacheStats getCacheStatsSinceLastReset() const
+    ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const
     {
         if constexpr (consecutive_keys_optimization)
-            return cache.getStats();
-        return {0, 0};
+            return cache.getMisses();
+        return 0;
     }
 
     ALWAYS_INLINE bool isNullAt(size_t row) const
@@ -271,20 +277,12 @@ protected:
     {
         if constexpr (consecutive_keys_optimization)
         {
-            if (!cache.empty)
+            if (cache.found && cache.check(keyHolderGetKey(key_holder)))
             {
-                if (cache.found && cache.check(keyHolderGetKey(key_holder)))
-                {
-                    ++cache.stats.hits;
-                    if constexpr (has_mapped)
-                        return EmplaceResult(cache.value.second, cache.value.second, false);
-                    else
-                        return EmplaceResult(false);
-                }
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
                 else
-                {
-                    ++cache.stats.misses;
-                }
+                    return EmplaceResult(false);
             }
         }
 
@@ -308,6 +306,7 @@ protected:
         {
             cache.found = true;
             cache.empty = false;
+            ++cache.misses;
 
             if constexpr (has_mapped)
             {
@@ -330,25 +329,17 @@ protected:
     template <typename Data, typename Key>
     ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data)
     {
-        if constexpr (Cache::consecutive_keys_optimization)
+        if constexpr (consecutive_keys_optimization)
         {
             /// It's possible to support such combination, but code will became more complex.
             /// Now there's not place where we need this options enabled together
             static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
-            if (!cache.empty)
+            if (likely(!cache.empty) && cache.check(key))
             {
-                if (cache.check(key))
-                {
-                    ++cache.stats.hits;
-                    if constexpr (has_mapped)
-                        return FindResult(&cache.value.second, cache.found, 0);
-                    else
-                        return FindResult(cache.found, 0);
-                }
+                if constexpr (has_mapped)
+                    return FindResult(&cache.value.second, cache.found, 0);
                 else
-                {
-                    ++cache.stats.misses;
-                }
+                    return FindResult(cache.found, 0);
             }
         }
 
@@ -358,6 +349,7 @@ protected:
         {
             cache.found = it != nullptr;
             cache.empty = false;
+            ++cache.misses;
 
             if constexpr (has_mapped)
             {
