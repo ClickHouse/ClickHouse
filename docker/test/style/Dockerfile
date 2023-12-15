@@ -45,6 +45,6 @@ RUN arch=${TARGETARCH:-amd64} \
   && rm /tmp/actiolint.zip
 
 
-COPY run.sh /
+COPY cmd.sh /
 
 CMD ["/bin/bash", "/cmd.sh"]
