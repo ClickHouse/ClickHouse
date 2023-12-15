@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--timeout",
         type=int,
-        # Fast tests in most cases done within 10 min and 40 min timout should be sufficient,
+        # Fast tests in most cases done within 10 min and 40 min timeout should be sufficient,
         # though due to cold cache build time can be much longer
         # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
         default=40,

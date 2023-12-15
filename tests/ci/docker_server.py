@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
         "--version",
         type=version_arg,
         default=get_version_from_repo(git=git).string,
-        help="a version to build, automaticaly got from version_helper, accepts either "
+        help="a version to build, automatically got from version_helper, accepts either "
         "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
     )
     parser.add_argument(

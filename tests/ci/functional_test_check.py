@@ -241,7 +241,7 @@ def main():
         kill_timeout > 0
     ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
     validate_bugfix_check = args.validate_bugfix
-    print(f"Runnin check [{check_name}] with timeout [{kill_timeout}]")
+    print(f"Running check [{check_name}] with timeout [{kill_timeout}]")
 
     flaky_check = "flaky" in check_name.lower()
 

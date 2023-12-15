@@ -99,7 +99,7 @@ class Release:
         if not self.with_stderr:
             kwargs["stderr"] = subprocess.DEVNULL
 
-        logging.info("Running command%s:\n    %s", cwd_text, cmd)
+        logging.info("Runningg command%s:\n    %s", cwd_text, cmd)
         return self._git.run(cmd, cwd, **kwargs)
 
     def set_release_info(self):

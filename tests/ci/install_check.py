@@ -190,7 +190,7 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
             for file in LOGS_PATH.glob("*"):
                 file.unlink()
 
-            logging.info("Running docker container: `%s`", run_command)
+            logging.info("Runningg docker container: `%s`", run_command)
             container_id = subprocess.check_output(
                 run_command, shell=True, encoding="utf-8"
             ).strip()
@@ -316,7 +316,7 @@ def main():
     test_results = []  # type: TestResults
     ch_binary = Path(TEMP_PATH) / "clickhouse"
     if ch_binary.exists():
-        # make a copy of clickhouse to avoid redownload of exctracted binary
+        # make a copy of clickhouse to avoid redownload of extracted binary
         ch_binary.chmod(0o755)
         ch_copy = ch_binary.parent / "clickhouse.copy"
         copy2(ch_binary, ch_binary.parent / "clickhouse.copy")

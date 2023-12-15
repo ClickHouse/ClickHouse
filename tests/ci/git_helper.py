@@ -67,7 +67,7 @@ class Runner:
     def run(self, cmd: str, cwd: Optional[str] = None, **kwargs: Any) -> str:
         if cwd is None:
             cwd = self.cwd
-        logger.debug("Running command: %s", cmd)
+        logger.debug("Runningg command: %s", cmd)
         output = str(
             subprocess.check_output(
                 cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs

@@ -202,7 +202,7 @@ def main():
     state = "success"
     for run_command in run_commands:
         try:
-            logging.info("Running command %s", run_command)
+            logging.info("Runningg command %s", run_command)
             subprocess.check_call(run_command, shell=True)
         except subprocess.CalledProcessError as ex:
             logging.info("Exception calling command %s", ex)

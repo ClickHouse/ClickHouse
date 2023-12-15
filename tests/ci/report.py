@@ -266,7 +266,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
             status = line[1]
             time = None
             if len(line) >= 3 and line[2] and line[2] != "\\N":
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # it's the time spent on the test
                 try:
                     time = float(line[2])
@@ -275,7 +275,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
 
             result = TestResult(name, status, time)
             if len(line) == 4 and line[3]:
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
                     # Python does not support TSV, so we unescape manually
@@ -572,7 +572,7 @@ def create_test_html_report(
         has_test_time = False
         has_log_urls = False
 
-        # Display entires with logs at the top (they correspond to failed tests)
+        # Display entries with logs at the top (they correspond to failed tests)
         test_results.sort(
             key=lambda result: result.raw_logs is None and result.log_files is None
         )

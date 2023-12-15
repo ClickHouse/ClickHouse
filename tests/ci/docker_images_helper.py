@@ -55,7 +55,7 @@ def pull_image(image: DockerImage) -> DockerImage:
         )
         logging.info("Pulling image %s - done", image)
     except Exception as ex:
-        logging.info("Got execption pulling docker %s", ex)
+        logging.info("Got exception pulling docker %s", ex)
         raise ex
     return image
 
@@ -171,7 +171,7 @@ def get_images_info() -> Dict[str, dict]:
 
 def get_images_oredered_list() -> List[DockerImageData]:
     """
-    returns images in a sorted list so that dependents follow their dependees
+    returns images in a sorted list so that child images follow their parents
     """
     images_info = get_images_info()
 

@@ -7,7 +7,7 @@
 
 set -xeuo pipefail
 
-echo "Running prepare script"
+echo "Runningg prepare script"
 export DEBIAN_FRONTEND=noninteractive
 export RUNNER_VERSION=2.311.0
 export RUNNER_HOME=/home/ubuntu/actions-runner
@@ -89,7 +89,7 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microso
 apt-get update
 apt-get install --yes --no-install-recommends azure-cli
 
-# Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
+# Increase the limit on number of virtual memory mappings to avoid 'Cannot mmap' error
 echo "vm.max_map_count = 2097152" > /etc/sysctl.d/01-increase-map-counts.conf
 
 systemctl restart docker
@@ -144,7 +144,7 @@ touch /var/tmp/clickhouse-ci-ami.success
 
 # TOE description
 # name: CIInfrastructurePrepare
-# description: instals the infrastructure for ClickHouse CI runners
+# description: installs the infrastructure for ClickHouse CI runners
 # schemaVersion: 1.0
 #
 # phases:

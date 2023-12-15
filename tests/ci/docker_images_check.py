@@ -131,7 +131,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Program to build changed or given docker images with all "
-        "dependant images. Example for local running: "
+        "dependent images. Example for local running: "
         "python docker_images_check.py --no-push-images --no-reports "
         "--image-path docker/packager/binary",
     )
@@ -182,7 +182,7 @@ def main():
 
     test_results = []  # type: TestResults
     additional_cache = []  # type: List[str]
-    # FIXME: add all tags taht we need. latest on master!
+    # FIXME: add all tags that we need. latest on master!
     # if pr_info.release_pr:
     #     logging.info("Use %s as additional cache tag", pr_info.release_pr)
     #     additional_cache.append(str(pr_info.release_pr))

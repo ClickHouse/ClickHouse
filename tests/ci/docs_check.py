@@ -99,7 +99,7 @@ def main():
     )
 
     run_log_path = test_output / "run.log"
-    logging.info("Running command: '%s'", cmd)
+    logging.info("Runningg command: '%s'", cmd)
 
     with TeePopen(cmd, run_log_path) as process:
         retcode = process.wait()

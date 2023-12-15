@@ -294,7 +294,7 @@ def get_worst_state(statuses: CommitStatuses) -> str:
 
 
 def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
-    """The function converst the statuses to TestResults and uploads the report
+    """The function convert the statuses to TestResults and uploads the report
     to S3 tests bucket. Then it returns the URL"""
     test_results = []  # type: TestResults
     for status in statuses:
@@ -325,7 +325,7 @@ def post_commit_status_to_file(
 @dataclass
 class CommitStatusData:
     """
-    if u about to add/remove fields in this class be causious that it dumps/loads to/from files (see it's method)
+    if u about to add/remove fields in this class be cautious that it dumps/loads to/from files (see it's method)
     - you might want to add default values for new fields so that it won't break with old files
     """
 

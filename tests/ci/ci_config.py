@@ -14,7 +14,7 @@ class DigestConfig:
     include_paths: List[Union[str, Path]] = field(default_factory=list)
     # file suffixes to exclude from digest
     exclude_files: List[str] = field(default_factory=list)
-    # directories to exlude from digest
+    # directories to exclude from digest
     exclude_dirs: List[Union[str, Path]] = field(default_factory=list)
     # docker names to include into digest
     docker: List[str] = field(default_factory=list)
@@ -27,7 +27,7 @@ class JobConfig:
     """
     contains config parameter relevant for job execution in CI workflow
     @digest - configures digest calculation for the job
-    @run_command - will be triggered for the job if omited in CI workflow yml
+    @run_command - will be triggered for the job if omitted in CI workflow yml
     @timeout
     @num_batches - sets number of batches for multi-batch job
     """
@@ -310,7 +310,7 @@ class CiConfig:
                     if isinstance(config[job_name], TestConfig):  # type: ignore
                         assert config[
                             job_name
-                        ].required_build, f"Error: Experimantal feature... Not supported job [{job_name}]"  # type: ignore
+                        ].required_build, f"Error: Experimental feature... Not supported job [{job_name}]"  # type: ignore
                         res.append(config[job_name].required_build)  # type: ignore
                         res.append("Fast tests")
                         res.append("Style check")
@@ -324,7 +324,7 @@ class CiConfig:
                     break
         assert (
             res
-        ), f"Error: Experimantal feature... Invlid request or not supported job [{check_name}]"
+        ), f"Error: Experimental feature... Invalid request or not supported job [{check_name}]"
         return res
 
     def get_digest_config(self, check_name: str) -> DigestConfig:

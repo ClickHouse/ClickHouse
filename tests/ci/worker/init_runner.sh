@@ -50,7 +50,7 @@ set -uo pipefail
 # set accordingly to a runner role #
 ####################################
 
-echo "Running init script"
+echo "Runningg init script"
 export DEBIAN_FRONTEND=noninteractive
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
@@ -292,7 +292,7 @@ is_job_assigned() {
         return 0
     fi
     # So far it's the only solid way to determine that the job is starting
-    grep -q 'Terminal] .* Running job:' "$log_file" \
+    grep -q 'Terminal] .* Runningg job:' "$log_file" \
         && return 0 \
         || return 1
 }
