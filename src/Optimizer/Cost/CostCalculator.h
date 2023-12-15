@@ -7,7 +7,7 @@
 #include <Interpreters/Cluster.h>
 #include <Optimizer/GroupNode.h>
 #include <Optimizer/PlanStepVisitor.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 #include <Optimizer/Tasks/TaskContext.h>
 
 namespace DB
@@ -21,9 +21,9 @@ public:
     using ResultType = Cost;
 
     CostCalculator(
-        const Statistics & statistics_,
+        const Stats & statistics_,
         TaskContextPtr task_context_,
-        const std::vector<Statistics> & input_statistics_ = {},
+        const std::vector<Stats> & input_statistics_ = {},
         const ChildrenProp & child_props_ = {})
         : statistics(statistics_)
         , input_statistics(input_statistics_)
@@ -76,10 +76,10 @@ public:
 
 private:
     /// Output statistics of step
-    const Statistics & statistics;
+    const Stats & statistics;
 
     /// Input statistics of step
-    const std::vector<Statistics> & input_statistics;
+    const std::vector<Stats> & input_statistics;
 
     /// Required children steps physical properties(distribution)
     /// Note that the props only represent the required, the real

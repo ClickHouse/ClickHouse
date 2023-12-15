@@ -196,14 +196,18 @@ IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
      {"log_last", ExternalCommandStderrReaction::LOG_LAST},
      {"throw", ExternalCommandStderrReaction::THROW}})
 
+IMPLEMENT_SETTING_ENUM(SchemaInferenceMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default", SchemaInferenceMode::DEFAULT},
+     {"union", SchemaInferenceMode::UNION}})
+
 IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
-                       {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
-                        {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
-                        {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
+    {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
+     {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
+     {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 
 IMPLEMENT_SETTING_ENUM(CBOStepExecutionMode, ErrorCodes::BAD_ARGUMENTS,
-                       {{"one_stage", CBOStepExecutionMode::ONE_STAGE},
-                        {"two_stage", CBOStepExecutionMode::TWO_STAGE},
-                        {"determined_by_optimizer", CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER}})
+   {{"one_stage", CBOStepExecutionMode::ONE_STAGE},
+    {"two_stage", CBOStepExecutionMode::TWO_STAGE},
+    {"determined_by_optimizer", CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER}})
 
 }

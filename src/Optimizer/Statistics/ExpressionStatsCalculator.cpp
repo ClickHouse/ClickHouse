@@ -47,7 +47,7 @@ ExpressionStatsCalculator::calculateStatistics(const ActionsDAG::Node * node, Ex
     return visitor.visit(node, context);
 }
 
-Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expressions, const Statistics & input)
+Stats ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expressions, const Stats & input)
 {
     /// Expression (Before GROUP BY) maybe empty
     if (expressions->getNodes().empty())
@@ -72,7 +72,7 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
     for (auto output_node : output_nodes)
         ExpressionStatsCalculator::calculateStatistics(output_node, context);
 
-    Statistics statistics;
+    Stats statistics;
     statistics.setOutputRowSize(input.getOutputRowSize());
 
     /// 3. add output node statistics to result

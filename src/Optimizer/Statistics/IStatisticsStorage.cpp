@@ -35,7 +35,7 @@ namespace
 ContextMutablePtr createQueryContext(ContextMutablePtr context_ = nullptr, SettingsChanges setting_changes = {});
 
 /// Load statistics into memory
-std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, const String & cluster_name);
+std::optional<TableRowCount> loadTableStats(const StorageID & storage_id, const String & cluster_name);
 std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_id, const String & cluster_name);
 
 /// Collect statistics for a table
@@ -109,7 +109,7 @@ void IStatisticsStorage::prepareTables(ContextPtr global_context)
 }
 
 /// TODO add strategies if one node in cluster has no statistics
-StatisticsPtr StatisticsLoader::load(const StorageID & storage_id, const String & cluster_name)
+StatsPtr StatisticsLoader::load(const StorageID & storage_id, const String & cluster_name)
 {
     /// 1. load table row count
     auto row_count = loadTableStats(storage_id, cluster_name);
@@ -120,7 +120,7 @@ StatisticsPtr StatisticsLoader::load(const StorageID & storage_id, const String 
     /// 2. load column statistics
     auto column_stats = loadColumnStats(storage_id, cluster_name);
 
-    return std::make_shared<Statistics>(*row_count, *column_stats);
+    return std::make_shared<Stats>(*row_count, *column_stats);
 }
 
 void StatisticsCollector::collect(const StorageID & storage_id, const Names & columns, ContextMutablePtr context)
@@ -134,7 +134,7 @@ void StatisticsCollector::collect(const StorageID & storage_id, const Names & co
     collectColumnStats(storage_id, columns, context);
 }
 
-StatisticsPtr IStatisticsStorage::get(const StorageID &, const String &)
+StatsPtr IStatisticsStorage::get(const StorageID &, const String &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method not implemented.");
 }
@@ -204,7 +204,7 @@ NamesAndTypesList StatsForColumnDesc::getNamesAndTypesList()
 {
     AggregateFunctionProperties properties;
     DataTypes agg_function_arg_data_types{std::make_shared<DataTypeString>()};
-    auto agg_function = AggregateFunctionFactory::instance().get("uniq", agg_function_arg_data_types, {}, properties);
+    auto agg_function = AggregateFunctionFactory::instance().get("uniq", NullsAction::IGNORE_NULLS, agg_function_arg_data_types, {}, properties);
 
     return {
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -238,7 +238,7 @@ ContextMutablePtr createQueryContext(ContextMutablePtr context_, SettingsChanges
     return query_context;
 }
 
-std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, const String & cluster_name)
+std::optional<TableRowCount> loadTableStats(const StorageID & storage_id, const String & cluster_name)
 {
     String sql = fmt::format(
         "SELECT sum(row_count) FROM cluster({}, {}, {}) WHERE db='{}' and table='{}'",

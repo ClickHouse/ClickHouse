@@ -1,6 +1,6 @@
 #include <Optimizer/Group.h>
 #include <Optimizer/Statistics/DeriveStatistics.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 #include <Optimizer/Tasks/DeriveStats.h>
 #include <Common/logger_useful.h>
 
@@ -43,15 +43,15 @@ void DeriveStats::execute()
 
 void DeriveStats::deriveStats()
 {
-    StatisticsList child_statistics;
+    StatsList child_statistics;
     for (auto * child_group : group_node->getChildren())
     {
-        Statistics stats = child_group->getStatistics();
+        Stats stats = child_group->getStatistics();
         child_statistics.emplace_back(stats);
     }
 
     DeriveStatistics visitor(child_statistics, getQueryContext());
-    Statistics stats = group_node->accept(visitor);
+    Stats stats = group_node->accept(visitor);
 
     auto * log = &Poco::Logger::get(
         "DeriveStats group(" + std::to_string(task_context->getCurrentGroup().getId()) + ") group node(" + group_node->getStep()->getName()

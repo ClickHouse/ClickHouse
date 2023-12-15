@@ -2,21 +2,21 @@
 
 #include <Optimizer/Statistics/ColumnStatistics.h>
 #include <Optimizer/Statistics/IStatisticsStorage.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 #include <Common/ThreadPool.h>
 
 
 namespace DB
 {
 
-using TableStatistics = Float64;
+using TableRowCount = Float64;
 
 class CachedStatisticsStorage : public IStatisticsStorage
 {
 public:
     explicit CachedStatisticsStorage(UInt64 refresh_interval_sec_, const String & load_thread_name_ = "StatisticsStrge");
 
-    StatisticsPtr get(const StorageID & table, const String & cluster_name) override;
+    StatsPtr get(const StorageID & table, const String & cluster_name) override;
     void collect(const StorageID & storage_id, const Names & columns, ContextMutablePtr context) override;
 
     void loadAll() override;

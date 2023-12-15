@@ -3,7 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 #include <Optimizer/Cost/Cost.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
@@ -118,7 +118,7 @@ public:
 
         /// Just for explain statement
         Cost cost;
-        Statistics statistics;
+        Stats statistics;
     };
     using Node = PlanNode;
     using Nodes = std::list<Node>;

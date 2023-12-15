@@ -3,7 +3,7 @@
 #include <Optimizer/Cost/Cost.h>
 #include <Optimizer/GroupNode.h>
 #include <Optimizer/PhysicalProperties.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 
 namespace DB
 {
@@ -42,8 +42,8 @@ public:
     String toString() const;
     String getDescription() const;
 
-    void setStatistics(Statistics & statistics_);
-    const Statistics & getStatistics() const;
+    void setStatistics(Stats & statistics_);
+    const Stats & getStatistics() const;
 
     void setStatsDerived();
     bool hasStatsDerived() const;
@@ -55,7 +55,7 @@ private:
     /// optimize temp result
     std::unordered_map<PhysicalProperties, NodeAndCost, PhysicalProperties::HashFunction> prop_to_best;
 
-    Statistics statistics;
+    Stats statistics;
     bool stats_derived = false;
 };
 

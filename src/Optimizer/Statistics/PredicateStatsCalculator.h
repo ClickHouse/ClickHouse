@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 
 namespace DB
 {
@@ -50,7 +50,7 @@ private:
 class PredicateStatsCalculator
 {
 public:
-    static Statistics calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input);
+    static Stats calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Stats & input);
 };
 
 }

@@ -2,21 +2,21 @@
 
 #include <Interpreters/Cluster.h>
 #include <Optimizer/PlanStepVisitor.h>
-#include <Optimizer/Statistics/Statistics.h>
-#include <Optimizer/Statistics/StatisticsSettings.h>
+#include <Optimizer/Statistics/Stats.h>
+#include <Optimizer/Statistics/StatsSettings.h>
 
 namespace DB
 {
 
-class DeriveStatistics : public PlanStepVisitor<Statistics>
+class DeriveStatistics : public PlanStepVisitor<Stats>
 {
 public:
-    using Base = PlanStepVisitor<Statistics>;
+    using Base = PlanStepVisitor<Stats>;
 
-    explicit DeriveStatistics(const StatisticsList & input_statistics_, ContextPtr context_)
+    explicit DeriveStatistics(const StatsList & input_statistics_, ContextPtr context_)
         : input_statistics(input_statistics_)
         , context(context_)
-        , stats_settings(StatisticsSettings::fromContext(context_))
+        , stats_settings(StatsSettings::fromContext(context_))
         , log(&Poco::Logger::get("DeriveStatistics"))
     {
         auto query_coordination_info = context->getQueryCoordinationMetaInfo();
@@ -24,37 +24,37 @@ public:
         node_count = cluster->getShardCount();
     }
 
-    Statistics visit(QueryPlanStepPtr step) override;
+    Stats visit(QueryPlanStepPtr step) override;
 
-    Statistics visitDefault(IQueryPlanStep & step) override;
+    Stats visitDefault(IQueryPlanStep & step) override;
 
-    Statistics visit(ReadFromMergeTree & step) override;
+    Stats visit(ReadFromMergeTree & step) override;
 
-    Statistics visit(ExpressionStep & step) override;
+    Stats visit(ExpressionStep & step) override;
 
-    Statistics visit(FilterStep & step) override;
+    Stats visit(FilterStep & step) override;
 
-    Statistics visit(AggregatingStep & step) override;
+    Stats visit(AggregatingStep & step) override;
 
-    Statistics visit(MergingAggregatedStep & step) override;
+    Stats visit(MergingAggregatedStep & step) override;
 
-    Statistics visit(CreatingSetsStep & step) override;
+    Stats visit(CreatingSetsStep & step) override;
 
-    Statistics visit(SortingStep & step) override;
+    Stats visit(SortingStep & step) override;
 
-    Statistics visit(LimitStep & step) override;
+    Stats visit(LimitStep & step) override;
 
-    Statistics visit(JoinStep & step) override;
+    Stats visit(JoinStep & step) override;
 
-    Statistics visit(UnionStep & step) override;
+    Stats visit(UnionStep & step) override;
 
-    Statistics visit(ExchangeDataStep & step) override;
+    Stats visit(ExchangeDataStep & step) override;
 
-    Statistics visit(TopNStep & step) override;
+    Stats visit(TopNStep & step) override;
 
 private:
     /// Inputs for step
-    const StatisticsList & input_statistics;
+    const StatsList & input_statistics;
 
     /// Query context
     ContextPtr context;
@@ -63,7 +63,7 @@ private:
     size_t node_count;
 
     /// Settings for statistics
-    StatisticsSettings stats_settings;
+    StatsSettings stats_settings;
 
     Poco::Logger * log;
 };

@@ -17,7 +17,7 @@ CachedStatisticsStorage::CachedStatisticsStorage(UInt64 refresh_interval_sec_, c
     load_thread = std::make_unique<ThreadFromGlobalPool>(&CachedStatisticsStorage::loadTask, this);
 }
 
-StatisticsPtr CachedStatisticsStorage::get(const StorageID & storage_id, const String & cluster_name)
+StatsPtr CachedStatisticsStorage::get(const StorageID & storage_id, const String & cluster_name)
 {
     std::unique_lock<std::mutex> lock(mutex); /// TODO add cache hit ratio metrics
     if (cache.contains(storage_id))

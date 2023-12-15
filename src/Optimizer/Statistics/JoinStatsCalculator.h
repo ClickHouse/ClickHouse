@@ -3,7 +3,7 @@
 #include <Core/Joins.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Common/logger_useful.h>
 
@@ -67,23 +67,23 @@ namespace DB
 class JoinStatsCalculator
 {
 public:
-    static Statistics calculateStatistics(JoinStep & step, const Statistics & left_input, const Statistics & right_input);
+    static Stats calculateStatistics(JoinStep & step, const Stats & left_input, const Stats & right_input);
 
 private:
     struct Impl
     {
     public:
-        explicit Impl(JoinStep & step_, const Statistics & left_input_, const Statistics & right_input_);
-        Statistics calculate();
+        explicit Impl(JoinStep & step_, const Stats & left_input_, const Stats & right_input_);
+        Stats calculate();
 
     private:
-        void calculateCrossJoin(Statistics & statistics);
+        void calculateCrossJoin(Stats & statistics);
         /// asof join: not equal join
-        void calculateAsofJoin(Statistics & statistics);
+        void calculateAsofJoin(Stats & statistics);
 
-        void calculateInnerJoin(Statistics & statistics, JoinStrictness strictness);
+        void calculateInnerJoin(Stats & statistics, JoinStrictness strictness);
         /// JoinStrictness: any, all
-        void calculateCommonInnerJoin(Statistics & statistics, bool is_any);
+        void calculateCommonInnerJoin(Stats & statistics, bool is_any);
         /// All Join:
         ///   Variable: H
         ///   H = F * G / C * 1.2
@@ -91,22 +91,22 @@ private:
         /// Any Join:
         ///   equals C
         Float64 calculateRowCountForInnerJoin(bool is_any);
-        void calculateColumnStatsForInnerJoin(Statistics & statistics);
+        void calculateColumnStatsForInnerJoin(Stats & statistics);
 
-        void calculateOuterJoin(Statistics & statistics, JoinStrictness strictness);
+        void calculateOuterJoin(Stats & statistics, JoinStrictness strictness);
 
         /// JoinStrictness: any, all
-        void calculateCommonOuterJoin(Statistics & statistics, bool is_any);
+        void calculateCommonOuterJoin(Stats & statistics, bool is_any);
         /// JoinStrictness: semi, anti
-        void calculateFilterOuterJoin(Statistics & statistics, bool is_semi);
+        void calculateFilterOuterJoin(Stats & statistics, bool is_semi);
 
         /// column statistics for outer join
-        void calculateColumnStatsForOuterJoin(Statistics & statistics, JoinKind type);
+        void calculateColumnStatsForOuterJoin(Stats & statistics, JoinKind type);
         /// column statistics for JoinStrictness: semi, anti
-        void calculateColumnStatsForFilterJoin(Statistics & statistics, bool is_semi);
+        void calculateColumnStatsForFilterJoin(Stats & statistics, bool is_semi);
 
-        void calculateColumnStatsForIntersecting(Statistics & statistics);
-        void calculateColumnStatsForAnti(Statistics & statistics, bool is_left);
+        void calculateColumnStatsForIntersecting(Stats & statistics);
+        void calculateColumnStatsForAnti(Stats & statistics, bool is_left);
 
         /// ndv for join on keys
         /// Variable: A
@@ -129,13 +129,13 @@ private:
         /// Whether join on key has columns whose statistics is unknown
         bool hasUnknownStatsColumn();
 
-        void removeNonOutputColumn(Statistics & input);
+        void removeNonOutputColumn(Stats & input);
 
         JoinStep & step;
 
         /// Inputs, should never changed
-        const Statistics & left_input;
-        const Statistics & right_input;
+        const Stats & left_input;
+        const Stats & right_input;
 
         /// Join on keys
         Names left_join_on_keys;

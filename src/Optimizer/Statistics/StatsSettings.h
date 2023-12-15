@@ -7,7 +7,7 @@ namespace DB
 
 struct Settings;
 
-struct StatisticsSettings
+struct StatsSettings
 {
     /// To calculate row count of aggregating result, when there is any column
     /// whose statistics is unknown, we use the coefficient to calculate the
@@ -24,8 +24,8 @@ struct StatisticsSettings
     /// multiply a coefficient.
     Float64 statistics_agg_full_cardinality_coefficient;
 
-    static StatisticsSettings fromSettings(const Settings & from);
-    static StatisticsSettings fromContext(ContextPtr from);
+    static StatsSettings fromSettings(const Settings & from);
+    static StatsSettings fromContext(ContextPtr from);
 };
 
 }

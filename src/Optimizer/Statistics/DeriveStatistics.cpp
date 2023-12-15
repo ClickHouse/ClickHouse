@@ -15,21 +15,21 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-Statistics DeriveStatistics::visit(QueryPlanStepPtr step)
+Stats DeriveStatistics::visit(QueryPlanStepPtr step)
 {
     LOG_TRACE(log, "Collecting statistics for step {}", step->getName());
     return Base::visit(step);
 }
 
-Statistics DeriveStatistics::visitDefault(IQueryPlanStep & step)
+Stats DeriveStatistics::visitDefault(IQueryPlanStep & step)
 {
     auto output_columns = step.getOutputStream().header.getNames();
 
     /// Return unknown statistics for non merge tree family storage engine.
     if (typeid_cast<ISourceStep *>(&step))
-        return Statistics::unknown(output_columns);
+        return Stats::unknown(output_columns);
 
-    Statistics statistics;
+    Stats statistics;
     chassert(input_statistics.size() == step.getInputStreams().size());
 
     /// Just find in input statistics by output column name,
@@ -60,7 +60,7 @@ Statistics DeriveStatistics::visitDefault(IQueryPlanStep & step)
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
+Stats DeriveStatistics::visit(ReadFromMergeTree & step)
 {
     chassert(input_statistics.empty());
 
@@ -70,7 +70,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     /// 1. init by statistics storage
     auto input = context->getStatisticsStorage()->get(storage_id, cluster_name);
     if (!input)
-        input = std::make_shared<Statistics>();
+        input = std::make_shared<Stats>();
 
     /// Final statistics output column names.
     const auto & output_columns = step.getOutputStream().header.getNames();
@@ -90,7 +90,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     /// when driving statistics for filter step the row count will reduce.
     /// TODO Driving statistics for filter step should support data type String
     /// whose value can be cast to Float64.
-    Statistics statistics = *input;
+    Stats statistics = *input;
 
     /// For action_dags in prewhere do not contains all output nodes,
     /// we should append other nodes to statistics. For example: SELECT a, b from t where a > 1;
@@ -141,25 +141,25 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(ExpressionStep & step)
+Stats DeriveStatistics::visit(ExpressionStep & step)
 {
     chassert(input_statistics.size() == 1);
     const auto & action_dag = step.getExpression();
-    Statistics statistics = ExpressionStatsCalculator::calculateStatistics(action_dag, input_statistics.front());
+    Stats statistics = ExpressionStatsCalculator::calculateStatistics(action_dag, input_statistics.front());
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(FilterStep & step)
+Stats DeriveStatistics::visit(FilterStep & step)
 {
     chassert(input_statistics.size() == 1);
-    Statistics statistics
+    Stats statistics
         = PredicateStatsCalculator::calculateStatistics(step.getExpression(), step.getFilterColumnName(), input_statistics.front());
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(AggregatingStep & step)
+Stats DeriveStatistics::visit(AggregatingStep & step)
 {
-    Statistics statistics;
+    Stats statistics;
 
     Names input_names = step.getInputStreams().front().header.getNames();
     Names output_names = step.getOutputStream().header.getNames();
@@ -294,12 +294,12 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(MergingAggregatedStep & step)
+Stats DeriveStatistics::visit(MergingAggregatedStep & step)
 {
     for (auto & output_column : step.getOutputStream().header.getNames())
         chassert(input_statistics.front().containsColumnStatistics(output_column));
 
-    Statistics statistics = input_statistics.front().clone();
+    Stats statistics = input_statistics.front().clone();
     Float64 row_count;
 
     /// The secondary stage of aggregating
@@ -310,16 +310,16 @@ Statistics DeriveStatistics::visit(MergingAggregatedStep & step)
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(SortingStep & step)
+Stats DeriveStatistics::visit(SortingStep & step)
 {
     return visitDefault(step);
 }
 
-Statistics DeriveStatistics::visit(CreatingSetsStep & step)
+Stats DeriveStatistics::visit(CreatingSetsStep & step)
 {
     auto output_columns = step.getOutputStream().header.getNames();
 
-    Statistics statistics;
+    Stats statistics;
     chassert(input_statistics.size() == step.getInputStreams().size());
 
     /// Just find in input statistics by output column name,
@@ -350,10 +350,10 @@ Statistics DeriveStatistics::visit(CreatingSetsStep & step)
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(LimitStep & step)
+Stats DeriveStatistics::visit(LimitStep & step)
 {
     chassert(input_statistics.size() == 1);
-    Statistics statistics = input_statistics.front().clone();
+    Stats statistics = input_statistics.front().clone();
 
     Float64 row_count = statistics.getOutputRowSize();
 
@@ -387,16 +387,16 @@ Statistics DeriveStatistics::visit(LimitStep & step)
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(JoinStep & step)
+Stats DeriveStatistics::visit(JoinStep & step)
 {
-    Statistics statistics;
+    Stats statistics;
     chassert(input_statistics.size() == 2);
     return JoinStatsCalculator::calculateStatistics(step, input_statistics[0], input_statistics[1]);
 }
 
-Statistics DeriveStatistics::visit(UnionStep & step)
+Stats DeriveStatistics::visit(UnionStep & step)
 {
-    Statistics statistics;
+    Stats statistics;
 
     chassert(input_statistics.size() > 1);
     chassert(step.getInputStreams().size() == input_statistics.size());
@@ -449,7 +449,7 @@ Statistics DeriveStatistics::visit(UnionStep & step)
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(ExchangeDataStep & /*step*/)
+Stats DeriveStatistics::visit(ExchangeDataStep & /*step*/)
 {
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
@@ -457,10 +457,10 @@ Statistics DeriveStatistics::visit(ExchangeDataStep & /*step*/)
         "And we just skip the calculating the step.");
 }
 
-Statistics DeriveStatistics::visit(TopNStep & step)
+Stats DeriveStatistics::visit(TopNStep & step)
 {
     chassert(input_statistics.size() == 1);
-    Statistics statistics = input_statistics.front().clone();
+    Stats statistics = input_statistics.front().clone();
 
     Float64 row_count = statistics.getOutputRowSize();
 

@@ -75,12 +75,12 @@ UInt32 Group::getId() const
     return id;
 }
 
-void Group::setStatistics(Statistics & statistics_)
+void Group::setStatistics(Stats & statistics_)
 {
     statistics = statistics_;
 }
 
-const Statistics & Group::getStatistics() const
+const Stats & Group::getStatistics() const
 {
     return statistics;
 }

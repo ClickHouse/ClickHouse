@@ -3,7 +3,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Optimizer/Statistics/ActionNodeStatistics.h>
 #include <Optimizer/Statistics/ActionNodeVisitor.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 
 namespace DB
 {
@@ -40,7 +40,7 @@ private:
 class ExpressionStatsCalculator
 {
 public:
-    static Statistics calculateStatistics(const ActionsDAGPtr & expression, const Statistics & input);
+    static Stats calculateStatistics(const ActionsDAGPtr & expression, const Stats & input);
     static ActionNodeStatistics calculateStatistics(const ActionsDAG::Node * node, ExpressionNodeVisitor::ContextType & context);
 };
 

@@ -4,7 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Optimizer/Statistics/ColumnStatistics.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace DB
@@ -28,6 +28,6 @@ bool isConstColumn(const ActionsDAG::Node * node);
 bool isAlwaysFalse(const ASTPtr & ast);
 
 /// Adjust 'statistics' to match output_columns by adding the missing and removing the additional.
-void adjustStatisticsByColumns(Statistics & statistics, const Names & final_columns);
+void adjustStatisticsByColumns(Stats & statistics, const Names & final_columns);
 
 }

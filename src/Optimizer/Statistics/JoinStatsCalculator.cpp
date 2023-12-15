@@ -10,12 +10,12 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 }
 
-Statistics JoinStatsCalculator::calculateStatistics(JoinStep & step, const Statistics & left_input, const Statistics & right_input)
+Stats JoinStatsCalculator::calculateStatistics(JoinStep & step, const Stats & left_input, const Stats & right_input)
 {
     return Impl(step, left_input, right_input).calculate();
 }
 
-JoinStatsCalculator::Impl::Impl(JoinStep & step_, const Statistics & left_input_, const Statistics & right_input_)
+JoinStatsCalculator::Impl::Impl(JoinStep & step_, const Stats & left_input_, const Stats & right_input_)
     : step(step_), left_input(left_input_), right_input(right_input_)
 {
     const auto & join = step.getJoin()->getTableJoin();
@@ -32,9 +32,9 @@ JoinStatsCalculator::Impl::Impl(JoinStep & step_, const Statistics & left_input_
     output_columns = step.getOutputStream().header.getNames();
 }
 
-Statistics JoinStatsCalculator::Impl::calculate()
+Stats JoinStatsCalculator::Impl::calculate()
 {
-    Statistics statistics;
+    Stats statistics;
 
     /// initialize statistics
     statistics.addAllColumnsFrom(left_input);
@@ -70,13 +70,13 @@ Statistics JoinStatsCalculator::Impl::calculate()
     return statistics;
 }
 
-void JoinStatsCalculator::Impl::calculateCrossJoin(Statistics & statistics)
+void JoinStatsCalculator::Impl::calculateCrossJoin(Stats & statistics)
 {
     auto row_count = left_input.getOutputRowSize() * right_input.getOutputRowSize();
     statistics.setOutputRowSize(row_count);
 }
 
-void JoinStatsCalculator::Impl::calculateAsofJoin(Statistics & statistics)
+void JoinStatsCalculator::Impl::calculateAsofJoin(Stats & statistics)
 {
     statistics.reset();
 
@@ -87,7 +87,7 @@ void JoinStatsCalculator::Impl::calculateAsofJoin(Statistics & statistics)
         statistics.addColumnStatistics(column, ColumnStatistics::unknown());
 }
 
-void JoinStatsCalculator::Impl::calculateInnerJoin(Statistics & statistics, JoinStrictness strictness)
+void JoinStatsCalculator::Impl::calculateInnerJoin(Stats & statistics, JoinStrictness strictness)
 {
     switch (strictness)
     {
@@ -108,7 +108,7 @@ void JoinStatsCalculator::Impl::calculateInnerJoin(Statistics & statistics, Join
     }
 }
 
-void JoinStatsCalculator::Impl::calculateCommonInnerJoin(Statistics & statistics, bool is_any)
+void JoinStatsCalculator::Impl::calculateCommonInnerJoin(Stats & statistics, bool is_any)
 {
     /// calculate row count
     Float64 row_count = calculateRowCountForInnerJoin(is_any);
@@ -118,7 +118,7 @@ void JoinStatsCalculator::Impl::calculateCommonInnerJoin(Statistics & statistics
     calculateColumnStatsForInnerJoin(statistics);
 }
 
-void JoinStatsCalculator::Impl::calculateOuterJoin(Statistics & statistics, JoinStrictness strictness)
+void JoinStatsCalculator::Impl::calculateOuterJoin(Stats & statistics, JoinStrictness strictness)
 {
     switch (strictness)
     {
@@ -140,7 +140,7 @@ void JoinStatsCalculator::Impl::calculateOuterJoin(Statistics & statistics, Join
     }
 }
 
-void JoinStatsCalculator::Impl::calculateCommonOuterJoin(Statistics & statistics, bool is_any)
+void JoinStatsCalculator::Impl::calculateCommonOuterJoin(Stats & statistics, bool is_any)
 {
     /// calculate row count
     Float64 row_count;
@@ -196,7 +196,7 @@ void JoinStatsCalculator::Impl::calculateCommonOuterJoin(Statistics & statistics
     calculateColumnStatsForOuterJoin(statistics, type);
 }
 
-void JoinStatsCalculator::Impl::calculateFilterOuterJoin(Statistics & statistics, bool is_semi)
+void JoinStatsCalculator::Impl::calculateFilterOuterJoin(Stats & statistics, bool is_semi)
 {
     auto type = step.getJoin()->getTableJoin().kind();
 
@@ -220,7 +220,7 @@ void JoinStatsCalculator::Impl::calculateFilterOuterJoin(Statistics & statistics
     calculateColumnStatsForFilterJoin(statistics, is_semi);
 }
 
-void JoinStatsCalculator::Impl::calculateColumnStatsForFilterJoin(Statistics & statistics, bool is_semi)
+void JoinStatsCalculator::Impl::calculateColumnStatsForFilterJoin(Stats & statistics, bool is_semi)
 {
     auto type = step.getJoin()->getTableJoin().kind();
     if (is_semi)
@@ -304,12 +304,12 @@ Float64 JoinStatsCalculator::Impl::calculateRowCountForInnerJoin(bool is_any)
     }
 }
 
-void JoinStatsCalculator::Impl::calculateColumnStatsForInnerJoin(Statistics & statistics)
+void JoinStatsCalculator::Impl::calculateColumnStatsForInnerJoin(Stats & statistics)
 {
     calculateColumnStatsForIntersecting(statistics);
 }
 
-void JoinStatsCalculator::Impl::calculateColumnStatsForIntersecting(Statistics & statistics)
+void JoinStatsCalculator::Impl::calculateColumnStatsForIntersecting(Stats & statistics)
 {
     /// For join on columns
     for (size_t i = 0; i < left_join_on_keys.size(); i++)
@@ -369,7 +369,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForIntersecting(Statistics &
     set_ndv_for_non_join_on_columns();
 }
 
-void JoinStatsCalculator::Impl::calculateColumnStatsForAnti(Statistics & statistics, bool /*is_left*/)
+void JoinStatsCalculator::Impl::calculateColumnStatsForAnti(Stats & statistics, bool /*is_left*/)
 {
     /// For join on columns
     for (size_t i = 0; i < left_join_on_keys.size(); i++)
@@ -425,7 +425,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForAnti(Statistics & statist
     set_ndv_for_non_join_on_columns();
 }
 
-void JoinStatsCalculator::Impl::calculateColumnStatsForOuterJoin(Statistics & statistics, JoinKind type)
+void JoinStatsCalculator::Impl::calculateColumnStatsForOuterJoin(Stats & statistics, JoinKind type)
 {
     /// For join on columns
     for (size_t i = 0; i < left_join_on_keys.size(); i++)
@@ -510,7 +510,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForOuterJoin(Statistics & st
     }
 }
 
-void JoinStatsCalculator::Impl::removeNonOutputColumn(Statistics & input)
+void JoinStatsCalculator::Impl::removeNonOutputColumn(Stats & input)
 {
     auto stats_columns = input.getColumnNames();
 

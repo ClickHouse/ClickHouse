@@ -32,10 +32,9 @@ ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Nod
     return node_stats;
 }
 
-Statistics
-PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input)
+Stats PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Stats & input)
 {
-    Statistics statistics;
+    Stats statistics;
 
     auto & input_nodes = predicates->getInputs();
     PredicateNodeVisitor::VisitContext context;

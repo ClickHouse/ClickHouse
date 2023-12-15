@@ -83,7 +83,7 @@ bool isAlwaysFalse(const ASTPtr & ast)
     return false;
 }
 
-void adjustStatisticsByColumns(Statistics & statistics, const Names & final_columns)
+void adjustStatisticsByColumns(Stats & statistics, const Names & final_columns)
 {
     /// remove additional
     for (const auto & column : statistics.getColumnNames())

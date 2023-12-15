@@ -3,18 +3,18 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 #include <Optimizer/Statistics/ColumnStatistics.h>
-#include <Optimizer/Statistics/Statistics.h>
+#include <Optimizer/Statistics/Stats.h>
 
 namespace DB
 {
 
-using TableStatistics = Float64;
+using TableRowCount = Float64;
 
 /// Load statistics from storage.
 class StatisticsLoader
 {
 public:
-    static StatisticsPtr load(const StorageID & table_id, const String & cluster_name);
+    static StatsPtr load(const StorageID & table_id, const String & cluster_name);
 };
 
 /// Collect statistics and insert into storage.
@@ -60,7 +60,7 @@ struct StatsForColumnDesc : public StatsTableDefinitionDesc
 class IStatisticsStorage : public std::enable_shared_from_this<IStatisticsStorage>
 {
 public:
-    using StatisticsMap = std::unordered_map<StorageID, StatisticsPtr, StorageID::DatabaseAndTableNameHash>;
+    using StatisticsMap = std::unordered_map<StorageID, StatsPtr, StorageID::DatabaseAndTableNameHash>;
     using TableAndClusters = std::unordered_map<StorageID, String, StorageID::DatabaseAndTableNameHash>;
 
     static constexpr auto STATISTICS_DATABASE_NAME = "system";
@@ -75,7 +75,7 @@ public:
 
     /// Get statistics for a table.
     /// 'storage_id' is local table and 'cluster_name' is used to query statistics for all nodes.
-    virtual StatisticsPtr get(const StorageID & storage_id, const String & cluster_name);
+    virtual StatsPtr get(const StorageID & storage_id, const String & cluster_name);
 
     /// Collect statistics for a table.
     /// User can get the updated statistics once collecting is done.

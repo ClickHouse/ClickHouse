@@ -29,7 +29,7 @@ void OptimizeInputs::execute()
     auto & group = task_context->getCurrentGroup();
     const auto & required_prop = task_context->getRequiredProp();
 
-    std::vector<Statistics> children_statistics;
+    std::vector<Stats> children_statistics;
     for (auto & child_group : group_node->getChildren())
         children_statistics.emplace_back(child_group->getStatistics());
 
