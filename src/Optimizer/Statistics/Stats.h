@@ -11,8 +11,8 @@ class Stats
 public:
     static Stats unknown(const Names & column_names);
 
-    Stats() = default;
-    Stats(Float64 row_count, ColumnStatisticsMap column_stats) : output_row_size(row_count), columns_stats_map(column_stats) { }
+    Stats() : output_row_size(1.0) { }
+    Stats(Float64 row_count, ColumnStatisticsMap column_stats) : output_row_size(std::max(1.0, row_count)), columns_stats_map(column_stats) { }
 
     Stats clone() const;
     std::shared_ptr<Stats> clonePtr() const;
