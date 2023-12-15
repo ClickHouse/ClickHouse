@@ -565,24 +565,6 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
         return true;
     }
 
-    if (function_name == "notEquals")
-    {
-        out.key_column = *key_index;
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.get<String>();
-        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
-        return true;
-    }
-    else if (function_name == "equals")
-    {
-        out.key_column = *key_index;
-        out.function = RPNElement::FUNCTION_EQUALS;
-        out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.get<String>();
-        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
-        return true;
-    }
     else if (function_name == "has")
     {
         out.key_column = *key_index;
