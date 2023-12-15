@@ -66,6 +66,8 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
     args = args_;
     zk_log = std::move(zk_log_);
     log = &Poco::Logger::get("ZooKeeperLoadBalancer");
+    // TODO(jianfei): need to make the host info info stateful to track connection states, rather than reset every time we call `init`.
+    host_info_list = {};
     for (size_t i = 0; i < args_.hosts.size(); ++i)
     {
         HostInfo host_info;
@@ -128,7 +130,7 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
     bool dns_error_occurred = false;
     for (size_t i = 0; i < host_info_list.size(); ++i)
     {
-        if (!isKeeperHostDNSAvailable(log, args.hosts[i], dns_error_occurred))
+        if (!isKeeperHostDNSAvailable(log, host_info_list[i].address, dns_error_occurred))
             continue;
 
         LOG_INFO(log, "Connecting to ZooKeeper host {}, number of attempted hosts {}", host_info_list[i].address, i+1);
