@@ -45,6 +45,7 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Freeze.h>
@@ -92,6 +93,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -442,6 +444,10 @@ BlockIO InterpreterSystemQuery::execute()
             result.pipeline = QueryPipeline(std::move(source));
             break;
         }
+        case Type::DROP_DISK_METADATA_CACHE:
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        }
         case Type::DROP_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
@@ -611,6 +617,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
             break;
+        case Type::REPLICA_UNREADY:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        case Type::REPLICA_READY:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         case Type::SYNC_TRANSACTION_LOG:
             syncTransactionLog();
             break;
@@ -1119,6 +1129,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
+        case Type::DROP_DISK_METADATA_CACHE:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
@@ -1245,6 +1257,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SYNC_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::REPLICA_READY:
+        case Type::REPLICA_UNREADY:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         case Type::RESTART_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA, query.getDatabase(), query.getTable());
