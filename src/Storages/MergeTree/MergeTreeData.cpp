@@ -4834,9 +4834,9 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition, Context
     auto table_id = getStorageID();
 
     const auto & query_settings = local_context->getSettingsRef();
-    if (query_settings.user_max_partition_size_to_drop.changed)
+    if (query_settings.max_partition_size_to_drop.changed)
     {
-        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size, query_settings.user_max_partition_size_to_drop);
+        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size, query_settings.max_partition_size_to_drop);
         return;
     }
 
@@ -4855,9 +4855,9 @@ void MergeTreeData::checkPartCanBeDropped(const String & part_name, ContextPtr l
     auto table_id = getStorageID();
 
     const auto & query_settings = local_context->getSettingsRef();
-    if (query_settings.user_max_partition_size_to_drop.changed)
+    if (query_settings.max_partition_size_to_drop.changed)
     {
-        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk(), query_settings.user_max_partition_size_to_drop);
+        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk(), query_settings.max_partition_size_to_drop);
         return;
     }
 

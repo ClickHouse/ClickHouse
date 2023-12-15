@@ -5088,7 +5088,7 @@ When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
 
-## user_max_partition_size_to_drop
+## max_partition_size_to_drop
 
 Restriction on dropping partitions in query time.
 
@@ -5099,7 +5099,7 @@ The value 0 means that you can drop partitions without any restrictions.
 This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
 :::
 
-## user_max_table_size_to_drop
+## max_table_size_to_drop
 
 Restriction on deleting tables in query time.
 
