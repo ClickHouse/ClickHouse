@@ -1155,40 +1155,36 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
 
 bool StorageMerge::supportsTrivialCountOptimization() const
 {
-    bool is_support = true;
-    forEachTable([&](const StoragePtr & table)
+    bool supported = true;
+    forEachTable([&](const auto & table)
     {
-        is_support &= table->supportsTrivialCountOptimization();
+        supported &= table->supportsTrivialCountOptimization();
     });
-    return is_support;
+    return supported;
 }
 
-std::optional<UInt64> StorageMerge::totalRows(const Settings &) const
+std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
 {
     UInt64 total_rows = 0;
-    forEachTable([&](const StoragePtr & table)
+    forEachTable([&](const auto & table)
     {
-        auto table_rows = table->totalRows(getContext()->getSettingsRef());
-        if (table_rows)
-        {
-            total_rows += *table_rows;
-        }
+        std::optional<UInt64> rows = table->totalRows(settings);
+        if (rows)
+            total_rows += *rows;
     });
-    return std::make_optional<UInt64>(total_rows);
+    return {total_rows};
 }
 
-std::optional<UInt64> StorageMerge::totalBytes(const Settings &) const
+std::optional<UInt64> StorageMerge::totalBytes(const Settings & settings) const
 {
     UInt64 total_bytes = 0;
-    forEachTable([&](const StoragePtr & table)
+    forEachTable([&](const auto & table)
     {
-        auto table_bytes = table->totalBytes(getContext()->getSettingsRef());
-        if (table_bytes)
-        {
-            total_bytes += *table_bytes;
-        }
+        std::optional<UInt64> bytes = table->totalBytes(settings);
+        if (bytes)
+            total_bytes += *bytes;
     });
-    return std::make_optional<UInt64>(total_bytes);
+    return {total_bytes};
 }
 
 
