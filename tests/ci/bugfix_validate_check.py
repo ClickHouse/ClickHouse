@@ -82,21 +82,19 @@ def main():
 
     is_ok, test_results = process_all_results(status_files)
 
-    pr_info = PRInfo()
     if not test_results:
-        description = "No results to upload"
-        report_url = ""
         logging.info("No results to upload")
-    else:
-        description = "" if is_ok else "Changed tests don't reproduce the bug"
-        report_url = upload_results(
-            S3Helper(),
-            pr_info.number,
-            pr_info.sha,
-            test_results,
-            status_files,
-            check_name_with_group,
-        )
+        return
+
+    pr_info = PRInfo()
+    report_url = upload_results(
+        S3Helper(),
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        status_files,
+        check_name_with_group,
+    )
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
@@ -104,10 +102,9 @@ def main():
         commit,
         "success" if is_ok else "error",
         report_url,
-        description,
+        "" if is_ok else "Changed tests don't reproduce the bug",
         check_name_with_group,
         pr_info,
-        dump_to_file=True,
     )
 
 

@@ -2,7 +2,6 @@
 
 import csv
 import logging
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,8 +21,8 @@ from commit_status_helper import (
     post_commit_status,
     format_description,
 )
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from docker_pull_helper import DockerImage, get_image_with_version
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResult, TestResults, read_test_results
@@ -127,15 +126,12 @@ def run_stress_test(docker_image_name: str) -> None:
 
     stopwatch = Stopwatch()
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
     repo_tests_path = repo_path / "tests"
+    reports_path = Path(REPORTS_PATH)
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    check_name = sys.argv[1]
 
     pr_info = PRInfo()
 
@@ -147,7 +143,7 @@ def run_stress_test(docker_image_name: str) -> None:
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = pull_image(get_docker_image(docker_image_name))
+    docker_image = get_image_with_version(reports_path, docker_image_name)
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -216,9 +212,7 @@ def run_stress_test(docker_image_name: str) -> None:
     )
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(
-        commit, state, report_url, description, check_name, pr_info, dump_to_file=True
-    )
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
