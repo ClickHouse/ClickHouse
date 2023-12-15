@@ -61,9 +61,7 @@ public:
         std::string rdkafka_stat;
     };
 
-public:
     KafkaConsumer(
-        ConsumerPtr consumer_,
         Poco::Logger * log_,
         size_t max_batch_size,
         size_t poll_timeout_,
@@ -73,6 +71,11 @@ public:
     );
 
     ~KafkaConsumer();
+
+    void setConsumer(const ConsumerPtr & consumer);
+    bool hasConsumer() const { return consumer.get() != nullptr; }
+    ConsumerPtr && moveConsumer() { return std::move(consumer); }
+
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.

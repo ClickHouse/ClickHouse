@@ -98,58 +98,55 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
         auto safe_consumers = storage_kafka_ptr->getSafeConsumers();
 
-        for (const auto & weak_consumer : safe_consumers.consumers)
+        for (const auto & consumer : safe_consumers.consumers)
         {
-            if (auto consumer = weak_consumer.lock())
+            auto consumer_stat = consumer->getStat();
+
+            database.insertData(database_str.data(), database_str.size());
+            table.insertData(table_str.data(), table_str.size());
+
+            consumer_id.insertData(consumer_stat.consumer_id.data(), consumer_stat.consumer_id.size());
+
+            const auto num_assignnemts = consumer_stat.assignments.size();
+
+            for (size_t num = 0; num < num_assignnemts; ++num)
             {
-                auto consumer_stat = consumer->getStat();
+                const auto & assign = consumer_stat.assignments[num];
 
-                database.insertData(database_str.data(), database_str.size());
-                table.insertData(table_str.data(), table_str.size());
+                assigments_topics.insertData(assign.topic_str.data(), assign.topic_str.size());
 
-                consumer_id.insertData(consumer_stat.consumer_id.data(), consumer_stat.consumer_id.size());
-
-                const auto num_assignnemts = consumer_stat.assignments.size();
-
-                for (size_t num = 0; num < num_assignnemts; ++num)
-                {
-                    const auto & assign = consumer_stat.assignments[num];
-
-                    assigments_topics.insertData(assign.topic_str.data(), assign.topic_str.size());
-
-                    assigments_partition_id.insert(assign.partition_id);
-                    assigments_current_offset.insert(assign.current_offset);
-                }
-                last_assignment_num += num_assignnemts;
-
-                assigments_topics_offsets.push_back(last_assignment_num);
-                assigments_partition_id_offsets.push_back(last_assignment_num);
-                assigments_current_offset_offsets.push_back(last_assignment_num);
-
-                for (const auto & exc : consumer_stat.exceptions_buffer)
-                {
-                    exceptions_text.insertData(exc.text.data(), exc.text.size());
-                    exceptions_time.insert(exc.timestamp_usec);
-                }
-                exceptions_num += consumer_stat.exceptions_buffer.size();
-                exceptions_text_offset.push_back(exceptions_num);
-                exceptions_time_offset.push_back(exceptions_num);
-
-
-                last_poll_time.insert(consumer_stat.last_poll_time);
-                num_messages_read.insert(consumer_stat.num_messages_read);
-                last_commit_time.insert(consumer_stat.last_commit_timestamp_usec);
-                num_commits.insert(consumer_stat.num_commits);
-                last_rebalance_time.insert(consumer_stat.last_rebalance_timestamp_usec);
-
-                num_rebalance_revocations.insert(consumer_stat.num_rebalance_revocations);
-                num_rebalance_assigments.insert(consumer_stat.num_rebalance_assignments);
-
-                is_currently_used.insert(consumer_stat.in_use);
-                last_used.insert(consumer_stat.last_used_usec);
-
-                rdkafka_stat.insertData(consumer_stat.rdkafka_stat.data(), consumer_stat.rdkafka_stat.size());
+                assigments_partition_id.insert(assign.partition_id);
+                assigments_current_offset.insert(assign.current_offset);
             }
+            last_assignment_num += num_assignnemts;
+
+            assigments_topics_offsets.push_back(last_assignment_num);
+            assigments_partition_id_offsets.push_back(last_assignment_num);
+            assigments_current_offset_offsets.push_back(last_assignment_num);
+
+            for (const auto & exc : consumer_stat.exceptions_buffer)
+            {
+                exceptions_text.insertData(exc.text.data(), exc.text.size());
+                exceptions_time.insert(exc.timestamp_usec);
+            }
+            exceptions_num += consumer_stat.exceptions_buffer.size();
+            exceptions_text_offset.push_back(exceptions_num);
+            exceptions_time_offset.push_back(exceptions_num);
+
+
+            last_poll_time.insert(consumer_stat.last_poll_time);
+            num_messages_read.insert(consumer_stat.num_messages_read);
+            last_commit_time.insert(consumer_stat.last_commit_timestamp_usec);
+            num_commits.insert(consumer_stat.num_commits);
+            last_rebalance_time.insert(consumer_stat.last_rebalance_timestamp_usec);
+
+            num_rebalance_revocations.insert(consumer_stat.num_rebalance_revocations);
+            num_rebalance_assigments.insert(consumer_stat.num_rebalance_assignments);
+
+            is_currently_used.insert(consumer_stat.in_use);
+            last_used.insert(consumer_stat.last_used_usec);
+
+            rdkafka_stat.insertData(consumer_stat.rdkafka_stat.data(), consumer_stat.rdkafka_stat.size());
         }
     };
 

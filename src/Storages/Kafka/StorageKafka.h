@@ -13,13 +13,7 @@
 #include <mutex>
 #include <list>
 #include <atomic>
-
-namespace cppkafka
-{
-
-class Configuration;
-
-}
+#include <cppkafka/cppkafka.h>
 
 namespace DB
 {
@@ -29,7 +23,7 @@ class StorageSystemKafkaConsumers;
 struct StorageKafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
-using KafkaConsumerWeakPtr = std::weak_ptr<KafkaConsumer>;
+using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -85,10 +79,10 @@ public:
     {
         std::shared_ptr<IStorage> storage_ptr;
         std::unique_lock<std::mutex> lock;
-        std::vector<KafkaConsumerWeakPtr> & consumers;
+        std::vector<KafkaConsumerPtr> & consumers;
     };
 
-    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), all_consumers};  }
+    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
 private:
     // Configuration and state
@@ -108,8 +102,7 @@ private:
 
     std::atomic<bool> mv_attached = false;
 
-    std::vector<KafkaConsumerPtr> consumers; /// available consumers
-    std::vector<KafkaConsumerWeakPtr> all_consumers; /// busy (belong to a KafkaSource) and vacant consumers
+    std::vector<KafkaConsumerPtr> consumers;
 
     std::mutex mutex;
     std::condition_variable cv;
@@ -131,7 +124,12 @@ private:
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     SettingsChanges createSettingsAdjustments();
-    KafkaConsumerPtr createConsumer(size_t consumer_number);
+    /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
+    KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
+    /// Creates real cppkafka::Consumer object
+    ConsumerPtr createConsumer(KafkaConsumer & kafka_consumer, size_t consumer_number);
+    /// Returns consumer configuration with all changes that had been overwritten in config
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
 
     /// If named_collection is specified.
     String collection_name;
@@ -139,11 +137,7 @@ private:
     std::atomic<bool> shutdown_called = false;
 
     // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config, std::shared_ptr<KafkaConsumerWeakPtr>);
-    void updateConfiguration(cppkafka::Configuration & kafka_config)
-    {
-        updateConfiguration(kafka_config, std::make_shared<KafkaConsumerWeakPtr>());
-    }
+    void updateConfiguration(cppkafka::Configuration & kafka_config);
 
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
