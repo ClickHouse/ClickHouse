@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <condition_variable>
 #include <list>
 #include <mutex>
@@ -32,12 +31,12 @@ private:
     std::mutex mutex;
     std::list<Chunk> ready_chunks;
 
-    // for unix realization
+#if defined(OS_LINUX)
     EventFD new_chunks_event;
-
-    // for other os
+#else
     bool cancelled = false;
     std::condition_variable empty_chunks;
+#endif
 };
 
 using SubscriberPtr = std::shared_ptr<Subscriber>;
