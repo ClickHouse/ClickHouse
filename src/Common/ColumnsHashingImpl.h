@@ -31,6 +31,11 @@ public:
 
 using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
 
+struct LastElementCacheStats
+{
+    UInt64 hits = 0;
+    UInt64 misses = 0;
+};
 
 namespace columns_hashing_impl
 {
@@ -39,17 +44,19 @@ template <typename Value, bool consecutive_keys_optimization_>
 struct LastElementCache
 {
     static constexpr bool consecutive_keys_optimization = consecutive_keys_optimization_;
+
     Value value;
     bool empty = true;
     bool found = false;
-    bool value_changed = false;
+    LastElementCacheStats stats;
 
     bool check(const Value & value_) const { return value == value_; }
 
     template <typename Key>
     bool check(const Key & key) const { return value.first == key; }
 
-    bool hasOnlyOneValue() const { return !empty && found && !value_changed; }
+    bool hasOnlyOneValue() const { return !empty && found && stats.misses == 0; }
+    LastElementCacheStats getStats() const { return stats; }
 };
 
 template <typename Data>
@@ -187,6 +194,7 @@ public:
                     return FindResult(data.hasNullKeyData(), 0);
             }
         }
+
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return findKeyImpl(keyHolderGetKey(key_holder), data);
     }
@@ -204,7 +212,7 @@ public:
         {
             cache.empty = true;
             cache.found = false;
-            cache.value_changed = false;
+            cache.stats = {};
         }
     }
 
@@ -213,6 +221,13 @@ public:
         if constexpr (consecutive_keys_optimization)
             return cache.hasOnlyOneValue();
         return false;
+    }
+
+    ALWAYS_INLINE LastElementCacheStats getCacheStatsSinceLastReset() const
+    {
+        if constexpr (consecutive_keys_optimization)
+            return cache.getStats();
+        return {0, 0};
     }
 
     ALWAYS_INLINE bool isNullAt(size_t row) const
@@ -254,12 +269,13 @@ protected:
     template <typename Data, typename KeyHolder>
     ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
     {
-        if constexpr (Cache::consecutive_keys_optimization)
+        if constexpr (consecutive_keys_optimization)
         {
             if (!cache.empty)
             {
                 if (cache.found && cache.check(keyHolderGetKey(key_holder)))
                 {
+                    ++cache.stats.hits;
                     if constexpr (has_mapped)
                         return EmplaceResult(cache.value.second, cache.value.second, false);
                     else
@@ -267,7 +283,7 @@ protected:
                 }
                 else
                 {
-                    cache.value_changed = true;
+                    ++cache.stats.misses;
                 }
             }
         }
@@ -323,6 +339,7 @@ protected:
             {
                 if (cache.check(key))
                 {
+                    ++cache.stats.hits;
                     if constexpr (has_mapped)
                         return FindResult(&cache.value.second, cache.found, 0);
                     else
@@ -330,7 +347,7 @@ protected:
                 }
                 else
                 {
-                    cache.value_changed = true;
+                    ++cache.stats.misses;
                 }
             }
         }
@@ -358,9 +375,8 @@ protected:
 
         size_t offset = 0;
         if constexpr (FindResult::has_offset)
-        {
             offset = it ? data.offsetInternal(it) : 0;
-        }
+
         if constexpr (has_mapped)
             return FindResult(it ? &it->getMapped() : nullptr, it != nullptr, offset);
         else

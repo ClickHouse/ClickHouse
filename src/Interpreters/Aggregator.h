@@ -205,8 +205,17 @@ struct AggregationMethodOneNumber
     }
 
     /// To use one `Method` in different threads, use different `State`.
-    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
-        Mapped, FieldType, consecutive_keys_optimization, false, nullable>;
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodOneNumber<
+        typename Data::value_type,
+        Mapped,
+        FieldType,
+        use_cache && consecutive_keys_optimization,
+        /*need_offset=*/ false,
+        nullable>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
 
     /// Use optimization for low cardinality.
     static const bool low_cardinality_optimization = false;
@@ -259,7 +268,11 @@ struct AggregationMethodString
 
     explicit AggregationMethodString(size_t size_hint) : data(size_hint) { }
 
-    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped>;
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, /*place_string_to_arena=*/ true, use_cache>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
@@ -292,7 +305,11 @@ struct AggregationMethodStringNoCache
     {
     }
 
-    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false, false, nullable>;
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false, false, nullable>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = nullable;
@@ -334,7 +351,11 @@ struct AggregationMethodFixedString
     {
     }
 
-    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped>;
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, /*place_string_to_arena=*/ true, use_cache>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
@@ -366,7 +387,11 @@ struct AggregationMethodFixedStringNoCache
     {
     }
 
-    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false, false, nullable>;
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false, false, nullable>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = nullable;
@@ -392,20 +417,24 @@ template <typename SingleColumnMethod>
 struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 {
     using Base = SingleColumnMethod;
-    using BaseState = typename Base::State;
-
     using Data = typename Base::Data;
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
-
     using Base::data;
+
+    template <bool use_cache>
+    using BaseStateImpl = typename Base::template StateImpl<use_cache>;
 
     AggregationMethodSingleLowCardinalityColumn() = default;
 
     template <typename Other>
     explicit AggregationMethodSingleLowCardinalityColumn(const Other & other) : Base(other) {}
 
-    using State = ColumnsHashing::HashMethodSingleLowCardinalityColumn<BaseState, Mapped, true>;
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodSingleLowCardinalityColumn<BaseStateImpl<use_cache>, Mapped, use_cache>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
 
     static const bool low_cardinality_optimization = true;
 
@@ -429,7 +458,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
 
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <typename TData, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool use_cache = true>
+template <typename TData, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool consecutive_keys_optimization = false>
 struct AggregationMethodKeysFixed
 {
     using Data = TData;
@@ -449,13 +478,17 @@ struct AggregationMethodKeysFixed
     {
     }
 
-    using State = ColumnsHashing::HashMethodKeysFixed<
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodKeysFixed<
         typename Data::value_type,
         Key,
         Mapped,
         has_nullable_keys,
         has_low_cardinality,
-        use_cache>;
+        use_cache && consecutive_keys_optimization>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
@@ -546,7 +579,11 @@ struct AggregationMethodSerialized
     {
     }
 
-    using State = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
@@ -566,6 +603,7 @@ class Aggregator;
 
 using ColumnsHashing::HashMethodContext;
 using ColumnsHashing::HashMethodContextPtr;
+using ColumnsHashing::LastElementCacheStats;
 
 struct AggregatedDataVariants : private boost::noncopyable
 {
@@ -598,6 +636,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     /** Specialization for the case when there are no keys, and for keys not fitted into max_rows_to_group_by.
       */
     AggregatedDataWithoutKey without_key = nullptr;
+
+    /// TODO:
+    LastElementCacheStats consecutive_keys_cache_stats;
 
     // Disable consecutive key optimization for Uint8/16, because they use a FixedHashMap
     // and the lookup there is almost free, so we don't need to cache the last lookup result
@@ -1295,15 +1336,28 @@ private:
         size_t row_end,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
+        LastElementCacheStats & consecutive_keys_cache_stats,
+        bool no_more_keys,
+        bool all_keys_are_const,
+        AggregateDataPtr overflow_row) const;
+
+    template <typename Method, typename State>
+    void executeImpl(
+        Method & method,
+        State & state,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys,
         bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
+    template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method, typename State>
     void executeImplBatch(
         Method & method,
-        typename Method::State & state,
+        State & state,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,

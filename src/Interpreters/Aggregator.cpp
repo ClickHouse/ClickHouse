@@ -976,12 +976,12 @@ void Aggregator::executeOnBlockSmall(
             initDataVariantsWithSizeHint(result, method_chosen, params);
         else
             result.init(method_chosen);
+
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
     }
 
     executeImpl(result, row_begin, row_end, key_columns, aggregate_instructions);
-
     CurrentMemoryTracker::check();
 }
 
@@ -1038,17 +1038,14 @@ void Aggregator::executeImpl(
 {
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
+                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
 }
 
-/** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
-  * (Probably because after the inline of this function, more internal functions no longer be inlined.)
-  * Inline does not make sense, since the inner loop is entirely inside this function.
-  */
 template <typename Method>
 void NO_INLINE Aggregator::executeImpl(
     Method & method,
@@ -1057,12 +1054,47 @@ void NO_INLINE Aggregator::executeImpl(
     size_t row_end,
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
+    LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+    UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
+    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / (total_rows) : 1.0;
+    bool use_cache = cache_hit_rate >= 0.5;
 
+    if (use_cache)
+    {
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+
+        auto current_stats = state.getCacheStatsSinceLastReset();
+        consecutive_keys_cache_stats.hits += current_stats.hits;
+        consecutive_keys_cache_stats.misses += current_stats.misses;
+    }
+    else
+    {
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+    }
+}
+
+/** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
+  * (Probably because after the inline of this function, more internal functions no longer be inlined.)
+  * Inline does not make sense, since the inner loop is entirely inside this function.
+  */
+template <typename Method, typename State>
+void NO_INLINE Aggregator::executeImpl(
+    Method & method,
+    State & state,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    AggregateDataPtr overflow_row) const
+{
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
@@ -1096,10 +1128,10 @@ void NO_INLINE Aggregator::executeImpl(
     }
 }
 
-template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
+template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
-    typename Method::State & state,
+    State & state,
     Arena * aggregates_pool,
     size_t row_begin,
     size_t row_end,
@@ -1119,8 +1151,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         if constexpr (no_more_keys)
             return;
 
-        /// For all rows.
-
         /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
         AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
@@ -1129,6 +1159,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         else
         {
+            /// For all rows.
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
